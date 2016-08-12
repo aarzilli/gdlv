@@ -33,7 +33,7 @@ import (
 	"golang.org/x/mobile/event/size"
 )
 
-//go:generate go-bindata -o internal/assets/assets.go -pkg assets ProggyClean.ttf
+//go:generate go-bindata -o internal/assets/assets.go -pkg assets DroidSansMono.ttf
 
 const perfUpdate = false
 
@@ -61,10 +61,10 @@ type MasterWindow struct {
 var ttfontDefault *truetype.Font
 var defaultFontInit sync.Once
 
-// Returns default font (ProggyClean) with specified size and scaling
+// Returns default font (DroidSansMono) with specified size and scaling
 func DefaultFont(size int, scaling float64) *types.Face {
 	defaultFontInit.Do(func() {
-		fontData, _ := assets.Asset("ProggyClean.ttf")
+		fontData, _ := assets.Asset("DroidSansMono.ttf")
 		ttfontDefault, _ = freetype.ParseFont(fontData)
 	})
 
@@ -73,7 +73,7 @@ func DefaultFont(size int, scaling float64) *types.Face {
 	return &types.Face{
 		Size: sz,
 		//ttfont: ttfontDefault,
-		Face: truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 96})}
+		Face: truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})}
 }
 
 // Creates new master window

@@ -11,35 +11,16 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/aarzilli/gdlv/internal/assets"
-
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
 	nstyle "github.com/aarzilli/nucular/style"
-	ntypes "github.com/aarzilli/nucular/types"
 
 	"github.com/derekparker/delve/service"
 	"github.com/derekparker/delve/service/api"
 	"github.com/derekparker/delve/service/rpc2"
-	"github.com/golang/freetype"
-	"github.com/golang/freetype/truetype"
 
-	"golang.org/x/image/font"
 	"golang.org/x/mobile/event/key"
 )
-
-//go:generate go-bindata -o internal/assets/assets.go -pkg assets DroidSansMono.ttf
-
-var ttfontDefault *truetype.Font
-
-func getFont(scaling float64) *ntypes.Face {
-	sz := int(12 * scaling)
-
-	return &ntypes.Face{
-		Size: sz,
-		Face: truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 96}),
-	}
-}
 
 func fixStyle(style *nstyle.Style) {
 	style.Selectable.Normal.Data.Color = style.NormalWindow.Background
@@ -53,7 +34,7 @@ func fixStyle(style *nstyle.Style) {
 var rightColWidth int = 200
 var scrollbackHeight int = 200
 
-const commandLineHeight = 38
+const commandLineHeight = 28
 
 type listingPanel struct {
 	mode     int
@@ -106,14 +87,14 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 		switch {
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '+') || (e.Rune == '='):
 			conf.Scaling += 0.1
-			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), getFont(conf.Scaling), conf.Scaling)
+			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), nil, conf.Scaling)
 			style, _ := mw.Style()
 			fixStyle(style)
 			saveConfiguration()
 
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '-'):
 			conf.Scaling -= 0.1
-			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), getFont(conf.Scaling), conf.Scaling)
+			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), nil, conf.Scaling)
 			style, _ := mw.Style()
 			fixStyle(style)
 			saveConfiguration()
@@ -132,13 +113,13 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 
 	if leftcol := w.GroupBegin("left-column", nucular.WindowNoScrollbar); leftcol != nil {
 
-		leftcol.Row(30).Static(200, 0)
+		leftcol.Row(25).Static(200, 0)
 		modes := []string{"Listing", "Disassembly"}
 		if !lp.showcur {
 			modes = []string{"Listing"}
 		}
 
-		item_height := int(30 * scaling)
+		item_height := int(25 * scaling)
 		item_padding := style.Combo.ButtonPadding.Y
 		window_padding := style.ComboWindow.Padding.Y
 		max_height := (len(modes)+1)*item_height + item_padding*3 + window_padding*2
@@ -223,17 +204,17 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 
 	if rightcol := w.GroupBegin("right-column", nucular.WindowNoScrollbar|nucular.WindowBorder); rightcol != nil {
 		//TODO: not implemented
-		rightcol.Row(30).Static(180, 0)
+		rightcol.Row(25).Static(180, 0)
 		rightcol.ComboSimple(rightcolModes, &rightcolMode, 22)
 		rightcol.Spacing(1)
-		rightcol.Row(30).Dynamic(1)
+		rightcol.Row(25).Dynamic(1)
 		rightcol.Label("Not implemented", "LC")
 		rightcol.GroupEnd()
 	}
 }
 
 func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
-	const lineheight = 18
+	const lineheight = 14
 	style, _ := mw.Style()
 
 	arroww := nucular.FontWidth(style.Font, "=>") + style.Text.Padding.X*2
@@ -525,11 +506,8 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 func main() {
 	loadConfiguration()
 
-	fontData, _ := assets.Asset("DroidSansMono.ttf")
-	ttfontDefault, _ = freetype.ParseFont(fontData)
-
 	wnd = nucular.NewMasterWindow(guiUpdate, nucular.WindowNoScrollbar)
-	wnd.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), getFont(conf.Scaling), conf.Scaling)
+	wnd.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), nil, conf.Scaling)
 	style, _ := wnd.Style()
 	fixStyle(style)
 

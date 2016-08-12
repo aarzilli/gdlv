@@ -157,7 +157,7 @@ func shrinkRect(r types.Rect, amount int) types.Rect {
 }
 
 func fontHeight(f *types.Face) int {
-	return f.Size
+	return f.Face.Metrics().Ascent.Ceil() + f.Face.Metrics().Descent.Ceil()
 }
 
 func FontWidth(f *types.Face, string string) int {
