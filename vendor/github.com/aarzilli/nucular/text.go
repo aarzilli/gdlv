@@ -43,8 +43,6 @@ func widgetText(o *command.Buffer, b types.Rect, str string, t *textWidget, a la
 	b.H = max(b.H, 2*t.Padding.Y)
 	lblrect := types.Rect{X: 0, W: 0, Y: b.Y + t.Padding.Y, H: b.H - 2*t.Padding.Y}
 
-	text_width := FontWidth(f, str)
-	text_width += (2.0 * t.Padding.X)
 
 	/* align in x-axis */
 	switch a[0] {
@@ -52,6 +50,8 @@ func widgetText(o *command.Buffer, b types.Rect, str string, t *textWidget, a la
 		lblrect.X = b.X + t.Padding.X
 		lblrect.W = max(0, b.W-2*t.Padding.X)
 	case 'C':
+		text_width := FontWidth(f, str)
+		text_width += (2.0 * t.Padding.X)
 		lblrect.W = max(1, 2*t.Padding.X+text_width)
 		lblrect.X = (b.X + t.Padding.X + ((b.W-2*t.Padding.X)-lblrect.W)/2)
 		lblrect.X = max(b.X+t.Padding.X, lblrect.X)
@@ -60,6 +60,8 @@ func widgetText(o *command.Buffer, b types.Rect, str string, t *textWidget, a la
 			lblrect.W -= lblrect.X
 		}
 	case 'R':
+		text_width := FontWidth(f, str)
+		text_width += (2.0 * t.Padding.X)
 		lblrect.X = max(b.X+t.Padding.X, (b.X+b.W)-(2*t.Padding.X+text_width))
 		lblrect.W = text_width + 2*t.Padding.X
 	default:

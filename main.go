@@ -34,7 +34,7 @@ func fixStyle(style *nstyle.Style) {
 var rightColWidth int = 200
 var scrollbackHeight int = 200
 
-const commandLineHeight = 20
+const commandLineHeight = 22
 
 type listingPanel struct {
 	mode     int
@@ -46,6 +46,7 @@ type listingPanel struct {
 }
 
 type listline struct {
+	idx        string
 	text       string
 	pc         bool
 	breakpoint bool
@@ -61,11 +62,10 @@ var curThread int
 var curGid int
 var curFrame int
 
-var rightcolModes = []string{"Goroutines and Stack", "Stack and Locals", "Threads and Locals", "Breakpoints", "Sources", "Functions", "Types"}
+var rightcolModes = []string{"Goroutines and Stack", "Stack and Locals", "Threads and Locals", "Threads and Registers", "Globals", "Breakpoints", "Sources", "Functions", "Types"}
 var rightcolMode int = 1
 
 var scrollbackEditor, commandLineEditor nucular.TextEditor
-var out = editorWriter{&scrollbackEditor}
 
 func prompt(thread int, gid, frame int) string {
 	if thread < 0 {
@@ -80,6 +80,9 @@ func prompt(thread int, gid, frame int) string {
 func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 	mu.Lock()
 	defer mu.Unlock()
+
+	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+
 	for _, e := range w.Input().Keyboard.Keys {
 		switch {
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '+') || (e.Rune == '='):
@@ -125,7 +128,7 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 			for i := range modes {
 				if w.MenuItem(label.TA(modes[i], "LC")) {
 					lp.mode = i
-					go refreshState(true)
+					go refreshState(true, nil)
 				}
 			}
 		})
@@ -177,8 +180,13 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 			active := commandLineEditor.Edit(leftcol)
 			if active&nucular.EditCommitted != 0 {
 				cmd := string(commandLineEditor.Buffer)
-				fmt.Fprintf(&out, "%s %s\n", p, cmd)
-				//TODO: execute commands
+				if cmd == "" {
+					fmt.Fprintf(&scrollbackOut, "%s %s\n", p, lastCmd)
+				} else {
+					lastCmd = cmd
+					fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmd)
+				}
+				go executeCommand(cmd)
 				commandLineEditor.Buffer = commandLineEditor.Buffer[:0]
 				commandLineEditor.Cursor = 0
 				commandLineEditor.Active = true
@@ -214,16 +222,14 @@ func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
 
 	switch lp.mode {
 	case 0:
-		zerow := nucular.FontWidth(style.Font, "0") + style.Text.Padding.X*2
-
-		d := digits(len(lp.listing))
-		if d < 3 {
-			d = 3
+		idxw := style.Text.Padding.X * 2
+		if len(lp.listing) > 0 {
+			idxw += nucular.FontWidth(style.Font, lp.listing[len(lp.listing)-1].idx)
 		}
 
-		listp.LayoutRowStaticScaled(int(lineheight*scaling), starw, arroww, zerow*(d+1), 0)
+		listp.LayoutRowStaticScaled(int(lineheight*scaling), starw, arroww, idxw, 0)
 
-		for i, line := range lp.listing {
+		for _, line := range lp.listing {
 			if line.breakpoint {
 				listp.Label("*", "CC")
 			} else {
@@ -244,7 +250,7 @@ func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
 			} else {
 				listp.Spacing(1)
 			}
-			listp.Label(fmt.Sprintf("%*d", d, i+1), "LC")
+			listp.Label(line.idx, "LC")
 			listp.Label(line.text, "LC")
 		}
 
@@ -297,9 +303,13 @@ func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
 }
 
 func connectTo(listenstr string) {
+	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+
 	const prefix = "API server listening at: "
 	if !strings.HasPrefix(listenstr, prefix) {
-		fmt.Fprintf(&out, "Could not parse connection string: %q\n", listenstr)
+		mu.Lock()
+		fmt.Fprintf(&scrollbackOut, "Could not parse connection string: %q\n", listenstr)
+		mu.Unlock()
 		return
 	}
 
@@ -310,11 +320,13 @@ func connectTo(listenstr string) {
 
 		client = rpc2.NewClient(addr)
 		if client == nil {
-			fmt.Fprintf(&out, "Could not connect\n")
+			fmt.Fprintf(&scrollbackOut, "Could not connect\n")
 		}
+
+		cmds = DebugCommands(client)
 	}()
 
-	refreshState(false)
+	refreshState(false, nil)
 }
 
 func digits(n int) int {
@@ -352,23 +364,28 @@ func expandTabs(in string) string {
 	return buf.String()
 }
 
-func refreshState(keepframe bool) {
+func refreshState(keepframe bool, state *api.DebuggerState) {
 	defer wnd.Changed()
+
+	var scrollbackOut = editorWriter{&scrollbackEditor, false}
 
 	failstate := func(pos string, err error) {
 		curThread = -1
 		curGid = -1
 		curFrame = 0
-		fmt.Fprintf(&out, "Error refreshing state %s: %v\n", pos, err)
+		fmt.Fprintf(&scrollbackOut, "Error refreshing state %s: %v\n", pos, err)
 
 	}
 
-	state, err := client.GetState()
-	if err != nil {
-		mu.Lock()
-		failstate("GetState()", err)
-		mu.Unlock()
-		return
+	if state == nil {
+		var err error
+		state, err = client.GetState()
+		if err != nil {
+			mu.Lock()
+			failstate("GetState()", err)
+			mu.Unlock()
+			return
+		}
 	}
 
 	mu.Lock()
@@ -435,12 +452,20 @@ func refreshState(keepframe bool) {
 			for buf.Scan() {
 				lineno++
 				_, breakpoint := bpmap[lineno]
-				lp.listing = append(lp.listing, listline{expandTabs(buf.Text()), lineno == state.CurrentThread.Line, breakpoint})
+				lp.listing = append(lp.listing, listline{"", expandTabs(buf.Text()), lineno == state.CurrentThread.Line, breakpoint})
 			}
 
 			if err := buf.Err(); err != nil {
 				failstate("(reading file)", err)
 				return
+			}
+
+			d := digits(len(lp.listing))
+			if d < 3 {
+				d = 3
+			}
+			for i := range lp.listing {
+				lp.listing[i].idx = fmt.Sprintf("%*d", d, i)
 			}
 
 		case 1:
@@ -453,6 +478,29 @@ func refreshState(keepframe bool) {
 			lp.text = text
 		}
 	}
+}
+
+type editorWriter struct {
+	ed   *nucular.TextEditor
+	lock bool
+}
+
+func (w *editorWriter) Write(b []byte) (int, error) {
+	if w.lock {
+		mu.Lock()
+		defer mu.Unlock()
+	}
+	atend := w.ed.Cursor == len(w.ed.Buffer) || w.ed.Cursor == len(w.ed.Buffer)-1
+	w.ed.Buffer = append(w.ed.Buffer, []rune(expandTabs(string(b)))...)
+	if atend {
+		w.ed.Cursor = len(w.ed.Buffer)
+		if b[len(b)-1] == '\n' {
+			w.ed.Cursor--
+		}
+		w.ed.CursorFollow = true
+		w.ed.Redraw = true
+	}
+	return len(b), nil
 }
 
 func main() {
@@ -468,7 +516,7 @@ func main() {
 	curGid = -1
 
 	scrollbackEditor.Flags = nucular.EditSelectable | nucular.EditReadOnly | nucular.EditMultiline
-	commandLineEditor.Flags = nucular.EditSelectable | nucular.EditSigEnter
+	commandLineEditor.Flags = nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard
 
 	args := []string{"--headless"}
 	args = append(args, os.Args[1:]...)
@@ -478,10 +526,10 @@ func main() {
 	stderr, _ := cmd.StderrPipe()
 	err := cmd.Start()
 
+	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+
 	if err != nil {
-		mu.Lock()
-		fmt.Fprintf(&out, "Could not start delve: %v\n", err)
-		mu.Unlock()
+		fmt.Fprintf(&scrollbackOut, "Could not start delve: %v\n", err)
 	} else {
 		go func() {
 			first := true
@@ -491,22 +539,18 @@ func main() {
 					connectTo(scan.Text())
 					first = false
 				} else {
-					fmt.Fprintln(&out, scan.Text())
+					fmt.Fprintln(&scrollbackOut, scan.Text())
 				}
 			}
 			if err := scan.Err(); err != nil {
-				mu.Lock()
-				fmt.Fprintf(&out, "Error reading stdout: %v\n", err)
-				mu.Unlock()
+				fmt.Fprintf(&scrollbackOut, "Error reading stdout: %v\n", err)
 			}
 		}()
 
 		go func() {
-			_, err := io.Copy(&out, stderr)
+			_, err := io.Copy(&scrollbackOut, stderr)
 			if err != nil {
-				mu.Lock()
-				fmt.Fprintf(&out, "Error reading stderr: %v\n", err)
-				mu.Unlock()
+				fmt.Fprintf(&scrollbackOut, "Error reading stderr: %v\n", err)
 			}
 		}()
 	}

@@ -24,31 +24,81 @@
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular",
-			"Rev": "11381fae3a435c2ad7a570ea95b0fcadfffb7577"
+			"Rev": "8c091410ca85b64b044f09521a0dfc5e5c3191eb"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/clipboard",
-			"Rev": "11381fae3a435c2ad7a570ea95b0fcadfffb7577"
+			"Rev": "8c091410ca85b64b044f09521a0dfc5e5c3191eb"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/command",
-			"Rev": "11381fae3a435c2ad7a570ea95b0fcadfffb7577"
+			"Rev": "8c091410ca85b64b044f09521a0dfc5e5c3191eb"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/internal/assets",
-			"Rev": "11381fae3a435c2ad7a570ea95b0fcadfffb7577"
+			"Rev": "8c091410ca85b64b044f09521a0dfc5e5c3191eb"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/label",
-			"Rev": "11381fae3a435c2ad7a570ea95b0fcadfffb7577"
+			"Rev": "8c091410ca85b64b044f09521a0dfc5e5c3191eb"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/style",
-			"Rev": "11381fae3a435c2ad7a570ea95b0fcadfffb7577"
+			"Rev": "8c091410ca85b64b044f09521a0dfc5e5c3191eb"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/types",
-			"Rev": "11381fae3a435c2ad7a570ea95b0fcadfffb7577"
+			"Rev": "8c091410ca85b64b044f09521a0dfc5e5c3191eb"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/dwarf/frame",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/dwarf/line",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/dwarf/op",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/dwarf/reader",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/dwarf/util",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/proc",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/service",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/service/api",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/service/debugger",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+		},
+		{
+			"ImportPath": "github.com/derekparker/delve/service/rpc2",
+			"Comment": "v0.11.0-alpha-126-g6607a9b",
+			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
 		},
 		{
 			"ImportPath": "github.com/golang/freetype",
@@ -64,6 +114,18 @@
 			"ImportPath": "github.com/golang/freetype/truetype",
 			"Comment": "release-128-gf9531a3",
 			"Rev": "f9531a36062a85d4cef2daae173a3c9a35ae9f17"
+		},
+		{
+			"ImportPath": "golang.org/x/debug/dwarf",
+			"Rev": "fb508927b491eca48a708e9d000fdb7afa53c32b"
+		},
+		{
+			"ImportPath": "golang.org/x/debug/elf",
+			"Rev": "fb508927b491eca48a708e9d000fdb7afa53c32b"
+		},
+		{
+			"ImportPath": "golang.org/x/debug/macho",
+			"Rev": "fb508927b491eca48a708e9d000fdb7afa53c32b"
 		},
 		{
 			"ImportPath": "golang.org/x/exp/shiny/driver",
@@ -154,8 +216,16 @@
 			"Rev": "cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"
 		},
 		{
+			"ImportPath": "golang.org/x/sys/unix",
+			"Rev": "eb2c74142fd19a79b3f237334c7384d5167b1b46"
+		},
+		{
 			"ImportPath": "golang.org/x/sys/windows",
 			"Rev": "eb2c74142fd19a79b3f237334c7384d5167b1b46"
+		},
+		{
+			"ImportPath": "rsc.io/x86/x86asm",
+			"Rev": "01d8f0379593fd888e08a4c4057d69f5765ab2e4"
 		}
 	]
 }
