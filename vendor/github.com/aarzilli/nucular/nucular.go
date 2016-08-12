@@ -893,12 +893,8 @@ func (ctx *context) scale(x int) int {
 	return int(float64(x) * ctx.Scaling)
 }
 
-func rowLayoutCtr(win *Window, height int, cols int, width int, scale bool) {
+func rowLayoutCtr(win *Window, height int, cols int, width int) {
 	/* update the current row and set the current row layout */
-	if scale {
-		height = win.ctx.scale(height)
-		width = win.ctx.scale(width)
-	}
 	panelLayout(win.ctx, win, height, cols)
 	win.layout.Row.Type = layoutDynamicFixed
 
@@ -922,29 +918,35 @@ func (win *Window) LayoutReserveRowScaled(height int, num int) {
 	win.layout.ReservedHeight += height*num + win.style().Spacing.Y*num
 }
 
+// Changes row layout and starts a new row.
+// Use the returned value to configure the new row layout:
+//  win.Row(10).Static(100, 120, 100)
+// If height == 0 all the row is stretched to fill all the remaining space.
+func (win *Window) Row(height int) *RowConstructor {
+	return &RowConstructor{win, win.ctx.scale(height)}
+}
+
+// Same as Row but with scaled units.
+func (win *Window) RowScaled(height int) *RowConstructor {
+	return &RowConstructor{win, height}
+}
+
+type RowConstructor struct {
+	win    *Window
+	height int
+}
+
 // Starts new row that has cols columns of equal width that automatically
 // resize to fill the available space.
-// If height == 0 all the row is stretched to fill all the remaining space.
-func (win *Window) LayoutRowDynamic(height int, cols int) {
-	rowLayoutCtr(win, height, cols, 0, true)
-}
-
-// Like LayoutRowDynamic but height is specified in scaled units.
-// If height == 0 all the row is stretched to fill all the remaining space.
-func (win *Window) LayoutRowDynamicScaled(height int, cols int) {
-	rowLayoutCtr(win, height, cols, 0, false)
-}
-
-func (win *Window) LayoutRowRatio(height int, ratio ...float64) {
-	win.LayoutRowRatioScaled(win.ctx.scale(height), ratio...)
+func (ctr *RowConstructor) Dynamic(cols int) {
+	rowLayoutCtr(ctr.win, ctr.height, cols, 0)
 }
 
 // Starts new row with a fixed number of columns of width proportional
 // to the size of the window.
-// If height == 0 all the row is stretched to fill all the remaining space.
-func (win *Window) LayoutRowRatioScaled(height int, ratio ...float64) {
-	layout := win.layout
-	panelLayout(win.ctx, win, height, len(ratio))
+func (ctr *RowConstructor) Ratio(ratio ...float64) {
+	layout := ctr.win.layout
+	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(ratio))
 
 	/* calculate width of undefined widget ratios */
 	r := 0.0
@@ -968,12 +970,25 @@ func (win *Window) LayoutRowRatioScaled(height int, ratio ...float64) {
 
 	layout.Row.ItemOffset = 0
 	layout.Row.Filled = 0
+
 }
 
-// Like LayoutRowStatic but with scaled sizes.
-func (win *Window) LayoutRowStaticScaled(height int, width ...int) {
-	layout := win.layout
-	panelLayout(win.ctx, win, height, len(width))
+// Starts new row with a fixed number of columns with the specfieid widths.
+// If no widths are specified the row will never autowrap
+// and the width of the next widget can be specified using
+// LayoutSetWidth/LayoutSetWidthScaled.
+func (ctr *RowConstructor) Static(width ...int) {
+	for i := range width {
+		width[i] = ctr.win.ctx.scale(width[i])
+	}
+
+	ctr.StaticScaled(width...)
+}
+
+// Like Static but with scaled sizes.
+func (ctr *RowConstructor) StaticScaled(width ...int) {
+	layout := ctr.win.layout
+	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(width))
 
 	nzero := 0
 	used := 0
@@ -985,7 +1000,7 @@ func (win *Window) LayoutRowStaticScaled(height int, width ...int) {
 	}
 
 	if nzero > 0 {
-		style := win.style()
+		style := ctr.win.style()
 		spacing := style.Spacing
 		padding := style.Padding
 		panel_padding := 2 * padding.X
@@ -1012,6 +1027,36 @@ func (win *Window) LayoutRowStaticScaled(height int, width ...int) {
 	layout.Row.Filled = 0
 }
 
+// Starts new row that will contain widget_count widgets.
+// The size and position of widgets inside this row will be specified
+// by callling LayoutSpacePush.
+func (ctr *RowConstructor) SpaceBegin(widget_count int) {
+	layout := ctr.win.layout
+	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count)
+	layout.Row.Type = layoutStaticFree
+
+	layout.Row.Ratio = nil
+	layout.Row.ItemWidth = 0
+	layout.Row.ItemRatio = 0.0
+	layout.Row.ItemOffset = 0
+	layout.Row.Filled = 0
+}
+
+// Starts new row that will contain widget_count widgets.
+// The size and position of widgets inside this row will be specified
+// by callling LayoutSpacePushRatio.
+func (ctr *RowConstructor) SpaceBeginRatio(widget_count int) {
+	layout := ctr.win.layout
+	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count)
+	layout.Row.Type = layoutDynamicFree
+
+	layout.Row.Ratio = nil
+	layout.Row.ItemWidth = 0
+	layout.Row.ItemRatio = 0.0
+	layout.Row.ItemOffset = 0
+	layout.Row.Filled = 0
+}
+
 func (win *Window) LayoutSetWidth(width int) {
 	layout := win.layout
 	if layout.Row.Type != layoutStatic || len(layout.Row.WidthArr) > 0 {
@@ -1026,50 +1071,6 @@ func (win *Window) LayoutSetWidthScaled(width int) {
 		panic(WrongLayoutErr)
 	}
 	layout.Row.ItemWidth = width
-}
-
-// Starts new row with a fixed number of columns with the specfieid widths.
-// If no widths are specified the row will never autowrap
-// and the width of the next widget can be specified using
-// LayoutSetWidth/LayoutSetWidthScaled.
-// If height == 0 all the row is stretched to fill all the remaining space.
-func (win *Window) LayoutRowStatic(height int, width ...int) {
-	for i := range width {
-		width[i] = win.ctx.scale(width[i])
-	}
-
-	win.LayoutRowStaticScaled(win.ctx.scale(height), width...)
-}
-
-// Starts new row that will contain widget_count widgets.
-// The size and position of widgets inside this row will be specified
-// by callling LayoutSpacePush.
-func (win *Window) LayoutSpaceBegin(height int, widget_count int) {
-	layout := win.layout
-	panelLayout(win.ctx, win, win.ctx.scale(height), widget_count)
-	layout.Row.Type = layoutStaticFree
-
-	layout.Row.Ratio = nil
-	layout.Row.ItemWidth = 0
-	layout.Row.ItemRatio = 0.0
-	layout.Row.ItemOffset = 0
-	layout.Row.Filled = 0
-}
-
-// Starts new row that will contain widget_count widgets.
-// The size and position of widgets inside this row will be specified
-// by callling LayoutSpacePushRatio.
-// If height == 0 all the row is stretched to fill all the remaining space.
-func (win *Window) LayoutSpaceBeginRatio(height int, widget_count int) {
-	layout := win.layout
-	panelLayout(win.ctx, win, win.ctx.scale(height), widget_count)
-	layout.Row.Type = layoutDynamicFree
-
-	layout.Row.Ratio = nil
-	layout.Row.ItemWidth = 0
-	layout.Row.ItemRatio = 0.0
-	layout.Row.ItemOffset = 0
-	layout.Row.Filled = 0
 }
 
 var WrongLayoutErr = errors.New("Command not available with current layout")
@@ -2396,7 +2397,7 @@ func (win *Window) Tooltip(text string) {
 	text_width += win.ctx.scale(2*padding.X) + win.ctx.scale(2*item_spacing.X)
 
 	win.TooltipOpen(text_width, false, func(mw *MasterWindow, tw *Window) {
-		tw.LayoutRowDynamicScaled(text_height, 1)
+		tw.RowScaled(text_height).Dynamic(1)
 		tw.Label(text, "LC")
 	})
 }
@@ -2461,11 +2462,12 @@ func (win *Window) ComboSimple(items []string, selected *int, item_height int) {
 		return
 	}
 
+	item_height = win.ctx.scale(item_height)
 	item_padding := win.ctx.Style.Combo.ButtonPadding.Y
 	window_padding := win.style().Padding.Y
 	max_height := (len(items)+1)*item_height + item_padding*3 + window_padding*2
 	win.Combo(label.T(items[*selected]), max_height, func(mw *MasterWindow, w *Window) {
-		w.LayoutRowDynamic(item_height, 1)
+		w.RowScaled(item_height).Dynamic(1)
 		for i := range items {
 			if w.MenuItem(label.TA(items[i], "LC")) {
 				*selected = i

@@ -11,16 +11,35 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/aarzilli/gdlv/internal/assets"
+
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
 	nstyle "github.com/aarzilli/nucular/style"
+	ntypes "github.com/aarzilli/nucular/types"
 
 	"github.com/derekparker/delve/service"
 	"github.com/derekparker/delve/service/api"
 	"github.com/derekparker/delve/service/rpc2"
+	"github.com/golang/freetype"
+	"github.com/golang/freetype/truetype"
 
+	"golang.org/x/image/font"
 	"golang.org/x/mobile/event/key"
 )
+
+//go:generate go-bindata -o internal/assets/assets.go -pkg assets DroidSansMono.ttf
+
+var ttfontDefault *truetype.Font
+
+func getFont(scaling float64) *ntypes.Face {
+	sz := int(12 * scaling)
+
+	return &ntypes.Face{
+		Size: sz,
+		Face: truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 96}),
+	}
+}
 
 func fixStyle(style *nstyle.Style) {
 	style.Selectable.Normal.Data.Color = style.NormalWindow.Background
@@ -34,7 +53,7 @@ func fixStyle(style *nstyle.Style) {
 var rightColWidth int = 200
 var scrollbackHeight int = 200
 
-const commandLineHeight = 22
+const commandLineHeight = 38
 
 type listingPanel struct {
 	mode     int
@@ -87,14 +106,14 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 		switch {
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '+') || (e.Rune == '='):
 			conf.Scaling += 0.1
-			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), nil, conf.Scaling)
+			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), getFont(conf.Scaling), conf.Scaling)
 			style, _ := mw.Style()
 			fixStyle(style)
 			saveConfiguration()
 
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '-'):
 			conf.Scaling -= 0.1
-			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), nil, conf.Scaling)
+			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), getFont(conf.Scaling), conf.Scaling)
 			style, _ := mw.Style()
 			fixStyle(style)
 			saveConfiguration()
@@ -107,24 +126,24 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 	style, scaling := mw.Style()
 	_, _ = style, scaling
 
-	w.LayoutRowStatic(0, 0, 1, rightColWidth)
+	w.Row(0).Static(0, 1, rightColWidth)
 
 	// LEFT COLUMN
 
 	if leftcol := w.GroupBegin("left-column", nucular.WindowNoScrollbar); leftcol != nil {
 
-		leftcol.LayoutRowStatic(20, 200, 0)
+		leftcol.Row(30).Static(200, 0)
 		modes := []string{"Listing", "Disassembly"}
 		if !lp.showcur {
 			modes = []string{"Listing"}
 		}
 
-		item_height := int(18 * scaling)
+		item_height := int(30 * scaling)
 		item_padding := style.Combo.ButtonPadding.Y
 		window_padding := style.ComboWindow.Padding.Y
 		max_height := (len(modes)+1)*item_height + item_padding*3 + window_padding*2
 		leftcol.Combo(label.T(modes[lp.mode]), max_height, func(mw *nucular.MasterWindow, w *nucular.Window) {
-			w.LayoutRowDynamicScaled(item_height, 1)
+			w.RowScaled(item_height).Dynamic(1)
 			for i := range modes {
 				if w.MenuItem(label.TA(modes[i], "LC")) {
 					lp.mode = i
@@ -143,18 +162,18 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 		leftcol.LayoutReserveRow(scrollbackHeight, 1)
 		leftcol.LayoutReserveRowScaled(int(commandLineHeight*scaling), 1)
 
-		leftcol.LayoutRowDynamic(0, 1)
+		leftcol.Row(0).Dynamic(1)
 
 		if listp := leftcol.GroupBegin("list-panel", nucular.WindowNoHScrollbar|nucular.WindowBorder); listp != nil {
 			lp.show(mw, listp)
 			listp.GroupEnd()
 		}
 
-		leftcol.LayoutRowDynamic(1, 1)
+		leftcol.Row(1).Dynamic(1)
 		leftcol.Spacing(1)
 		// TODO: make this a resize handle
 
-		leftcol.LayoutRowDynamic(scrollbackHeight, 1)
+		leftcol.Row(scrollbackHeight).Dynamic(1)
 		scrollbackEditor.Edit(leftcol)
 
 		var p string
@@ -171,7 +190,7 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 		}
 		promptwidth := nucular.FontWidth(style.Font, p) + style.Text.Padding.X*2
 
-		leftcol.LayoutRowStaticScaled(int(commandLineHeight*scaling), promptwidth, 0)
+		leftcol.Row(commandLineHeight).StaticScaled(promptwidth, 0)
 		leftcol.Label(p, "LC")
 
 		if client == nil || running {
@@ -204,18 +223,18 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 
 	if rightcol := w.GroupBegin("right-column", nucular.WindowNoScrollbar|nucular.WindowBorder); rightcol != nil {
 		//TODO: not implemented
-		rightcol.LayoutRowStatic(20, 180, 0)
+		rightcol.Row(30).Static(180, 0)
 		rightcol.ComboSimple(rightcolModes, &rightcolMode, 22)
 		rightcol.Spacing(1)
-		rightcol.LayoutRowDynamic(20, 1)
+		rightcol.Row(30).Dynamic(1)
 		rightcol.Label("Not implemented", "LC")
 		rightcol.GroupEnd()
 	}
 }
 
 func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
-	const lineheight = 14
-	style, scaling := mw.Style()
+	const lineheight = 18
+	style, _ := mw.Style()
 
 	arroww := nucular.FontWidth(style.Font, "=>") + style.Text.Padding.X*2
 	starw := nucular.FontWidth(style.Font, "*") + style.Text.Padding.X*2
@@ -227,7 +246,7 @@ func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
 			idxw += nucular.FontWidth(style.Font, lp.listing[len(lp.listing)-1].idx)
 		}
 
-		listp.LayoutRowStaticScaled(int(lineheight*scaling), starw, arroww, idxw, 0)
+		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, 0)
 
 		for _, line := range lp.listing {
 			if line.breakpoint {
@@ -264,17 +283,17 @@ func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
 		lastfile, lastlineno := "", 0
 
 		if len(lp.text) > 0 && lp.text[0].Loc.Function != nil {
-			listp.LayoutRowDynamicScaled(int(lineheight*scaling), 1)
+			listp.Row(lineheight).Dynamic(1)
 			listp.Label(fmt.Sprintf("TEXT %s(SB) %s", lp.text[0].Loc.Function.Name, lp.text[0].Loc.File), "LC")
 		}
 
 		for _, instr := range lp.text {
 			if instr.Loc.File != lastfile || instr.Loc.Line != lastlineno {
-				listp.LayoutRowDynamicScaled(int(lineheight*scaling), 1)
+				listp.Row(lineheight).Dynamic(1)
 				listp.Label(fmt.Sprintf("%s:%d:", instr.Loc.File, instr.Loc.Line), "LC")
 				lastfile, lastlineno = instr.Loc.File, instr.Loc.Line
 			}
-			listp.LayoutRowStaticScaled(int(lineheight*scaling), starw, arroww, addrw, 0)
+			listp.Row(lineheight).StaticScaled(starw, arroww, addrw, 0)
 			if instr.Breakpoint {
 				listp.Label("*", "LC")
 			} else {
@@ -506,8 +525,11 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 func main() {
 	loadConfiguration()
 
+	fontData, _ := assets.Asset("DroidSansMono.ttf")
+	ttfontDefault, _ = freetype.ParseFont(fontData)
+
 	wnd = nucular.NewMasterWindow(guiUpdate, nucular.WindowNoScrollbar)
-	wnd.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), nil, conf.Scaling)
+	wnd.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), getFont(conf.Scaling), conf.Scaling)
 	style, _ := wnd.Style()
 	fixStyle(style)
 

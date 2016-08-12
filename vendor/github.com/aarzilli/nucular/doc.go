@@ -29,9 +29,9 @@ For example, drawing a simple text button is done with this code:
 
 Widgets are laid out left to right and top to bottom, each row has a layout that can be configured calling the Layout* methods of nucular.Window. There are three main row layout modes:
 
- - Static: in this mode the columns of the row have a fixed, user defined, width. This row layout can be selected calling LayoutRowStatic, LayoutRowStaticScaled or LayoutRowFixed
+ - Static: in this mode the columns of the row have a fixed, user defined, width. This row layout can be selected calling Static or StaticScaled
 
- - Dynamic: in this mode the columns of the row have a width proportional to the total width of the window. This row layout can be selected calling LayoutRowDynamic, LayoutRowDynamicScaled or LayoutRowRatio
+ - Dynamic: in this mode the columns of the row have a width proportional to the total width of the window. This row layout can be selected calling Dynamic, DynamicScaled or Ratio
 
  - Space: in this mode widgets are positioned and sized arbitrarily. This row layout can be selected calling LayoutSpaceBegin or LayoutSpaceBeginRatio, once this row layout is selected widgets can be positioned using LayoutSpacePush or LayoutSpacePushRatio
 

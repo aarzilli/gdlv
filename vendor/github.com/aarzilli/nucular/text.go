@@ -43,7 +43,6 @@ func widgetText(o *command.Buffer, b types.Rect, str string, t *textWidget, a la
 	b.H = max(b.H, 2*t.Padding.Y)
 	lblrect := types.Rect{X: 0, W: 0, Y: b.Y + t.Padding.Y, H: b.H - 2*t.Padding.Y}
 
-
 	/* align in x-axis */
 	switch a[0] {
 	case 'L':
