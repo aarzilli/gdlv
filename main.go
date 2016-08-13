@@ -14,12 +14,14 @@ import (
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
 	nstyle "github.com/aarzilli/nucular/style"
+	ntypes "github.com/aarzilli/nucular/types"
 
 	"github.com/derekparker/delve/service"
 	"github.com/derekparker/delve/service/api"
 	"github.com/derekparker/delve/service/rpc2"
 
 	"golang.org/x/mobile/event/key"
+	"golang.org/x/mobile/event/mouse"
 )
 
 func fixStyle(style *nstyle.Style) {
@@ -31,7 +33,10 @@ func fixStyle(style *nstyle.Style) {
 	style.ContextualWindow.FooterPadding.Y = 0
 }
 
-var rightColWidth int = 200
+var scrollbackResize bool
+var rightColResize bool
+
+var rightColWidth int = 300
 var scrollbackHeight int = 200
 
 const commandLineHeight = 28
@@ -61,9 +66,6 @@ var client service.Client
 var curThread int
 var curGid int
 var curFrame int
-
-var rightcolModes = []string{"Goroutines and Stack", "Stack and Locals", "Threads and Locals", "Threads and Registers", "Globals", "Breakpoints", "Sources", "Functions", "Types"}
-var rightcolMode int = 1
 
 var scrollbackEditor, commandLineEditor nucular.TextEditor
 
@@ -107,7 +109,7 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 	style, scaling := mw.Style()
 	_, _ = style, scaling
 
-	w.Row(0).Static(0, 1, rightColWidth)
+	w.Row(0).Static(0, 2, rightColWidth)
 
 	// LEFT COLUMN
 
@@ -139,7 +141,7 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 			leftcol.Label(prompt(curThread, curGid, curFrame), "LC")
 		}
 
-		leftcol.LayoutReserveRow(1, 1)
+		leftcol.LayoutReserveRow(8, 1)
 		leftcol.LayoutReserveRow(scrollbackHeight, 1)
 		leftcol.LayoutReserveRowScaled(int(commandLineHeight*scaling), 1)
 
@@ -150,11 +152,25 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 			listp.GroupEnd()
 		}
 
-		leftcol.Row(1).Dynamic(1)
-		leftcol.Spacing(1)
-		// TODO: make this a resize handle
+		nextScrollbackHeight := scrollbackHeight
+
+		leftcol.Row(8).Dynamic(1)
+		rszbounds, _ := leftcol.Custom(ntypes.WidgetStateInactive)
+		rszbounds.Y -= style.GroupWindow.Spacing.Y
+		rszbounds.H += style.GroupWindow.Spacing.Y * 2
+		if w.Input().Mouse.HasClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
+			scrollbackResize = true
+		}
+		if scrollbackResize {
+			if !w.Input().Mouse.Down(mouse.ButtonLeft) {
+				scrollbackResize = false
+			} else {
+				nextScrollbackHeight -= int(float64(w.Input().Mouse.Delta.Y) / scaling)
+			}
+		}
 
 		leftcol.Row(scrollbackHeight).Dynamic(1)
+		scrollbackHeight = nextScrollbackHeight
 		scrollbackEditor.Edit(leftcol)
 
 		var p string
@@ -197,17 +213,91 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 	}
 
 	// SPACING
-	w.Spacing(1)
-	// TODO: make this a resize handle
+	rszbounds, _ := w.Custom(ntypes.WidgetStateInactive)
+	rszbounds.X -= style.NormalWindow.Spacing.X
+	rszbounds.W += style.NormalWindow.Spacing.X * 2
+	if w.Input().Mouse.HasClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
+		rightColResize = true
+	}
+	if rightColResize {
+		if !w.Input().Mouse.Down(mouse.ButtonLeft) {
+			rightColResize = false
+		} else {
+			rightColWidth -= int(float64(w.Input().Mouse.Delta.X) / scaling)
+		}
+	}
 
 	// RIGHT COLUMN
 
-	if rightcol := w.GroupBegin("right-column", nucular.WindowNoScrollbar|nucular.WindowBorder); rightcol != nil {
-		//TODO: not implemented
-		rightcol.Row(25).Static(180, 0)
+	if rightcol := w.GroupBegin("right-column", nucular.WindowNoScrollbar); rightcol != nil {
+		rightcol.Row(25).Static(180)
 		rightcol.ComboSimple(rightcolModes, &rightcolMode, 22)
-		rightcol.Spacing(1)
-		rightcol.Row(25).Dynamic(1)
+
+		ht := rightcol.LayoutAvailableHeight() - int(2*scaling) - style.NormalWindow.Spacing.Y*2
+		h1 := ht / 2
+		h2 := ht - h1
+
+		switch rightcolModes[rightcolMode] {
+		case rightGoStack:
+			rightcol.RowScaled(h1).Dynamic(1)
+			goroutinesPanel.Update(mw, rightcol)
+
+			rightcol.Row(2).Dynamic(1)
+			rightcol.Spacing(1)
+
+			rightcol.RowScaled(h2).Dynamic(1)
+			stackPanel.Update(mw, rightcol)
+
+		case rightStackLocals:
+			rightcol.RowScaled(h1).Dynamic(1)
+			stackPanel.Update(mw, rightcol)
+
+			rightcol.Row(2).Dynamic(1)
+			rightcol.Spacing(1)
+
+			rightcol.RowScaled(h2).Dynamic(1)
+			localsPanel.Update(mw, rightcol)
+
+		case rigthThrLocals:
+			rightcol.RowScaled(h1).Dynamic(1)
+			threadsPanel.Update(mw, rightcol)
+
+			rightcol.Row(2).Dynamic(1)
+			rightcol.Spacing(1)
+
+			rightcol.RowScaled(h2).Dynamic(1)
+			localsPanel.Update(mw, rightcol)
+
+		case rightThrRegs:
+			rightcol.RowScaled(h1).Dynamic(1)
+			threadsPanel.Update(mw, rightcol)
+
+			rightcol.Row(2).Dynamic(1)
+			rightcol.Spacing(1)
+
+			rightcol.RowScaled(h2).Dynamic(1)
+			regsPanel.Update(mw, rightcol)
+
+		case rightGlobal:
+			rightcol.Row(0).Dynamic(1)
+			globalsPanel.Update(mw, rightcol)
+
+		case rightBps:
+			rightcol.Row(0).Dynamic(1)
+			breakpointsPanel.Update(mw, rightcol)
+
+		case rightSources:
+			rightcol.Row(0).Dynamic(1)
+			sourcesPanel.Update(mw, rightcol)
+
+		case rightFuncs:
+			rightcol.Row(0).Dynamic(1)
+			funcsPanel.Update(mw, rightcol)
+
+		case rightTypes:
+			rightcol.Row(0).Dynamic(1)
+			typesPanel.Update(mw, rightcol)
+		}
 		rightcol.Label("Not implemented", "LC")
 		rightcol.GroupEnd()
 	}
@@ -227,9 +317,15 @@ func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
 			idxw += nucular.FontWidth(style.Font, lp.listing[len(lp.listing)-1].idx)
 		}
 
-		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, 0)
-
 		for _, line := range lp.listing {
+			listp.Row(lineheight).StaticScaled(starw, arroww, idxw, 0)
+			if line.pc {
+				rowbounds := listp.WidgetBounds()
+				rowbounds.W = listp.LayoutAvailableWidth()
+				cmds := listp.Commands()
+				cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
+			}
+
 			if line.breakpoint {
 				listp.Label("*", "CC")
 			} else {
@@ -336,6 +432,13 @@ func digits(n int) int {
 	return int(math.Floor(math.Log10(float64(n)))) + 1
 }
 
+func hexdigits(n uint64) int {
+	if n <= 0 {
+		return 1
+	}
+	return int(math.Floor(math.Log10(float64(n))/math.Log10(16))) + 1
+}
+
 func expandTabs(in string) string {
 	hastab := false
 	for _, c := range in {
@@ -374,7 +477,6 @@ func refreshState(keepframe bool, state *api.DebuggerState) {
 		curGid = -1
 		curFrame = 0
 		fmt.Fprintf(&scrollbackOut, "Error refreshing state %s: %v\n", pos, err)
-
 	}
 
 	if state == nil {
@@ -411,6 +513,13 @@ func refreshState(keepframe bool, state *api.DebuggerState) {
 		if state.CurrentThread != nil {
 			loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
 		}
+		goroutinesPanel.clear()
+		stackPanel.clear()
+		threadsPanel.clear()
+		localsPanel.clear()
+		regsPanel.clear()
+		globalsPanel.clear()
+		breakpointsPanel.clear()
 	} else {
 		frames, err := client.Stacktrace(curGid, curFrame+1, nil)
 		if err != nil {

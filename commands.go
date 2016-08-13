@@ -468,7 +468,7 @@ func formatLocation(loc api.Location) string {
 	if loc.Function != nil {
 		fname = loc.Function.Name
 	}
-	return fmt.Sprintf("%s:%d %s (%#v)", ShortenFilePath(loc.File), loc.Line, fname, loc.PC)
+	return fmt.Sprintf("%s at %s:%d (%#v)", ShortenFilePath(loc.File), loc.Line, fname, loc.PC)
 }
 
 func writeGoroutineLong(w io.Writer, g *api.Goroutine, prefix string) {

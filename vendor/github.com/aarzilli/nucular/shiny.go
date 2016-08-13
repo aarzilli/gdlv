@@ -626,7 +626,19 @@ func (w *MasterWindow) draw() (int, int) {
 				Src:  image.NewUniform(cmd.Foreground),
 				Face: cmd.Font.Face,
 				Dot:  fixed.P(cmd.X, cmd.Y+cmd.Font.Face.Metrics().Ascent.Ceil())}
-			d.DrawString(cmd.String)
+
+			start := 0
+			for i := range cmd.String {
+				if cmd.String[i] == '\n' {
+					d.DrawString(cmd.String[start:i])
+					d.Dot.X = fixed.I(cmd.X)
+					d.Dot.Y += fixed.I(fontHeight(cmd.Font))
+					start = i + 1
+				}
+			}
+			if start < len(cmd.String) {
+				d.DrawString(cmd.String[start:])
+			}
 			txt++
 			if perfUpdate {
 				txttim += time.Now().Sub(t0)
