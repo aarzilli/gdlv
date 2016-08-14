@@ -627,6 +627,7 @@ func main() {
 
 	scrollbackEditor.Flags = nucular.EditSelectable | nucular.EditReadOnly | nucular.EditMultiline
 	commandLineEditor.Flags = nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard
+	commandLineEditor.Active = true
 
 	args := []string{"--headless"}
 	args = append(args, os.Args[1:]...)

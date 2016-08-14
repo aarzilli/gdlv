@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -301,6 +302,8 @@ func updateThreads(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 }
 
 func loadLocals(p *rightPanel) {
+	m := map[string]int{}
+
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	args, err = client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
@@ -313,13 +316,44 @@ func loadLocals(p *rightPanel) {
 		fmt.Fprintf(&out, "Could not list local variables: %v\n", err)
 		return
 	}
+
+	changename := func(v *api.Variable) {
+		if n, ok := m[v.Name]; ok {
+			n++
+			m[v.Name] = n
+			v.Name = fmt.Sprintf("%s_%d", v.Name, n)
+		} else {
+			m[v.Name] = 0
+		}
+	}
+
+	for i := range args {
+		changename(&args[i])
+	}
+	for i := range locals {
+		changename(&locals[i])
+	}
 	p.done()
 }
 
 func updateLocals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	w.Row(20).Dynamic(1)
-	w.Label("Not implemented", "LT")
-	//TODO: implement
+
+	_, scaling := mw.Style()
+	ind := int(18 * scaling)
+
+	for i := range args {
+		showVariable(w, 0, args[i].Name, &args[i], ind)
+	}
+
+	if len(args) > 0 {
+		w.Row(10).Dynamic(1)
+		w.Spacing(1)
+	}
+
+	for i := range locals {
+		showVariable(w, 0, locals[i].Name, &locals[i], ind)
+	}
 }
 
 func loadRegs(p *rightPanel) {
@@ -446,6 +480,156 @@ func updateStringSlice(mw *nucular.MasterWindow, w *nucular.Window, filterEditor
 		if strings.Index(value, filter) >= 0 {
 			w.Label(value, "LC")
 		}
-		// TODO: contextual menu with copy
+		// TODO: contextual menu with copy (but functions need to also have a "set breakpoint" entry)
+	}
+}
+
+func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, ind int) {
+	const minInlineKeyValueLen = 20
+	if v.Type != "" {
+		if name == "" {
+			name = v.Type
+		} else {
+			name = fmt.Sprintf("%s %s", name, v.Type)
+		}
+	}
+	if v.Unreadable != "" {
+		w.Label(fmt.Sprintf("%s = (unreadable %s)", name, v.Unreadable), "LC")
+		return
+	}
+
+	if depth > 0 && v.Addr == 0 {
+		w.Label(fmt.Sprintf("%s = nil", name, v.Type), "LC")
+		return
+	}
+
+	switch v.Kind {
+	case reflect.Slice:
+		if w.TreePush(nucular.TreeNode, name, false) {
+			w.Scrollbar.X -= ind
+			w.Label(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap), "LC")
+			showArrayOrSliceContents(w, depth, v, ind)
+			w.Scrollbar.X += ind
+			w.TreePop()
+		}
+	case reflect.Array:
+		if w.TreePush(nucular.TreeNode, name, false) {
+			w.Scrollbar.X -= ind
+			w.Label(fmt.Sprintf("len: %d", v.Len), "LC")
+			showArrayOrSliceContents(w, depth, v, ind)
+			w.Scrollbar.X += ind
+			w.TreePop()
+		}
+	case reflect.Ptr:
+		if v.Type == "" || v.Children[0].Addr == 0 {
+			w.Label(fmt.Sprintf("%s = nil", name), "LC")
+		} else if v.Children[0].OnlyAddr && v.Children[0].Addr != 0 {
+			w.Label(fmt.Sprintf("%s = (%s)(%#x)", name, v.Type, v.Children[0].Addr), "LC")
+		} else {
+			if w.TreePush(nucular.TreeNode, name, false) {
+				w.Scrollbar.X -= ind
+				showVariable(w, depth+1, "", &v.Children[0], ind)
+				w.Scrollbar.X += ind
+				w.TreePop()
+			}
+		}
+	case reflect.UnsafePointer:
+		w.Label(fmt.Sprintf("%s = unsafe.Pointer(%#x)", name, v.Children[0].Addr), "LC")
+	case reflect.String:
+		if len(v.Value) != int(v.Len) {
+			w.Label(fmt.Sprintf("%s = %q...+%d more", name, v.Value, int(v.Len)-len(v.Value)), "LC")
+		} else {
+			w.Label(fmt.Sprintf("%s = %q", name, v.Value), "LC")
+		}
+	case reflect.Chan:
+		if len(v.Children) == 0 {
+			w.Label(fmt.Sprintf("%s = nil", name), "LC")
+		} else {
+			if w.TreePush(nucular.TreeNode, name, false) {
+				w.Scrollbar.X -= ind
+				showStructContents(w, depth, v, ind)
+				w.Scrollbar.X += ind
+				w.TreePop()
+			}
+		}
+	case reflect.Struct:
+		if w.TreePush(nucular.TreeNode, name, false) {
+			w.Scrollbar.X -= ind
+			if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
+				//TODO: load
+				w.Label("Loading...", "LC")
+			} else {
+				showStructContents(w, depth, v, ind)
+			}
+			w.Scrollbar.X += ind
+			w.TreePop()
+		}
+	case reflect.Interface:
+		if v.Children[0].Kind == reflect.Invalid {
+			w.Label(fmt.Sprintf("%s = nil", name), "LC")
+		} else {
+			if w.TreePush(nucular.TreeNode, name, false) {
+				w.Scrollbar.X -= ind
+				if v.Children[0].Kind == reflect.Ptr {
+					showVariable(w, depth+1, "data", &v.Children[0].Children[0], ind)
+				} else {
+					showVariable(w, depth+1, "data", &v.Children[0], ind)
+				}
+				w.Scrollbar.X += ind
+				w.TreePop()
+			}
+		}
+	case reflect.Map:
+		if w.TreePush(nucular.TreeNode, name, false) {
+			w.Scrollbar.X -= ind
+			for i := 0; i < len(v.Children); i += 2 {
+				key, value := &v.Children[i], &v.Children[i+1]
+				if len(key.Children) == 0 && len(key.Value) < minInlineKeyValueLen {
+					var keyname string
+					if key.Kind == reflect.String {
+						keyname = fmt.Sprintf("[%q]", key.Value)
+					} else {
+						keyname = fmt.Sprintf("[%s]", key.Value)
+					}
+					showVariable(w, depth+1, keyname, value, ind)
+				} else {
+					showVariable(w, depth+1, fmt.Sprintf("[%d key]", i/2), key, ind)
+					showVariable(w, depth+1, fmt.Sprintf("[%d value]", i/2), value, ind)
+				}
+			}
+			if len(v.Children)/2 != int(v.Len) {
+				if w.ButtonText(fmt.Sprintf("%d more", int(v.Len)-(len(v.Children)/2))) {
+					//TODO: load more
+				}
+			}
+			w.Scrollbar.X += ind
+			w.TreePop()
+		}
+	case reflect.Func:
+		if v.Value == "" {
+			w.Label(fmt.Sprintf("%s = nil", name), "LC")
+		} else {
+			w.Label(fmt.Sprintf("%s = %s", name, v.Value), "LC")
+		}
+	case reflect.Complex64, reflect.Complex128:
+		w.Label(fmt.Sprintf("%s = (%s + %si)", name, v.Children[0].Value, v.Children[1].Value), "LC")
+	default:
+		if v.Value != "" {
+			w.Label(fmt.Sprintf("%s = %s", name, v.Value), "LC")
+		} else {
+			w.Label(fmt.Sprintf("%s = (unknown %s)", name, v.Kind), "LC")
+		}
+	}
+}
+
+func showArrayOrSliceContents(w *nucular.Window, depth int, v *api.Variable, ind int) {
+	for i := range v.Children {
+		showVariable(w, depth+1, fmt.Sprintf("[%d]", i), &v.Children[i], ind)
+	}
+}
+
+func showStructContents(w *nucular.Window, depth int, v *api.Variable, ind int) {
+	for i := range v.Children {
+		showVariable(w, depth+1, v.Children[i].Name, &v.Children[i], ind)
 	}
 }

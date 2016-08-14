@@ -705,13 +705,6 @@ func (win *Window) widget() (widgetLayoutStates, types.Rect) {
 		return widgetInvalid, bounds
 	}
 
-	contains := func(r *types.Rect, b *types.Rect) bool {
-		return b.Contains(image.Point{r.X, r.Y}) && b.Contains(image.Point{r.X + r.W, r.Y + r.H})
-	}
-
-	if !contains(&bounds, c) {
-		return widgetRom, bounds
-	}
 	return widgetValid, bounds
 }
 
@@ -1191,6 +1184,7 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 	}
 
 	ws := win.widgets.PrevState(header)
+
 	if buttonBehaviorDo(&ws, header, in, false) {
 		node.Open = !node.Open
 	}
