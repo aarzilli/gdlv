@@ -121,9 +121,14 @@ var goroutines []*api.Goroutine
 var stack []api.Stackframe
 var stackDepth int = 20
 var threads []*api.Thread
+
+var localsFilterEditor = nucular.TextEditor{Filter: spacefilter}
+var localsShowAddress bool = false
 var args []api.Variable
 var locals []api.Variable
 var regs string
+var globalsFilterEditor = nucular.TextEditor{Filter: spacefilter}
+var globalsShowAddress bool = false
 var globals []api.Variable
 var breakpoints []*api.Breakpoint
 var funcsFilterEditor = nucular.TextEditor{Filter: spacefilter}
@@ -321,7 +326,7 @@ func loadLocals(p *rightPanel) {
 		if n, ok := m[v.Name]; ok {
 			n++
 			m[v.Name] = n
-			v.Name = fmt.Sprintf("%s_%d", v.Name, n)
+			v.Name = fmt.Sprintf("%s(%d)", v.Name, n)
 		} else {
 			m[v.Name] = 0
 		}
@@ -337,22 +342,34 @@ func loadLocals(p *rightPanel) {
 }
 
 func updateLocals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+	w.MenubarBegin()
+	w.Row(20).Static(90, 0, 100)
+	w.Label("Filter:", "LC")
+	localsFilterEditor.Edit(w)
+	filter := string(localsFilterEditor.Buffer)
+	w.CheckboxText("Address", &localsShowAddress)
+	w.MenubarEnd()
 	w.Row(20).Dynamic(1)
 
 	_, scaling := mw.Style()
 	ind := int(18 * scaling)
 
 	for i := range args {
-		showVariable(w, 0, args[i].Name, &args[i], ind)
+		if strings.Index(args[i].Name, filter) >= 0 {
+			showVariable(w, 0, localsShowAddress, args[i].Name, &args[i], ind)
+		}
 	}
 
 	if len(args) > 0 {
 		w.Row(10).Dynamic(1)
 		w.Spacing(1)
+		w.Row(20).Dynamic(1)
 	}
 
 	for i := range locals {
-		showVariable(w, 0, locals[i].Name, &locals[i], ind)
+		if strings.Index(locals[i].Name, filter) >= 0 {
+			showVariable(w, 0, localsShowAddress, locals[i].Name, &locals[i], ind)
+		}
 	}
 }
 
@@ -391,6 +408,23 @@ func loadGlobals(p *rightPanel) {
 
 func updateGlobals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	//TODO: display globals (must be grouped by package)
+	w.MenubarBegin()
+	w.Row(20).Static(90, 0, 100)
+	w.Label("Filter:", "LC")
+	globalsFilterEditor.Edit(w)
+	filter := string(globalsFilterEditor.Buffer)
+	w.CheckboxText("Address", &globalsShowAddress)
+	w.MenubarEnd()
+	w.Row(20).Dynamic(1)
+
+	_, scaling := mw.Style()
+	ind := int(18 * scaling)
+
+	for i := range globals {
+		if strings.Index(globals[i].Name, filter) >= 0 {
+			showVariable(w, 0, globalsShowAddress, globals[i].Name, &globals[i], ind)
+		}
+	}
 }
 
 func loadBreakpoints(p *rightPanel) {
@@ -484,13 +518,29 @@ func updateStringSlice(mw *nucular.MasterWindow, w *nucular.Window, filterEditor
 	}
 }
 
-func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, ind int) {
+func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.Variable, ind int) {
 	const minInlineKeyValueLen = 20
 	if v.Type != "" {
-		if name == "" {
-			name = v.Type
+		if addr {
+			if name != "" {
+				name = fmt.Sprintf("%#x %s %s", v.Addr, name, v.Type)
+			} else {
+				name = fmt.Sprintf("%#x %s", v.Addr, v.Type)
+			}
 		} else {
-			name = fmt.Sprintf("%s %s", name, v.Type)
+			if name != "" {
+				name = fmt.Sprintf("%s %s", name, v.Type)
+			} else {
+				name = v.Type
+			}
+		}
+	} else {
+		if addr {
+			if name != "" {
+				name = fmt.Sprintf("%#x %s", v.Addr, name)
+			} else {
+				name = fmt.Sprintf("%#x", v.Addr)
+			}
 		}
 	}
 	if v.Unreadable != "" {
@@ -508,7 +558,7 @@ func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, in
 		if w.TreePush(nucular.TreeNode, name, false) {
 			w.Scrollbar.X -= ind
 			w.Label(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap), "LC")
-			showArrayOrSliceContents(w, depth, v, ind)
+			showArrayOrSliceContents(w, depth, addr, v, ind)
 			w.Scrollbar.X += ind
 			w.TreePop()
 		}
@@ -516,7 +566,7 @@ func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, in
 		if w.TreePush(nucular.TreeNode, name, false) {
 			w.Scrollbar.X -= ind
 			w.Label(fmt.Sprintf("len: %d", v.Len), "LC")
-			showArrayOrSliceContents(w, depth, v, ind)
+			showArrayOrSliceContents(w, depth, addr, v, ind)
 			w.Scrollbar.X += ind
 			w.TreePop()
 		}
@@ -528,7 +578,7 @@ func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, in
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
 				w.Scrollbar.X -= ind
-				showVariable(w, depth+1, "", &v.Children[0], ind)
+				showVariable(w, depth+1, addr, "", &v.Children[0], ind)
 				w.Scrollbar.X += ind
 				w.TreePop()
 			}
@@ -547,7 +597,7 @@ func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, in
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
 				w.Scrollbar.X -= ind
-				showStructContents(w, depth, v, ind)
+				showStructContents(w, depth, addr, v, ind)
 				w.Scrollbar.X += ind
 				w.TreePop()
 			}
@@ -559,7 +609,7 @@ func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, in
 				//TODO: load
 				w.Label("Loading...", "LC")
 			} else {
-				showStructContents(w, depth, v, ind)
+				showStructContents(w, depth, addr, v, ind)
 			}
 			w.Scrollbar.X += ind
 			w.TreePop()
@@ -571,9 +621,9 @@ func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, in
 			if w.TreePush(nucular.TreeNode, name, false) {
 				w.Scrollbar.X -= ind
 				if v.Children[0].Kind == reflect.Ptr {
-					showVariable(w, depth+1, "data", &v.Children[0].Children[0], ind)
+					showVariable(w, depth+1, addr, "data", &v.Children[0].Children[0], ind)
 				} else {
-					showVariable(w, depth+1, "data", &v.Children[0], ind)
+					showVariable(w, depth+1, addr, "data", &v.Children[0], ind)
 				}
 				w.Scrollbar.X += ind
 				w.TreePop()
@@ -591,10 +641,10 @@ func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, in
 					} else {
 						keyname = fmt.Sprintf("[%s]", key.Value)
 					}
-					showVariable(w, depth+1, keyname, value, ind)
+					showVariable(w, depth+1, addr, keyname, value, ind)
 				} else {
-					showVariable(w, depth+1, fmt.Sprintf("[%d key]", i/2), key, ind)
-					showVariable(w, depth+1, fmt.Sprintf("[%d value]", i/2), value, ind)
+					showVariable(w, depth+1, addr, fmt.Sprintf("[%d key]", i/2), key, ind)
+					showVariable(w, depth+1, addr, fmt.Sprintf("[%d value]", i/2), value, ind)
 				}
 			}
 			if len(v.Children)/2 != int(v.Len) {
@@ -622,14 +672,14 @@ func showVariable(w *nucular.Window, depth int, name string, v *api.Variable, in
 	}
 }
 
-func showArrayOrSliceContents(w *nucular.Window, depth int, v *api.Variable, ind int) {
+func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *api.Variable, ind int) {
 	for i := range v.Children {
-		showVariable(w, depth+1, fmt.Sprintf("[%d]", i), &v.Children[i], ind)
+		showVariable(w, depth+1, addr, fmt.Sprintf("[%d]", i), &v.Children[i], ind)
 	}
 }
 
-func showStructContents(w *nucular.Window, depth int, v *api.Variable, ind int) {
+func showStructContents(w *nucular.Window, depth int, addr bool, v *api.Variable, ind int) {
 	for i := range v.Children {
-		showVariable(w, depth+1, v.Children[i].Name, &v.Children[i], ind)
+		showVariable(w, depth+1, addr, v.Children[i].Name, &v.Children[i], ind)
 	}
 }

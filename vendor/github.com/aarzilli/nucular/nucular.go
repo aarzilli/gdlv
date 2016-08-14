@@ -705,6 +705,13 @@ func (win *Window) widget() (widgetLayoutStates, types.Rect) {
 		return widgetInvalid, bounds
 	}
 
+	contains := func(r *types.Rect, b *types.Rect) bool {
+		return b.Contains(image.Point{r.X, r.Y}) && b.Contains(image.Point{r.X + r.W, r.Y + r.H})
+	}
+
+	if !contains(&bounds, c) {
+		return widgetRom, bounds
+	}
 	return widgetValid, bounds
 }
 
@@ -1158,14 +1165,16 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 	style := &win.ctx.Style
 	panel_padding := win.style().Padding
 
-	/* calculate header bounds and draw background */
-	panelLayout(win.ctx, win, fontHeight(style.Font)+2*style.Tab.Padding.Y, 1)
-	win.layout.Row.Type = layoutDynamicFixed
-	win.layout.Row.ItemWidth = 0
-	win.layout.Row.ItemRatio = 0.0
-	win.layout.Row.Ratio = nil
-	win.layout.Row.ItemOffset = 0
-	win.layout.Row.Filled = 0
+	if type_ == TreeTab {
+		/* calculate header bounds and draw background */
+		panelLayout(win.ctx, win, fontHeight(style.Font)+2*style.Tab.Padding.Y, 1)
+		win.layout.Row.Type = layoutDynamicFixed
+		win.layout.Row.ItemWidth = 0
+		win.layout.Row.ItemRatio = 0.0
+		win.layout.Row.Ratio = nil
+		win.layout.Row.ItemOffset = 0
+		win.layout.Row.Filled = 0
+	}
 
 	widget_state, header := win.widget()
 
@@ -1179,13 +1188,20 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 
 	/* update node state */
 	in := &Input{}
-	if win.toplevel() && widget_state == widgetValid {
-		in = &win.ctx.Input
+	if win.toplevel() {
+		if widget_state == widgetValid || widget_state == widgetRom {
+			in = &win.ctx.Input
+		}
+	}
+
+	behaviourbounds := header
+
+	if widget_state == widgetRom {
+		behaviourbounds = unify(header, win.layout.Clip)
 	}
 
 	ws := win.widgets.PrevState(header)
-
-	if buttonBehaviorDo(&ws, header, in, false) {
+	if buttonBehaviorDo(&ws, behaviourbounds, in, false) {
 		node.Open = !node.Open
 	}
 
@@ -1796,7 +1812,7 @@ func doToggle(out *widgetBuffer, r types.Rect, active bool, str string, type_ to
 
 	select_.H = select_.W
 	select_.X = r.X + style.Padding.X
-	select_.Y = (r.Y + style.Padding.Y + (select_.W / 2)) - (fontHeight(font) / 2)
+	select_.Y = r.Y + (r.H/2 - select_.H/2)
 	if type_ == toggleOption {
 		cursor_pad = select_.W / 4
 	} else {
