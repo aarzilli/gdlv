@@ -332,16 +332,17 @@ func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
 				listp.Spacing(1)
 			}
 
-			if line.pc {
-				if lp.recenter {
-					lp.recenter = false
-					if above, below := listp.Invisible(); above || below {
-						listp.Scrollbar.Y = listp.At().Y - listp.Bounds.H/2
-						if listp.Scrollbar.Y < 0 {
-							listp.Scrollbar.Y = 0
-						}
+			if line.pc && lp.recenter {
+				lp.recenter = false
+				if above, below := listp.Invisible(); above || below {
+					listp.Scrollbar.Y = listp.At().Y - listp.Bounds.H/2
+					if listp.Scrollbar.Y < 0 {
+						listp.Scrollbar.Y = 0
 					}
 				}
+			}
+
+			if line.pc && curFrame == 0 {
 				listp.Label("=>", "CC")
 			} else {
 				listp.Spacing(1)

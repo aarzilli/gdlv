@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/aarzilli/nucular"
@@ -124,9 +125,16 @@ var locals []api.Variable
 var regs string
 var globals []api.Variable
 var breakpoints []*api.Breakpoint
+var funcsFilterEditor = nucular.TextEditor{Filter: spacefilter}
 var functions []string
+var typesFilterEditor = nucular.TextEditor{Filter: spacefilter}
 var types []string
+var sourcesFilterEditor = nucular.TextEditor{Filter: spacefilter}
 var sources []string
+
+func spacefilter(ch rune) bool {
+	return ch != ' ' && ch != '\t'
+}
 
 func (p *rightPanel) Update(mw *nucular.MasterWindow, container *nucular.Window) {
 	p.mu.Lock()
@@ -258,7 +266,6 @@ func updateStacktrace(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window
 			name = frame.Function.Name
 		}
 		w.Label(fmt.Sprintf("%s\nat %s:%d", name, ShortenFilePath(frame.File), frame.Line), "LT")
-		// TODO: multiline text drawing
 		// TODO: switch stack frame on click
 	}
 }
@@ -327,7 +334,14 @@ func loadRegs(p *rightPanel) {
 }
 
 func updateRegs(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
-	//TODO: display registers
+	lines := 1
+	for i := range regs {
+		if regs[i] == '\n' {
+			lines++
+		}
+	}
+	w.Row(20 * lines).Dynamic(1)
+	w.Label(regs, "LT")
 }
 
 func loadGlobals(p *rightPanel) {
@@ -357,7 +371,20 @@ func loadBreakpoints(p *rightPanel) {
 }
 
 func updateBreakpoints(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
-	//TODO: display breakpoints
+	style, _ := mw.Style()
+
+	pad := style.Selectable.Padding.X * 2
+	d := 1
+	if len(breakpoints) > 0 {
+		d = digits(breakpoints[len(breakpoints)-1].ID)
+	}
+
+	w.Row(40).StaticScaled(nucular.FontWidth(style.Font, "0")*d+pad, 0)
+	for _, breakpoint := range breakpoints {
+		w.Label(fmt.Sprintf("%*d", d, breakpoint.ID), "LT")
+		w.Label(fmt.Sprintf("%s in %s\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT")
+		//TODO: menu on right click
+	}
 }
 
 func loadFuncs(p *rightPanel) {
@@ -371,8 +398,8 @@ func loadFuncs(p *rightPanel) {
 	p.done()
 }
 
-func updateFuncs(p *rightPanel, mw *nucular.MasterWindow, container *nucular.Window) {
-	//TODO: display functions
+func updateFuncs(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+	updateStringSlice(mw, w, &funcsFilterEditor, functions)
 }
 
 func loadSources(p *rightPanel) {
@@ -386,8 +413,8 @@ func loadSources(p *rightPanel) {
 	p.done()
 }
 
-func updateSources(p *rightPanel, mw *nucular.MasterWindow, container *nucular.Window) {
-	//TODO: display sources
+func updateSources(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+	updateStringSlice(mw, w, &sourcesFilterEditor, sources)
 }
 
 func loadTypes(p *rightPanel) {
@@ -401,6 +428,24 @@ func loadTypes(p *rightPanel) {
 	p.done()
 }
 
-func updateTypes(p *rightPanel, mw *nucular.MasterWindow, container *nucular.Window) {
-	//TODO: display types
+func updateTypes(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+	updateStringSlice(mw, w, &typesFilterEditor, types)
+}
+
+func updateStringSlice(mw *nucular.MasterWindow, w *nucular.Window, filterEditor *nucular.TextEditor, values []string) {
+	w.MenubarBegin()
+	w.Row(20).Static(90, 0)
+	w.Label("Filter:", "LC")
+	filterEditor.Edit(w)
+	w.MenubarEnd()
+
+	filter := string(filterEditor.Buffer)
+
+	w.Row(20).Dynamic(1)
+	for _, value := range values {
+		if strings.Index(value, filter) >= 0 {
+			w.Label(value, "LC")
+		}
+		// TODO: contextual menu with copy
+	}
 }

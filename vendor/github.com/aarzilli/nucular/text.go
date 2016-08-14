@@ -76,7 +76,9 @@ func widgetText(o *command.Buffer, b types.Rect, str string, t *textWidget, a la
 			lblrect.Y = b.Y + b.H - fontHeight(f)
 		}
 	}
-	lblrect.H = fontHeight(f) * 2
+	if lblrect.H < fontHeight(f) * 2 {
+		lblrect.H = fontHeight(f) * 2
+	}
 
 	o.DrawText(lblrect, str, f, t.Text)
 }
