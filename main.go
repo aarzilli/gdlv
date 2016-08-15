@@ -114,7 +114,6 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 	// LEFT COLUMN
 
 	if leftcol := w.GroupBegin("left-column", nucular.WindowNoScrollbar); leftcol != nil {
-
 		leftcol.Row(25).Static(200, 0)
 		modes := []string{"Listing", "Disassembly"}
 		if !lp.showcur {
@@ -130,7 +129,7 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 			for i := range modes {
 				if w.MenuItem(label.TA(modes[i], "LC")) {
 					lp.mode = i
-					go refreshState(true, nil)
+					go refreshState(true, 0, nil)
 				}
 			}
 		})
@@ -423,7 +422,7 @@ func connectTo(listenstr string) {
 		cmds = DebugCommands(client)
 	}()
 
-	refreshState(false, nil)
+	refreshState(false, clearStop, nil)
 }
 
 func digits(n int) int {
@@ -468,7 +467,15 @@ func expandTabs(in string) string {
 	return buf.String()
 }
 
-func refreshState(keepframe bool, state *api.DebuggerState) {
+type clearKind int
+
+const (
+	clearFrameSwitch clearKind = iota
+	clearGoroutineSwitch
+	clearStop
+)
+
+func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState) {
 	defer wnd.Changed()
 
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
@@ -514,13 +521,6 @@ func refreshState(keepframe bool, state *api.DebuggerState) {
 		if state.CurrentThread != nil {
 			loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
 		}
-		goroutinesPanel.clear()
-		stackPanel.clear()
-		threadsPanel.clear()
-		localsPanel.clear()
-		regsPanel.clear()
-		globalsPanel.clear()
-		breakpointsPanel.clear()
 	} else {
 		frames, err := client.Stacktrace(curGid, curFrame+1, nil)
 		if err != nil {
@@ -533,6 +533,22 @@ func refreshState(keepframe bool, state *api.DebuggerState) {
 		if curFrame < len(frames) {
 			loc = &frames[curFrame].Location
 		}
+	}
+
+	switch clearKind {
+	case clearFrameSwitch:
+		localsPanel.clear()
+	case clearGoroutineSwitch:
+		localsPanel.clear()
+		regsPanel.clear()
+	case clearStop:
+		localsPanel.clear()
+		regsPanel.clear()
+		goroutinesPanel.clear()
+		stackPanel.clear()
+		threadsPanel.clear()
+		globalsPanel.clear()
+		breakpointsPanel.clear()
 	}
 
 	if loc != nil {

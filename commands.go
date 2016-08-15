@@ -230,13 +230,13 @@ func cont(client service.Client, out io.Writer, ctx callContext, args string) er
 		}
 		printcontext(out, state)
 	}
-	refreshState(false, state)
+	refreshState(false, clearStop, state)
 	return nil
 }
 
 func continueUntilCompleteNext(client service.Client, out io.Writer, state *api.DebuggerState, op string) error {
 	if !state.NextInProgress {
-		refreshState(false, state)
+		refreshState(false, clearStop, state)
 		return nil
 	}
 	for {
@@ -249,7 +249,7 @@ func continueUntilCompleteNext(client service.Client, out io.Writer, state *api.
 			printcontext(out, state)
 		}
 		if !state.NextInProgress {
-			refreshState(false, state)
+			refreshState(false, clearStop, state)
 			return nil
 		}
 		fmt.Fprintf(out, "    breakpoint hit during %s, continuing...\n", op)
@@ -271,7 +271,7 @@ func stepInstruction(client service.Client, out io.Writer, ctx callContext, args
 		return err
 	}
 	printcontext(out, state)
-	refreshState(false, state)
+	refreshState(false, clearStop, state)
 	return nil
 }
 

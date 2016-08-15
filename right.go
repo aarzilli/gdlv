@@ -341,15 +341,20 @@ func loadLocals(p *rightPanel) {
 	p.done()
 }
 
+const (
+	varRowHeight = 20
+	moreBtnWidth = 70
+)
+
 func updateLocals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	w.MenubarBegin()
-	w.Row(20).Static(90, 0, 100)
+	w.Row(varRowHeight).Static(90, 0, 100)
 	w.Label("Filter:", "LC")
 	localsFilterEditor.Edit(w)
 	filter := string(localsFilterEditor.Buffer)
 	w.CheckboxText("Address", &localsShowAddress)
 	w.MenubarEnd()
-	w.Row(20).Dynamic(1)
+	w.Row(varRowHeight).Dynamic(1)
 
 	_, scaling := mw.Style()
 	ind := int(18 * scaling)
@@ -361,9 +366,9 @@ func updateLocals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	}
 
 	if len(args) > 0 {
-		w.Row(10).Dynamic(1)
+		w.Row(varRowHeight / 2).Dynamic(1)
 		w.Spacing(1)
-		w.Row(20).Dynamic(1)
+		w.Row(varRowHeight).Dynamic(1)
 	}
 
 	for i := range locals {
@@ -407,15 +412,14 @@ func loadGlobals(p *rightPanel) {
 }
 
 func updateGlobals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
-	//TODO: display globals (must be grouped by package)
 	w.MenubarBegin()
-	w.Row(20).Static(90, 0, 100)
+	w.Row(varRowHeight).Static(90, 0, 100)
 	w.Label("Filter:", "LC")
 	globalsFilterEditor.Edit(w)
 	filter := string(globalsFilterEditor.Buffer)
 	w.CheckboxText("Address", &globalsShowAddress)
 	w.MenubarEnd()
-	w.Row(20).Dynamic(1)
+	w.Row(varRowHeight).Dynamic(1)
 
 	_, scaling := mw.Style()
 	ind := int(18 * scaling)
@@ -587,7 +591,11 @@ func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.V
 		w.Label(fmt.Sprintf("%s = unsafe.Pointer(%#x)", name, v.Children[0].Addr), "LC")
 	case reflect.String:
 		if len(v.Value) != int(v.Len) {
-			w.Label(fmt.Sprintf("%s = %q...+%d more", name, v.Value, int(v.Len)-len(v.Value)), "LC")
+			w.Row(varRowHeight).Static(0, moreBtnWidth)
+			w.Label(fmt.Sprintf("%s = %q", name, v.Value), "LC")
+			w.Label(fmt.Sprintf("%d more", int(v.Len)-len(v.Value)), "LC")
+			//TODO: detailed view for strings
+			w.Row(varRowHeight).Dynamic(1)
 		} else {
 			w.Label(fmt.Sprintf("%s = %q", name, v.Value), "LC")
 		}
@@ -606,7 +614,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.V
 		if w.TreePush(nucular.TreeNode, name, false) {
 			w.Scrollbar.X -= ind
 			if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
-				//TODO: load
+				loadMoreStruct(v)
 				w.Label("Loading...", "LC")
 			} else {
 				showStructContents(w, depth, addr, v, ind)
@@ -648,9 +656,11 @@ func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.V
 				}
 			}
 			if len(v.Children)/2 != int(v.Len) {
+				w.Row(varRowHeight).Static(moreBtnWidth)
 				if w.ButtonText(fmt.Sprintf("%d more", int(v.Len)-(len(v.Children)/2))) {
-					//TODO: load more
+					loadMoreMap(v)
 				}
+				w.Row(varRowHeight).Dynamic(1)
 			}
 			w.Scrollbar.X += ind
 			w.TreePop()
@@ -676,10 +686,90 @@ func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *api.Va
 	for i := range v.Children {
 		showVariable(w, depth+1, addr, fmt.Sprintf("[%d]", i), &v.Children[i], ind)
 	}
+	if len(v.Children) != int(v.Len) {
+		w.Row(varRowHeight).Static(moreBtnWidth)
+		if w.ButtonText(fmt.Sprintf("%d more", int(v.Len)-len(v.Children))) {
+			loadMoreArrayOrSlice(v)
+		}
+		w.Row(varRowHeight).Dynamic(1)
+	}
 }
 
 func showStructContents(w *nucular.Window, depth int, addr bool, v *api.Variable, ind int) {
 	for i := range v.Children {
 		showVariable(w, depth+1, addr, v.Children[i].Name, &v.Children[i], ind)
+	}
+}
+
+var additionalLoadMu sync.Mutex
+var additionalLoadRunning bool
+
+func loadMoreMap(v *api.Variable) {
+	additionalLoadMu.Lock()
+	defer additionalLoadMu.Unlock()
+
+	if !additionalLoadRunning {
+		additionalLoadRunning = true
+		go func() {
+			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", v.Type, v.Addr, len(v.Children)/2)
+			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
+			if err != nil {
+				out := editorWriter{&scrollbackEditor, true}
+				fmt.Fprintf(&out, "Error loading array contents %s: %v\n", expr, err)
+				// prevent further attempts at loading
+				v.Len = int64(len(v.Children) / 2)
+			} else {
+				v.Children = append(v.Children, lv.Children...)
+			}
+			wnd.Changed()
+			additionalLoadMu.Lock()
+			additionalLoadRunning = false
+			additionalLoadMu.Unlock()
+		}()
+	}
+}
+
+func loadMoreArrayOrSlice(v *api.Variable) {
+	additionalLoadMu.Lock()
+	defer additionalLoadMu.Unlock()
+	if !additionalLoadRunning {
+		additionalLoadRunning = true
+		go func() {
+			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", v.Type, v.Addr, len(v.Children))
+			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
+			if err != nil {
+				out := editorWriter{&scrollbackEditor, true}
+				fmt.Fprintf(&out, "Error loading array contents %s: %v\n", expr, err)
+				// prevent further attempts at loading
+				v.Len = int64(len(v.Children))
+			} else {
+				v.Children = append(v.Children, lv.Children...)
+			}
+			additionalLoadMu.Lock()
+			additionalLoadRunning = false
+			additionalLoadMu.Unlock()
+			wnd.Changed()
+		}()
+	}
+}
+
+func loadMoreStruct(v *api.Variable) {
+	additionalLoadMu.Lock()
+	defer additionalLoadMu.Unlock()
+	if !additionalLoadRunning {
+		additionalLoadRunning = true
+		go func() {
+			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, fmt.Sprintf("*(*%q)(%#x)", v.Type, v.Addr), LongLoadConfig)
+			if err != nil {
+				v.Unreadable = err.Error()
+			} else {
+				lv.Name = v.Name
+				*v = *lv
+			}
+			wnd.Changed()
+			additionalLoadMu.Lock()
+			additionalLoadRunning = false
+			additionalLoadMu.Unlock()
+		}()
 	}
 }
