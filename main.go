@@ -42,6 +42,7 @@ var scrollbackHeight int = 200
 const commandLineHeight = 28
 
 type listingPanel struct {
+	file string
 	mode     int
 	showcur  bool
 	path     string
@@ -334,7 +335,7 @@ func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
 			listp.Row(lineheight).StaticScaled(starw, arroww, idxw, 0)
 			if line.pc {
 				rowbounds := listp.WidgetBounds()
-				rowbounds.W = listp.LayoutAvailableWidth()
+				rowbounds.W = listp.Bounds.W
 				cmds := listp.Commands()
 				cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
 			}
@@ -381,10 +382,23 @@ func (lp *listingPanel) show(mw *nucular.MasterWindow, listp *nucular.Window) {
 		for _, instr := range lp.text {
 			if instr.Loc.File != lastfile || instr.Loc.Line != lastlineno {
 				listp.Row(lineheight).Dynamic(1)
-				listp.Label(fmt.Sprintf("%s:%d:", instr.Loc.File, instr.Loc.Line), "LC")
+				listp.Row(lineheight).Dynamic(1)
+				text := ""
+				if instr.Loc.File == lp.file && instr.Loc.Line-1 < len(lp.listing) {
+					text = lp.listing[instr.Loc.Line-1].text
+				}
+				listp.Label(fmt.Sprintf("%s:%d: %s", instr.Loc.File, instr.Loc.Line, text), "LC")
 				lastfile, lastlineno = instr.Loc.File, instr.Loc.Line
 			}
 			listp.Row(lineheight).StaticScaled(starw, arroww, addrw, 0)
+			
+			if instr.AtPC {
+				rowbounds := listp.WidgetBounds()
+				rowbounds.W = listp.Bounds.W
+				cmds := listp.Commands()
+				cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
+			}
+			
 			if instr.Breakpoint {
 				listp.Label("*", "LC")
 			} else {
@@ -574,12 +588,24 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 
 	if loc != nil {
 		switch lp.mode {
+		case 1:
+			text, err := client.DisassemblePC(api.EvalScope{curGid, curFrame}, loc.PC, api.IntelFlavour)
+			if err != nil {
+				failstate("DisassemblePC()", err)
+				return
+			}
+
+			lp.text = text
+			
+			fallthrough
+			
 		case 0:
 			breakpoints, err := client.ListBreakpoints()
 			if err != nil {
 				failstate("ListBreakpoints()", err)
 				return
 			}
+			lp.file = loc.File
 			bpmap := map[int]*api.Breakpoint{}
 			for _, bp := range breakpoints {
 				if bp.File == loc.File {
@@ -599,7 +625,12 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 			for buf.Scan() {
 				lineno++
 				_, breakpoint := bpmap[lineno]
-				lp.listing = append(lp.listing, listline{"", expandTabs(buf.Text()), lineno == loc.Line, breakpoint})
+				t := expandTabs(buf.Text())
+				switch lp.mode {
+				case 1:
+					t = strings.TrimSpace(t)
+				}
+				lp.listing = append(lp.listing, listline{"", t, lineno == loc.Line, breakpoint})
 			}
 
 			if err := buf.Err(); err != nil {
@@ -614,15 +645,6 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 			for i := range lp.listing {
 				lp.listing[i].idx = fmt.Sprintf("%*d", d, i+1)
 			}
-
-		case 1:
-			text, err := client.DisassemblePC(api.EvalScope{curGid, curFrame}, loc.PC, api.IntelFlavour)
-			if err != nil {
-				failstate("DisassemblePC()", err)
-				return
-			}
-
-			lp.text = text
 		}
 	}
 }
@@ -640,7 +662,7 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 	}
 	w.ed.Buffer = append(w.ed.Buffer, []rune(expandTabs(string(b)))...)
 	oldcursor := w.ed.Cursor
-	for w.ed.Cursor = len(w.ed.Buffer) - 1; w.ed.Cursor > oldcursor; w.ed.Cursor-- {
+	for w.ed.Cursor = len(w.ed.Buffer) - 2; w.ed.Cursor > oldcursor; w.ed.Cursor-- {
 		if w.ed.Buffer[w.ed.Cursor] == '\n' {
 			break
 		}
