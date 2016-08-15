@@ -623,16 +623,18 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 		mu.Lock()
 		defer mu.Unlock()
 	}
-	atend := w.ed.Cursor == len(w.ed.Buffer) || w.ed.Cursor == len(w.ed.Buffer)-1
 	w.ed.Buffer = append(w.ed.Buffer, []rune(expandTabs(string(b)))...)
-	if atend {
-		w.ed.Cursor = len(w.ed.Buffer)
-		if b[len(b)-1] == '\n' {
-			w.ed.Cursor--
+	oldcursor := w.ed.Cursor
+	for w.ed.Cursor = len(w.ed.Buffer) - 1; w.ed.Cursor > oldcursor; w.ed.Cursor-- {
+		if w.ed.Buffer[w.ed.Cursor] == '\n' {
+			break
 		}
-		w.ed.CursorFollow = true
-		w.ed.Redraw = true
 	}
+	if w.ed.Cursor > 0 {
+		w.ed.Cursor++
+	}
+	w.ed.CursorFollow = true
+	w.ed.Redraw = true
 	return len(b), nil
 }
 
