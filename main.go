@@ -518,7 +518,13 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 	var loc *api.Location
 	if !keepframe {
 		curFrame = 0
-		if state.CurrentThread != nil {
+		if state.SelectedGoroutine != nil {
+			if state.CurrentThread != nil && state.SelectedGoroutine.ThreadID == state.CurrentThread.ID {
+				loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
+			} else {
+				loc = &state.SelectedGoroutine.CurrentLoc
+			}
+		} else if state.CurrentThread != nil {
 			loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
 		}
 	} else {
@@ -539,6 +545,7 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 	case clearFrameSwitch:
 		localsPanel.clear()
 	case clearGoroutineSwitch:
+		stackPanel.clear()
 		localsPanel.clear()
 		regsPanel.clear()
 	case clearStop:
@@ -578,7 +585,7 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 			for buf.Scan() {
 				lineno++
 				_, breakpoint := bpmap[lineno]
-				lp.listing = append(lp.listing, listline{"", expandTabs(buf.Text()), lineno == state.CurrentThread.Line, breakpoint})
+				lp.listing = append(lp.listing, listline{"", expandTabs(buf.Text()), lineno == loc.Line, breakpoint})
 			}
 
 			if err := buf.Err(); err != nil {
@@ -591,7 +598,7 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 				d = 3
 			}
 			for i := range lp.listing {
-				lp.listing[i].idx = fmt.Sprintf("%*d", d, i)
+				lp.listing[i].idx = fmt.Sprintf("%*d", d, i+1)
 			}
 
 		case 1:

@@ -10,6 +10,13 @@ import (
 	"github.com/derekparker/delve/service/api"
 )
 
+func init() {
+	// used to break initialization loop
+	goroutinesPanel.update = updateGoroutines
+	stackPanel.update = updateStacktrace
+	threadsPanel.update = updateThreads
+}
+
 const (
 	rightGoStack     = "Goroutines and Stack"
 	rightStackLocals = "Stack and Locals"
@@ -49,21 +56,18 @@ func (l *rightPanel) done() {
 }
 
 var goroutinesPanel = &rightPanel{
-	name:   "goroutines",
-	update: updateGoroutines,
-	load:   loadGoroutines,
+	name: "goroutines",
+	load: loadGoroutines,
 }
 
 var stackPanel = &rightPanel{
-	name:   "stacktrace",
-	update: updateStacktrace,
-	load:   loadStacktrace,
+	name: "stacktrace",
+	load: loadStacktrace,
 }
 
 var threadsPanel = &rightPanel{
-	name:   "threads",
-	update: updateThreads,
-	load:   loadThreads,
+	name: "threads",
+	load: loadThreads,
 }
 
 var localsPanel = &rightPanel{
@@ -209,21 +213,32 @@ func updateGoroutines(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window
 
 	w.Row(20).StaticScaled(zerow*d+pad, zerow*dthread+pad, 0)
 	for _, g := range goroutines {
-		w.Label(fmt.Sprintf("%*d", d, g.ID), "LC")
+		selected := curGid == g.ID
+		w.SelectableLabel(fmt.Sprintf("%*d", d, g.ID), "LC", &selected)
 		if g.ThreadID != 0 {
-			w.Label(fmt.Sprintf("%*d", dthread, g.ThreadID), "LC")
+			w.SelectableLabel(fmt.Sprintf("%*d", dthread, g.ThreadID), "LC", &selected)
 		} else {
-			w.Spacing(1)
+			w.SelectableLabel(" ", "LC", &selected)
 		}
 		switch goroutineLocations[goroutineLocation] {
 		case currentGoroutineLocation:
-			w.Label(formatLocation(g.CurrentLoc), "LC")
+			w.SelectableLabel(formatLocation(g.CurrentLoc), "LC", &selected)
 		case userGoroutineLocation:
-			w.Label(formatLocation(g.UserCurrentLoc), "LC")
+			w.SelectableLabel(formatLocation(g.UserCurrentLoc), "LC", &selected)
 		case goStatementLocation:
-			w.Label(formatLocation(g.GoStatementLoc), "LC")
+			w.SelectableLabel(formatLocation(g.GoStatementLoc), "LC", &selected)
 		}
-		//TODO: switch goroutine on click
+		if selected && curGid != g.ID {
+			go func(gid int) {
+				state, err := client.SwitchGoroutine(gid)
+				if err != nil {
+					out := editorWriter{&scrollbackEditor, true}
+					fmt.Fprintf(&out, "Could not switch goroutine: %v\n", err)
+				} else {
+					go refreshState(false, clearGoroutineSwitch, state)
+				}
+			}(g.ID)
+		}
 	}
 }
 
@@ -265,14 +280,18 @@ func updateStacktrace(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window
 	w.Row(40).StaticScaled(nucular.FontWidth(style.Font, "0")*didx+pad, nucular.FontWidth(style.Font, fmt.Sprintf("%#0*x", d, 0))+pad, 0)
 
 	for i, frame := range stack {
-		w.Label(fmt.Sprintf("%*d", didx, i), "LT")
-		w.Label(fmt.Sprintf("%#0*x", d, frame.PC), "LT")
+		selected := curFrame == i
+		w.SelectableLabel(fmt.Sprintf("%*d", didx, i), "LT", &selected)
+		w.SelectableLabel(fmt.Sprintf("%#0*x", d, frame.PC), "LT", &selected)
 		name := "(nil)"
 		if frame.Function != nil {
 			name = frame.Function.Name
 		}
-		w.Label(fmt.Sprintf("%s\nat %s:%d", name, ShortenFilePath(frame.File), frame.Line), "LT")
-		// TODO: switch stack frame on click
+		w.SelectableLabel(fmt.Sprintf("%s\nat %s:%d", name, ShortenFilePath(frame.File), frame.Line), "LT", &selected)
+		if selected && curFrame != i {
+			curFrame = i
+			go refreshState(true, clearFrameSwitch, nil)
+		}
 	}
 }
 
@@ -298,10 +317,21 @@ func updateThreads(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	w.Row(20).StaticScaled(nucular.FontWidth(style.Font, "0")*d+pad, 0)
 
 	for _, thread := range threads {
-		w.Label(fmt.Sprintf("%*d", d, thread.ID), "LC")
+		selected := curThread == thread.ID
+		w.SelectableLabel(fmt.Sprintf("%*d", d, thread.ID), "LC", &selected)
 		loc := api.Location{thread.PC, thread.File, thread.Line, thread.Function}
-		w.Label(formatLocation(loc), "LC")
-		//TODO: switch thread on click
+		w.SelectableLabel(formatLocation(loc), "LC", &selected)
+		if selected && curThread != thread.ID {
+			go func(tid int) {
+				state, err := client.SwitchThread(tid)
+				if err != nil {
+					out := editorWriter{&scrollbackEditor, true}
+					fmt.Fprintf(&out, "Could not switch thread: %v\n", err)
+				} else {
+					go refreshState(false, clearGoroutineSwitch, state)
+				}
+			}(thread.ID)
+		}
 	}
 	w.GroupEnd()
 }
@@ -455,7 +485,7 @@ func updateBreakpoints(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Windo
 	for _, breakpoint := range breakpoints {
 		w.Label(fmt.Sprintf("%*d", d, breakpoint.ID), "LT")
 		w.Label(fmt.Sprintf("%s in %s\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT")
-		//TODO: menu on right click
+		//TODO: menu on right click. entries: edit, clear, clear all
 	}
 }
 

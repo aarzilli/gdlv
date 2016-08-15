@@ -160,6 +160,7 @@ func (c *Commands) help(client service.Client, out io.Writer, ctx callContext, a
 }
 
 func setBreakpoint(client service.Client, out io.Writer, tracepoint bool, argstr string) error {
+	defer breakpointsPanel.clear()
 	args := strings.SplitN(argstr, " ", 2)
 
 	requestedBp := &api.Breakpoint{}
@@ -468,7 +469,7 @@ func formatLocation(loc api.Location) string {
 	if loc.Function != nil {
 		fname = loc.Function.Name
 	}
-	return fmt.Sprintf("%s at %s:%d (%#v)", ShortenFilePath(loc.File), loc.Line, fname, loc.PC)
+	return fmt.Sprintf("%s at %s:%d (%#v)", fname, ShortenFilePath(loc.File), loc.Line, loc.PC)
 }
 
 func writeGoroutineLong(w io.Writer, g *api.Goroutine, prefix string) {
