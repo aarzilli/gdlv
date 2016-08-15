@@ -17,21 +17,6 @@ func init() {
 	threadsPanel.update = updateThreads
 }
 
-const (
-	rightGoStack     = "Goroutines and Stack"
-	rightStackLocals = "Stack and Locals"
-	rigthThrLocals   = "Threads and Locals"
-	rightThrRegs     = "Threads and Registers"
-	rightGlobal      = "Globals"
-	rightBps         = "Breakpoints"
-	rightSources     = "Sources"
-	rightFuncs       = "Functions"
-	rightTypes       = "Types"
-)
-
-var rightcolModes = []string{rightGoStack, rightStackLocals, rigthThrLocals, rightThrRegs, rightGlobal, rightBps, rightSources, rightFuncs, rightTypes}
-var rightcolMode int = 1
-
 type rightPanel struct {
 	mu      sync.Mutex
 	loaded  bool
@@ -169,7 +154,7 @@ func (p *rightPanel) Update(mw *nucular.MasterWindow, container *nucular.Window)
 		go p.load(p)
 	}
 
-	if w := container.GroupBegin(p.name, nucular.WindowBorder); w != nil {
+	if w := container.GroupBegin(p.name, 0); w != nil {
 		p.update(p, mw, w)
 		w.GroupEnd()
 	}
