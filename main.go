@@ -84,7 +84,7 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 	defer mu.Unlock()
 
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
-
+	
 	for _, e := range w.Input().Keyboard.Keys {
 		switch {
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '+') || (e.Rune == '='):
@@ -100,9 +100,21 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 			style, _ := mw.Style()
 			fixStyle(style)
 			saveConfiguration()
-
-		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeW):
-			go mw.Close()
+			
+		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):
+			mw.ActivateEditor(&commandLineEditor)
+			
+		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeDeleteForward):
+			if running && client != nil {
+				_, err := client.Halt()
+				if err != nil {
+					fmt.Fprintf(&scrollbackOut, "Request manual stop failed: %v\n", err)
+				}
+				err = client.CancelNext()
+				if err != nil {
+					fmt.Fprintf(&scrollbackOut, "Could not cancel next operation: %v\n", err)
+				}
+			}
 		}
 	}
 
@@ -173,39 +185,41 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 		scrollbackEditor.Edit(leftcol)
 
 		var p string
-		if curThread < 0 {
-			if running {
-				p = "running"
-			} else if client == nil {
-				p = "connecting"
-			} else {
-				p = "dlv>"
-			}
+		if running {
+			p = "running"
+		} else if client == nil {
+			p = "connecting"
 		} else {
-			p = prompt(curThread, curGid, curFrame) + ">"
+			if curThread < 0 {
+				p = "dlv>"
+			} else {
+				p = prompt(curThread, curGid, curFrame) + ">"
+			}
 		}
+		
 		promptwidth := nucular.FontWidth(style.Font, p) + style.Text.Padding.X*2
 
 		leftcol.Row(commandLineHeight).StaticScaled(promptwidth, 0)
 		leftcol.Label(p, "LC")
 
 		if client == nil || running {
-			w.Label(" ", "LC")
+			commandLineEditor.Flags |= nucular.EditReadOnly
 		} else {
-			active := commandLineEditor.Edit(leftcol)
-			if active&nucular.EditCommitted != 0 {
-				cmd := string(commandLineEditor.Buffer)
-				if cmd == "" {
-					fmt.Fprintf(&scrollbackOut, "%s %s\n", p, lastCmd)
-				} else {
-					lastCmd = cmd
-					fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmd)
-				}
-				go executeCommand(cmd)
-				commandLineEditor.Buffer = commandLineEditor.Buffer[:0]
-				commandLineEditor.Cursor = 0
-				commandLineEditor.Active = true
+			commandLineEditor.Flags &= ^nucular.EditReadOnly
+		}
+		active := commandLineEditor.Edit(leftcol)
+		if active&nucular.EditCommitted != 0 {
+			cmd := string(commandLineEditor.Buffer)
+			if cmd == "" {
+				fmt.Fprintf(&scrollbackOut, "%s %s\n", p, lastCmd)
+			} else {
+				lastCmd = cmd
+				fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmd)
 			}
+			go executeCommand(cmd)
+			commandLineEditor.Buffer = commandLineEditor.Buffer[:0]
+			commandLineEditor.Cursor = 0
+			commandLineEditor.Active = true
 		}
 
 		leftcol.GroupEnd()
@@ -622,6 +636,7 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 	if w.lock {
 		mu.Lock()
 		defer mu.Unlock()
+		defer wnd.Changed()
 	}
 	w.ed.Buffer = append(w.ed.Buffer, []rune(expandTabs(string(b)))...)
 	oldcursor := w.ed.Cursor

@@ -140,7 +140,7 @@ func (c *Commands) help(client service.Client, out io.Writer, ctx callContext, a
 
 	fmt.Fprintln(out, "The following commands are available:")
 	w := new(tabwriter.Writer)
-	w.Init(out, 0, 8, 0, '-', 0)
+	w.Init(out, 0, 8, 0, ' ', 0)
 	for _, cmd := range c.cmds {
 		h := cmd.helpMsg
 		if idx := strings.Index(h, "\n"); idx >= 0 {
@@ -156,6 +156,14 @@ func (c *Commands) help(client service.Client, out io.Writer, ctx callContext, a
 		return err
 	}
 	fmt.Fprintln(out, "Type help followed by a command for full documentation.")
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Keybindings:")
+	fmt.Fprintln(w, "    Ctrl +/- \t Zoom in/out")
+	fmt.Fprintln(w, "    Escape \t Focus command line")
+	fmt.Fprintln(w, "    Ctrl delete \t Request manual stop")
+	if err := w.Flush(); err != nil {
+		return err
+	}
 	return nil
 }
 

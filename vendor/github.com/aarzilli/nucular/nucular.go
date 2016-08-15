@@ -22,11 +22,12 @@ import (
 ///////////////////////////////////////////////////////////////////////////////////
 
 type context struct {
-	Input   Input
-	Style   nstyle.Style
-	Windows []*Window
-	Scaling float64
-	changed int32
+	Input          Input
+	Style          nstyle.Style
+	Windows        []*Window
+	Scaling        float64
+	changed        int32
+	activateEditor *TextEditor
 }
 
 type UpdateFn func(*MasterWindow, *Window)

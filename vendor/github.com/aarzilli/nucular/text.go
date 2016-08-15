@@ -1235,6 +1235,11 @@ func (ed *TextEditor) doEdit(bounds types.Rect, style *nstyle.Edit, inp *Input) 
 	/* update edit state */
 	prev_state := ed.Active
 
+	if ed.win.ctx.activateEditor != nil {
+		ed.Active = ed.win.ctx.activateEditor == ed
+
+	}
+
 	is_hovered := inp.Mouse.HoveringRect(bounds)
 
 	if ed.Flags&EditFocusFollowsMouse != 0 {

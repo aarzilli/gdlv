@@ -228,7 +228,7 @@ func updateGoroutines(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window
 		case goStatementLocation:
 			w.SelectableLabel(formatLocation(g.GoStatementLoc), "LC", &selected)
 		}
-		if selected && curGid != g.ID {
+		if selected && curGid != g.ID && !running {
 			go func(gid int) {
 				state, err := client.SwitchGoroutine(gid)
 				if err != nil {
@@ -288,7 +288,7 @@ func updateStacktrace(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window
 			name = frame.Function.Name
 		}
 		w.SelectableLabel(fmt.Sprintf("%s\nat %s:%d", name, ShortenFilePath(frame.File), frame.Line), "LT", &selected)
-		if selected && curFrame != i {
+		if selected && curFrame != i && !running {
 			curFrame = i
 			go refreshState(true, clearFrameSwitch, nil)
 		}
@@ -321,7 +321,7 @@ func updateThreads(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 		w.SelectableLabel(fmt.Sprintf("%*d", d, thread.ID), "LC", &selected)
 		loc := api.Location{thread.PC, thread.File, thread.Line, thread.Function}
 		w.SelectableLabel(formatLocation(loc), "LC", &selected)
-		if selected && curThread != thread.ID {
+		if selected && curThread != thread.ID && !running {
 			go func(tid int) {
 				state, err := client.SwitchThread(tid)
 				if err != nil {

@@ -350,6 +350,7 @@ func (w *MasterWindow) updateLocked() {
 	for i := range w.ctx.Windows {
 		w.ctx.Windows[i].idx = i
 	}
+	w.ctx.activateEditor = nil
 	in.Mouse.Buttons[mouse.ButtonLeft].Clicked = false
 	in.Mouse.Buttons[mouse.ButtonMiddle].Clicked = false
 	in.Mouse.Buttons[mouse.ButtonRight].Clicked = false
@@ -877,4 +878,8 @@ func (w *MasterWindow) drawChanged(cmds []command.Command) bool {
 	}
 
 	return false
+}
+
+func (mw *MasterWindow) ActivateEditor(ed *TextEditor) {
+	mw.ctx.activateEditor = ed
 }
