@@ -2,12 +2,15 @@ package main
 
 import (
 	"fmt"
+	"image"
 	"reflect"
 	"sort"
 	"strings"
 	"sync"
 
 	"github.com/aarzilli/nucular"
+	"github.com/aarzilli/nucular/label"
+	ntypes "github.com/aarzilli/nucular/types"
 	"github.com/derekparker/delve/service/api"
 )
 
@@ -16,6 +19,7 @@ func init() {
 	goroutinesPanel.update = updateGoroutines
 	stackPanel.update = updateStacktrace
 	threadsPanel.update = updateThreads
+	breakpointsPanel.update = updateBreakpoints
 }
 
 type infoPanel struct {
@@ -75,9 +79,8 @@ var globalsPanel = &infoPanel{
 }
 
 var breakpointsPanel = &infoPanel{
-	name:   "breakpoints",
-	update: updateBreakpoints,
-	load:   loadBreakpoints,
+	name: "breakpoints",
+	load: loadBreakpoints,
 }
 
 var sourcesPanel = &infoPanel{
@@ -120,6 +123,7 @@ var regs string
 var globalsFilterEditor = nucular.TextEditor{Filter: spacefilter}
 var globalsShowAddress bool = false
 var globals []api.Variable
+var selectedBreakpoint int
 var breakpoints []*api.Breakpoint
 var funcsFilterEditor = nucular.TextEditor{Filter: spacefilter}
 var functions []string
@@ -482,10 +486,21 @@ func updateGlobals(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	}
 }
 
+type breakpointsByID []*api.Breakpoint
+
+func (bps breakpointsByID) Len() int { return len(bps) }
+func (bps breakpointsByID) Swap(i, j int) {
+	temp := bps[i]
+	bps[i] = bps[j]
+	bps[j] = temp
+}
+func (bps breakpointsByID) Less(i, j int) bool { return bps[i].ID < bps[i].ID }
+
 func loadBreakpoints(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	breakpoints, err = client.ListBreakpoints()
+	sort.Sort(breakpointsByID(breakpoints))
 	if err != nil {
 		fmt.Fprintf(&out, "Could not list breakpoints: %v\n", err)
 		return
@@ -501,12 +516,174 @@ func updateBreakpoints(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window
 	if len(breakpoints) > 0 {
 		d = digits(breakpoints[len(breakpoints)-1].ID)
 	}
+	if d < 3 {
+		d = 3
+	}
 
 	w.Row(40).StaticScaled(nucular.FontWidth(style.Font, "0")*d+pad, 0)
 	for _, breakpoint := range breakpoints {
-		w.Label(fmt.Sprintf("%*d", d, breakpoint.ID), "LT")
-		w.Label(fmt.Sprintf("%s in %s\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT")
-		//TODO: menu on right click. entries: edit, clear, clear all
+		selected := selectedBreakpoint == breakpoint.ID
+		w.SelectableLabel(fmt.Sprintf("%*d", d, breakpoint.ID), "LT", &selected)
+		bounds := w.LastWidgetBounds
+		bounds.W = w.Bounds.W
+		if w.Input().Mouse.AnyClickInRect(bounds) {
+			selectedBreakpoint = breakpoint.ID
+		}
+		w.SelectableLabel(fmt.Sprintf("%s in %s\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
+		w.ContextualOpen(0, image.Point{200, 500}, bounds, breakpointsMenu)
+	}
+}
+
+func breakpointsMenu(mw *nucular.MasterWindow, w *nucular.Window) {
+	w.Row(20).Dynamic(1)
+	if selectedBreakpoint > 0 {
+		if w.MenuItem(label.TA("Edit...", "LC")) {
+			mw.PopupOpen(fmt.Sprintf("Editing breakpoint %d", selectedBreakpoint), nucular.WindowDynamic|nucular.WindowTitle|nucular.WindowNoScrollbar|nucular.WindowMovable|nucular.WindowBorder, ntypes.Rect{100, 100, 400, 700}, true, breakpointEditor)
+		}
+		if w.MenuItem(label.TA("Clear", "LC")) {
+			go func() {
+				scrollbackOut := editorWriter{&scrollbackEditor, true}
+				_, err := client.ClearBreakpoint(selectedBreakpoint)
+				if err != nil {
+					fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint: %v\n", err)
+				}
+				breakpointsPanel.clear()
+				wnd.Changed()
+			}()
+		}
+	}
+	if w.MenuItem(label.TA("Clear All", "LC")) {
+		go func() {
+			scrollbackOut := editorWriter{&scrollbackEditor, true}
+			for i := range breakpoints {
+				if breakpoints[i].ID < 0 {
+					continue
+				}
+				_, err := client.ClearBreakpoint(breakpoints[i].ID)
+				if err != nil {
+					fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint %d: %v\n", breakpoints[i].ID, err)
+				}
+			}
+			breakpointsPanel.clear()
+			wnd.Changed()
+		}()
+	}
+}
+
+var editedBreakpoint *api.Breakpoint
+var breakpointPrintEditor nucular.TextEditor
+var breakpointCondEditor nucular.TextEditor
+
+func breakpointEditor(mw *nucular.MasterWindow, w *nucular.Window) {
+	if editedBreakpoint == nil {
+		for i := range breakpoints {
+			if breakpoints[i].ID == selectedBreakpoint {
+				editedBreakpoint = breakpoints[i]
+				break
+			}
+		}
+
+		if editedBreakpoint == nil {
+			w.Close()
+			return
+		}
+
+		breakpointPrintEditor.Flags = nucular.EditMultiline | nucular.EditClipboard | nucular.EditSelectable
+		breakpointPrintEditor.Buffer = breakpointPrintEditor.Buffer[:0]
+		for i := range editedBreakpoint.Variables {
+			breakpointPrintEditor.Buffer = append(breakpointPrintEditor.Buffer, []rune(fmt.Sprintf("%s\n", editedBreakpoint.Variables[i]))...)
+		}
+
+		breakpointCondEditor.Flags = nucular.EditClipboard | nucular.EditSelectable
+		breakpointCondEditor.Buffer = []rune(editedBreakpoint.Cond)
+	}
+
+	w.Row(20).Dynamic(2)
+	if w.OptionText("breakpoint", !editedBreakpoint.Tracepoint) {
+		editedBreakpoint.Tracepoint = false
+	}
+	if w.OptionText("tracepoint", editedBreakpoint.Tracepoint) {
+		editedBreakpoint.Tracepoint = true
+	}
+
+	w.Row(20).Static(100, 100, 150)
+	arguments := editedBreakpoint.LoadArgs != nil
+	w.CheckboxText("Arguments", &arguments)
+	locals := editedBreakpoint.LoadLocals != nil
+	w.CheckboxText("Locals", &locals)
+	w.PropertyInt("Stacktrace", 0, &editedBreakpoint.Stacktrace, 200, 1, 10)
+
+	verboseArguments, verboseLocals := false, false
+	w.Row(20).Static(20, 100, 100)
+	w.Spacing(1)
+	if arguments {
+		verboseArguments = editedBreakpoint.LoadArgs != nil && *editedBreakpoint.LoadArgs == LongLoadConfig
+		w.CheckboxText("-v", &verboseArguments)
+	} else {
+		w.Spacing(1)
+	}
+	if locals {
+		verboseLocals = editedBreakpoint.LoadLocals != nil && *editedBreakpoint.LoadLocals == LongLoadConfig
+		w.CheckboxText("-v", &verboseLocals)
+	} else {
+		w.Spacing(1)
+	}
+
+	if arguments {
+		if verboseArguments {
+			editedBreakpoint.LoadArgs = &LongLoadConfig
+		} else {
+			editedBreakpoint.LoadArgs = &ShortLoadConfig
+		}
+	} else {
+		editedBreakpoint.LoadArgs = nil
+	}
+
+	if locals {
+		if verboseLocals {
+			editedBreakpoint.LoadLocals = &LongLoadConfig
+		} else {
+			editedBreakpoint.LoadLocals = &ShortLoadConfig
+		}
+	} else {
+		editedBreakpoint.LoadLocals = nil
+	}
+
+	w.Row(20).Dynamic(1)
+	w.Label("Print:", "LC")
+	w.Row(100).Dynamic(1)
+	breakpointPrintEditor.Edit(w)
+
+	w.Row(20).Static(70, 0)
+	w.Label("Condition:", "LC")
+	breakpointCondEditor.Edit(w)
+
+	w.Row(20).Static(0, 80, 80)
+	w.Spacing(1)
+	if w.ButtonText("Cancel") {
+		editedBreakpoint = nil
+		breakpointsPanel.clear()
+		w.Close()
+	}
+	if w.ButtonText("OK") {
+		editedBreakpoint.Cond = string(breakpointCondEditor.Buffer)
+		editedBreakpoint.Variables = editedBreakpoint.Variables[:0]
+		for _, p := range strings.Split(string(breakpointPrintEditor.Buffer), "\n") {
+			if p == "" {
+				continue
+			}
+			editedBreakpoint.Variables = append(editedBreakpoint.Variables, p)
+		}
+		go func(bp *api.Breakpoint) {
+			err := client.AmendBreakpoint(bp)
+			if err != nil {
+				scrollbackOut := editorWriter{&scrollbackEditor, true}
+				fmt.Fprintf(&scrollbackOut, "Could not amend breakpoint: %v\n", err)
+			}
+		}(editedBreakpoint)
+		editedBreakpoint = nil
+		breakpointsPanel.clear()
+		w.Close()
 	}
 }
 
