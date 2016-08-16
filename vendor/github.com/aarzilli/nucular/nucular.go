@@ -33,16 +33,17 @@ type context struct {
 type UpdateFn func(*MasterWindow, *Window)
 
 type Window struct {
-	title        string
-	ctx          *context
-	idx          int
-	flags        WindowFlags
-	Bounds       types.Rect
-	Scrollbar    image.Point
-	cmds         command.Buffer
-	widgets      widgetBuffer
-	layout       *panel
-	close, first bool
+	LastWidgetBounds types.Rect
+	title            string
+	ctx              *context
+	idx              int
+	flags            WindowFlags
+	Bounds           types.Rect
+	Scrollbar        image.Point
+	cmds             command.Buffer
+	widgets          widgetBuffer
+	layout           *panel
+	close, first     bool
 	// trigger rectangle of nonblocking windows
 	triggerBounds, header types.Rect
 	// root of the node tree
@@ -219,7 +220,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 		move.H = layout.HeaderH
 
 		if win.idx != 0 {
-			move.H = fontHeight(font) + 2.0*wstyle.Header.Padding.Y
+			move.H = FontHeight(font) + 2.0*wstyle.Header.Padding.Y
 			move.H += 2.0 * wstyle.Header.LabelPadding.Y
 		} else {
 			move.H = window_padding.Y + item_spacing.Y
@@ -262,7 +263,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	if win.flags&windowMinimized != 0 {
 		layout.HeaderH = 0
 		layout.Row.Height = 0
-	} else if win.flags&windowMenu != 0 || win.flags&windowContextual != 0 {
+	} else if win.flags&windowMenu != 0 || win.flags&windowContextual != 0 || win.flags&windowGroup != 0 {
 		layout.HeaderH = window_padding.Y
 		layout.Row.Height = window_padding.Y
 	} else {
@@ -281,7 +282,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	if win.flags&WindowNoScrollbar == 0 {
 		layout.Width = layout.Bounds.W - wstyle.ScrollbarSize.X
 	}
-	layout.Height = layout.Bounds.H - (layout.HeaderH + item_spacing.Y + window_padding.Y)
+	layout.Height = layout.Bounds.H - (layout.HeaderH + window_padding.Y)
 	layout.Height -= layout.FooterH
 
 	/* window header */
@@ -302,7 +303,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 		dwh.Header.W = layout.Bounds.W
 
 		/* calculate correct header height */
-		layout.HeaderH = fontHeight(font) + 2.0*wstyle.Header.Padding.Y
+		layout.HeaderH = FontHeight(font) + 2.0*wstyle.Header.Padding.Y
 
 		layout.HeaderH += 2.0 * wstyle.Header.LabelPadding.Y
 		layout.Row.Height += layout.HeaderH
@@ -323,7 +324,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 		dwh.Label.X = header.X + wstyle.Header.Padding.X
 		dwh.Label.X += wstyle.Header.LabelPadding.X
 		dwh.Label.Y = header.Y + wstyle.Header.LabelPadding.Y
-		dwh.Label.H = fontHeight(font) + 2*wstyle.Header.LabelPadding.Y
+		dwh.Label.H = FontHeight(font) + 2*wstyle.Header.LabelPadding.Y
 		dwh.Label.W = t + 2*wstyle.Header.Spacing.X
 		dwh.LayoutHeaderH = layout.HeaderH
 		dwh.RowHeight = layout.Row.Height
@@ -700,6 +701,8 @@ func (win *Window) widget() (widgetLayoutStates, types.Rect) {
 
 	/* allocate space  and check if the widget needs to be updated and drawn */
 	panelAllocSpace(&bounds, win)
+
+	win.LastWidgetBounds = bounds
 
 	c = &win.layout.Clip
 	if !c.Intersect(&bounds) {
@@ -1168,7 +1171,7 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 
 	if type_ == TreeTab {
 		/* calculate header bounds and draw background */
-		panelLayout(win.ctx, win, fontHeight(style.Font)+2*style.Tab.Padding.Y, 1)
+		panelLayout(win.ctx, win, FontHeight(style.Font)+2*style.Tab.Padding.Y, 1)
 		win.layout.Row.Type = layoutDynamicFixed
 		win.layout.Row.ItemWidth = 0
 		win.layout.Row.ItemRatio = 0.0
@@ -1208,7 +1211,7 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 
 	/* calculate the triangle bounds */
 	var sym types.Rect
-	sym.H = fontHeight(style.Font)
+	sym.H = FontHeight(style.Font)
 	sym.W = sym.H
 	sym.Y = header.Y + style.Tab.Padding.Y
 	sym.X = header.X + panel_padding.X + style.Tab.Padding.X
@@ -1336,28 +1339,8 @@ func (win *Window) Image(img *image.RGBA) {
 
 // Spacing adds empty space
 func (win *Window) Spacing(cols int) {
-	var nilrect types.Rect
-	var i int
-
-	/* spacing over row boundaries */
-
-	layout := win.layout
-	if layout.Row.Columns > 0 {
-		index := (layout.Row.Index + cols) % layout.Row.Columns
-		rows := (layout.Row.Index + cols) / layout.Row.Columns
-		if rows != 0 {
-			for i = 0; i < rows; i++ {
-				panelAllocRow(win)
-			}
-			cols = index
-		}
-	}
-
-	/* non table layout need to allocate space */
-	if layout.Row.Type != layoutDynamicFixed {
-		for i = 0; i < cols; i++ {
-			panelAllocSpace(&nilrect, win)
-		}
+	for i := 0; i < cols; i++ {
+		win.widget()
 	}
 }
 
@@ -1465,9 +1448,9 @@ func doButton(win *Window, lbl label.Label, r types.Rect, style *nstyle.Button, 
 		}
 		font := win.ctx.Style.Font
 		var tri types.Rect
-		tri.Y = content.Y + (content.H / 2) - fontHeight(font)/2
-		tri.W = fontHeight(font)
-		tri.H = fontHeight(font)
+		tri.Y = content.Y + (content.H / 2) - FontHeight(font)/2
+		tri.W = FontHeight(font)
+		tri.H = FontHeight(font)
 		if lbl.Align[0] == 'L' {
 			tri.X = (content.X + content.W) - (2*style.Padding.X + tri.W)
 			tri.X = max(tri.X, 0)
@@ -1799,8 +1782,8 @@ func doToggle(out *widgetBuffer, r types.Rect, active bool, str string, type_ to
 	var label types.Rect
 	var cursor_pad int
 
-	r.W = max(r.W, fontHeight(font)+2*style.Padding.X)
-	r.H = max(r.H, fontHeight(font)+2*style.Padding.Y)
+	r.W = max(r.W, FontHeight(font)+2*style.Padding.X)
+	r.H = max(r.H, FontHeight(font)+2*style.Padding.Y)
 
 	/* add additional touch padding for touch screen devices */
 	bounds.X = r.X - style.TouchPadding.X
@@ -1809,7 +1792,7 @@ func doToggle(out *widgetBuffer, r types.Rect, active bool, str string, type_ to
 	bounds.H = r.H + 2*style.TouchPadding.Y
 
 	/* calculate the selector space */
-	select_.W = min(r.H, fontHeight(font)+style.Padding.Y)
+	select_.W = min(r.H, FontHeight(font)+style.Padding.Y)
 
 	select_.H = select_.W
 	select_.X = r.X + style.Padding.X
@@ -2120,7 +2103,7 @@ func (win *Window) doProperty(property types.Rect, name string, text string, fil
 
 	// left decrement button
 	var left types.Rect
-	left.H = fontHeight(font) / 2
+	left.H = FontHeight(font) / 2
 	left.W = left.H
 	left.X = property.X + style.Border + style.Padding.X
 	left.Y = property.Y + style.Border + property.H/2.0 - left.H/2
@@ -2408,7 +2391,7 @@ func (win *Window) Tooltip(text string) {
 
 	/* calculate size of the text and tooltip */
 	text_width := FontWidth(win.ctx.Style.Font, text)
-	text_height := fontHeight(win.ctx.Style.Font)
+	text_height := FontHeight(win.ctx.Style.Font)
 	text_width += win.ctx.scale(2*padding.X) + win.ctx.scale(2*item_spacing.X)
 
 	win.TooltipOpen(text_width, false, func(mw *MasterWindow, tw *Window) {

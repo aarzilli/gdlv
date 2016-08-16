@@ -2,6 +2,8 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
+	"strconv"
 	"strings"
 
 	"github.com/aarzilli/nucular"
@@ -53,15 +55,25 @@ var infoNameToFunc = map[string]func(mw *nucular.MasterWindow, w *nucular.Window
 	infoFuncs:       funcsPanel.Update,
 	infoTypes:       typesPanel.Update,
 }
+
 var infoModes = []string{
 	infoCommand, infoListing, infoDisassembly, infoGoroutines, infoStacktrace, infoLocals, infoGlobal, infoBps, infoThreads, infoRegisters, infoSources, infoFuncs, infoTypes,
 }
 
-// TODO: ugly take it away XXXX
-var infoListingIdx = 1
-var infoCommandIdx = 0
-var infoStacktraceIdx = 4
-var infoLocalsIdx = 5
+var codeToInfoMode = map[byte]string{
+	'C': infoCommand,
+	'L': infoListing,
+	'D': infoDisassembly,
+	'G': infoGoroutines,
+	'S': infoStacktrace,
+	'l': infoLocals,
+	'g': infoGlobal,
+	'B': infoBps,
+	'r': infoRegisters,
+	's': infoSources,
+	'f': infoFuncs,
+	't': infoTypes,
+}
 
 func (kind panelKind) Internal() bool {
 	switch kind {
@@ -77,36 +89,81 @@ type panel struct {
 	size     int
 	infoMode int
 	child    [2]*panel
+	parent   *panel
 
 	name   string
 	resize bool
 }
 
-var rootPanel = &panel{kind: splitVerticalPanelKind, size: 300, name: "root",
-	child: [2]*panel{
-		&panel{kind: splitHorizontalPanelKind, size: 250,
-			child: [2]*panel{
-				&panel{kind: infoPanelKind, infoMode: infoListingIdx},
-				&panel{kind: infoPanelKind, infoMode: infoCommandIdx}}},
-		&panel{kind: splitHorizontalPanelKind, size: 150,
-			child: [2]*panel{
-				&panel{kind: infoPanelKind, infoMode: infoStacktraceIdx},
-				&panel{kind: infoPanelKind, infoMode: infoLocalsIdx}}}}}
+var rootPanel *panel
+
+func init() {
+	rootPanel, _ = parsePanelDescr("|300_250LC_180Sl", nil)
+}
 
 const (
 	headerRow         = 20
-	headerCombo       = 180
+	headerCombo       = 110
 	headerSplitMenu   = 70
 	verticalSpacing   = 1
 	horizontalSpacing = 2
+	splitMinSize      = 20
 )
+
+func parsePanelDescr(in string, parent *panel) (p *panel, rest string) {
+	var kind panelKind
+	switch in[0] {
+	case '0':
+		p = &panel{kind: kind, name: randomname(), parent: parent}
+		p.child[0], rest = parsePanelDescr(in[1:], p)
+	case '_', '|':
+		kind = splitHorizontalPanelKind
+		if in[0] == '|' {
+			kind = splitVerticalPanelKind
+		}
+		var i int
+		for i = 1; i < len(in); i++ {
+			if in[i] < '0' || in[i] > '9' {
+				break
+			}
+		}
+		size, _ := strconv.Atoi(in[1:i])
+		p = &panel{kind: kind, name: randomname(), size: size, parent: parent}
+		rest = in[i:]
+		p.child[0], rest = parsePanelDescr(rest, p)
+		p.child[1], rest = parsePanelDescr(rest, p)
+		return p, rest
+	default:
+		p = &panel{kind: infoPanelKind, name: randomname(), infoMode: infoModeIdx(codeToInfoMode[in[0]]), parent: parent}
+		rest = in[1:]
+		return p, rest
+	}
+	panic("unreachable")
+}
+
+func infoModeIdx(n string) int {
+	for i := range infoModes {
+		if infoModes[i] == n {
+			return i
+		}
+	}
+	return -1
+}
+
+func randomname() string {
+	var alphabet = []byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'}
+	out := make([]byte, 8)
+	for i := range out {
+		out[i] = alphabet[rand.Intn(len(alphabet))]
+	}
+	return string(out)
+}
 
 func (p *panel) update(mw *nucular.MasterWindow, w *nucular.Window) {
 	style, scaling := mw.Style()
 
 	switch p.kind {
 	case fullPanelKind:
-		p.child[0].name = p.name + "-contents"
 		p.child[0].update(mw, w)
 
 	case infoPanelKind:
@@ -115,17 +172,20 @@ func (p *panel) update(mw *nucular.MasterWindow, w *nucular.Window) {
 		w.Spacing(1)
 		w.ComboSimple(infoModes, &p.infoMode, 22)
 		w.Row(0).Dynamic(1)
-		infoNameToFunc[infoModes[p.infoMode]](mw, w)
+		if p.infoMode >= 0 {
+			infoNameToFunc[infoModes[p.infoMode]](mw, w)
+		}
 
 	case splitHorizontalPanelKind:
+		if p.size == 0 {
+			p.size = int(float64(w.LayoutAvailableHeight()-int(horizontalSpacing*scaling)) / (2 * scaling))
+		}
 		w.Row(p.size).Dynamic(1)
-		n := p.name + "-top"
 		flags := splitFlags
 		if p.child[0].kind == infoPanelKind {
 			flags |= nucular.WindowBorder
 		}
-		if sw := w.GroupBegin(n, flags); sw != nil {
-			p.child[0].name = n
+		if sw := w.GroupBegin(p.child[0].name, flags); sw != nil {
 			p.child[0].update(mw, sw)
 			sw.GroupEnd()
 		}
@@ -143,17 +203,18 @@ func (p *panel) update(mw *nucular.MasterWindow, w *nucular.Window) {
 				p.resize = false
 			} else {
 				p.size += int(float64(w.Input().Mouse.Delta.Y) / scaling)
+				if p.size <= splitMinSize {
+					p.size = splitMinSize
+				}
 			}
 		}
 
 		w.Row(0).Dynamic(1)
-		n = p.name + "-bot"
 		flags = splitFlags
 		if p.child[1].kind == infoPanelKind {
 			flags |= nucular.WindowBorder
 		}
-		if sw := w.GroupBegin(n, flags); sw != nil {
-			p.child[1].name = n
+		if sw := w.GroupBegin(p.child[1].name, flags); sw != nil {
 			p.child[1].update(mw, sw)
 			sw.GroupEnd()
 		}
@@ -161,15 +222,16 @@ func (p *panel) update(mw *nucular.MasterWindow, w *nucular.Window) {
 	case splitVerticalPanelKind:
 		w.Row(0).Static(p.size, verticalSpacing, 0)
 
-		n := p.name + "-left"
 		flags := splitFlags
 		if p.child[0].kind == infoPanelKind {
 			flags |= nucular.WindowBorder
 		}
-		if sw := w.GroupBegin(n, flags); sw != nil {
-			p.child[0].name = n
+		if sw := w.GroupBegin(p.child[0].name, flags); sw != nil {
 			p.child[0].update(mw, sw)
 			sw.GroupEnd()
+		}
+		if p.size == 0 {
+			p.size = int(float64(w.LastWidgetBounds.W) / scaling)
 		}
 
 		rszbounds, _ := w.Custom(ntypes.WidgetStateInactive)
@@ -184,16 +246,17 @@ func (p *panel) update(mw *nucular.MasterWindow, w *nucular.Window) {
 				p.resize = false
 			} else {
 				p.size += int(float64(w.Input().Mouse.Delta.X) / scaling)
+				if p.size <= splitMinSize {
+					p.size = splitMinSize
+				}
 			}
 		}
 
-		n = p.name + "-right"
 		flags = splitFlags
 		if p.child[1].kind == infoPanelKind {
 			flags |= nucular.WindowBorder
 		}
-		if sw := w.GroupBegin(n, flags); sw != nil {
-			p.child[1].name = n
+		if sw := w.GroupBegin(p.child[1].name, flags); sw != nil {
 			p.child[1].update(mw, sw)
 			sw.GroupEnd()
 		}
@@ -203,14 +266,83 @@ func (p *panel) update(mw *nucular.MasterWindow, w *nucular.Window) {
 func (p *panel) splitMenu(mw *nucular.MasterWindow, w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 	if w.MenuItem(label.TA("Horizontal", "LC")) {
-		//TODO: implement
+		p.split(splitHorizontalPanelKind)
 	}
 	if w.MenuItem(label.TA("Vertical", "LC")) {
-		//TODO: implement
+		p.split(splitVerticalPanelKind)
 	}
 	if w.MenuItem(label.TA("Close", "LC")) {
-		//TODO: implement
+		p.closeMyself()
 	}
+}
+
+func (p *panel) split(kind panelKind) {
+	if p.parent == nil {
+		return
+	}
+
+	if p.parent.kind == fullPanelKind {
+		p.parent.kind = kind
+		p.parent.child[1] = &panel{kind: p.kind, name: randomname(), infoMode: p.infoMode, parent: p.parent}
+		return
+	}
+
+	idx := p.parent.idx(p)
+	if idx < 0 {
+		return
+	}
+
+	newpanel := &panel{kind: kind, name: randomname(), size: 0, parent: p.parent}
+
+	newpanel.child[0] = p
+	newpanel.child[1] = &panel{kind: p.kind, name: randomname(), infoMode: p.infoMode, parent: newpanel}
+
+	p.parent.child[idx] = newpanel
+	p.parent = newpanel
+}
+
+func (p *panel) idx(child *panel) int {
+	for i := range p.child {
+		if p.child[i] == child {
+			return i
+		}
+	}
+	return -1
+}
+
+func (p *panel) closeMyself() {
+	if p.parent == nil || p.parent.kind == fullPanelKind {
+		return
+	}
+
+	idx := p.parent.idx(p)
+	if idx < 0 {
+		return
+	}
+	p.parent.closeChild(idx)
+}
+
+func (p *panel) closeChild(idx int) {
+	if p.parent == nil {
+		p.kind = fullPanelKind
+		if idx == 0 {
+			p.child[0] = p.child[1]
+		}
+		return
+	}
+
+	ownidx := p.parent.idx(p)
+	if ownidx < 0 {
+		return
+	}
+
+	survivor := p.child[0]
+	if idx == 0 {
+		survivor = p.child[1]
+	}
+
+	p.parent.child[ownidx] = survivor
+	survivor.parent = p.parent
 }
 
 func updateCommandPanel(mw *nucular.MasterWindow, container *nucular.Window) {

@@ -260,7 +260,7 @@ func (d *drawableTreeNode) Draw(z *nstyle.Style, out *command.Buffer) {
 	lblrect.X = sym.X + sym.W + item_spacing.X + 2*z.Tab.Spacing.X
 	lblrect.Y = sym.Y
 	lblrect.W = header.W - (sym.W + 2*z.Tab.Spacing.X + item_spacing.Y + panel_padding.X)
-	lblrect.H = fontHeight(z.Font)
+	lblrect.H = FontHeight(z.Font)
 
 	text.Text = z.Tab.Text
 	widgetText(out, lblrect, title, &text, "LC", z.Font)

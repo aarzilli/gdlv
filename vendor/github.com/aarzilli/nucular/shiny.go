@@ -633,7 +633,7 @@ func (w *MasterWindow) draw() (int, int) {
 				if cmd.String[i] == '\n' {
 					d.DrawString(cmd.String[start:i])
 					d.Dot.X = fixed.I(cmd.X)
-					d.Dot.Y += fixed.I(fontHeight(cmd.Font))
+					d.Dot.Y += fixed.I(FontHeight(cmd.Font))
 					start = i + 1
 				}
 			}

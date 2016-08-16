@@ -71,13 +71,13 @@ func widgetText(o *command.Buffer, b types.Rect, str string, t *textWidget, a la
 	if len(a) >= 2 {
 		switch a[1] {
 		case 'C':
-			lblrect.Y = b.Y + b.H/2.0 - fontHeight(f)/2.0
+			lblrect.Y = b.Y + b.H/2.0 - FontHeight(f)/2.0
 		case 'B':
-			lblrect.Y = b.Y + b.H - fontHeight(f)
+			lblrect.Y = b.Y + b.H - FontHeight(f)
 		}
 	}
-	if lblrect.H < fontHeight(f)*2 {
-		lblrect.H = fontHeight(f) * 2
+	if lblrect.H < FontHeight(f)*2 {
+		lblrect.H = FontHeight(f) * 2
 	}
 
 	o.DrawText(lblrect, str, f, t.Text)
@@ -99,7 +99,7 @@ func widgetTextWrap(o *command.Buffer, b types.Rect, str []rune, t *textWidget, 
 	line.X = b.X + t.Padding.X
 	line.Y = b.Y + t.Padding.Y
 	line.W = b.W - 2*t.Padding.X
-	line.H = 2*t.Padding.Y + fontHeight(f)
+	line.H = 2*t.Padding.Y + FontHeight(f)
 
 	fitting := textClamp(f, str, line.W)
 	for done < len(str) {
@@ -108,7 +108,7 @@ func widgetTextWrap(o *command.Buffer, b types.Rect, str []rune, t *textWidget, 
 		}
 		widgetText(o, line, string(fitting), &text, "LC", f)
 		done += len(fitting)
-		line.Y += fontHeight(f) + 2*t.Padding.Y
+		line.Y += FontHeight(f) + 2*t.Padding.Y
 		fitting = textClamp(f, str[done:], line.W)
 	}
 }
@@ -1227,7 +1227,7 @@ func (ed *TextEditor) doEdit(bounds types.Rect, style *nstyle.Edit, inp *Input) 
 	}
 	var row_height int
 	if ed.Flags&EditMultiline != 0 {
-		row_height = fontHeight(font) + style.RowPadding
+		row_height = FontHeight(font) + style.RowPadding
 	} else {
 		row_height = area.H
 	}
