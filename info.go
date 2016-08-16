@@ -17,22 +17,22 @@ func init() {
 	threadsPanel.update = updateThreads
 }
 
-type rightPanel struct {
+type infoPanel struct {
 	mu      sync.Mutex
 	loaded  bool
 	loading bool
 	name    string
-	update  func(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window)
-	load    func(p *rightPanel)
+	update  func(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window)
+	load    func(p *infoPanel)
 }
 
-func (l *rightPanel) clear() {
+func (l *infoPanel) clear() {
 	l.mu.Lock()
 	l.loaded = false
 	l.mu.Unlock()
 }
 
-func (l *rightPanel) done() {
+func (l *infoPanel) done() {
 	l.mu.Lock()
 	l.loading = false
 	l.loaded = true
@@ -40,58 +40,58 @@ func (l *rightPanel) done() {
 	wnd.Changed()
 }
 
-var goroutinesPanel = &rightPanel{
+var goroutinesPanel = &infoPanel{
 	name: "goroutines",
 	load: loadGoroutines,
 }
 
-var stackPanel = &rightPanel{
+var stackPanel = &infoPanel{
 	name: "stacktrace",
 	load: loadStacktrace,
 }
 
-var threadsPanel = &rightPanel{
+var threadsPanel = &infoPanel{
 	name: "threads",
 	load: loadThreads,
 }
 
-var localsPanel = &rightPanel{
+var localsPanel = &infoPanel{
 	name:   "locals",
 	update: updateLocals,
 	load:   loadLocals,
 }
 
-var regsPanel = &rightPanel{
+var regsPanel = &infoPanel{
 	name:   "regs",
 	update: updateRegs,
 	load:   loadRegs,
 }
 
-var globalsPanel = &rightPanel{
+var globalsPanel = &infoPanel{
 	name:   "globals",
 	update: updateGlobals,
 	load:   loadGlobals,
 }
 
-var breakpointsPanel = &rightPanel{
+var breakpointsPanel = &infoPanel{
 	name:   "breakpoints",
 	update: updateBreakpoints,
 	load:   loadBreakpoints,
 }
 
-var sourcesPanel = &rightPanel{
+var sourcesPanel = &infoPanel{
 	name:   "sources",
 	update: updateSources,
 	load:   loadSources,
 }
 
-var funcsPanel = &rightPanel{
+var funcsPanel = &infoPanel{
 	name:   "funcs",
 	update: updateFuncs,
 	load:   loadFuncs,
 }
 
-var typesPanel = &rightPanel{
+var typesPanel = &infoPanel{
 	name:   "types",
 	update: updateTypes,
 	load:   loadTypes,
@@ -131,7 +131,7 @@ func spacefilter(ch rune) bool {
 	return ch != ' ' && ch != '\t'
 }
 
-func (p *rightPanel) Update(mw *nucular.MasterWindow, container *nucular.Window) {
+func (p *infoPanel) Update(mw *nucular.MasterWindow, container *nucular.Window) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -160,7 +160,7 @@ func (p *rightPanel) Update(mw *nucular.MasterWindow, container *nucular.Window)
 	}
 }
 
-func loadGoroutines(p *rightPanel) {
+func loadGoroutines(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	goroutines, err = client.ListGoroutines()
@@ -171,7 +171,7 @@ func loadGoroutines(p *rightPanel) {
 	p.done()
 }
 
-func updateGoroutines(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateGoroutines(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	style, _ := mw.Style()
 
 	w.MenubarBegin()
@@ -227,7 +227,7 @@ func updateGoroutines(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window
 	}
 }
 
-func loadStacktrace(p *rightPanel) {
+func loadStacktrace(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	stack, err = client.Stacktrace(curGid, stackDepth, nil)
@@ -238,7 +238,7 @@ func loadStacktrace(p *rightPanel) {
 	p.done()
 }
 
-func updateStacktrace(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateStacktrace(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	style, _ := mw.Style()
 
 	w.MenubarBegin()
@@ -280,7 +280,7 @@ func updateStacktrace(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window
 	}
 }
 
-func loadThreads(p *rightPanel) {
+func loadThreads(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	threads, err = client.ListThreads()
@@ -291,7 +291,7 @@ func loadThreads(p *rightPanel) {
 	p.done()
 }
 
-func updateThreads(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateThreads(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	style, _ := mw.Style()
 
 	pad := style.Selectable.Padding.X * 2
@@ -321,7 +321,7 @@ func updateThreads(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	w.GroupEnd()
 }
 
-func loadLocals(p *rightPanel) {
+func loadLocals(p *infoPanel) {
 	m := map[string]int{}
 
 	out := editorWriter{&scrollbackEditor, true}
@@ -361,7 +361,7 @@ const (
 	moreBtnWidth = 70
 )
 
-func updateLocals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateLocals(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	w.MenubarBegin()
 	w.Row(varRowHeight).Static(90, 0, 100)
 	w.Label("Filter:", "LC")
@@ -393,7 +393,7 @@ func updateLocals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	}
 }
 
-func loadRegs(p *rightPanel) {
+func loadRegs(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	regs, err = client.ListRegisters()
@@ -404,7 +404,7 @@ func loadRegs(p *rightPanel) {
 	p.done()
 }
 
-func updateRegs(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateRegs(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	lines := 1
 	for i := range regs {
 		if regs[i] == '\n' {
@@ -415,7 +415,7 @@ func updateRegs(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	w.Label(regs, "LT")
 }
 
-func loadGlobals(p *rightPanel) {
+func loadGlobals(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	globals, err = client.ListPackageVariables("", LongLoadConfig)
@@ -426,7 +426,7 @@ func loadGlobals(p *rightPanel) {
 	p.done()
 }
 
-func updateGlobals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateGlobals(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	w.MenubarBegin()
 	w.Row(varRowHeight).Static(90, 0, 100)
 	w.Label("Filter:", "LC")
@@ -446,7 +446,7 @@ func updateGlobals(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	}
 }
 
-func loadBreakpoints(p *rightPanel) {
+func loadBreakpoints(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	breakpoints, err = client.ListBreakpoints()
@@ -457,7 +457,7 @@ func loadBreakpoints(p *rightPanel) {
 	p.done()
 }
 
-func updateBreakpoints(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateBreakpoints(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	style, _ := mw.Style()
 
 	pad := style.Selectable.Padding.X * 2
@@ -474,7 +474,7 @@ func updateBreakpoints(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Windo
 	}
 }
 
-func loadFuncs(p *rightPanel) {
+func loadFuncs(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	functions, err = client.ListFunctions("")
@@ -485,11 +485,11 @@ func loadFuncs(p *rightPanel) {
 	p.done()
 }
 
-func updateFuncs(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateFuncs(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	updateStringSlice(mw, w, &funcsFilterEditor, functions)
 }
 
-func loadSources(p *rightPanel) {
+func loadSources(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	sources, err = client.ListSources("")
@@ -500,11 +500,11 @@ func loadSources(p *rightPanel) {
 	p.done()
 }
 
-func updateSources(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateSources(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	updateStringSlice(mw, w, &sourcesFilterEditor, sources)
 }
 
-func loadTypes(p *rightPanel) {
+func loadTypes(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	types, err = client.ListTypes("")
@@ -515,7 +515,7 @@ func loadTypes(p *rightPanel) {
 	p.done()
 }
 
-func updateTypes(p *rightPanel, mw *nucular.MasterWindow, w *nucular.Window) {
+func updateTypes(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	updateStringSlice(mw, w, &typesFilterEditor, types)
 }
 

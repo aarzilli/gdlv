@@ -21,13 +21,20 @@ import (
 	"golang.org/x/mobile/event/key"
 )
 
-func fixStyle(style *nstyle.Style) {
+func setupStyle() {
+	theme := nstyle.DarkTheme
+	if conf.WhiteTheme {
+		theme = nstyle.WhiteTheme
+	}
+	wnd.SetStyle(nstyle.FromTheme(theme), nil, conf.Scaling)
+	style, _ := wnd.Style()
 	style.Selectable.Normal.Data.Color = style.NormalWindow.Background
 	style.NormalWindow.Padding.Y = 0
 	style.GroupWindow.Padding.Y = 0
 	style.GroupWindow.FooterPadding.Y = 0
 	style.MenuWindow.FooterPadding.Y = 0
 	style.ContextualWindow.FooterPadding.Y = 0
+	saveConfiguration()
 }
 
 var scrollbackResize bool
@@ -86,17 +93,11 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 		switch {
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '+') || (e.Rune == '='):
 			conf.Scaling += 0.1
-			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), nil, conf.Scaling)
-			style, _ := mw.Style()
-			fixStyle(style)
-			saveConfiguration()
+			setupStyle()
 
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '-'):
 			conf.Scaling -= 0.1
-			mw.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), nil, conf.Scaling)
-			style, _ := mw.Style()
-			fixStyle(style)
-			saveConfiguration()
+			setupStyle()
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):
 			mw.ActivateEditor(&commandLineEditor)
@@ -360,9 +361,9 @@ func main() {
 	loadConfiguration()
 
 	wnd = nucular.NewMasterWindow(guiUpdate, nucular.WindowNoScrollbar)
-	wnd.SetStyle(nstyle.FromTheme(nstyle.DarkTheme), nil, conf.Scaling)
-	style, _ := wnd.Style()
-	fixStyle(style)
+	setupStyle()
+
+	rootPanel, _ = parsePanelDescr(conf.Layouts["default"].Layout, nil)
 
 	lp.showcur = true
 	curThread = -1

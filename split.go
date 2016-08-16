@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"math/rand"
 	"strconv"
 	"strings"
@@ -73,6 +75,15 @@ var codeToInfoMode = map[byte]string{
 	's': infoSources,
 	'f': infoFuncs,
 	't': infoTypes,
+	'T': infoThreads,
+}
+
+var infoModeToCode = map[string]byte{}
+
+func init() {
+	for k, v := range codeToInfoMode {
+		infoModeToCode[v] = k
+	}
 }
 
 func (kind panelKind) Internal() bool {
@@ -97,10 +108,6 @@ type panel struct {
 
 var rootPanel *panel
 
-func init() {
-	rootPanel, _ = parsePanelDescr("|300_250LC_180Sl", nil)
-}
-
 const (
 	headerRow         = 20
 	headerCombo       = 110
@@ -116,6 +123,7 @@ func parsePanelDescr(in string, parent *panel) (p *panel, rest string) {
 	case '0':
 		p = &panel{kind: kind, name: randomname(), parent: parent}
 		p.child[0], rest = parsePanelDescr(in[1:], p)
+		return p, rest
 	case '_', '|':
 		kind = splitHorizontalPanelKind
 		if in[0] == '|' {
@@ -138,7 +146,39 @@ func parsePanelDescr(in string, parent *panel) (p *panel, rest string) {
 		rest = in[1:]
 		return p, rest
 	}
-	panic("unreachable")
+}
+
+func (p *panel) String() (s string, err error) {
+	defer func() {
+		if ierr := recover(); ierr != nil {
+			err = ierr.(error)
+		}
+	}()
+	var out bytes.Buffer
+	p.serialize(&out)
+	return out.String(), err
+}
+
+func (p *panel) serialize(out io.Writer) {
+	switch p.kind {
+	case fullPanelKind:
+		out.Write([]byte{'0'})
+		p.child[0].serialize(out)
+	case splitHorizontalPanelKind:
+		fmt.Fprintf(out, "_%d", p.size)
+		p.child[0].serialize(out)
+		p.child[1].serialize(out)
+	case splitVerticalPanelKind:
+		fmt.Fprintf(out, "|%d", p.size)
+		p.child[0].serialize(out)
+		p.child[1].serialize(out)
+	case infoPanelKind:
+		code, ok := infoModeToCode[infoModes[p.infoMode]]
+		if !ok {
+			panic(fmt.Errorf("could not convert info mode %s to a code", infoModes[p.infoMode]))
+		}
+		out.Write([]byte{code})
+	}
 }
 
 func infoModeIdx(n string) int {

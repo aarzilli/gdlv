@@ -108,6 +108,20 @@ See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a des
 	[goroutine <n>] [frame <m>] set <variable> = <value>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions. Only numerical variables and pointers can be changed.`},
+		{aliases: []string{"layout"}, cmdFn: layoutCommand, helpMsg: `Manages window layout.
+	
+	layout <name>
+
+Loads the specified layout.
+
+	layout save <name> <descr>
+	
+Saves the current layout.
+
+	layout list
+	
+Lists saved layouts.`},
+		{aliases: []string{"theme"}, cmdFn: themeCommand, helpMsg: `Changes theme`},
 		{aliases: []string{"exit", "quit", "q"}, cmdFn: exitCommand, helpMsg: "Exit the debugger."},
 	}
 
@@ -346,6 +360,66 @@ func (ere ExitRequestError) Error() string {
 
 func exitCommand(client service.Client, out io.Writer, ctx callContext, args string) error {
 	return ExitRequestError{}
+}
+
+func layoutCommand(client service.Client, out io.Writer, ctx callContext, args string) error {
+	argv := strings.SplitN(args, " ", 3)
+	if len(argv) < 0 {
+		return fmt.Errorf("not enough arguments")
+	}
+	switch argv[0] {
+	case "list":
+		w := new(tabwriter.Writer)
+		w.Init(out, 0, 8, 0, ' ', 0)
+		for name, ld := range conf.Layouts {
+			fmt.Fprintf(w, "%s \t %s\n", name, ld.Description)
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
+	case "save":
+		if len(argv) < 2 {
+			return fmt.Errorf("not enough arguments")
+		}
+		name := argv[1]
+		description := ""
+		if len(argv) > 2 {
+			description = argv[2]
+		}
+
+		s, err := rootPanel.String()
+		if err != nil {
+			return err
+		}
+		conf.Layouts[name] = LayoutDescr{Description: description, Layout: s}
+		saveConfiguration()
+	default:
+		ld, ok := conf.Layouts[argv[0]]
+		if !ok {
+			return fmt.Errorf("unknown layout %q", argv[0])
+		}
+		newRoot, _ := parsePanelDescr(ld.Layout, nil)
+		mu.Lock()
+		rootPanel = newRoot
+		wnd.Changed()
+		mu.Unlock()
+	}
+	return nil
+}
+
+func themeCommand(client service.Client, out io.Writer, ctx callContext, args string) error {
+	switch args {
+	case "dark":
+		conf.WhiteTheme = false
+		setupStyle()
+		return nil
+	case "white":
+		conf.WhiteTheme = true
+		setupStyle()
+		return nil
+	default:
+		return fmt.Errorf("available themes: 'dark', 'white'")
+	}
 }
 
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
