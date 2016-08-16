@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"sync"
 
@@ -160,6 +161,16 @@ func (p *infoPanel) Update(mw *nucular.MasterWindow, container *nucular.Window) 
 	}
 }
 
+type goroutinesByID []*api.Goroutine
+
+func (gs goroutinesByID) Len() int { return len(gs) }
+func (gs goroutinesByID) Swap(i, j int) {
+	temp := gs[i]
+	gs[i] = gs[j]
+	gs[j] = temp
+}
+func (gs goroutinesByID) Less(i, j int) bool { return gs[i].ID < gs[j].ID }
+
 func loadGoroutines(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
@@ -168,6 +179,7 @@ func loadGoroutines(p *infoPanel) {
 		fmt.Fprintf(&out, "Could not list goroutines: %v\n", err)
 		return
 	}
+	sort.Sort(goroutinesByID(goroutines))
 	p.done()
 }
 
@@ -280,6 +292,16 @@ func updateStacktrace(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window)
 	}
 }
 
+type threadsByID []*api.Thread
+
+func (threads threadsByID) Len() int { return len(threads) }
+func (threads threadsByID) Swap(i, j int) {
+	temp := threads[i]
+	threads[i] = threads[j]
+	threads[j] = temp
+}
+func (threads threadsByID) Less(i, j int) bool { return threads[i].ID < threads[j].ID }
+
 func loadThreads(p *infoPanel) {
 	out := editorWriter{&scrollbackEditor, true}
 	var err error
@@ -288,6 +310,7 @@ func loadThreads(p *infoPanel) {
 		fmt.Fprintf(&out, "Could not list threads: %v\n", err)
 		return
 	}
+	sort.Sort(threadsByID(threads))
 	p.done()
 }
 
@@ -321,6 +344,16 @@ func updateThreads(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
 	w.GroupEnd()
 }
 
+type variablesByName []api.Variable
+
+func (vars variablesByName) Len() int { return len(vars) }
+func (vars variablesByName) Swap(i, j int) {
+	temp := vars[i]
+	vars[i] = vars[j]
+	vars[j] = temp
+}
+func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].Name }
+
 func loadLocals(p *infoPanel) {
 	m := map[string]int{}
 
@@ -336,6 +369,8 @@ func loadLocals(p *infoPanel) {
 		fmt.Fprintf(&out, "Could not list local variables: %v\n", err)
 		return
 	}
+	sort.Sort(variablesByName(args))
+	sort.Sort(variablesByName(locals))
 
 	changename := func(v *api.Variable) {
 		if n, ok := m[v.Name]; ok {
@@ -423,6 +458,7 @@ func loadGlobals(p *infoPanel) {
 		fmt.Fprintf(&out, "Could not list global variabless: %v\n", err)
 		return
 	}
+	sort.Sort(variablesByName(globals))
 	p.done()
 }
 
