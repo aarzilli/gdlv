@@ -926,8 +926,8 @@ func init() {
 	whiteThemeTable[ColorToggle] = color.RGBA{150, 150, 150, 255}
 	whiteThemeTable[ColorToggleHover] = color.RGBA{120, 120, 120, 255}
 	whiteThemeTable[ColorToggleCursor] = color.RGBA{175, 175, 175, 255}
-	whiteThemeTable[ColorSelect] = color.RGBA{190, 190, 190, 255}
-	whiteThemeTable[ColorSelectActive] = color.RGBA{175, 175, 175, 255}
+	whiteThemeTable[ColorSelect] = color.RGBA{175, 175, 175, 255} 
+	whiteThemeTable[ColorSelectActive] = color.RGBA{190, 190, 190, 255}
 	whiteThemeTable[ColorSlider] = color.RGBA{190, 190, 190, 255}
 	whiteThemeTable[ColorSliderCursor] = color.RGBA{80, 80, 80, 255}
 	whiteThemeTable[ColorSliderCursorHover] = color.RGBA{70, 70, 70, 255}
