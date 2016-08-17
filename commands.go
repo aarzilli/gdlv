@@ -122,6 +122,12 @@ Saves the current layout.
 	
 Lists saved layouts.`},
 		{aliases: []string{"theme"}, cmdFn: themeCommand, helpMsg: `Changes theme`},
+		{aliases: []string{"scroll"}, cmdFn: scrollCommand, helpMsg: `Controls scrollback behavior.
+	
+	scroll clear		Clears scrollback
+	scroll silence		Silences output from inferior
+	scroll noise		Re-enables output from inferior.
+`},
 		{aliases: []string{"exit", "quit", "q"}, cmdFn: exitCommand, helpMsg: "Exit the debugger."},
 	}
 
@@ -420,6 +426,37 @@ func themeCommand(client service.Client, out io.Writer, ctx callContext, args st
 	default:
 		return fmt.Errorf("available themes: 'dark', 'white'")
 	}
+}
+
+func scrollCommand(client service.Client, out io.Writer, ctx callContext, args string) error {
+	switch args {
+	case "clear":
+		mu.Lock()
+		scrollbackEditor.Buffer = scrollbackEditor.Buffer[:0]
+		scrollbackEditor.Cursor = 0
+		scrollbackEditor.CursorFollow = true
+		mu.Unlock()
+	case "silence":
+		mu.Lock()
+		silenced = true
+		mu.Unlock()
+		fmt.Fprintf(out, "Inferior output silenced\n")
+	case "noise":
+		mu.Lock()
+		silenced = false
+		mu.Unlock()
+		fmt.Fprintf(out, "Inferior output enabled\n")
+	default:
+		mu.Lock()
+		s := silenced
+		mu.Unlock()
+		if s {
+			fmt.Fprintf(out, "Inferior output is silenced\n")
+		} else {
+			fmt.Fprintf(out, "Inferior output is not silenced\n")
+		}
+	}
+	return nil
 }
 
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {

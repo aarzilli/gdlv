@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aarzilli/nucular"
 	nstyle "github.com/aarzilli/nucular/style"
@@ -29,7 +30,6 @@ func setupStyle() {
 	wnd.SetStyle(nstyle.FromTheme(theme), nil, conf.Scaling)
 	style, _ := wnd.Style()
 	style.Selectable.Normal.Data.Color = style.NormalWindow.Background
-	//style.NormalWindow.Padding.Y = 0
 	style.GroupWindow.Padding.Y = 0
 	style.GroupWindow.FooterPadding.Y = 0
 	style.MenuWindow.FooterPadding.Y = 0
@@ -37,6 +37,7 @@ func setupStyle() {
 	saveConfiguration()
 }
 
+var silenced bool
 var scrollbackResize bool
 var rightColResize bool
 
@@ -336,6 +337,11 @@ type editorWriter struct {
 	lock bool
 }
 
+const (
+	scrollbackHighMark = 8 * 1024
+	scrollbackLowMark  = 4 * 1024
+)
+
 func (w *editorWriter) Write(b []byte) (int, error) {
 	if w.lock {
 		mu.Lock()
@@ -343,6 +349,11 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 		defer wnd.Changed()
 	}
 	w.ed.Buffer = append(w.ed.Buffer, []rune(expandTabs(string(b)))...)
+	if len(w.ed.Buffer) > scrollbackHighMark {
+		copy(w.ed.Buffer, w.ed.Buffer[scrollbackLowMark:])
+		w.ed.Buffer = w.ed.Buffer[:len(w.ed.Buffer)-scrollbackLowMark]
+		w.ed.Cursor = len(w.ed.Buffer) - 256
+	}
 	oldcursor := w.ed.Cursor
 	for w.ed.Cursor = len(w.ed.Buffer) - 2; w.ed.Cursor > oldcursor; w.ed.Cursor-- {
 		if w.ed.Buffer[w.ed.Cursor] == '\n' {
@@ -388,6 +399,8 @@ func main() {
 		fmt.Fprintf(&scrollbackOut, "Could not start delve: %v\n", err)
 	} else {
 		go func() {
+			bucket := 0
+			t0 := time.Now()
 			first := true
 			scan := bufio.NewScanner(stdout)
 			for scan.Scan() {
@@ -395,6 +408,26 @@ func main() {
 					connectTo(scan.Text())
 					first = false
 				} else {
+					mu.Lock()
+					if silenced {
+						mu.Unlock()
+						continue
+					}
+					mu.Unlock()
+					now := time.Now()
+					if now.Sub(t0) > 500*time.Millisecond {
+						t0 = now
+						bucket = 0
+					}
+					bucket += len(scan.Text())
+					if bucket > scrollbackLowMark {
+						mu.Lock()
+						silenced = true
+						mu.Unlock()
+						fmt.Fprintf(&scrollbackOut, "too much output in 500ms (%d), output silenced\n", bucket)
+						bucket = 0
+						continue
+					}
 					fmt.Fprintln(&scrollbackOut, scan.Text())
 				}
 			}

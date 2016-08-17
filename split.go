@@ -500,6 +500,7 @@ func updateCommandPanel(mw *nucular.MasterWindow, container *nucular.Window) {
 		go executeCommand(cmd)
 		commandLineEditor.Buffer = commandLineEditor.Buffer[:0]
 		commandLineEditor.Cursor = 0
+		commandLineEditor.CursorFollow = true
 		commandLineEditor.Active = true
 	}
 }
