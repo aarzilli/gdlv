@@ -263,7 +263,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	if win.flags&windowMinimized != 0 {
 		layout.HeaderH = 0
 		layout.Row.Height = 0
-	} else if win.flags&windowMenu != 0 || win.flags&windowContextual != 0 || win.flags&windowGroup != 0 {
+	} else if win.flags&windowMenu != 0 || win.flags&windowContextual != 0 {
 		layout.HeaderH = window_padding.Y
 		layout.Row.Height = window_padding.Y
 	} else {
@@ -1033,7 +1033,7 @@ func (ctr *RowConstructor) StaticScaled(width ...int) {
 
 // Starts new row that will contain widget_count widgets.
 // The size and position of widgets inside this row will be specified
-// by callling LayoutSpacePush.
+// by callling LayoutSpacePush/LayoutSpacePushScaled.
 func (ctr *RowConstructor) SpaceBegin(widget_count int) {
 	layout := ctr.win.layout
 	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count)
@@ -1044,6 +1044,8 @@ func (ctr *RowConstructor) SpaceBegin(widget_count int) {
 	layout.Row.ItemRatio = 0.0
 	layout.Row.ItemOffset = 0
 	layout.Row.Filled = 0
+	layout.AtX = layout.Clip.X
+	layout.AtY = layout.Clip.Y
 }
 
 // Starts new row that will contain widget_count widgets.
@@ -1091,6 +1093,14 @@ func (win *Window) LayoutSpacePush(rect types.Rect) {
 	win.layout.Row.Item = rect
 }
 
+// Like LayoutSpacePush but with scaled units
+func (win *Window) LayoutSpacePushScaled(rect types.Rect) {
+	if win.layout.Row.Type != layoutStaticFree {
+		panic(WrongLayoutErr)
+	}
+	win.layout.Row.Item = rect
+}
+
 // Sets position and size of the next widgets in a Space row layout
 func (win *Window) LayoutSpacePushRatio(x, y, w, h float64) {
 	if win.layout.Row.Type != layoutDynamicFree {
@@ -1124,12 +1134,22 @@ func (win *Window) WidgetBounds() types.Rect {
 
 // Returns remaining available height of win in scaled units.
 func (win *Window) LayoutAvailableHeight() int {
-	return win.layout.Clip.H - (win.layout.AtY - win.layout.Bounds.Y) - win.style().Spacing.Y - win.layout.Row.Height
+	switch win.layout.Row.Type {
+	case layoutDynamicFree, layoutStaticFree:
+		return win.layout.Clip.H
+	default:
+		return win.layout.Clip.H - (win.layout.AtY - win.layout.Bounds.Y) - win.style().Spacing.Y - win.layout.Row.Height
+	}
 }
 
 func (win *Window) LayoutAvailableWidth() int {
-	style := win.style()
-	return win.layout.Width - style.Padding.X*2 - style.Spacing.X - win.layout.AtX
+	switch win.layout.Row.Type {
+	case layoutDynamicFree, layoutStaticFree:
+		return win.layout.Clip.W
+	default:
+		style := win.style()
+		return win.layout.Width - style.Padding.X*2 - style.Spacing.X - win.layout.AtX
+	}
 }
 
 // Will return (false, false) if the next widget is visible, (true,

@@ -29,7 +29,7 @@ func setupStyle() {
 	wnd.SetStyle(nstyle.FromTheme(theme), nil, conf.Scaling)
 	style, _ := wnd.Style()
 	style.Selectable.Normal.Data.Color = style.NormalWindow.Background
-	style.NormalWindow.Padding.Y = 0
+	//style.NormalWindow.Padding.Y = 0
 	style.GroupWindow.Padding.Y = 0
 	style.GroupWindow.FooterPadding.Y = 0
 	style.MenuWindow.FooterPadding.Y = 0
@@ -364,6 +364,7 @@ func main() {
 	setupStyle()
 
 	rootPanel, _ = parsePanelDescr(conf.Layouts["default"].Layout, nil)
+	//rootPanel, _ = parsePanelDescr("0C", nil)
 
 	lp.showcur = true
 	curThread = -1

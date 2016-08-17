@@ -1,6 +1,6 @@
 {
 	"ImportPath": "github.com/aarzilli/gdlv",
-	"GoVersion": "go1.6",
+	"GoVersion": "go1.7",
 	"GodepVersion": "v74",
 	"Packages": [
 		"./..."
@@ -24,31 +24,31 @@
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular",
-			"Rev": "48e2f566be6ab3d48d3ba2e80ff14df649ee46fc"
+			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/clipboard",
-			"Rev": "48e2f566be6ab3d48d3ba2e80ff14df649ee46fc"
+			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/command",
-			"Rev": "48e2f566be6ab3d48d3ba2e80ff14df649ee46fc"
+			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/internal/assets",
-			"Rev": "48e2f566be6ab3d48d3ba2e80ff14df649ee46fc"
+			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/label",
-			"Rev": "48e2f566be6ab3d48d3ba2e80ff14df649ee46fc"
+			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/style",
-			"Rev": "48e2f566be6ab3d48d3ba2e80ff14df649ee46fc"
+			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/types",
-			"Rev": "48e2f566be6ab3d48d3ba2e80ff14df649ee46fc"
+			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/dwarf/frame",
