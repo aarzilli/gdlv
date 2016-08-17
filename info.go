@@ -530,7 +530,9 @@ func updateBreakpoints(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window
 			selectedBreakpoint = breakpoint.ID
 		}
 		w.SelectableLabel(fmt.Sprintf("%s in %s\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
-		w.ContextualOpen(0, image.Point{200, 500}, bounds, breakpointsMenu)
+		if !running {
+			w.ContextualOpen(0, image.Point{200, 500}, bounds, breakpointsMenu)
+		}
 	}
 }
 

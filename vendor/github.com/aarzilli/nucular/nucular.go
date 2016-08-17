@@ -1044,8 +1044,12 @@ func (ctr *RowConstructor) SpaceBegin(widget_count int) {
 	layout.Row.ItemRatio = 0.0
 	layout.Row.ItemOffset = 0
 	layout.Row.Filled = 0
-	layout.AtX = layout.Clip.X
-	layout.AtY = layout.Clip.Y
+	if layout.AtX < layout.Clip.X {
+		layout.AtX = layout.Clip.X
+	}
+	if layout.AtY < layout.Clip.Y {
+		layout.AtY = layout.Clip.Y
+	}
 }
 
 // Starts new row that will contain widget_count widgets.

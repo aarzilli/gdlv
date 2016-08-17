@@ -24,31 +24,31 @@
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular",
-			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
+			"Rev": "3195572ecf93e66df2d65819fecc41824432dc28"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/clipboard",
-			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
+			"Rev": "3195572ecf93e66df2d65819fecc41824432dc28"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/command",
-			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
+			"Rev": "3195572ecf93e66df2d65819fecc41824432dc28"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/internal/assets",
-			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
+			"Rev": "3195572ecf93e66df2d65819fecc41824432dc28"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/label",
-			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
+			"Rev": "3195572ecf93e66df2d65819fecc41824432dc28"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/style",
-			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
+			"Rev": "3195572ecf93e66df2d65819fecc41824432dc28"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/types",
-			"Rev": "2984abd8e9ac8498fa856075c2dcb9e37848dd8b"
+			"Rev": "3195572ecf93e66df2d65819fecc41824432dc28"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/dwarf/frame",
