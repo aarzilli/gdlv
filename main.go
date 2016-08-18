@@ -144,6 +144,30 @@ func connectTo(listenstr string) {
 		cmds = DebugCommands(client)
 	}()
 
+	mu.Lock()
+	running = true
+	fmt.Fprintf(&scrollbackOut, "Loading program info...")
+
+	var err error
+	functions, err = client.ListFunctions("")
+	if err != nil {
+		fmt.Fprintf(&scrollbackOut, "Could not list functions: %v\n", err)
+	}
+
+	sources, err = client.ListSources("")
+	if err != nil {
+		fmt.Fprintf(&scrollbackOut, "Could not list sources: %v\n", err)
+	}
+
+	types, err = client.ListTypes("")
+	if err != nil {
+		fmt.Fprintf(&scrollbackOut, "Could not list types: %v\n", err)
+	}
+
+	fmt.Fprintf(&scrollbackOut, "done\n")
+	running = false
+	mu.Unlock()
+
 	refreshState(false, clearStop, nil)
 }
 

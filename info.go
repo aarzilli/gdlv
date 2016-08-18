@@ -83,24 +83,6 @@ var breakpointsPanel = &infoPanel{
 	load: loadBreakpoints,
 }
 
-var sourcesPanel = &infoPanel{
-	name:   "sources",
-	update: updateSources,
-	load:   loadSources,
-}
-
-var funcsPanel = &infoPanel{
-	name:   "funcs",
-	update: updateFuncs,
-	load:   loadFuncs,
-}
-
-var typesPanel = &infoPanel{
-	name:   "types",
-	update: updateTypes,
-	load:   loadTypes,
-}
-
 const (
 	currentGoroutineLocation = "Current location"
 	userGoroutineLocation    = "User location"
@@ -689,52 +671,25 @@ func breakpointEditor(mw *nucular.MasterWindow, w *nucular.Window) {
 	}
 }
 
-func loadFuncs(p *infoPanel) {
-	out := editorWriter{&scrollbackEditor, true}
-	var err error
-	functions, err = client.ListFunctions("")
-	if err != nil {
-		fmt.Fprintf(&out, "Could not list functions: %v\n", err)
+func updateFuncs(mw *nucular.MasterWindow, w *nucular.Window) {
+	updateStringSlice(mw, w, "functions", &funcsFilterEditor, functions)
+}
+
+func updateSources(mw *nucular.MasterWindow, w *nucular.Window) {
+	updateStringSlice(mw, w, "sources", &sourcesFilterEditor, sources)
+}
+
+func updateTypes(mw *nucular.MasterWindow, w *nucular.Window) {
+	updateStringSlice(mw, w, "types", &typesFilterEditor, types)
+}
+
+func updateStringSlice(mw *nucular.MasterWindow, container *nucular.Window, name string, filterEditor *nucular.TextEditor, values []string) {
+	w := container.GroupBegin(name, 0)
+	if w == nil {
 		return
 	}
-	p.done()
-}
+	defer w.GroupEnd()
 
-func updateFuncs(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
-	updateStringSlice(mw, w, &funcsFilterEditor, functions)
-}
-
-func loadSources(p *infoPanel) {
-	out := editorWriter{&scrollbackEditor, true}
-	var err error
-	sources, err = client.ListSources("")
-	if err != nil {
-		fmt.Fprintf(&out, "Could not list sources: %v\n", err)
-		return
-	}
-	p.done()
-}
-
-func updateSources(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
-	updateStringSlice(mw, w, &sourcesFilterEditor, sources)
-}
-
-func loadTypes(p *infoPanel) {
-	out := editorWriter{&scrollbackEditor, true}
-	var err error
-	types, err = client.ListTypes("")
-	if err != nil {
-		fmt.Fprintf(&out, "Could not list types: %v\n", err)
-		return
-	}
-	p.done()
-}
-
-func updateTypes(p *infoPanel, mw *nucular.MasterWindow, w *nucular.Window) {
-	updateStringSlice(mw, w, &typesFilterEditor, types)
-}
-
-func updateStringSlice(mw *nucular.MasterWindow, w *nucular.Window, filterEditor *nucular.TextEditor, values []string) {
 	w.MenubarBegin()
 	w.Row(20).Static(90, 0)
 	w.Label("Filter:", "LC")

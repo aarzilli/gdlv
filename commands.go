@@ -16,27 +16,21 @@ import (
 	"github.com/derekparker/delve/service/api"
 )
 
-type cmdPrefix int
+type completeMode int
 
 const (
-	noPrefix    = cmdPrefix(0)
-	scopePrefix = cmdPrefix(1 << iota)
-	onPrefix
+	noComplete completeMode = iota
+	completeLocation
+	completeVariable
 )
 
-type callContext struct {
-	Prefix     cmdPrefix
-	Scope      api.EvalScope
-	Breakpoint *api.Breakpoint
-}
-
-type cmdfunc func(c service.Client, out io.Writer, ctx callContext, args string) error
+type cmdfunc func(c service.Client, out io.Writer, args string) error
 
 type command struct {
-	aliases         []string
-	allowedPrefixes cmdPrefix
-	helpMsg         string
-	cmdFn           cmdfunc
+	aliases      []string
+	completeMode completeMode
+	helpMsg      string
+	cmdFn        cmdfunc
 }
 
 // Returns true if the command string matches one of the aliases for this command
@@ -78,14 +72,14 @@ func DebugCommands(client service.Client) *Commands {
 	help [command]
 	
 Type "help" followed by the name of a command for more information about it.`},
-		{aliases: []string{"break", "b"}, cmdFn: breakpoint, helpMsg: `Sets a breakpoint.
+		{aliases: []string{"break", "b"}, cmdFn: breakpoint, completeMode: completeLocation, helpMsg: `Sets a breakpoint.
 
 	break [name] <linespec>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/locspec.md for the syntax of linespec.
 
 See also: "help on", "help cond" and "help clear"`},
-		{aliases: []string{"trace", "t"}, cmdFn: tracepoint, helpMsg: `Set tracepoint.
+		{aliases: []string{"trace", "t"}, cmdFn: tracepoint, completeMode: completeLocation, helpMsg: `Set tracepoint.
 
 	trace [name] <linespec>
 	
@@ -94,16 +88,16 @@ A tracepoint is a breakpoint that does not stop the execution of the program, in
 See also: "help on", "help cond" and "help clear"`},
 		{aliases: []string{"restart", "r"}, cmdFn: restart, helpMsg: "Restart process."},
 		{aliases: []string{"continue", "c"}, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
-		{aliases: []string{"step", "s"}, allowedPrefixes: scopePrefix, cmdFn: step, helpMsg: "Single step through program."},
-		{aliases: []string{"step-instruction", "si"}, allowedPrefixes: scopePrefix, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
-		{aliases: []string{"next", "n"}, allowedPrefixes: scopePrefix, cmdFn: next, helpMsg: "Step over to next source line."},
-		{aliases: []string{"stepout"}, allowedPrefixes: scopePrefix, cmdFn: stepout, helpMsg: "Step out of the current function."},
-		{aliases: []string{"print", "p"}, allowedPrefixes: onPrefix | scopePrefix, cmdFn: printVar, helpMsg: `Evaluate an expression.
+		{aliases: []string{"step", "s"}, cmdFn: step, helpMsg: "Single step through program."},
+		{aliases: []string{"step-instruction", "si"}, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
+		{aliases: []string{"next", "n"}, cmdFn: next, helpMsg: "Step over to next source line."},
+		{aliases: []string{"stepout"}, cmdFn: stepout, helpMsg: "Step out of the current function."},
+		{aliases: []string{"print", "p"}, completeMode: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
 
 	[goroutine <n>] [frame <m>] print <expression>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.`},
-		{aliases: []string{"set"}, allowedPrefixes: scopePrefix, cmdFn: setVar, helpMsg: `Changes the value of a variable.
+		{aliases: []string{"set"}, cmdFn: setVar, completeMode: completeVariable, helpMsg: `Changes the value of a variable.
 
 	[goroutine <n>] [frame <m>] set <variable> = <value>
 
@@ -137,15 +131,15 @@ Lists saved layouts.`},
 
 var noCmdError = errors.New("command not available")
 
-func noCmdAvailable(client service.Client, out io.Writer, ctx callContext, args string) error {
+func noCmdAvailable(client service.Client, out io.Writer, args string) error {
 	return noCmdError
 }
 
-func nullCommand(client service.Client, out io.Writer, ctx callContext, args string) error {
+func nullCommand(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func (c *Commands) help(client service.Client, out io.Writer, ctx callContext, args string) error {
+func (c *Commands) help(client service.Client, out io.Writer, args string) error {
 	if args != "" {
 		for _, cmd := range c.cmds {
 			for _, alias := range cmd.aliases {
@@ -234,15 +228,15 @@ func setBreakpoint(client service.Client, out io.Writer, tracepoint bool, argstr
 	return nil
 }
 
-func breakpoint(client service.Client, out io.Writer, ctx callContext, args string) error {
+func breakpoint(client service.Client, out io.Writer, args string) error {
 	return setBreakpoint(client, out, false, args)
 }
 
-func tracepoint(client service.Client, out io.Writer, ctx callContext, args string) error {
+func tracepoint(client service.Client, out io.Writer, args string) error {
 	return setBreakpoint(client, out, true, args)
 }
 
-func restart(client service.Client, out io.Writer, ctx callContext, args string) error {
+func restart(client service.Client, out io.Writer, args string) error {
 	if err := client.Restart(); err != nil {
 		return err
 	}
@@ -250,7 +244,7 @@ func restart(client service.Client, out io.Writer, ctx callContext, args string)
 	return nil
 }
 
-func cont(client service.Client, out io.Writer, ctx callContext, args string) error {
+func cont(client service.Client, out io.Writer, args string) error {
 	stateChan := client.Continue()
 	var state *api.DebuggerState
 	for state = range stateChan {
@@ -285,7 +279,7 @@ func continueUntilCompleteNext(client service.Client, out io.Writer, state *api.
 	}
 }
 
-func step(client service.Client, out io.Writer, ctx callContext, args string) error {
+func step(client service.Client, out io.Writer, args string) error {
 	state, err := client.Step()
 	if err != nil {
 		return err
@@ -294,7 +288,7 @@ func step(client service.Client, out io.Writer, ctx callContext, args string) er
 	return continueUntilCompleteNext(client, out, state, "step")
 }
 
-func stepInstruction(client service.Client, out io.Writer, ctx callContext, args string) error {
+func stepInstruction(client service.Client, out io.Writer, args string) error {
 	state, err := client.StepInstruction()
 	if err != nil {
 		return err
@@ -304,7 +298,7 @@ func stepInstruction(client service.Client, out io.Writer, ctx callContext, args
 	return nil
 }
 
-func next(client service.Client, out io.Writer, ctx callContext, args string) error {
+func next(client service.Client, out io.Writer, args string) error {
 	state, err := client.Next()
 	if err != nil {
 		return err
@@ -313,7 +307,7 @@ func next(client service.Client, out io.Writer, ctx callContext, args string) er
 	return continueUntilCompleteNext(client, out, state, "next")
 }
 
-func stepout(client service.Client, out io.Writer, ctx callContext, args string) error {
+func stepout(client service.Client, out io.Writer, args string) error {
 	state, err := client.StepOut()
 	if err != nil {
 		return err
@@ -322,15 +316,11 @@ func stepout(client service.Client, out io.Writer, ctx callContext, args string)
 	return continueUntilCompleteNext(client, out, state, "stepout")
 }
 
-func printVar(client service.Client, out io.Writer, ctx callContext, args string) error {
+func printVar(client service.Client, out io.Writer, args string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("not enough arguments")
 	}
-	if ctx.Prefix == onPrefix {
-		ctx.Breakpoint.Variables = append(ctx.Breakpoint.Variables, args)
-		return nil
-	}
-	val, err := client.EvalVariable(ctx.Scope, args, LongLoadConfig)
+	val, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, args, LongLoadConfig)
 	if err != nil {
 		return err
 	}
@@ -339,7 +329,7 @@ func printVar(client service.Client, out io.Writer, ctx callContext, args string
 	return nil
 }
 
-func setVar(client service.Client, out io.Writer, ctx callContext, args string) error {
+func setVar(client service.Client, out io.Writer, args string) error {
 	// HACK: in go '=' is not an operator, we detect the error and try to recover from it by splitting the input string
 	_, err := parser.ParseExpr(args)
 	if err == nil {
@@ -353,7 +343,7 @@ func setVar(client service.Client, out io.Writer, ctx callContext, args string) 
 
 	lexpr := args[:el[0].Pos.Offset]
 	rexpr := args[el[0].Pos.Offset+1:]
-	return client.SetVariable(ctx.Scope, lexpr, rexpr)
+	return client.SetVariable(api.EvalScope{curGid, curFrame}, lexpr, rexpr)
 }
 
 // ExitRequestError is returned when the user
@@ -364,11 +354,11 @@ func (ere ExitRequestError) Error() string {
 	return ""
 }
 
-func exitCommand(client service.Client, out io.Writer, ctx callContext, args string) error {
+func exitCommand(client service.Client, out io.Writer, args string) error {
 	return ExitRequestError{}
 }
 
-func layoutCommand(client service.Client, out io.Writer, ctx callContext, args string) error {
+func layoutCommand(client service.Client, out io.Writer, args string) error {
 	argv := strings.SplitN(args, " ", 3)
 	if len(argv) < 0 {
 		return fmt.Errorf("not enough arguments")
@@ -413,7 +403,7 @@ func layoutCommand(client service.Client, out io.Writer, ctx callContext, args s
 	return nil
 }
 
-func themeCommand(client service.Client, out io.Writer, ctx callContext, args string) error {
+func themeCommand(client service.Client, out io.Writer, args string) error {
 	switch args {
 	case "dark":
 		conf.WhiteTheme = false
@@ -428,7 +418,7 @@ func themeCommand(client service.Client, out io.Writer, ctx callContext, args st
 	}
 }
 
-func scrollCommand(client service.Client, out io.Writer, ctx callContext, args string) error {
+func scrollCommand(client service.Client, out io.Writer, args string) error {
 	switch args {
 	case "clear":
 		mu.Lock()
@@ -673,7 +663,7 @@ func parseCommand(cmdstr string) (string, string) {
 // Find will look up the command function for the given command input.
 // If it cannot find the command it will default to noCmdAvailable().
 // If the command is an empty string it will replay the last command.
-func (c *Commands) Find(cmdstr string, prefix cmdPrefix) cmdfunc {
+func (c *Commands) Find(cmdstr string) cmdfunc {
 	// If <enter> use last command, if there was one.
 	if cmdstr == "" {
 		if c.lastCmd != nil {
@@ -684,9 +674,6 @@ func (c *Commands) Find(cmdstr string, prefix cmdPrefix) cmdfunc {
 
 	for _, v := range c.cmds {
 		if v.match(cmdstr) {
-			if prefix != noPrefix && v.allowedPrefixes&prefix == 0 {
-				continue
-			}
 			c.lastCmd = v.cmdFn
 			return v.cmdFn
 		}
@@ -695,11 +682,6 @@ func (c *Commands) Find(cmdstr string, prefix cmdPrefix) cmdfunc {
 	return noCmdAvailable
 }
 
-func (c *Commands) CallWithContext(cmdstr, args string, out io.Writer, ctx callContext) error {
-	return c.Find(cmdstr, ctx.Prefix)(client, out, ctx, args)
-}
-
 func (c *Commands) Call(cmdstr, args string, out io.Writer) error {
-	ctx := callContext{Prefix: noPrefix, Scope: api.EvalScope{GoroutineID: -1, Frame: 0}}
-	return c.CallWithContext(cmdstr, args, out, ctx)
+	return c.Find(cmdstr)(client, out, args)
 }

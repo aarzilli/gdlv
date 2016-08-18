@@ -51,9 +51,9 @@ var infoNameToFunc = map[string]func(mw *nucular.MasterWindow, w *nucular.Window
 	infoBps:         breakpointsPanel.Update,
 	infoThreads:     threadsPanel.Update,
 	infoRegisters:   regsPanel.Update,
-	infoSources:     sourcesPanel.Update,
-	infoFuncs:       funcsPanel.Update,
-	infoTypes:       typesPanel.Update,
+	infoSources:     updateSources,
+	infoFuncs:       updateFuncs,
+	infoTypes:       updateTypes,
 }
 
 var infoModes = []string{
