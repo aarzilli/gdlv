@@ -16,21 +16,13 @@ import (
 	"github.com/derekparker/delve/service/api"
 )
 
-type completeMode int
-
-const (
-	noComplete completeMode = iota
-	completeLocation
-	completeVariable
-)
-
 type cmdfunc func(c service.Client, out io.Writer, args string) error
 
 type command struct {
-	aliases      []string
-	completeMode completeMode
-	helpMsg      string
-	cmdFn        cmdfunc
+	aliases  []string
+	complete func()
+	helpMsg  string
+	cmdFn    cmdfunc
 }
 
 // Returns true if the command string matches one of the aliases for this command
@@ -72,14 +64,14 @@ func DebugCommands(client service.Client) *Commands {
 	help [command]
 	
 Type "help" followed by the name of a command for more information about it.`},
-		{aliases: []string{"break", "b"}, cmdFn: breakpoint, completeMode: completeLocation, helpMsg: `Sets a breakpoint.
+		{aliases: []string{"break", "b"}, cmdFn: breakpoint, complete: completeLocation, helpMsg: `Sets a breakpoint.
 
 	break [name] <linespec>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/locspec.md for the syntax of linespec.
 
 See also: "help on", "help cond" and "help clear"`},
-		{aliases: []string{"trace", "t"}, cmdFn: tracepoint, completeMode: completeLocation, helpMsg: `Set tracepoint.
+		{aliases: []string{"trace", "t"}, cmdFn: tracepoint, complete: completeLocation, helpMsg: `Set tracepoint.
 
 	trace [name] <linespec>
 	
@@ -92,12 +84,12 @@ See also: "help on", "help cond" and "help clear"`},
 		{aliases: []string{"step-instruction", "si"}, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
 		{aliases: []string{"next", "n"}, cmdFn: next, helpMsg: "Step over to next source line."},
 		{aliases: []string{"stepout"}, cmdFn: stepout, helpMsg: "Step out of the current function."},
-		{aliases: []string{"print", "p"}, completeMode: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
+		{aliases: []string{"print", "p"}, complete: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
 
 	[goroutine <n>] [frame <m>] print <expression>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.`},
-		{aliases: []string{"set"}, cmdFn: setVar, completeMode: completeVariable, helpMsg: `Changes the value of a variable.
+		{aliases: []string{"set"}, cmdFn: setVar, complete: completeVariable, helpMsg: `Changes the value of a variable.
 
 	[goroutine <n>] [frame <m>] set <variable> = <value>
 

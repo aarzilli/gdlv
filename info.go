@@ -958,3 +958,132 @@ func loadMoreStruct(v *api.Variable) {
 		}()
 	}
 }
+
+func updateListingPanel(mw *nucular.MasterWindow, container *nucular.Window) {
+	const lineheight = 14
+
+	listp := container.GroupBegin("listing", nucular.WindowNoHScrollbar)
+	if listp == nil {
+		return
+	}
+	defer listp.GroupEnd()
+
+	style, _ := mw.Style()
+
+	arroww := nucular.FontWidth(style.Font, "=>") + style.Text.Padding.X*2
+	starw := nucular.FontWidth(style.Font, "*") + style.Text.Padding.X*2
+
+	idxw := style.Text.Padding.X * 2
+	if len(lp.listing) > 0 {
+		idxw += nucular.FontWidth(style.Font, lp.listing[len(lp.listing)-1].idx)
+	}
+
+	for _, line := range lp.listing {
+		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, 0)
+		if line.pc {
+			rowbounds := listp.WidgetBounds()
+			rowbounds.W = listp.Bounds.W
+			cmds := listp.Commands()
+			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
+		}
+
+		if line.breakpoint {
+			listp.Label("*", "CC")
+		} else {
+			listp.Spacing(1)
+		}
+
+		if line.pc && lp.recenterListing {
+			lp.recenterListing = false
+			if above, below := listp.Invisible(); above || below {
+				listp.Scrollbar.Y = listp.At().Y - listp.Bounds.H/2
+				if listp.Scrollbar.Y < 0 {
+					listp.Scrollbar.Y = 0
+				}
+				wnd.Changed()
+			}
+		}
+
+		if line.pc && curFrame == 0 {
+			listp.Label("=>", "CC")
+		} else {
+			listp.Spacing(1)
+		}
+		listp.Label(line.idx, "LC")
+		listp.Label(line.text, "LC")
+	}
+}
+
+func updateDisassemblyPanel(mw *nucular.MasterWindow, container *nucular.Window) {
+	const lineheight = 14
+
+	listp := container.GroupBegin("disassembly", nucular.WindowNoHScrollbar)
+	if listp == nil {
+		return
+	}
+	defer listp.GroupEnd()
+
+	style, _ := mw.Style()
+
+	arroww := nucular.FontWidth(style.Font, "=>") + style.Text.Padding.X*2
+	starw := nucular.FontWidth(style.Font, "*") + style.Text.Padding.X*2
+
+	var maxaddr uint64 = 0
+	if len(lp.text) > 0 {
+		maxaddr = lp.text[len(lp.text)-1].Loc.PC
+	}
+	addrw := nucular.FontWidth(style.Font, fmt.Sprintf("%#x", maxaddr)) + style.Text.Padding.X*2
+
+	lastfile, lastlineno := "", 0
+
+	if len(lp.text) > 0 && lp.text[0].Loc.Function != nil {
+		listp.Row(lineheight).Dynamic(1)
+		listp.Label(fmt.Sprintf("TEXT %s(SB) %s", lp.text[0].Loc.Function.Name, lp.text[0].Loc.File), "LC")
+	}
+
+	for _, instr := range lp.text {
+		if instr.Loc.File != lastfile || instr.Loc.Line != lastlineno {
+			listp.Row(lineheight).Dynamic(1)
+			listp.Row(lineheight).Dynamic(1)
+			text := ""
+			if instr.Loc.File == lp.file && instr.Loc.Line-1 < len(lp.listing) {
+				text = strings.TrimSpace(lp.listing[instr.Loc.Line-1].text)
+			}
+			listp.Label(fmt.Sprintf("%s:%d: %s", instr.Loc.File, instr.Loc.Line, text), "LC")
+			lastfile, lastlineno = instr.Loc.File, instr.Loc.Line
+		}
+		listp.Row(lineheight).StaticScaled(starw, arroww, addrw, 0)
+
+		if instr.AtPC {
+			rowbounds := listp.WidgetBounds()
+			rowbounds.W = listp.Bounds.W
+			cmds := listp.Commands()
+			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
+		}
+
+		if instr.Breakpoint {
+			listp.Label("*", "LC")
+		} else {
+			listp.Label(" ", "LC")
+		}
+
+		if instr.AtPC {
+			if lp.recenterDisassembly {
+				lp.recenterDisassembly = false
+				if above, below := listp.Invisible(); above || below {
+					listp.Scrollbar.Y = listp.At().Y - listp.Bounds.H/2
+					if listp.Scrollbar.Y < 0 {
+						listp.Scrollbar.Y = 0
+					}
+					wnd.Changed()
+				}
+			}
+			listp.Label("=>", "LC")
+		} else {
+			listp.Label(" ", "LC")
+		}
+
+		listp.Label(fmt.Sprintf("%#x", instr.Loc.PC), "LC")
+		listp.Label(instr.Text, "LC")
+	}
+}

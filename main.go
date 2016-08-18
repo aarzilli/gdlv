@@ -120,6 +120,66 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 	rootPanel.update(mw, w)
 }
 
+func updateCommandPanel(mw *nucular.MasterWindow, container *nucular.Window) {
+	style, _ := mw.Style()
+
+	w := container.GroupBegin("command", nucular.WindowNoScrollbar)
+	if w == nil {
+		return
+	}
+	defer w.GroupEnd()
+
+	w.LayoutReserveRow(commandLineHeight, 1)
+	w.Row(0).Dynamic(1)
+	scrollbackEditor.Edit(w)
+
+	var p string
+	if running {
+		p = "running"
+	} else if client == nil {
+		p = "connecting"
+	} else {
+		if curThread < 0 {
+			p = "dlv>"
+		} else {
+			p = prompt(curThread, curGid, curFrame) + ">"
+		}
+	}
+
+	promptwidth := nucular.FontWidth(style.Font, p) + style.Text.Padding.X*2
+
+	w.Row(commandLineHeight).StaticScaled(promptwidth, 0)
+	w.Label(p, "LC")
+
+	if client == nil || running {
+		commandLineEditor.Flags |= nucular.EditReadOnly
+	} else {
+		commandLineEditor.Flags &= ^nucular.EditReadOnly
+	}
+	for _, k := range w.Input().Keyboard.Keys {
+		if k.Modifiers == 0 && k.Code == key.CodeTab {
+			completeAny()
+		}
+	}
+	active := commandLineEditor.Edit(w)
+	if active&nucular.EditCommitted != 0 {
+		var scrollbackOut = editorWriter{&scrollbackEditor, false}
+
+		cmd := string(commandLineEditor.Buffer)
+		if cmd == "" {
+			fmt.Fprintf(&scrollbackOut, "%s %s\n", p, lastCmd)
+		} else {
+			lastCmd = cmd
+			fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmd)
+		}
+		go executeCommand(cmd)
+		commandLineEditor.Buffer = commandLineEditor.Buffer[:0]
+		commandLineEditor.Cursor = 0
+		commandLineEditor.CursorFollow = true
+		commandLineEditor.Active = true
+	}
+}
+
 func connectTo(listenstr string) {
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
 
@@ -163,6 +223,8 @@ func connectTo(listenstr string) {
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not list types: %v\n", err)
 	}
+
+	completeLocationSetup()
 
 	fmt.Fprintf(&scrollbackOut, "done\n")
 	running = false
