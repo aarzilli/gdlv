@@ -974,11 +974,11 @@ func updateListingPanel(mw *nucular.MasterWindow, container *nucular.Window) {
 	starw := nucular.FontWidth(style.Font, "*") + style.Text.Padding.X*2
 
 	idxw := style.Text.Padding.X * 2
-	if len(lp.listing) > 0 {
-		idxw += nucular.FontWidth(style.Font, lp.listing[len(lp.listing)-1].idx)
+	if len(listingPanel.listing) > 0 {
+		idxw += nucular.FontWidth(style.Font, listingPanel.listing[len(listingPanel.listing)-1].idx)
 	}
 
-	for _, line := range lp.listing {
+	for _, line := range listingPanel.listing {
 		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, 0)
 		if line.pc {
 			rowbounds := listp.WidgetBounds()
@@ -993,8 +993,8 @@ func updateListingPanel(mw *nucular.MasterWindow, container *nucular.Window) {
 			listp.Spacing(1)
 		}
 
-		if line.pc && lp.recenterListing {
-			lp.recenterListing = false
+		if line.pc && listingPanel.recenterListing {
+			listingPanel.recenterListing = false
 			if above, below := listp.Invisible(); above || below {
 				listp.Scrollbar.Y = listp.At().Y - listp.Bounds.H/2
 				if listp.Scrollbar.Y < 0 {
@@ -1029,25 +1029,25 @@ func updateDisassemblyPanel(mw *nucular.MasterWindow, container *nucular.Window)
 	starw := nucular.FontWidth(style.Font, "*") + style.Text.Padding.X*2
 
 	var maxaddr uint64 = 0
-	if len(lp.text) > 0 {
-		maxaddr = lp.text[len(lp.text)-1].Loc.PC
+	if len(listingPanel.text) > 0 {
+		maxaddr = listingPanel.text[len(listingPanel.text)-1].Loc.PC
 	}
 	addrw := nucular.FontWidth(style.Font, fmt.Sprintf("%#x", maxaddr)) + style.Text.Padding.X*2
 
 	lastfile, lastlineno := "", 0
 
-	if len(lp.text) > 0 && lp.text[0].Loc.Function != nil {
+	if len(listingPanel.text) > 0 && listingPanel.text[0].Loc.Function != nil {
 		listp.Row(lineheight).Dynamic(1)
-		listp.Label(fmt.Sprintf("TEXT %s(SB) %s", lp.text[0].Loc.Function.Name, lp.text[0].Loc.File), "LC")
+		listp.Label(fmt.Sprintf("TEXT %s(SB) %s", listingPanel.text[0].Loc.Function.Name, listingPanel.text[0].Loc.File), "LC")
 	}
 
-	for _, instr := range lp.text {
+	for _, instr := range listingPanel.text {
 		if instr.Loc.File != lastfile || instr.Loc.Line != lastlineno {
 			listp.Row(lineheight).Dynamic(1)
 			listp.Row(lineheight).Dynamic(1)
 			text := ""
-			if instr.Loc.File == lp.file && instr.Loc.Line-1 < len(lp.listing) {
-				text = strings.TrimSpace(lp.listing[instr.Loc.Line-1].text)
+			if instr.Loc.File == listingPanel.file && instr.Loc.Line-1 < len(listingPanel.listing) {
+				text = strings.TrimSpace(listingPanel.listing[instr.Loc.Line-1].text)
 			}
 			listp.Label(fmt.Sprintf("%s:%d: %s", instr.Loc.File, instr.Loc.Line, text), "LC")
 			lastfile, lastlineno = instr.Loc.File, instr.Loc.Line
@@ -1068,8 +1068,8 @@ func updateDisassemblyPanel(mw *nucular.MasterWindow, container *nucular.Window)
 		}
 
 		if instr.AtPC {
-			if lp.recenterDisassembly {
-				lp.recenterDisassembly = false
+			if listingPanel.recenterDisassembly {
+				listingPanel.recenterDisassembly = false
 				if above, below := listp.Invisible(); above || below {
 					listp.Scrollbar.Y = listp.At().Y - listp.Bounds.H/2
 					if listp.Scrollbar.Y < 0 {

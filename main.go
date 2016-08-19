@@ -37,23 +37,7 @@ func setupStyle() {
 	saveConfiguration()
 }
 
-var silenced bool
-var scrollbackResize bool
-var rightColResize bool
-
-var rightColWidth int = 300
-var scrollbackHeight int = 200
-
 const commandLineHeight = 28
-
-type listingPanel struct {
-	file                                 string
-	showcur                              bool
-	path                                 string
-	recenterListing, recenterDisassembly bool
-	listing                              []listline
-	text                                 api.AsmInstructions
-}
 
 type listline struct {
 	idx        string
@@ -62,16 +46,25 @@ type listline struct {
 	breakpoint bool
 }
 
+var listingPanel struct {
+	file                string
+	path                string
+	recenterListing     bool
+	recenterDisassembly bool
+	listing             []listline
+	text                api.AsmInstructions
+}
+
 var mu sync.Mutex
 var wnd *nucular.MasterWindow
-var lp listingPanel
+
 var running bool
 var client service.Client
-
 var curThread int
 var curGid int
 var curFrame int
 
+var silenced bool
 var scrollbackEditor, commandLineEditor nucular.TextEditor
 
 func prompt(thread int, gid, frame int) string {
@@ -308,9 +301,9 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 
 	mu.Lock()
 	defer mu.Unlock()
-	lp.listing = lp.listing[:0]
-	lp.text = nil
-	lp.recenterListing, lp.recenterDisassembly = true, true
+	listingPanel.listing = listingPanel.listing[:0]
+	listingPanel.text = nil
+	listingPanel.recenterListing, listingPanel.recenterDisassembly = true, true
 	if state.CurrentThread != nil {
 		curThread = state.CurrentThread.ID
 	} else {
@@ -373,14 +366,14 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 			return
 		}
 
-		lp.text = text
+		listingPanel.text = text
 
 		breakpoints, err := client.ListBreakpoints()
 		if err != nil {
 			failstate("ListBreakpoints()", err)
 			return
 		}
-		lp.file = loc.File
+		listingPanel.file = loc.File
 		bpmap := map[int]*api.Breakpoint{}
 		for _, bp := range breakpoints {
 			if bp.File == loc.File {
@@ -400,7 +393,7 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 		for buf.Scan() {
 			lineno++
 			_, breakpoint := bpmap[lineno]
-			lp.listing = append(lp.listing, listline{"", expandTabs(buf.Text()), lineno == loc.Line, breakpoint})
+			listingPanel.listing = append(listingPanel.listing, listline{"", expandTabs(buf.Text()), lineno == loc.Line, breakpoint})
 		}
 
 		if err := buf.Err(); err != nil {
@@ -408,12 +401,12 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 			return
 		}
 
-		d := digits(len(lp.listing))
+		d := digits(len(listingPanel.listing))
 		if d < 3 {
 			d = 3
 		}
-		for i := range lp.listing {
-			lp.listing[i].idx = fmt.Sprintf("%*d", d, i+1)
+		for i := range listingPanel.listing {
+			listingPanel.listing[i].idx = fmt.Sprintf("%*d", d, i+1)
 		}
 	}
 }
@@ -461,9 +454,7 @@ func main() {
 	setupStyle()
 
 	rootPanel, _ = parsePanelDescr(conf.Layouts["default"].Layout, nil)
-	//rootPanel, _ = parsePanelDescr("0C", nil)
 
-	lp.showcur = true
 	curThread = -1
 	curGid = -1
 
