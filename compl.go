@@ -11,14 +11,14 @@ var pathCompl []string
 var funcCompl []string
 
 func completeLocationSetup() {
-	for _, source := range sources {
+	for _, source := range sourcesPanel.slice {
 		fullpathCompl = append(fullpathCompl, source)
 		for _, seg := range strings.Split(source, "/") {
 			pathCompl = append(pathCompl, seg)
 		}
 	}
 
-	for _, name := range functions {
+	for _, name := range funcsPanel.slice {
 		funcCompl = append(funcCompl, name)
 		for _, seg0 := range strings.Split(name, "/") {
 			funcCompl = append(funcCompl, seg0)
@@ -91,31 +91,31 @@ func completeVariable() {
 	word := lastWord([]rune{' '})
 	cm := completeMachine{word: word}
 	func() {
-		localsPanel.mu.Lock()
-		defer localsPanel.mu.Unlock()
+		localsPanel.asyncLoad.mu.Lock()
+		defer localsPanel.asyncLoad.mu.Unlock()
 
-		if !localsPanel.loaded {
+		if !localsPanel.asyncLoad.loaded {
 			return
 		}
 
-		for i := range args {
-			cm.add(args[i].Name)
+		for i := range localsPanel.args {
+			cm.add(localsPanel.args[i].Name)
 		}
-		for i := range locals {
-			cm.add(locals[i].Name)
+		for i := range localsPanel.locals {
+			cm.add(localsPanel.locals[i].Name)
 		}
 	}()
 
 	func() {
-		globalsPanel.mu.Lock()
-		defer globalsPanel.mu.Unlock()
+		globalsPanel.asyncLoad.mu.Lock()
+		defer globalsPanel.asyncLoad.mu.Unlock()
 
-		if !globalsPanel.loaded {
+		if !globalsPanel.asyncLoad.loaded {
 			return
 		}
 
-		for i := range globals {
-			cm.add(globals[i].Name)
+		for i := range globalsPanel.globals {
+			cm.add(globalsPanel.globals[i].Name)
 		}
 	}()
 

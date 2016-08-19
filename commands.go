@@ -174,7 +174,7 @@ func (c *Commands) help(client service.Client, out io.Writer, args string) error
 }
 
 func setBreakpoint(client service.Client, out io.Writer, tracepoint bool, argstr string) error {
-	defer breakpointsPanel.clear()
+	defer breakpointsPanel.asyncLoad.clear()
 	args := strings.SplitN(argstr, " ", 2)
 
 	requestedBp := &api.Breakpoint{}

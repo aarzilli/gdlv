@@ -202,17 +202,17 @@ func connectTo(listenstr string) {
 	fmt.Fprintf(&scrollbackOut, "Loading program info...")
 
 	var err error
-	functions, err = client.ListFunctions("")
+	funcsPanel.slice, err = client.ListFunctions("")
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not list functions: %v\n", err)
 	}
 
-	sources, err = client.ListSources("")
+	sourcesPanel.slice, err = client.ListSources("")
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not list sources: %v\n", err)
 	}
 
-	types, err = client.ListTypes("")
+	typesPanel.slice, err = client.ListTypes("")
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not list types: %v\n", err)
 	}
@@ -344,19 +344,19 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 
 	switch clearKind {
 	case clearFrameSwitch:
-		localsPanel.clear()
+		localsPanel.asyncLoad.clear()
 	case clearGoroutineSwitch:
-		stackPanel.clear()
-		localsPanel.clear()
-		regsPanel.clear()
+		stackPanel.asyncLoad.clear()
+		localsPanel.asyncLoad.clear()
+		regsPanel.asyncLoad.clear()
 	case clearStop:
-		localsPanel.clear()
-		regsPanel.clear()
-		goroutinesPanel.clear()
-		stackPanel.clear()
-		threadsPanel.clear()
-		globalsPanel.clear()
-		breakpointsPanel.clear()
+		localsPanel.asyncLoad.clear()
+		regsPanel.asyncLoad.clear()
+		goroutinesPanel.asyncLoad.clear()
+		stackPanel.asyncLoad.clear()
+		threadsPanel.asyncLoad.clear()
+		globalsPanel.asyncLoad.clear()
+		breakpointsPanel.asyncLoad.clear()
 	}
 
 	if loc != nil {
