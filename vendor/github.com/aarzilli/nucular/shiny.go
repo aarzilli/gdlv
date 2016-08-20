@@ -291,6 +291,20 @@ func (w *MasterWindow) updateLocked() {
 			}
 		}
 
+		if win.flags&windowCombo != 0 && win.flags&WindowDynamic != 0 {
+			prevbody := win.Bounds
+			prevbody.H = win.layout.Height
+			// If the combo window ends up with the right corner below the
+			// main winodw's lower bound make it non-dynamic and resize it to its
+			// maximum possible size that will show the whole combo box.
+			max := w.ctx.Windows[0].Bounds.Max()
+			if prevbody.Y+prevbody.H > max.Y {
+				prevbody.H = max.Y - prevbody.Y
+				win.Bounds = prevbody
+				win.flags &= ^windowCombo
+			}
+		}
+
 		if win.flags&windowNonblock != 0 && !win.first {
 			/* check if user clicked outside the popup and close if so */
 			in_panel := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, win.ctx.Windows[0].layout.Bounds)
