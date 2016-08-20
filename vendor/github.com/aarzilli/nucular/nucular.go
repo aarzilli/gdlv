@@ -702,8 +702,6 @@ func (win *Window) widget() (widgetLayoutStates, types.Rect) {
 	/* allocate space  and check if the widget needs to be updated and drawn */
 	panelAllocSpace(&bounds, win)
 
-	win.LastWidgetBounds = bounds
-
 	c = &win.layout.Clip
 	if !c.Intersect(&bounds) {
 		return widgetInvalid, bounds
@@ -748,6 +746,8 @@ func panelAllocSpace(bounds *types.Rect, win *Window) {
 
 	/* calculate widget position and size */
 	layoutWidgetSpace(bounds, win.ctx, win, true)
+
+	win.LastWidgetBounds = *bounds
 
 	layout.Row.Index++
 }

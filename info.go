@@ -18,6 +18,7 @@ type asyncLoad struct {
 	mu      sync.Mutex
 	loaded  bool
 	loading bool
+	err     error
 }
 
 func (l *asyncLoad) clear() {
@@ -26,8 +27,9 @@ func (l *asyncLoad) clear() {
 	l.mu.Unlock()
 }
 
-func (l *asyncLoad) done() {
+func (l *asyncLoad) done(err error) {
 	l.mu.Lock()
+	l.err = err
 	l.loading = false
 	l.loaded = true
 	l.mu.Unlock()
@@ -55,6 +57,11 @@ func (l *asyncLoad) showRequest(mw *nucular.MasterWindow, container *nucular.Win
 
 		l.loading = true
 		go load(l)
+		return nil
+	}
+
+	if l.err != nil {
+		container.Label(fmt.Sprintf("Error: %v", l.err), "LT")
 		return nil
 	}
 
@@ -100,6 +107,18 @@ var localsPanel = struct {
 	locals       []api.Variable
 }{
 	filterEditor: nucular.TextEditor{Filter: spacefilter},
+}
+
+var exprsPanel = struct {
+	asyncLoad    asyncLoad
+	expressions  []string
+	selected     int
+	menuSelected int
+	ed           nucular.TextEditor
+	v            []*api.Variable
+}{
+	selected: -1,
+	ed:       nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard},
 }
 
 var regsPanel = struct {
@@ -150,15 +169,12 @@ func (gs goroutinesByID) Swap(i, j int) {
 func (gs goroutinesByID) Less(i, j int) bool { return gs[i].ID < gs[j].ID }
 
 func loadGoroutines(p *asyncLoad) {
-	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	goroutinesPanel.goroutines, err = client.ListGoroutines()
-	if err != nil {
-		fmt.Fprintf(&out, "Could not list goroutines: %v\n", err)
-		return
+	if err == nil {
+		sort.Sort(goroutinesByID(goroutinesPanel.goroutines))
 	}
-	sort.Sort(goroutinesByID(goroutinesPanel.goroutines))
-	p.done()
+	p.done(err)
 }
 
 func updateGoroutines(mw *nucular.MasterWindow, container *nucular.Window) {
@@ -225,14 +241,9 @@ func updateGoroutines(mw *nucular.MasterWindow, container *nucular.Window) {
 }
 
 func loadStacktrace(p *asyncLoad) {
-	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, nil)
-	if err != nil {
-		fmt.Fprintf(&out, "Could not stacktrace: %v\n", err)
-		return
-	}
-	p.done()
+	p.done(err)
 }
 
 func updateStacktrace(mw *nucular.MasterWindow, container *nucular.Window) {
@@ -295,15 +306,12 @@ func (threads threadsByID) Swap(i, j int) {
 func (threads threadsByID) Less(i, j int) bool { return threads[i].ID < threads[j].ID }
 
 func loadThreads(p *asyncLoad) {
-	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	threadsPanel.threads, err = client.ListThreads()
-	if err != nil {
-		fmt.Fprintf(&out, "Could not list threads: %v\n", err)
-		return
+	if err == nil {
+		sort.Sort(threadsByID(threadsPanel.threads))
 	}
-	sort.Sort(threadsByID(threadsPanel.threads))
-	p.done()
+	p.done(err)
 }
 
 func updateThreads(mw *nucular.MasterWindow, container *nucular.Window) {
@@ -354,22 +362,17 @@ func (vars variablesByName) Swap(i, j int) {
 func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].Name }
 
 func loadLocals(p *asyncLoad) {
-	m := map[string]int{}
+	var errloc, errarg error
+	localsPanel.args, errloc = client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
+	if errarg == nil {
+		sort.Sort(variablesByName(localsPanel.args))
+	}
+	localsPanel.locals, errarg = client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
+	if errloc == nil {
+		sort.Sort(variablesByName(localsPanel.locals))
+	}
 
-	out := editorWriter{&scrollbackEditor, true}
-	var err error
-	localsPanel.args, err = client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
-	if err != nil {
-		fmt.Fprintf(&out, "Could not list function arguments: %v\n", err)
-		return
-	}
-	localsPanel.locals, err = client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
-	if err != nil {
-		fmt.Fprintf(&out, "Could not list local variables: %v\n", err)
-		return
-	}
-	sort.Sort(variablesByName(localsPanel.args))
-	sort.Sort(variablesByName(localsPanel.locals))
+	m := map[string]int{}
 
 	changename := func(v *api.Variable) {
 		if n, ok := m[v.Name]; ok {
@@ -387,13 +390,19 @@ func loadLocals(p *asyncLoad) {
 	for i := range localsPanel.locals {
 		changename(&localsPanel.locals[i])
 	}
-	p.done()
+	if errarg != nil {
+		p.done(errarg)
+		return
+	}
+	p.done(errloc)
 }
 
 const (
 	varRowHeight = 20
 	moreBtnWidth = 70
 )
+
+const variableIndent = 18
 
 func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 	w := localsPanel.asyncLoad.showRequest(mw, container, "locals", loadLocals)
@@ -412,13 +421,13 @@ func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 	w.Row(varRowHeight).Dynamic(1)
 
 	_, scaling := mw.Style()
-	ind := int(18 * scaling)
+	ind := int(variableIndent * scaling)
 
 	args, locals := localsPanel.args, localsPanel.locals
 
 	for i := range args {
 		if strings.Index(args[i].Name, filter) >= 0 {
-			showVariable(w, 0, localsPanel.showAddr, args[i].Name, &args[i], ind)
+			showVariable(w, 0, localsPanel.showAddr, -1, args[i].Name, &args[i], ind)
 		}
 	}
 
@@ -430,20 +439,120 @@ func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 
 	for i := range locals {
 		if strings.Index(locals[i].Name, filter) >= 0 {
-			showVariable(w, 0, localsPanel.showAddr, locals[i].Name, &locals[i], ind)
+			showVariable(w, 0, localsPanel.showAddr, -1, locals[i].Name, &locals[i], ind)
 		}
 	}
 }
 
-func loadRegs(p *asyncLoad) {
-	out := editorWriter{&scrollbackEditor, true}
+func loadOneExpr(i int) {
 	var err error
-	regsPanel.regs, err = client.ListRegisters()
+	exprsPanel.v[i], err = client.EvalVariable(api.EvalScope{curGid, curFrame}, exprsPanel.expressions[i], LongLoadConfig)
 	if err != nil {
-		fmt.Fprintf(&out, "Could not list registers: %v\n", err)
+		exprsPanel.v[i] = &api.Variable{Name: exprsPanel.expressions[i], Unreadable: err.Error()}
+	}
+}
+
+func loadExprs(l *asyncLoad) {
+	for i := range exprsPanel.expressions {
+		loadOneExpr(i)
+	}
+	l.done(nil)
+}
+
+func updateExprs(mw *nucular.MasterWindow, container *nucular.Window) {
+	w := exprsPanel.asyncLoad.showRequest(mw, container, "exprs", loadExprs)
+	if w == nil {
 		return
 	}
-	p.done()
+	defer w.GroupEnd()
+
+	w.Row(varRowHeight).Dynamic(1)
+
+	_, scaling := mw.Style()
+	ind := int(variableIndent * scaling)
+	editorShown := false
+
+	for i := range exprsPanel.expressions {
+		if i == exprsPanel.selected {
+			exprsEditor(w)
+			editorShown = true
+		} else {
+			showVariable(w, 0, false, i, exprsPanel.v[i].Name, exprsPanel.v[i], ind)
+		}
+	}
+
+	if !editorShown {
+		exprsEditor(w)
+	}
+}
+
+func exprsEditor(w *nucular.Window) {
+	active := exprsPanel.ed.Edit(w)
+	if active&nucular.EditCommitted == 0 {
+		return
+	}
+
+	newexpr := string(exprsPanel.ed.Buffer)
+	exprsPanel.ed.Buffer = exprsPanel.ed.Buffer[:0]
+	exprsPanel.ed.Cursor = 0
+	exprsPanel.ed.Active = true
+	exprsPanel.ed.CursorFollow = true
+
+	if exprsPanel.selected < 0 {
+		exprsPanel.expressions = append(exprsPanel.expressions, newexpr)
+		exprsPanel.v = append(exprsPanel.v, nil)
+		i := len(exprsPanel.v) - 1
+		go func(i int) {
+			additionalLoadMu.Lock()
+			defer additionalLoadMu.Unlock()
+			loadOneExpr(i)
+		}(i)
+	} else {
+		exprsPanel.expressions[exprsPanel.selected] = newexpr
+		go func(i int) {
+			additionalLoadMu.Lock()
+			defer additionalLoadMu.Unlock()
+			loadOneExpr(i)
+		}(exprsPanel.selected)
+		exprsPanel.selected = -1
+	}
+}
+
+func showExprMenu(w *nucular.Window, exprMenuIdx int) {
+	if exprMenuIdx < 0 || running {
+		return
+	}
+	if w.Input().Mouse.AnyClickInRect(w.LastWidgetBounds) {
+		exprsPanel.menuSelected = exprMenuIdx
+	}
+	w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, exprMenu)
+}
+
+func exprMenu(mw *nucular.MasterWindow, w *nucular.Window) {
+	w.Row(20).Dynamic(1)
+
+	if w.MenuItem(label.TA("Edit", "LC")) {
+		exprsPanel.selected = exprsPanel.menuSelected
+		if exprsPanel.selected >= 0 && exprsPanel.selected < len(exprsPanel.expressions) {
+			exprsPanel.ed.Buffer = []rune(exprsPanel.expressions[exprsPanel.selected])
+			exprsPanel.ed.Cursor = len(exprsPanel.ed.Buffer)
+			exprsPanel.ed.CursorFollow = true
+		}
+	}
+	if w.MenuItem(label.TA("Remove", "LC")) {
+		if exprsPanel.menuSelected+1 < len(exprsPanel.expressions) {
+			copy(exprsPanel.expressions[exprsPanel.menuSelected:], exprsPanel.expressions[exprsPanel.menuSelected+1:])
+			copy(exprsPanel.v[exprsPanel.menuSelected:], exprsPanel.v[exprsPanel.menuSelected+1:])
+		}
+		exprsPanel.expressions = exprsPanel.expressions[:len(exprsPanel.expressions)-1]
+		exprsPanel.v = exprsPanel.v[:len(exprsPanel.v)-1]
+	}
+}
+
+func loadRegs(p *asyncLoad) {
+	var err error
+	regsPanel.regs, err = client.ListRegisters()
+	p.done(err)
 }
 
 func updateRegs(mw *nucular.MasterWindow, container *nucular.Window) {
@@ -466,15 +575,10 @@ func updateRegs(mw *nucular.MasterWindow, container *nucular.Window) {
 }
 
 func loadGlobals(p *asyncLoad) {
-	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	globalsPanel.globals, err = client.ListPackageVariables("", LongLoadConfig)
-	if err != nil {
-		fmt.Fprintf(&out, "Could not list global variabless: %v\n", err)
-		return
-	}
 	sort.Sort(variablesByName(globalsPanel.globals))
-	p.done()
+	p.done(err)
 }
 
 func updateGlobals(mw *nucular.MasterWindow, container *nucular.Window) {
@@ -500,7 +604,7 @@ func updateGlobals(mw *nucular.MasterWindow, container *nucular.Window) {
 
 	for i := range globals {
 		if strings.Index(globals[i].Name, filter) >= 0 {
-			showVariable(w, 0, globalsPanel.showAddr, globals[i].Name, &globals[i], ind)
+			showVariable(w, 0, globalsPanel.showAddr, -1, globals[i].Name, &globals[i], ind)
 		}
 	}
 }
@@ -516,15 +620,12 @@ func (bps breakpointsByID) Swap(i, j int) {
 func (bps breakpointsByID) Less(i, j int) bool { return bps[i].ID < bps[i].ID }
 
 func loadBreakpoints(p *asyncLoad) {
-	out := editorWriter{&scrollbackEditor, true}
 	var err error
 	breakpointsPanel.breakpoints, err = client.ListBreakpoints()
-	sort.Sort(breakpointsByID(breakpointsPanel.breakpoints))
-	if err != nil {
-		fmt.Fprintf(&out, "Could not list breakpoints: %v\n", err)
-		return
+	if err == nil {
+		sort.Sort(breakpointsByID(breakpointsPanel.breakpoints))
 	}
-	p.done()
+	p.done(err)
 }
 
 func updateBreakpoints(mw *nucular.MasterWindow, container *nucular.Window) {
@@ -742,7 +843,7 @@ func (p *stringSlicePanel) update(mw *nucular.MasterWindow, container *nucular.W
 	}
 }
 
-func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.Variable, ind int) {
+func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *api.Variable, ind int) {
 	const minInlineKeyValueLen = 20
 	if v.Type != "" {
 		if addr {
@@ -769,69 +870,90 @@ func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.V
 	}
 	if v.Unreadable != "" {
 		w.Label(fmt.Sprintf("%s = (unreadable %s)", name, v.Unreadable), "LC")
+		showExprMenu(w, exprMenu)
 		return
 	}
 
 	if depth > 0 && v.Addr == 0 {
 		w.Label(fmt.Sprintf("%s = nil", name, v.Type), "LC")
+		showExprMenu(w, exprMenu)
 		return
 	}
 
 	switch v.Kind {
 	case reflect.Slice:
 		if w.TreePush(nucular.TreeNode, name, false) {
+			showExprMenu(w, exprMenu)
 			w.Scrollbar.X -= ind
 			w.Label(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap), "LC")
 			showArrayOrSliceContents(w, depth, addr, v, ind)
 			w.Scrollbar.X += ind
 			w.TreePop()
+		} else {
+			showExprMenu(w, exprMenu)
 		}
 	case reflect.Array:
 		if w.TreePush(nucular.TreeNode, name, false) {
+			showExprMenu(w, exprMenu)
 			w.Scrollbar.X -= ind
 			w.Label(fmt.Sprintf("len: %d", v.Len), "LC")
 			showArrayOrSliceContents(w, depth, addr, v, ind)
 			w.Scrollbar.X += ind
 			w.TreePop()
+		} else {
+			showExprMenu(w, exprMenu)
 		}
 	case reflect.Ptr:
 		if v.Type == "" || v.Children[0].Addr == 0 {
 			w.Label(fmt.Sprintf("%s = nil", name), "LC")
+			showExprMenu(w, exprMenu)
 		} else if v.Children[0].OnlyAddr && v.Children[0].Addr != 0 {
 			w.Label(fmt.Sprintf("%s = (%s)(%#x)", name, v.Type, v.Children[0].Addr), "LC")
+			showExprMenu(w, exprMenu)
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
+				showExprMenu(w, exprMenu)
 				w.Scrollbar.X -= ind
-				showVariable(w, depth+1, addr, "", &v.Children[0], ind)
+				showVariable(w, depth+1, addr, -1, "", &v.Children[0], ind)
 				w.Scrollbar.X += ind
 				w.TreePop()
+			} else {
+				showExprMenu(w, exprMenu)
 			}
 		}
 	case reflect.UnsafePointer:
 		w.Label(fmt.Sprintf("%s = unsafe.Pointer(%#x)", name, v.Children[0].Addr), "LC")
+		showExprMenu(w, exprMenu)
 	case reflect.String:
 		if len(v.Value) != int(v.Len) {
 			w.Row(varRowHeight).Static(0, moreBtnWidth)
 			w.Label(fmt.Sprintf("%s = %q", name, v.Value), "LC")
+			showExprMenu(w, exprMenu)
 			w.Label(fmt.Sprintf("%d more", int(v.Len)-len(v.Value)), "LC")
 			//TODO: detailed view for strings
 			w.Row(varRowHeight).Dynamic(1)
 		} else {
 			w.Label(fmt.Sprintf("%s = %q", name, v.Value), "LC")
+			showExprMenu(w, exprMenu)
 		}
 	case reflect.Chan:
 		if len(v.Children) == 0 {
 			w.Label(fmt.Sprintf("%s = nil", name), "LC")
+			showExprMenu(w, exprMenu)
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
+				showExprMenu(w, exprMenu)
 				w.Scrollbar.X -= ind
 				showStructContents(w, depth, addr, v, ind)
 				w.Scrollbar.X += ind
 				w.TreePop()
+			} else {
+				showExprMenu(w, exprMenu)
 			}
 		}
 	case reflect.Struct:
 		if w.TreePush(nucular.TreeNode, name, false) {
+			showExprMenu(w, exprMenu)
 			w.Scrollbar.X -= ind
 			if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
 				loadMoreStruct(v)
@@ -841,24 +963,31 @@ func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.V
 			}
 			w.Scrollbar.X += ind
 			w.TreePop()
+		} else {
+			showExprMenu(w, exprMenu)
 		}
 	case reflect.Interface:
 		if v.Children[0].Kind == reflect.Invalid {
 			w.Label(fmt.Sprintf("%s = nil", name), "LC")
+			showExprMenu(w, exprMenu)
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
+				showExprMenu(w, exprMenu)
 				w.Scrollbar.X -= ind
 				if v.Children[0].Kind == reflect.Ptr {
-					showVariable(w, depth+1, addr, "data", &v.Children[0].Children[0], ind)
+					showVariable(w, depth+1, addr, -1, "data", &v.Children[0].Children[0], ind)
 				} else {
-					showVariable(w, depth+1, addr, "data", &v.Children[0], ind)
+					showVariable(w, depth+1, addr, -1, "data", &v.Children[0], ind)
 				}
 				w.Scrollbar.X += ind
 				w.TreePop()
+			} else {
+				showExprMenu(w, exprMenu)
 			}
 		}
 	case reflect.Map:
 		if w.TreePush(nucular.TreeNode, name, false) {
+			showExprMenu(w, exprMenu)
 			w.Scrollbar.X -= ind
 			for i := 0; i < len(v.Children); i += 2 {
 				key, value := &v.Children[i], &v.Children[i+1]
@@ -869,10 +998,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.V
 					} else {
 						keyname = fmt.Sprintf("[%s]", key.Value)
 					}
-					showVariable(w, depth+1, addr, keyname, value, ind)
+					showVariable(w, depth+1, addr, -1, keyname, value, ind)
 				} else {
-					showVariable(w, depth+1, addr, fmt.Sprintf("[%d key]", i/2), key, ind)
-					showVariable(w, depth+1, addr, fmt.Sprintf("[%d value]", i/2), value, ind)
+					showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d key]", i/2), key, ind)
+					showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d value]", i/2), value, ind)
 				}
 			}
 			if len(v.Children)/2 != int(v.Len) {
@@ -884,6 +1013,8 @@ func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.V
 			}
 			w.Scrollbar.X += ind
 			w.TreePop()
+		} else {
+			showExprMenu(w, exprMenu)
 		}
 	case reflect.Func:
 		if v.Value == "" {
@@ -891,20 +1022,23 @@ func showVariable(w *nucular.Window, depth int, addr bool, name string, v *api.V
 		} else {
 			w.Label(fmt.Sprintf("%s = %s", name, v.Value), "LC")
 		}
+		showExprMenu(w, exprMenu)
 	case reflect.Complex64, reflect.Complex128:
 		w.Label(fmt.Sprintf("%s = (%s + %si)", name, v.Children[0].Value, v.Children[1].Value), "LC")
+		showExprMenu(w, exprMenu)
 	default:
 		if v.Value != "" {
 			w.Label(fmt.Sprintf("%s = %s", name, v.Value), "LC")
 		} else {
 			w.Label(fmt.Sprintf("%s = (unknown %s)", name, v.Kind), "LC")
 		}
+		showExprMenu(w, exprMenu)
 	}
 }
 
 func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *api.Variable, ind int) {
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, fmt.Sprintf("[%d]", i), &v.Children[i], ind)
+		showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d]", i), &v.Children[i], ind)
 	}
 	if len(v.Children) != int(v.Len) {
 		w.Row(varRowHeight).Static(moreBtnWidth)
@@ -917,7 +1051,7 @@ func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *api.Va
 
 func showStructContents(w *nucular.Window, depth int, addr bool, v *api.Variable, ind int) {
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, v.Children[i].Name, &v.Children[i], ind)
+		showVariable(w, depth+1, addr, -1, v.Children[i].Name, &v.Children[i], ind)
 	}
 }
 

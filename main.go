@@ -345,6 +345,7 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 	switch clearKind {
 	case clearFrameSwitch:
 		localsPanel.asyncLoad.clear()
+		exprsPanel.asyncLoad.clear()
 	case clearGoroutineSwitch:
 		stackPanel.asyncLoad.clear()
 		localsPanel.asyncLoad.clear()
@@ -458,7 +459,7 @@ func main() {
 	curThread = -1
 	curGid = -1
 
-	scrollbackEditor.Flags = nucular.EditSelectable | nucular.EditReadOnly | nucular.EditMultiline
+	scrollbackEditor.Flags = nucular.EditSelectable | nucular.EditReadOnly | nucular.EditMultiline | nucular.EditClipboard
 	commandLineEditor.Flags = nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard
 	commandLineEditor.Active = true
 
