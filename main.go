@@ -149,9 +149,38 @@ func updateCommandPanel(mw *nucular.MasterWindow, container *nucular.Window) {
 	} else {
 		commandLineEditor.Flags &= ^nucular.EditReadOnly
 	}
-	for _, k := range w.Input().Keyboard.Keys {
-		if k.Modifiers == 0 && k.Code == key.CodeTab {
-			completeAny()
+	if commandLineEditor.Active {
+		showHistory := false
+		for _, k := range w.Input().Keyboard.Keys {
+			switch {
+			case k.Modifiers == 0 && k.Code == key.CodeTab:
+				completeAny()
+			case k.Modifiers == 0 && k.Code == key.CodeUpArrow:
+				historyShown--
+				showHistory = true
+			case k.Modifiers == 0 && k.Code == key.CodeDownArrow:
+				historyShown++
+				showHistory = true
+			}
+		}
+		if showHistory {
+			w.Input().Keyboard.Keys = w.Input().Keyboard.Keys[:0]
+			switch {
+			case historyShown < 0:
+				historyShown = len(cmdhistory)
+			case historyShown > len(cmdhistory):
+				historyShown = len(cmdhistory)
+			}
+			
+			if historyShown != len(cmdhistory) {
+				commandLineEditor.Buffer = []rune(cmdhistory[historyShown])
+				commandLineEditor.Cursor = len(commandLineEditor.Buffer)
+				commandLineEditor.CursorFollow = true
+			} else {
+				commandLineEditor.Buffer = commandLineEditor.Buffer[:0]
+				commandLineEditor.Cursor = 0
+				commandLineEditor.CursorFollow = true
+			}
 		}
 	}
 	active := commandLineEditor.Edit(w)
@@ -160,11 +189,12 @@ func updateCommandPanel(mw *nucular.MasterWindow, container *nucular.Window) {
 
 		cmd := string(commandLineEditor.Buffer)
 		if cmd == "" {
-			fmt.Fprintf(&scrollbackOut, "%s %s\n", p, lastCmd)
+			fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmdhistory[len(cmdhistory)-1])
 		} else {
-			lastCmd = cmd
+			cmdhistory = append(cmdhistory, cmd)
 			fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmd)
 		}
+		historyShown = len(cmdhistory)
 		go executeCommand(cmd)
 		commandLineEditor.Buffer = commandLineEditor.Buffer[:0]
 		commandLineEditor.Cursor = 0
