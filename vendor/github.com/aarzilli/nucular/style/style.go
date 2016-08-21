@@ -3,14 +3,23 @@ package style
 import (
 	"image"
 	"image/color"
-	
-	"github.com/aarzilli/nucular/types"
-	"github.com/aarzilli/nucular/label"
+
 	"github.com/aarzilli/nucular/command"
+	"github.com/aarzilli/nucular/label"
+
+	"golang.org/x/image/font"
+)
+
+type WidgetStates int
+
+const (
+	WidgetStateInactive WidgetStates = iota
+	WidgetStateHovered
+	WidgetStateActive
 )
 
 type Style struct {
-	Font             *types.Face
+	Font             font.Face
 	Text             Text
 	Button           Button
 	ContextualButton Button
@@ -110,11 +119,11 @@ type Button struct {
 }
 
 type CustomButtonDrawing struct {
-	ButtonText       func(*command.Buffer, image.Rectangle, image.Rectangle, types.WidgetStates, *Button, string, label.Align, *types.Face)
-	ButtonSymbol     func(*command.Buffer, image.Rectangle, image.Rectangle, types.WidgetStates, *Button, label.SymbolType, *types.Face)
-	ButtonImage      func(*command.Buffer, image.Rectangle, image.Rectangle, types.WidgetStates, *Button, *image.RGBA)
-	ButtonTextSymbol func(*command.Buffer, image.Rectangle, image.Rectangle, image.Rectangle, types.WidgetStates, *Button, string, label.SymbolType, *types.Face)
-	ButtonTextImage  func(*command.Buffer, image.Rectangle, image.Rectangle, image.Rectangle, types.WidgetStates, *Button, string, *types.Face, *image.RGBA)
+	ButtonText       func(*command.Buffer, image.Rectangle, image.Rectangle, WidgetStates, *Button, string, label.Align, font.Face)
+	ButtonSymbol     func(*command.Buffer, image.Rectangle, image.Rectangle, WidgetStates, *Button, label.SymbolType, font.Face)
+	ButtonImage      func(*command.Buffer, image.Rectangle, image.Rectangle, WidgetStates, *Button, *image.RGBA)
+	ButtonTextSymbol func(*command.Buffer, image.Rectangle, image.Rectangle, image.Rectangle, WidgetStates, *Button, string, label.SymbolType, font.Face)
+	ButtonTextImage  func(*command.Buffer, image.Rectangle, image.Rectangle, image.Rectangle, WidgetStates, *Button, string, font.Face, *image.RGBA)
 }
 
 type Toggle struct {
@@ -135,8 +144,8 @@ type Toggle struct {
 }
 
 type CustomToggleDrawing struct {
-	Radio    func(*command.Buffer, types.WidgetStates, *Toggle, bool, image.Rectangle, image.Rectangle, image.Rectangle, string, *types.Face)
-	Checkbox func(*command.Buffer, types.WidgetStates, *Toggle, bool, image.Rectangle, image.Rectangle, image.Rectangle, string, *types.Face)
+	Radio    func(*command.Buffer, WidgetStates, *Toggle, bool, image.Rectangle, image.Rectangle, image.Rectangle, string, font.Face)
+	Checkbox func(*command.Buffer, WidgetStates, *Toggle, bool, image.Rectangle, image.Rectangle, image.Rectangle, string, font.Face)
 }
 
 type Selectable struct {
@@ -158,7 +167,7 @@ type Selectable struct {
 	Padding           image.Point
 	TouchPadding      image.Point
 	DrawBegin         func(*command.Buffer)
-	Draw              func(*command.Buffer, types.WidgetStates, *Selectable, bool, image.Rectangle, string, label.Align, *types.Face)
+	Draw              func(*command.Buffer, WidgetStates, *Selectable, bool, image.Rectangle, string, label.Align, font.Face)
 	DrawEnd           func(*command.Buffer)
 }
 
@@ -186,7 +195,7 @@ type Slider struct {
 	IncSymbol    label.SymbolType
 	DecSymbol    label.SymbolType
 	DrawBegin    func(*command.Buffer)
-	Draw         func(*command.Buffer, types.WidgetStates, *Slider, image.Rectangle, image.Rectangle, float64, float64, float64)
+	Draw         func(*command.Buffer, WidgetStates, *Slider, image.Rectangle, image.Rectangle, float64, float64, float64)
 	DrawEnd      func(*command.Buffer)
 }
 
@@ -200,7 +209,7 @@ type Progress struct {
 	Rounding     uint16
 	Padding      image.Point
 	DrawBegin    func(*command.Buffer)
-	Draw         func(*command.Buffer, types.WidgetStates, *Progress, image.Rectangle, image.Rectangle, int, int)
+	Draw         func(*command.Buffer, WidgetStates, *Progress, image.Rectangle, image.Rectangle, int, int)
 	DrawEnd      func(*command.Buffer)
 }
 
@@ -221,7 +230,7 @@ type Scrollbar struct {
 	IncSymbol    label.SymbolType
 	DecSymbol    label.SymbolType
 	DrawBegin    func(*command.Buffer)
-	Draw         func(*command.Buffer, types.WidgetStates, *Scrollbar, image.Rectangle, image.Rectangle)
+	Draw         func(*command.Buffer, WidgetStates, *Scrollbar, image.Rectangle, image.Rectangle)
 	DrawEnd      func(*command.Buffer)
 }
 
@@ -267,7 +276,7 @@ type Property struct {
 	IncButton   Button
 	DecButton   Button
 	DrawBegin   func(*command.Buffer)
-	Draw        func(*command.Buffer, *Property, image.Rectangle, image.Rectangle, types.WidgetStates, string, *types.Face)
+	Draw        func(*command.Buffer, *Property, image.Rectangle, image.Rectangle, WidgetStates, string, font.Face)
 	DrawEnd     func(*command.Buffer)
 }
 
@@ -926,7 +935,7 @@ func init() {
 	whiteThemeTable[ColorToggle] = color.RGBA{150, 150, 150, 255}
 	whiteThemeTable[ColorToggleHover] = color.RGBA{120, 120, 120, 255}
 	whiteThemeTable[ColorToggleCursor] = color.RGBA{175, 175, 175, 255}
-	whiteThemeTable[ColorSelect] = color.RGBA{175, 175, 175, 255} 
+	whiteThemeTable[ColorSelect] = color.RGBA{175, 175, 175, 255}
 	whiteThemeTable[ColorSelectActive] = color.RGBA{190, 190, 190, 255}
 	whiteThemeTable[ColorSlider] = color.RGBA{190, 190, 190, 255}
 	whiteThemeTable[ColorSliderCursor] = color.RGBA{80, 80, 80, 255}

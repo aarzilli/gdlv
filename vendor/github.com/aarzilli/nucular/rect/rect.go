@@ -1,11 +1,6 @@
-package types
+package rect
 
-import (
-	"image"
-	
-	"golang.org/x/image/font"
-)
-
+import "image"
 
 type Rect struct {
 	X int
@@ -13,21 +8,6 @@ type Rect struct {
 	W int
 	H int
 }
-
-/*
-func max(a, b int) int {
-	if a > b {
-		return a
-	}
-	return b
-}
-
-func min(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
-}*/
 
 func between(x int, a int, b int) bool {
 	return a <= x && x <= b
@@ -63,16 +43,3 @@ func FromRectangle(r image.Rectangle) Rect {
 func (r *Rect) Rectangle() image.Rectangle {
 	return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H)
 }
-
-type Face struct {
-	Face   font.Face
-	Size   int
-}
-
-type WidgetStates int
-
-const (
-	WidgetStateInactive WidgetStates = iota
-	WidgetStateHovered
-	WidgetStateActive
-)

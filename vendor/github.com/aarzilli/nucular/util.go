@@ -3,10 +3,12 @@ package nucular
 import (
 	"image"
 
+	nstyle "github.com/aarzilli/nucular/style"
+
 	"golang.org/x/image/font"
 	"golang.org/x/mobile/event/mouse"
 
-	"github.com/aarzilli/nucular/types"
+	"github.com/aarzilli/nucular/rect"
 )
 
 type Heading int
@@ -44,7 +46,7 @@ func assert2(cond bool, reason string) {
 	}
 }
 
-func triangleFromDirection(r types.Rect, pad_x, pad_y int, direction Heading) (result []image.Point) {
+func triangleFromDirection(r rect.Rect, pad_x, pad_y int, direction Heading) (result []image.Point) {
 	result = make([]image.Point, 3)
 	var w_half int
 	var h_half int
@@ -118,35 +120,35 @@ func saturateFloat(x float64) float64 {
 	return maxFloat(0.0, minFloat(1.0, x))
 }
 
-func basicWidgetStateControl(state *types.WidgetStates, in *Input, bounds types.Rect) types.WidgetStates {
+func basicWidgetStateControl(state *nstyle.WidgetStates, in *Input, bounds rect.Rect) nstyle.WidgetStates {
 	if in == nil {
-		*state = types.WidgetStateInactive
-		return types.WidgetStateInactive
+		*state = nstyle.WidgetStateInactive
+		return nstyle.WidgetStateInactive
 	}
 
 	hovering := in.Mouse.HoveringRect(bounds)
 
-	if *state == types.WidgetStateInactive && hovering {
-		*state = types.WidgetStateHovered
+	if *state == nstyle.WidgetStateInactive && hovering {
+		*state = nstyle.WidgetStateHovered
 	}
 
-	if *state == types.WidgetStateHovered && !hovering {
-		*state = types.WidgetStateInactive
+	if *state == nstyle.WidgetStateHovered && !hovering {
+		*state = nstyle.WidgetStateInactive
 	}
 
-	if *state == types.WidgetStateHovered && in.Mouse.HasClickInRect(mouse.ButtonLeft, bounds) {
-		*state = types.WidgetStateActive
+	if *state == nstyle.WidgetStateHovered && in.Mouse.HasClickInRect(mouse.ButtonLeft, bounds) {
+		*state = nstyle.WidgetStateActive
 	}
 
 	if hovering {
-		return types.WidgetStateHovered
+		return nstyle.WidgetStateHovered
 	} else {
-		return types.WidgetStateInactive
+		return nstyle.WidgetStateInactive
 	}
 }
 
-func shrinkRect(r types.Rect, amount int) types.Rect {
-	var res types.Rect
+func shrinkRect(r rect.Rect, amount int) rect.Rect {
+	var res rect.Rect
 	r.W = max(r.W, 2*amount)
 	r.H = max(r.H, 2*amount)
 	res.X = r.X + amount
@@ -156,16 +158,16 @@ func shrinkRect(r types.Rect, amount int) types.Rect {
 	return res
 }
 
-func FontHeight(f *types.Face) int {
-	return f.Face.Metrics().Ascent.Ceil() + f.Face.Metrics().Descent.Ceil()
+func FontHeight(f font.Face) int {
+	return f.Metrics().Ascent.Ceil() + f.Metrics().Descent.Ceil()
 }
 
-func FontWidth(f *types.Face, string string) int {
-	d := font.Drawer{Face: f.Face}
+func FontWidth(f font.Face, string string) int {
+	d := font.Drawer{Face: f}
 	return d.MeasureString(string).Ceil()
 }
 
-func unify(a types.Rect, b types.Rect) (clip types.Rect) {
+func unify(a rect.Rect, b rect.Rect) (clip rect.Rect) {
 	clip.X = max(a.X, b.X)
 	clip.Y = max(a.Y, b.Y)
 	clip.W = min(a.X+a.W, b.X+b.W) - clip.X
@@ -175,7 +177,7 @@ func unify(a types.Rect, b types.Rect) (clip types.Rect) {
 	return
 }
 
-func padRect(r types.Rect, pad image.Point) types.Rect {
+func padRect(r rect.Rect, pad image.Point) rect.Rect {
 	r.W = max(r.W, 2*pad.X)
 	r.H = max(r.H, 2*pad.Y)
 	r.X += pad.X

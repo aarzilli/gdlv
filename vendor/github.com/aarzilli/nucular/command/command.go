@@ -3,18 +3,20 @@ package command
 import (
 	"image"
 	"image/color"
-	
-	"github.com/aarzilli/nucular/types"
+
+	"github.com/aarzilli/nucular/rect"
+
+	"golang.org/x/image/font"
 )
 
 // CommandBuffer is a list of drawing directives.
 type Buffer struct {
 	UseClipping bool
-	Clip        types.Rect
+	Clip        rect.Rect
 	Commands    []Command
 }
 
-var nk_null_rect = types.Rect{-8192.0, -8192.0, 16384.0, 16384.0}
+var nk_null_rect = rect.Rect{-8192.0, -8192.0, 16384.0, 16384.0}
 
 func (buffer *Buffer) Reset() {
 	buffer.UseClipping = true
@@ -28,7 +30,7 @@ type Command interface {
 }
 
 type Scissor struct {
-	types.Rect
+	rect.Rect
 }
 
 func (c *Scissor) command() {}
@@ -43,7 +45,7 @@ type Line struct {
 func (c *Line) command() {}
 
 type RectFilled struct {
-	types.Rect
+	rect.Rect
 	Rounding uint16
 	Color    color.RGBA
 }
@@ -60,29 +62,29 @@ type TriangleFilled struct {
 func (c *TriangleFilled) command() {}
 
 type CircleFilled struct {
-	types.Rect
+	rect.Rect
 	Color color.RGBA
 }
 
 func (c *CircleFilled) command() {}
 
 type Image struct {
-	types.Rect
+	rect.Rect
 	Img *image.RGBA
 }
 
 func (c *Image) command() {}
 
 type Text struct {
-	types.Rect
-	Font       *types.Face
+	rect.Rect
+	Face       font.Face
 	Foreground color.RGBA
 	String     string
 }
 
 func (c *Text) command() {}
 
-func (b *Buffer) PushScissor(r types.Rect) {
+func (b *Buffer) PushScissor(r rect.Rect) {
 	cmd := &Scissor{}
 
 	b.Clip = r
@@ -101,7 +103,7 @@ func (b *Buffer) StrokeLine(p0, p1 image.Point, line_thickness int, c color.RGBA
 	cmd.Color = c
 }
 
-func (b *Buffer) FillRect(rect types.Rect, rounding uint16, c color.RGBA) {
+func (b *Buffer) FillRect(rect rect.Rect, rounding uint16, c color.RGBA) {
 	cmd := &RectFilled{}
 	if c.A == 0 {
 		return
@@ -118,7 +120,7 @@ func (b *Buffer) FillRect(rect types.Rect, rounding uint16, c color.RGBA) {
 	cmd.Color = c
 }
 
-func (b *Buffer) FillCircle(r types.Rect, c color.RGBA) {
+func (b *Buffer) FillCircle(r rect.Rect, c color.RGBA) {
 	cmd := &CircleFilled{}
 	if c.A == 0 {
 		return
@@ -152,7 +154,7 @@ func (b *Buffer) FillTriangle(p0, p1, p2 image.Point, c color.RGBA) {
 	cmd.Color = c
 }
 
-func (b *Buffer) DrawImage(r types.Rect, img *image.RGBA) {
+func (b *Buffer) DrawImage(r rect.Rect, img *image.RGBA) {
 	cmd := &Image{}
 	if b.UseClipping {
 		if !r.Intersect(&b.Clip) {
@@ -165,7 +167,7 @@ func (b *Buffer) DrawImage(r types.Rect, img *image.RGBA) {
 	cmd.Img = img
 }
 
-func (b *Buffer) DrawText(r types.Rect, str string, font *types.Face, fg color.RGBA) {
+func (b *Buffer) DrawText(r rect.Rect, str string, face font.Face, fg color.RGBA) {
 	cmd := &Text{}
 
 	if len(str) == 0 || (fg.A == 0) {
@@ -183,6 +185,6 @@ func (b *Buffer) DrawText(r types.Rect, str string, font *types.Face, fg color.R
 	b.Commands = append(b.Commands, cmd)
 	cmd.Rect = r
 	cmd.Foreground = fg
-	cmd.Font = font
+	cmd.Face = face
 	cmd.String = str
 }

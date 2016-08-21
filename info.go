@@ -10,7 +10,7 @@ import (
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
-	ntypes "github.com/aarzilli/nucular/types"
+	"github.com/aarzilli/nucular/rect"
 	"github.com/derekparker/delve/service/api"
 )
 
@@ -668,7 +668,7 @@ func breakpointsMenu(mw *nucular.MasterWindow, w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 	if breakpointsPanel.selected > 0 {
 		if w.MenuItem(label.TA("Edit...", "LC")) {
-			mw.PopupOpen(fmt.Sprintf("Editing breakpoint %d", breakpointsPanel.selected), nucular.WindowDynamic|nucular.WindowTitle|nucular.WindowNoScrollbar|nucular.WindowMovable|nucular.WindowBorder, ntypes.Rect{100, 100, 400, 700}, true, breakpointEditor)
+			mw.PopupOpen(fmt.Sprintf("Editing breakpoint %d", breakpointsPanel.selected), nucular.WindowDynamic|nucular.WindowTitle|nucular.WindowNoScrollbar|nucular.WindowMovable|nucular.WindowBorder, rect.Rect{100, 100, 400, 700}, true, breakpointEditor)
 		}
 		if w.MenuItem(label.TA("Clear", "LC")) {
 			go func() {

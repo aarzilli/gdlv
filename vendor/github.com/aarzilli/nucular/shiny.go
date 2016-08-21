@@ -17,7 +17,9 @@ import (
 	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/internal/assets"
-	"github.com/aarzilli/nucular/types"
+	"github.com/aarzilli/nucular/rect"
+	nstyle "github.com/aarzilli/nucular/style"
+
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/raster"
 	"github.com/golang/freetype/truetype"
@@ -62,7 +64,7 @@ var ttfontDefault *truetype.Font
 var defaultFontInit sync.Once
 
 // Returns default font (DroidSansMono) with specified size and scaling
-func DefaultFont(size int, scaling float64) *types.Face {
+func DefaultFont(size int, scaling float64) font.Face {
 	defaultFontInit.Do(func() {
 		fontData, _ := assets.Asset("DroidSansMono.ttf")
 		ttfontDefault, _ = freetype.ParseFont(fontData)
@@ -70,10 +72,7 @@ func DefaultFont(size int, scaling float64) *types.Face {
 
 	sz := int(float64(size) * scaling)
 
-	return &types.Face{
-		Size: sz,
-		//ttfont: ttfontDefault,
-		Face: truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})}
+	return truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
 }
 
 // Creates new master window
@@ -266,7 +265,7 @@ func (w *MasterWindow) updateLocked() {
 	contextBegin(w.ctx, &w.layout)
 	in := &w.ctx.Input
 	in.Keyboard.Text = w.textbuffer.String()
-	w.ctx.Windows[0].Bounds = types.FromRectangle(w.bounds)
+	w.ctx.Windows[0].Bounds = rect.FromRectangle(w.bounds)
 	var t0, t1, te time.Time
 	if perfUpdate {
 		t0 = time.Now()
@@ -318,7 +317,7 @@ func (w *MasterWindow) updateLocked() {
 		}
 
 		if win.flags&windowPopup != 0 {
-			win.widgets.Add(types.WidgetStateInactive, nk_null_rect, &drawableScissor{nk_null_rect})
+			win.widgets.Add(nstyle.WidgetStateInactive, nk_null_rect, &drawableScissor{nk_null_rect})
 			win.widgets.Clip = nk_null_rect
 
 			if !panelBegin(w.ctx, win, win.title) {
@@ -639,15 +638,15 @@ func (w *MasterWindow) draw() (int, int) {
 			d := font.Drawer{
 				Dst:  dstimg,
 				Src:  image.NewUniform(cmd.Foreground),
-				Face: cmd.Font.Face,
-				Dot:  fixed.P(cmd.X, cmd.Y+cmd.Font.Face.Metrics().Ascent.Ceil())}
+				Face: cmd.Face,
+				Dot:  fixed.P(cmd.X, cmd.Y+cmd.Face.Metrics().Ascent.Ceil())}
 
 			start := 0
 			for i := range cmd.String {
 				if cmd.String[i] == '\n' {
 					d.DrawString(cmd.String[start:i])
 					d.Dot.X = fixed.I(cmd.X)
-					d.Dot.Y += fixed.I(FontHeight(cmd.Font))
+					d.Dot.Y += fixed.I(FontHeight(cmd.Face))
 					start = i + 1
 				}
 			}

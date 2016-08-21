@@ -171,7 +171,7 @@ func updateCommandPanel(mw *nucular.MasterWindow, container *nucular.Window) {
 			case historyShown > len(cmdhistory):
 				historyShown = len(cmdhistory)
 			}
-			
+
 			if historyShown != len(cmdhistory) {
 				commandLineEditor.Buffer = []rune(cmdhistory[historyShown])
 				commandLineEditor.Cursor = len(commandLineEditor.Buffer)

@@ -9,7 +9,8 @@ import (
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
-	ntypes "github.com/aarzilli/nucular/types"
+	"github.com/aarzilli/nucular/rect"
+	nstyle "github.com/aarzilli/nucular/style"
 
 	"golang.org/x/mobile/event/mouse"
 )
@@ -205,12 +206,12 @@ func randomname() string {
 func (p *panel) update(mw *nucular.MasterWindow, w *nucular.Window) {
 	w.Row(0).SpaceBegin(0)
 
-	bounds := ntypes.Rect{0, 0, w.LayoutAvailableWidth(), w.LayoutAvailableHeight()}
+	bounds := rect.Rect{0, 0, w.LayoutAvailableWidth(), w.LayoutAvailableHeight()}
 
 	p.updateIntl(mw, w, bounds)
 }
 
-func (p *panel) updateIntl(mw *nucular.MasterWindow, w *nucular.Window, bounds ntypes.Rect) {
+func (p *panel) updateIntl(mw *nucular.MasterWindow, w *nucular.Window, bounds rect.Rect) {
 	style, scaling := mw.Style()
 	_ = style
 
@@ -280,7 +281,7 @@ func (p *panel) updateIntl(mw *nucular.MasterWindow, w *nucular.Window, bounds n
 		}
 
 		w.LayoutSpacePushScaled(rszbounds)
-		rszbounds, _ = w.Custom(ntypes.WidgetStateInactive)
+		rszbounds, _ = w.Custom(nstyle.WidgetStateInactive)
 
 		if w.Input().Mouse.HasClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
 			p.resize = true
@@ -348,7 +349,7 @@ func (p *panel) updateIntl(mw *nucular.MasterWindow, w *nucular.Window, bounds n
 		}
 
 		w.LayoutSpacePushScaled(rszbounds)
-		rszbounds, _ = w.Custom(ntypes.WidgetStateInactive)
+		rszbounds, _ = w.Custom(nstyle.WidgetStateInactive)
 
 		if w.Input().Mouse.HasClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
 			p.resize = true

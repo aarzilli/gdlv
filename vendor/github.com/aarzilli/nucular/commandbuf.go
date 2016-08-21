@@ -2,8 +2,8 @@ package nucular
 
 import (
 	"github.com/aarzilli/nucular/command"
+	"github.com/aarzilli/nucular/rect"
 	"github.com/aarzilli/nucular/style"
-	"github.com/aarzilli/nucular/types"
 )
 
 type drawParams interface {
@@ -11,29 +11,29 @@ type drawParams interface {
 }
 
 type frozenWidget struct {
-	ws     types.WidgetStates
-	bounds types.Rect
+	ws     style.WidgetStates
+	bounds rect.Rect
 	//drawParams drawParams
 }
 
 type widgetBuffer struct {
 	win         *Window
-	Clip        types.Rect
+	Clip        rect.Rect
 	UseClipping bool
 	cur         []frozenWidget
 	prev        []frozenWidget
 }
 
-func (wbuf *widgetBuffer) PrevState(bounds types.Rect) types.WidgetStates {
+func (wbuf *widgetBuffer) PrevState(bounds rect.Rect) style.WidgetStates {
 	for i := range wbuf.prev {
 		if wbuf.prev[i].bounds == bounds {
 			return wbuf.prev[i].ws
 		}
 	}
-	return types.WidgetStateInactive
+	return style.WidgetStateInactive
 }
 
-func (wbuf *widgetBuffer) Add(ws types.WidgetStates, bounds types.Rect, drawParams drawParams) {
+func (wbuf *widgetBuffer) Add(ws style.WidgetStates, bounds rect.Rect, drawParams drawParams) {
 	if drawParams != nil {
 		drawParams.Draw(&wbuf.win.ctx.Style, &wbuf.win.cmds)
 	}

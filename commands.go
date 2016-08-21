@@ -52,7 +52,7 @@ func (a ByFirstAlias) Len() int           { return len(a) }
 func (a ByFirstAlias) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a ByFirstAlias) Less(i, j int) bool { return a[i].aliases[0] < a[j].aliases[0] }
 
-var cmdhistory = []string{ "" }
+var cmdhistory = []string{""}
 var historyShown int = 0
 var cmds *Commands
 

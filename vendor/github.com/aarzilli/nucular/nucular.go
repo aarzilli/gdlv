@@ -10,9 +10,10 @@ import (
 
 	"github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/label"
+	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
-	"github.com/aarzilli/nucular/types"
 
+	"golang.org/x/image/font"
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
 )
@@ -33,19 +34,19 @@ type context struct {
 type UpdateFn func(*MasterWindow, *Window)
 
 type Window struct {
-	LastWidgetBounds types.Rect
+	LastWidgetBounds rect.Rect
 	title            string
 	ctx              *context
 	idx              int
 	flags            WindowFlags
-	Bounds           types.Rect
+	Bounds           rect.Rect
 	Scrollbar        image.Point
 	cmds             command.Buffer
 	widgets          widgetBuffer
 	layout           *panel
 	close, first     bool
 	// trigger rectangle of nonblocking windows
-	triggerBounds, header types.Rect
+	triggerBounds, header rect.Rect
 	// root of the node tree
 	rootNode *treeNode
 	// current tree node see TreePush/TreePop
@@ -58,6 +59,7 @@ type Window struct {
 	editor *TextEditor
 	// update function
 	updateFn UpdateFn
+	usingSub bool
 }
 
 type treeNode struct {
@@ -68,7 +70,7 @@ type treeNode struct {
 
 type panel struct {
 	Flags          WindowFlags
-	Bounds         types.Rect
+	Bounds         rect.Rect
 	Offset         *image.Point
 	AtX            int
 	AtY            int
@@ -78,7 +80,7 @@ type panel struct {
 	FooterH        int
 	HeaderH        int
 	Border         int
-	Clip           types.Rect
+	Clip           rect.Rect
 	Menu           menuState
 	Row            rowLayout
 	ReservedHeight int
@@ -104,7 +106,7 @@ type rowLayout struct {
 	ItemHeight int
 	ItemOffset int
 	Filled     float64
-	Item       types.Rect
+	Item       rect.Rect
 	TreeDepth  int
 
 	DynamicFreeX, DynamicFreeY, DynamicFreeW, DynamicFreeH float64
@@ -160,6 +162,7 @@ func createWindow(ctx *context, title string) *Window {
 
 func contextBegin(ctx *context, layout *panel) {
 	for _, w := range ctx.Windows {
+		w.usingSub = false
 		w.curNode = w.rootNode
 		w.close = false
 		w.widgets.reset()
@@ -193,6 +196,7 @@ func (win *Window) style() *nstyle.Window {
 }
 
 func panelBegin(ctx *context, win *Window, title string) bool {
+	win.usingSub = false
 	style := &ctx.Style
 	font := style.Font
 	in := &ctx.Input
@@ -213,7 +217,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 
 	/* window dragging */
 	if (win.flags&WindowMovable != 0) && win.toplevel() {
-		var move types.Rect
+		var move rect.Rect
 		move.X = win.Bounds.X
 		move.Y = win.Bounds.Y
 		move.W = win.Bounds.W
@@ -330,9 +334,9 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 		dwh.RowHeight = layout.Row.Height
 		dwh.Title = title
 
-		win.widgets.Add(types.WidgetStateInactive, layout.Bounds, &dwh)
+		win.widgets.Add(nstyle.WidgetStateInactive, layout.Bounds, &dwh)
 
-		var button types.Rect
+		var button rect.Rect
 		/* window close button */
 		button.Y = header.Y + wstyle.Header.Padding.Y
 		button.H = layout.HeaderH - 2*wstyle.Header.Padding.Y
@@ -383,7 +387,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	} else {
 		dwh.LayoutHeaderH = layout.HeaderH
 		dwh.RowHeight = layout.Row.Height
-		win.widgets.Add(types.WidgetStateInactive, layout.Bounds, &dwh)
+		win.widgets.Add(nstyle.WidgetStateInactive, layout.Bounds, &dwh)
 	}
 
 	/* fix header height for transition between minimized and maximized window state */
@@ -427,17 +431,17 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	dwb.LayoutWidth = layout.Width
 	dwb.Clip = layout.Clip
 	win.widgets.Clip = dwb.Clip
-	win.widgets.Add(types.WidgetStateInactive, dwb.Bounds, &dwb)
+	win.widgets.Add(nstyle.WidgetStateInactive, dwb.Bounds, &dwb)
 
 	layout.Row.Type = layoutInvalid
 
 	return layout.Flags&windowHidden == 0 && layout.Flags&windowMinimized == 0
 }
 
-var nk_null_rect = types.Rect{-8192.0, -8192.0, 16384.0, 16384.0}
+var nk_null_rect = rect.Rect{-8192.0, -8192.0, 16384.0, 16384.0}
 
 func panelEnd(ctx *context, window *Window) {
-	var footer = types.Rect{0, 0, 0, 0}
+	var footer = rect.Rect{0, 0, 0, 0}
 
 	layout := window.layout
 	style := &ctx.Style
@@ -450,7 +454,7 @@ func panelEnd(ctx *context, window *Window) {
 		outclip = window.parent.widgets.Clip
 	}
 	window.widgets.Clip = outclip
-	window.widgets.Add(types.WidgetStateInactive, outclip, &drawableScissor{outclip})
+	window.widgets.Add(nstyle.WidgetStateInactive, outclip, &drawableScissor{outclip})
 
 	wstyle := window.style()
 
@@ -470,13 +474,13 @@ func panelEnd(ctx *context, window *Window) {
 
 		// fill horizontal scrollbar space
 		{
-			var bounds types.Rect
+			var bounds rect.Rect
 			bounds.X = window.Bounds.X
 			bounds.Y = layout.AtY - item_spacing.Y
 			bounds.W = window.Bounds.W
 			bounds.H = window.Bounds.Y + layout.Height + item_spacing.Y + window.style().Padding.Y - bounds.Y
 
-			window.widgets.Add(types.WidgetStateInactive, bounds, &drawableFillRect{bounds, wstyle.Background})
+			window.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableFillRect{bounds, wstyle.Background})
 		}
 
 		if (layout.Offset.X == 0) || (layout.Flags&WindowNoScrollbar != 0) {
@@ -491,13 +495,13 @@ func panelEnd(ctx *context, window *Window) {
 			if (layout.Offset.X == 0) && layout.Flags&WindowNoScrollbar == 0 {
 				/* special case for windows like combobox, menu require draw call
 				 * to fill the empty scrollbar background */
-				var bounds types.Rect
+				var bounds rect.Rect
 				bounds.X = layout.Bounds.X + layout.Width
 				bounds.Y = layout.Clip.Y
 				bounds.W = scrollbar_size.X
 				bounds.H = layout.Height
 
-				window.widgets.Add(types.WidgetStateInactive, bounds, &drawableFillRect{bounds, wstyle.Background})
+				window.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableFillRect{bounds, wstyle.Background})
 			}
 		} else {
 			/* dynamic window with visible scrollbars and therefore bigger footer */
@@ -509,23 +513,23 @@ func panelEnd(ctx *context, window *Window) {
 			} else {
 				footer.Y = window.Bounds.Y + layout.Height + layout.FooterH
 			}
-			window.widgets.Add(types.WidgetStateInactive, footer, &drawableFillRect{footer, wstyle.Background})
+			window.widgets.Add(nstyle.WidgetStateInactive, footer, &drawableFillRect{footer, wstyle.Background})
 
 			if layout.Flags&windowCombo == 0 && layout.Flags&windowMenu == 0 {
 				/* fill empty scrollbar space */
-				var bounds types.Rect
+				var bounds rect.Rect
 				bounds.X = layout.Bounds.X
 				bounds.Y = window.Bounds.Y + layout.Height
 				bounds.W = layout.Bounds.W
 				bounds.H = layout.Row.Height
-				window.widgets.Add(types.WidgetStateInactive, bounds, &drawableFillRect{bounds, wstyle.Background})
+				window.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableFillRect{bounds, wstyle.Background})
 			}
 		}
 	}
 
 	/* scrollbars */
 	if layout.Flags&WindowNoScrollbar == 0 && layout.Flags&windowMinimized == 0 {
-		var bounds types.Rect
+		var bounds rect.Rect
 		var scroll_target float64
 		var scroll_offset float64
 		var scroll_step float64
@@ -636,7 +640,7 @@ func panelEnd(ctx *context, window *Window) {
 		}
 	}
 
-	window.widgets.Add(types.WidgetStateInactive, dsab.Bounds, &dsab)
+	window.widgets.Add(nstyle.WidgetStateInactive, dsab.Bounds, &dsab)
 
 	if window.flags&windowSub == 0 {
 		if layout.Flags&windowHidden != 0 {
@@ -683,7 +687,7 @@ func (win *Window) MenubarEnd() {
 	layout.Clip.H -= layout.Menu.H + layout.Row.Height
 	layout.AtY = layout.Menu.Y + layout.Menu.H
 	win.widgets.Clip = layout.Clip
-	win.widgets.Add(types.WidgetStateInactive, layout.Clip, &drawableScissor{layout.Clip})
+	win.widgets.Add(nstyle.WidgetStateInactive, layout.Clip, &drawableScissor{layout.Clip})
 }
 
 type widgetLayoutStates int
@@ -694,10 +698,10 @@ const (
 	widgetRom
 )
 
-func (win *Window) widget() (widgetLayoutStates, types.Rect) {
-	var c *types.Rect = nil
+func (win *Window) widget() (widgetLayoutStates, rect.Rect) {
+	var c *rect.Rect = nil
 
-	var bounds types.Rect
+	var bounds rect.Rect
 
 	/* allocate space  and check if the widget needs to be updated and drawn */
 	panelAllocSpace(&bounds, win)
@@ -707,7 +711,7 @@ func (win *Window) widget() (widgetLayoutStates, types.Rect) {
 		return widgetInvalid, bounds
 	}
 
-	contains := func(r *types.Rect, b *types.Rect) bool {
+	contains := func(r *rect.Rect, b *rect.Rect) bool {
 		return b.Contains(image.Point{r.X, r.Y}) && b.Contains(image.Point{r.X + r.W, r.Y + r.H})
 	}
 
@@ -717,7 +721,7 @@ func (win *Window) widget() (widgetLayoutStates, types.Rect) {
 	return widgetValid, bounds
 }
 
-func (win *Window) widgetFitting(item_padding image.Point) (state widgetLayoutStates, bounds types.Rect) {
+func (win *Window) widgetFitting(item_padding image.Point) (state widgetLayoutStates, bounds rect.Rect) {
 	/* update the bounds to stand without padding  */
 	style := win.style()
 	layout := win.layout
@@ -737,7 +741,10 @@ func (win *Window) widgetFitting(item_padding image.Point) (state widgetLayoutSt
 	return state, bounds
 }
 
-func panelAllocSpace(bounds *types.Rect, win *Window) {
+func panelAllocSpace(bounds *rect.Rect, win *Window) {
+	if win.usingSub {
+		panic(UsingSubErr)
+	}
 	/* check if the end of the row has been hit and begin new row if so */
 	layout := win.layout
 	if layout.Row.Columns > 0 && layout.Row.Index >= layout.Row.Columns {
@@ -780,9 +787,9 @@ func panelLayout(ctx *context, win *Window, height int, cols int) {
 	layout.Row.ItemOffset = 0
 	if layout.Flags&WindowDynamic != 0 {
 		var drect drawableFillRect
-		drect.R = types.Rect{layout.Bounds.X, layout.AtY, layout.Bounds.W, height + item_spacing.Y}
+		drect.R = rect.Rect{layout.Bounds.X, layout.AtY, layout.Bounds.W, height + item_spacing.Y}
 		drect.C = style.Background
-		win.widgets.Add(types.WidgetStateInactive, drect.R, &drect)
+		win.widgets.Add(nstyle.WidgetStateInactive, drect.R, &drect)
 	}
 }
 
@@ -796,8 +803,9 @@ const (
 )
 
 var InvalidLayoutErr = errors.New("invalid layout")
+var UsingSubErr = errors.New("parent window used while populating a sub window")
 
-func layoutWidgetSpace(bounds *types.Rect, ctx *context, win *Window, modify bool) {
+func layoutWidgetSpace(bounds *rect.Rect, ctx *context, win *Window, modify bool) {
 	layout := win.layout
 
 	/* cache some configuration data */
@@ -1086,7 +1094,7 @@ func (win *Window) LayoutSetWidthScaled(width int) {
 var WrongLayoutErr = errors.New("Command not available with current layout")
 
 // Sets position and size of the next widgets in a Space row layout
-func (win *Window) LayoutSpacePush(rect types.Rect) {
+func (win *Window) LayoutSpacePush(rect rect.Rect) {
 	if win.layout.Row.Type != layoutStaticFree {
 		panic(WrongLayoutErr)
 	}
@@ -1098,7 +1106,7 @@ func (win *Window) LayoutSpacePush(rect types.Rect) {
 }
 
 // Like LayoutSpacePush but with scaled units
-func (win *Window) LayoutSpacePushScaled(rect types.Rect) {
+func (win *Window) LayoutSpacePushScaled(rect rect.Rect) {
 	if win.layout.Row.Type != layoutStaticFree {
 		panic(WrongLayoutErr)
 	}
@@ -1113,7 +1121,7 @@ func (win *Window) LayoutSpacePushRatio(x, y, w, h float64) {
 	win.layout.Row.DynamicFreeX, win.layout.Row.DynamicFreeY, win.layout.Row.DynamicFreeH, win.layout.Row.DynamicFreeW = x, y, w, h
 }
 
-func (win *Window) layoutPeek(bounds *types.Rect) {
+func (win *Window) layoutPeek(bounds *rect.Rect) {
 	layout := win.layout
 	y := layout.AtY
 	index := layout.Row.Index
@@ -1130,8 +1138,8 @@ func (win *Window) layoutPeek(bounds *types.Rect) {
 // Returns the position and size of the next widget that will be
 // added to the current row.
 // Note that the return value is in scaled units.
-func (win *Window) WidgetBounds() types.Rect {
-	var bounds types.Rect
+func (win *Window) WidgetBounds() rect.Rect {
+	var bounds rect.Rect
 	win.layoutPeek(&bounds)
 	return bounds
 }
@@ -1234,7 +1242,7 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 	}
 
 	/* calculate the triangle bounds */
-	var sym types.Rect
+	var sym rect.Rect
 	sym.H = FontHeight(style.Font)
 	sym.W = sym.H
 	sym.Y = header.Y + style.Tab.Padding.Y
@@ -1308,7 +1316,7 @@ func (win *Window) TreePop() {
 
 // LabelColored draws a text label with the specified background color.
 func (win *Window) LabelColored(str string, alignment label.Align, color color.RGBA) {
-	var bounds types.Rect
+	var bounds rect.Rect
 	var text textWidget
 
 	style := &win.ctx.Style
@@ -1319,14 +1327,14 @@ func (win *Window) LabelColored(str string, alignment label.Align, color color.R
 	text.Padding.Y = item_padding.Y
 	text.Background = win.style().Background
 	text.Text = color
-	win.widgets.Add(types.WidgetStateInactive, bounds, &drawableNonInteractive{bounds, color, false, text, alignment, str, nil, nil})
+	win.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableNonInteractive{bounds, color, false, text, alignment, str, nil, nil})
 
 }
 
 // LabelWrapColored draws a text label with the specified background
 // color autowrappping the text.
 func (win *Window) LabelWrapColored(str string, color color.RGBA) {
-	var bounds types.Rect
+	var bounds rect.Rect
 	var text textWidget
 
 	style := &win.ctx.Style
@@ -1337,7 +1345,7 @@ func (win *Window) LabelWrapColored(str string, color color.RGBA) {
 	text.Padding.Y = item_padding.Y
 	text.Background = win.style().Background
 	text.Text = color
-	win.widgets.Add(types.WidgetStateInactive, bounds, &drawableNonInteractive{bounds, color, true, text, "LT", str, nil, nil})
+	win.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableNonInteractive{bounds, color, true, text, "LT", str, nil, nil})
 }
 
 // Label draws a text label.
@@ -1352,13 +1360,13 @@ func (win *Window) LabelWrap(str string) {
 
 // Image draws an image.
 func (win *Window) Image(img *image.RGBA) {
-	var bounds types.Rect
+	var bounds rect.Rect
 	var s widgetLayoutStates
 
 	if s, bounds = win.widget(); s == 0 {
 		return
 	}
-	win.widgets.Add(types.WidgetStateInactive, bounds, &drawableNonInteractive{Bounds: bounds, Img: img})
+	win.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableNonInteractive{Bounds: bounds, Img: img})
 }
 
 // Spacing adds empty space
@@ -1369,7 +1377,7 @@ func (win *Window) Spacing(cols int) {
 }
 
 // CustomState returns the widget state of a custom widget.
-func (win *Window) CustomState() types.WidgetStates {
+func (win *Window) CustomState() nstyle.WidgetStates {
 	bounds := win.WidgetBounds()
 	s := widgetValid
 	if !win.layout.Clip.Intersect(&bounds) {
@@ -1382,7 +1390,7 @@ func (win *Window) CustomState() types.WidgetStates {
 }
 
 // Custom adds a custom widget.
-func (win *Window) Custom(state types.WidgetStates) (bounds types.Rect, out *command.Buffer) {
+func (win *Window) Custom(state nstyle.WidgetStates) (bounds rect.Rect, out *command.Buffer) {
 	var s widgetLayoutStates
 
 	if s, bounds = win.widget(); s == 0 {
@@ -1390,7 +1398,7 @@ func (win *Window) Custom(state types.WidgetStates) (bounds types.Rect, out *com
 	}
 	prevstate := win.widgets.PrevState(bounds)
 	exitstate := basicWidgetStateControl(&prevstate, win.inputMaybe(s), bounds)
-	if state != types.WidgetStateActive {
+	if state != nstyle.WidgetStateActive {
 		state = exitstate
 	}
 	win.widgets.Add(state, bounds, nil)
@@ -1405,11 +1413,11 @@ func (win *Window) Commands() *command.Buffer {
 // BUTTON
 ///////////////////////////////////////////////////////////////////////////////////
 
-func buttonBehaviorDo(state *types.WidgetStates, r types.Rect, i *Input, repeat bool) (ret bool) {
+func buttonBehaviorDo(state *nstyle.WidgetStates, r rect.Rect, i *Input, repeat bool) (ret bool) {
 	exitstate := basicWidgetStateControl(state, i, r)
 
-	if *state == types.WidgetStateActive {
-		if exitstate == types.WidgetStateHovered {
+	if *state == nstyle.WidgetStateActive {
+		if exitstate == nstyle.WidgetStateHovered {
 			if repeat {
 				ret = i.Mouse.Down(mouse.ButtonLeft)
 			} else {
@@ -1424,7 +1432,7 @@ func buttonBehaviorDo(state *types.WidgetStates, r types.Rect, i *Input, repeat 
 	return ret
 }
 
-func doButton(win *Window, lbl label.Label, r types.Rect, style *nstyle.Button, in *Input, repeat bool) bool {
+func doButton(win *Window, lbl label.Label, r rect.Rect, style *nstyle.Button, in *Input, repeat bool) bool {
 	out := win.widgets
 	if lbl.Kind == label.ColorLabel {
 		button := *style
@@ -1436,14 +1444,14 @@ func doButton(win *Window, lbl label.Label, r types.Rect, style *nstyle.Button, 
 	}
 
 	/* calculate button content space */
-	var content types.Rect
+	var content rect.Rect
 	content.X = r.X + style.Padding.X + style.Border
 	content.Y = r.Y + style.Padding.Y + style.Border
 	content.W = r.W - 2*style.Padding.X + style.Border
 	content.H = r.H - 2*style.Padding.Y + style.Border
 
 	/* execute button behavior */
-	var bounds types.Rect
+	var bounds rect.Rect
 	bounds.X = r.X - style.TouchPadding.X
 	bounds.Y = r.Y - style.TouchPadding.Y
 	bounds.W = r.W + 2*style.TouchPadding.X
@@ -1471,7 +1479,7 @@ func doButton(win *Window, lbl label.Label, r types.Rect, style *nstyle.Button, 
 			lbl.Align = "CC"
 		}
 		font := win.ctx.Style.Font
-		var tri types.Rect
+		var tri rect.Rect
 		tri.Y = content.Y + (content.H / 2) - FontHeight(font)/2
 		tri.W = FontHeight(font)
 		tri.H = FontHeight(font)
@@ -1488,7 +1496,7 @@ func doButton(win *Window, lbl label.Label, r types.Rect, style *nstyle.Button, 
 		if lbl.Align == "" {
 			lbl.Align = "CC"
 		}
-		var icon types.Rect
+		var icon rect.Rect
 		icon.Y = bounds.Y + style.Padding.Y
 		icon.H = bounds.H - 2*style.Padding.Y
 		icon.W = icon.H
@@ -1534,14 +1542,14 @@ func (win *Window) ButtonText(text string) bool {
 // SELECTABLE
 ///////////////////////////////////////////////////////////////////////////////////
 
-func doSelectable(out *widgetBuffer, bounds types.Rect, str string, align label.Align, value *bool, style *nstyle.Selectable, in *Input) bool {
+func doSelectable(out *widgetBuffer, bounds rect.Rect, str string, align label.Align, value *bool, style *nstyle.Selectable, in *Input) bool {
 	if str == "" {
 		return false
 	}
 	old_value := *value
 
 	/* remove padding */
-	var touch types.Rect
+	var touch rect.Rect
 	touch.X = bounds.X - style.TouchPadding.X
 	touch.Y = bounds.Y - style.TouchPadding.Y
 	touch.W = bounds.W + style.TouchPadding.X*2
@@ -1582,10 +1590,10 @@ const (
 	horizontal
 )
 
-func scrollbarBehavior(state *types.WidgetStates, in *Input, scroll, cursor, scrollwheel_bounds types.Rect, scroll_offset float64, target float64, scroll_step float64, o orientation) float64 {
+func scrollbarBehavior(state *nstyle.WidgetStates, in *Input, scroll, cursor, scrollwheel_bounds rect.Rect, scroll_offset float64, target float64, scroll_step float64, o orientation) float64 {
 	exitstate := basicWidgetStateControl(state, in, cursor)
 
-	if *state == types.WidgetStateActive {
+	if *state == nstyle.WidgetStateActive {
 		if !in.Mouse.Down(mouse.ButtonLeft) {
 			*state = exitstate
 		} else {
@@ -1624,8 +1632,8 @@ func scrollbarBehavior(state *types.WidgetStates, in *Input, scroll, cursor, scr
 	return scroll_offset
 }
 
-func doScrollbarv(win *Window, scroll, scrollwheel_bounds types.Rect, offset float64, target float64, step float64, button_pixel_inc float64, style *nstyle.Scrollbar, in *Input, font *types.Face) float64 {
-	var cursor types.Rect
+func doScrollbarv(win *Window, scroll, scrollwheel_bounds rect.Rect, offset float64, target float64, step float64, button_pixel_inc float64, style *nstyle.Scrollbar, in *Input, font font.Face) float64 {
+	var cursor rect.Rect
 	var scroll_step float64
 	var scroll_offset float64
 	var scroll_off float64
@@ -1645,7 +1653,7 @@ func doScrollbarv(win *Window, scroll, scrollwheel_bounds types.Rect, offset flo
 
 	/* optional scrollbar buttons */
 	if style.ShowButtons {
-		var button types.Rect
+		var button rect.Rect
 		button.X = scroll.X
 		button.W = scroll.W
 		button.H = scroll.W
@@ -1698,8 +1706,8 @@ func doScrollbarv(win *Window, scroll, scrollwheel_bounds types.Rect, offset flo
 	return scroll_offset
 }
 
-func doScrollbarh(win *Window, scroll types.Rect, offset float64, target float64, step float64, button_pixel_inc float64, style *nstyle.Scrollbar, in *Input, font *types.Face) float64 {
-	var cursor types.Rect
+func doScrollbarh(win *Window, scroll rect.Rect, offset float64, target float64, step float64, button_pixel_inc float64, style *nstyle.Scrollbar, in *Input, font font.Face) float64 {
+	var cursor rect.Rect
 	var scroll_step float64
 	var scroll_offset float64
 	var scroll_off float64
@@ -1721,7 +1729,7 @@ func doScrollbarh(win *Window, scroll types.Rect, offset float64, target float64
 	/* optional scrollbar buttons */
 	if style.ShowButtons {
 		var scroll_w float64
-		var button types.Rect
+		var button rect.Rect
 		button.Y = scroll.Y
 		button.W = scroll.H
 		button.H = scroll.H
@@ -1763,7 +1771,7 @@ func doScrollbarh(win *Window, scroll types.Rect, offset float64, target float64
 	/* update scrollbar */
 	out := &win.widgets
 	state := out.PrevState(scroll)
-	scroll_offset = scrollbarBehavior(&state, in, scroll, cursor, types.Rect{0, 0, 0, 0}, scroll_offset, target, scroll_step, horizontal)
+	scroll_offset = scrollbarBehavior(&state, in, scroll, cursor, rect.Rect{0, 0, 0, 0}, scroll_offset, target, scroll_step, horizontal)
 
 	scroll_off = scroll_offset / target
 	cursor.X = scroll.X + int(scroll_off*float64(scroll.W))
@@ -1784,26 +1792,26 @@ const (
 	toggleOption
 )
 
-func toggleBehavior(in *Input, b types.Rect, state *types.WidgetStates, active bool) bool {
+func toggleBehavior(in *Input, b rect.Rect, state *nstyle.WidgetStates, active bool) bool {
 	//TODO: rewrite using basicWidgetStateControl
 	if in.Mouse.HoveringRect(b) {
-		*state = types.WidgetStateHovered
+		*state = nstyle.WidgetStateHovered
 	} else {
-		*state = types.WidgetStateInactive
+		*state = nstyle.WidgetStateInactive
 	}
-	if *state == types.WidgetStateHovered && in.Mouse.Clicked(mouse.ButtonLeft, b) {
-		*state = types.WidgetStateActive
+	if *state == nstyle.WidgetStateHovered && in.Mouse.Clicked(mouse.ButtonLeft, b) {
+		*state = nstyle.WidgetStateActive
 		active = !active
 	}
 
 	return active
 }
 
-func doToggle(out *widgetBuffer, r types.Rect, active bool, str string, type_ toggleType, style *nstyle.Toggle, in *Input, font *types.Face) bool {
-	var bounds types.Rect
-	var select_ types.Rect
-	var cursor types.Rect
-	var label types.Rect
+func doToggle(out *widgetBuffer, r rect.Rect, active bool, str string, type_ toggleType, style *nstyle.Toggle, in *Input, font font.Face) bool {
+	var bounds rect.Rect
+	var select_ rect.Rect
+	var cursor rect.Rect
+	var label rect.Rect
 	var cursor_pad int
 
 	r.W = max(r.W, FontHeight(font)+2*style.Padding.X)
@@ -1884,10 +1892,10 @@ func (win *Window) CheckboxText(text string, active *bool) bool {
 // SLIDER
 ///////////////////////////////////////////////////////////////////////////////////
 
-func sliderBehavior(state *types.WidgetStates, cursor *types.Rect, in *Input, style *nstyle.Slider, bounds types.Rect, slider_min float64, slider_value float64, slider_max float64, slider_step float64, slider_steps int) float64 {
+func sliderBehavior(state *nstyle.WidgetStates, cursor *rect.Rect, in *Input, style *nstyle.Slider, bounds rect.Rect, slider_min float64, slider_value float64, slider_max float64, slider_step float64, slider_steps int) float64 {
 	exitstate := basicWidgetStateControl(state, in, bounds)
 
-	if *state == types.WidgetStateActive {
+	if *state == nstyle.WidgetStateActive {
 		if !in.Mouse.Down(mouse.ButtonLeft) {
 			*state = exitstate
 		} else {
@@ -1909,10 +1917,10 @@ func sliderBehavior(state *types.WidgetStates, cursor *types.Rect, in *Input, st
 	return slider_value
 }
 
-func doSlider(win *Window, bounds types.Rect, minval float64, val float64, maxval float64, step float64, style *nstyle.Slider, in *Input) float64 {
+func doSlider(win *Window, bounds rect.Rect, minval float64, val float64, maxval float64, step float64, style *nstyle.Slider, in *Input) float64 {
 	var slider_range float64
 	var cursor_offset float64
-	var cursor types.Rect
+	var cursor rect.Rect
 
 	/* remove padding from slider bounds */
 	bounds.X = bounds.X + style.Padding.X
@@ -1925,7 +1933,7 @@ func doSlider(win *Window, bounds types.Rect, minval float64, val float64, maxva
 
 	/* optional buttons */
 	if style.ShowButtons {
-		var button types.Rect
+		var button rect.Rect
 		button.Y = bounds.Y
 		button.W = bounds.H
 		button.H = bounds.H
@@ -1996,15 +2004,15 @@ func (win *Window) SliderInt(min int, val *int, max int, step int) bool {
 // PROGRESS BAR
 ///////////////////////////////////////////////////////////////////////////////////
 
-func progressBehavior(state *types.WidgetStates, in *Input, r types.Rect, maxval int, value int, modifiable bool) int {
+func progressBehavior(state *nstyle.WidgetStates, in *Input, r rect.Rect, maxval int, value int, modifiable bool) int {
 	if !modifiable {
-		*state = types.WidgetStateInactive
+		*state = nstyle.WidgetStateInactive
 		return value
 	}
 
 	exitstate := basicWidgetStateControl(state, in, r)
 
-	if *state == types.WidgetStateActive {
+	if *state == nstyle.WidgetStateActive {
 		if !in.Mouse.Down(mouse.ButtonLeft) {
 			*state = exitstate
 		} else {
@@ -2022,9 +2030,9 @@ func progressBehavior(state *types.WidgetStates, in *Input, r types.Rect, maxval
 	return value
 }
 
-func doProgress(out *widgetBuffer, bounds types.Rect, value int, maxval int, modifiable bool, style *nstyle.Progress, in *Input) int {
+func doProgress(out *widgetBuffer, bounds rect.Rect, value int, maxval int, modifiable bool, style *nstyle.Progress, in *Input) int {
 	var prog_scale float64
-	var cursor types.Rect
+	var cursor rect.Rect
 
 	/* calculate progressbar cursor */
 	cursor = padRect(bounds, style.Padding)
@@ -2077,7 +2085,7 @@ func FilterFloat(c rune) bool {
 	return !((c < '0' || c > '9') && c != '.' && c != '-')
 }
 
-func (ed *TextEditor) propertyBehavior(ws *types.WidgetStates, in *Input, property types.Rect, label types.Rect, edit types.Rect, empty types.Rect) (drag bool, delta int) {
+func (ed *TextEditor) propertyBehavior(ws *nstyle.WidgetStates, in *Input, property rect.Rect, label rect.Rect, edit rect.Rect, empty rect.Rect) (drag bool, delta int) {
 	if ed.propertyStatus == propertyDefault {
 		if buttonBehaviorDo(ws, edit, in, false) {
 			ed.propertyStatus = propertyEdit
@@ -2099,12 +2107,12 @@ func (ed *TextEditor) propertyBehavior(ws *types.WidgetStates, in *Input, proper
 
 	if ed.propertyStatus == propertyDefault {
 		if in.Mouse.HoveringRect(property) {
-			*ws = types.WidgetStateHovered
+			*ws = nstyle.WidgetStateHovered
 		} else {
-			*ws = types.WidgetStateInactive
+			*ws = nstyle.WidgetStateInactive
 		}
 	} else {
-		*ws = types.WidgetStateActive
+		*ws = nstyle.WidgetStateActive
 	}
 
 	return
@@ -2120,13 +2128,13 @@ const (
 	doPropertySet
 )
 
-func (win *Window) doProperty(property types.Rect, name string, text string, filter FilterFunc, in *Input) (ret doPropertyRet, delta int, ed *TextEditor) {
+func (win *Window) doProperty(property rect.Rect, name string, text string, filter FilterFunc, in *Input) (ret doPropertyRet, delta int, ed *TextEditor) {
 	ret = doPropertyStay
 	style := &win.ctx.Style.Property
 	font := win.ctx.Style.Font
 
 	// left decrement button
-	var left types.Rect
+	var left rect.Rect
 	left.H = FontHeight(font) / 2
 	left.W = left.H
 	left.X = property.X + style.Border + style.Padding.X
@@ -2134,14 +2142,14 @@ func (win *Window) doProperty(property types.Rect, name string, text string, fil
 
 	// text label
 	size := FontWidth(font, name)
-	var lblrect types.Rect
+	var lblrect rect.Rect
 	lblrect.X = left.X + left.W + style.Padding.X
 	lblrect.W = size + 2*style.Padding.X
 	lblrect.Y = property.Y + style.Border
 	lblrect.H = property.H - 2*style.Border
 
 	/* right increment button */
-	var right types.Rect
+	var right rect.Rect
 	right.Y = left.Y
 	right.W = left.W
 	right.H = left.H
@@ -2149,7 +2157,7 @@ func (win *Window) doProperty(property types.Rect, name string, text string, fil
 
 	ws := win.widgets.PrevState(property)
 	oldws := ws
-	if ws == types.WidgetStateActive {
+	if ws == nstyle.WidgetStateActive {
 		ed = win.editor
 	} else {
 		ed = &TextEditor{}
@@ -2160,14 +2168,14 @@ func (win *Window) doProperty(property types.Rect, name string, text string, fil
 	size = FontWidth(font, string(ed.Buffer)) + style.Edit.CursorSize
 
 	/* edit */
-	var edit types.Rect
+	var edit rect.Rect
 	edit.W = size + 2*style.Padding.X
 	edit.X = right.X - (edit.W + style.Padding.X)
 	edit.Y = property.Y + style.Border + 1
 	edit.H = property.H - (2*style.Border + 2)
 
 	/* empty left space activator */
-	var empty types.Rect
+	var empty rect.Rect
 	empty.W = edit.X - (lblrect.X + lblrect.W)
 	empty.X = lblrect.X + lblrect.W
 	empty.Y = property.Y
@@ -2180,10 +2188,10 @@ func (win *Window) doProperty(property types.Rect, name string, text string, fil
 	if drag {
 		ret = doPropertyDrag
 	}
-	if ws == types.WidgetStateActive {
+	if ws == nstyle.WidgetStateActive {
 		ed.Active = true
 		win.editor = ed
-	} else if oldws == types.WidgetStateActive {
+	} else if oldws == nstyle.WidgetStateActive {
 		win.editor = nil
 	}
 	ed.win.widgets.Add(ws, property, &drawableProperty{style, property, lblrect, ws, name})
@@ -2281,7 +2289,7 @@ func (win *Window) PropertyInt(name string, min int, val *int, max, step, inc_pe
 // POPUP
 ///////////////////////////////////////////////////////////////////////////////////
 
-func (ctx *context) nonblockOpen(flags WindowFlags, body types.Rect, header types.Rect, updateFn UpdateFn) {
+func (ctx *context) nonblockOpen(flags WindowFlags, body rect.Rect, header rect.Rect, updateFn UpdateFn) {
 	popup := createWindow(ctx, "")
 	popup.idx = len(ctx.Windows)
 	popup.updateFn = updateFn
@@ -2301,7 +2309,7 @@ func (ctx *context) nonblockOpen(flags WindowFlags, body types.Rect, header type
 // Opens a popup window inside win. Will return true until the
 // popup window is closed.
 // The contents of the popup window will be updated by updateFn
-func (mw *MasterWindow) PopupOpen(title string, flags WindowFlags, rect types.Rect, scale bool, updateFn UpdateFn) {
+func (mw *MasterWindow) PopupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn) {
 	go func() {
 		mw.uilock.Lock()
 		defer mw.uilock.Unlock()
@@ -2310,7 +2318,7 @@ func (mw *MasterWindow) PopupOpen(title string, flags WindowFlags, rect types.Re
 	}()
 }
 
-func (ctx *context) popupOpen(title string, flags WindowFlags, rect types.Rect, scale bool, updateFn UpdateFn) {
+func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn) {
 	popup := createWindow(ctx, title)
 	popup.idx = len(ctx.Windows)
 	popup.updateFn = updateFn
@@ -2344,21 +2352,21 @@ func (win *Window) Close() {
 ///////////////////////////////////////////////////////////////////////////////////
 
 // Opens a contextual menu with maximum size equal to 'size'.
-func (win *Window) ContextualOpen(flags WindowFlags, size image.Point, trigger_bounds types.Rect, updateFn UpdateFn) {
+func (win *Window) ContextualOpen(flags WindowFlags, size image.Point, trigger_bounds rect.Rect, updateFn UpdateFn) {
 	size.X = win.ctx.scale(size.X)
 	size.Y = win.ctx.scale(size.Y)
 	if !win.Input().Mouse.Clicked(mouse.ButtonRight, trigger_bounds) {
 		return
 	}
 
-	var body types.Rect
+	var body rect.Rect
 	body.X = win.ctx.Input.Mouse.Pos.X
 	body.Y = win.ctx.Input.Mouse.Pos.Y
 	body.W = size.X
 	body.H = size.Y
 
 	atomic.AddInt32(&win.ctx.changed, 1)
-	win.ctx.nonblockOpen(flags|windowContextual|WindowNoScrollbar, body, types.Rect{}, updateFn)
+	win.ctx.nonblockOpen(flags|windowContextual|WindowNoScrollbar, body, rect.Rect{}, updateFn)
 	popup := win.ctx.Windows[len(win.ctx.Windows)-1]
 	popup.triggerBounds = trigger_bounds
 }
@@ -2394,7 +2402,7 @@ func (win *Window) TooltipOpen(width int, scale bool, updateFn UpdateFn) {
 		width = win.ctx.scale(width)
 	}
 
-	var bounds types.Rect
+	var bounds rect.Rect
 	bounds.W = width
 	bounds.H = nk_null_rect.H
 	bounds.X = (in.Mouse.Pos.X + 1) - win.layout.Clip.X
@@ -2428,20 +2436,20 @@ func (win *Window) Tooltip(text string) {
 // COMBO-BOX
 ///////////////////////////////////////////////////////////////////////////////////
 
-func (ctx *context) comboOpen(height int, is_clicked bool, header types.Rect, updateFn UpdateFn) {
+func (ctx *context) comboOpen(height int, is_clicked bool, header rect.Rect, updateFn UpdateFn) {
 	height = ctx.scale(height)
 
 	if !is_clicked {
 		return
 	}
 
-	var body types.Rect
+	var body rect.Rect
 	body.X = header.X
 	body.W = header.W
 	body.Y = header.Y + header.H - 1
 	body.H = height
 
-	ctx.nonblockOpen(windowCombo, body, types.Rect{0, 0, 0, 0}, updateFn)
+	ctx.nonblockOpen(windowCombo, body, rect.Rect{0, 0, 0, 0}, updateFn)
 }
 
 // Adds a drop-down list to win.
@@ -2502,14 +2510,14 @@ func (win *Window) ComboSimple(items []string, selected *int, item_height int) {
 // MENU
 ///////////////////////////////////////////////////////////////////////////////////
 
-func (win *Window) menuOpen(is_clicked bool, header types.Rect, width int, updateFn UpdateFn) {
+func (win *Window) menuOpen(is_clicked bool, header rect.Rect, width int, updateFn UpdateFn) {
 	width = win.ctx.scale(width)
 
 	if !is_clicked {
 		return
 	}
 
-	var body types.Rect
+	var body rect.Rect
 	body.X = header.X
 	body.W = width
 	body.Y = header.Y + header.H
@@ -2574,12 +2582,15 @@ func (win *Window) GroupBegin(title string, flags WindowFlags) *Window {
 
 	sw.layout.Offset = &sw.Scrollbar
 
+	win.usingSub = true
+
 	return sw
 }
 
 // Signals that you are done adding widgets to a group.
 func (win *Window) GroupEnd() {
 	panelEnd(win.ctx, win)
+	win.parent.usingSub = false
 	win.parent.widgets.prev = append(win.parent.widgets.prev, win.widgets.prev...)
 	win.parent.widgets.cur = append(win.parent.widgets.cur, win.widgets.cur...)
 

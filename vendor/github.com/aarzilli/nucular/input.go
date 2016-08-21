@@ -3,10 +3,10 @@ package nucular
 import (
 	"image"
 
+	"github.com/aarzilli/nucular/rect"
+
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
-
-	"github.com/aarzilli/nucular/types"
 )
 
 type mouseButton struct {
@@ -41,46 +41,46 @@ func (win *Window) Input() *Input {
 	return &win.ctx.Input
 }
 
-func (win *Window) KeyboardOnHover(bounds types.Rect) KeyboardInput {
+func (win *Window) KeyboardOnHover(bounds rect.Rect) KeyboardInput {
 	if !win.toplevel() || !win.ctx.Input.Mouse.HoveringRect(bounds) {
 		return KeyboardInput{}
 	}
 	return win.ctx.Input.Keyboard
 }
 
-func (i *MouseInput) HasClickInRect(id mouse.Button, b types.Rect) bool {
+func (i *MouseInput) HasClickInRect(id mouse.Button, b rect.Rect) bool {
 	btn := &i.Buttons[id]
 	return b.Contains(btn.ClickedPos)
 }
 
-func (i *MouseInput) HasClickDownInRect(id mouse.Button, b types.Rect, down bool) bool {
+func (i *MouseInput) HasClickDownInRect(id mouse.Button, b rect.Rect, down bool) bool {
 	btn := &i.Buttons[id]
 	return i.HasClickInRect(id, b) && (btn.Down == down)
 }
 
-func (i *MouseInput) IsClickInRect(id mouse.Button, b types.Rect) bool {
+func (i *MouseInput) IsClickInRect(id mouse.Button, b rect.Rect) bool {
 	btn := &i.Buttons[id]
 	return i.HasClickDownInRect(id, b, false) && btn.Clicked
 }
 
-func (i *MouseInput) IsClickDownInRect(id mouse.Button, b types.Rect, down bool) bool {
+func (i *MouseInput) IsClickDownInRect(id mouse.Button, b rect.Rect, down bool) bool {
 	btn := &i.Buttons[id]
 	return i.HasClickDownInRect(id, b, down) && btn.Clicked
 }
 
-func (i *MouseInput) AnyClickInRect(b types.Rect) bool {
+func (i *MouseInput) AnyClickInRect(b rect.Rect) bool {
 	return i.IsClickInRect(mouse.ButtonLeft, b) || i.IsClickInRect(mouse.ButtonMiddle, b) || i.IsClickInRect(mouse.ButtonRight, b)
 }
 
-func (i *MouseInput) HoveringRect(rect types.Rect) bool {
+func (i *MouseInput) HoveringRect(rect rect.Rect) bool {
 	return i.valid && rect.Contains(i.Pos)
 }
 
-func (i *MouseInput) PrevHoveringRect(rect types.Rect) bool {
+func (i *MouseInput) PrevHoveringRect(rect rect.Rect) bool {
 	return i.valid && rect.Contains(i.Prev)
 }
 
-func (i *MouseInput) Clicked(id mouse.Button, rect types.Rect) bool {
+func (i *MouseInput) Clicked(id mouse.Button, rect rect.Rect) bool {
 	if !i.HoveringRect(rect) {
 		return false
 	}

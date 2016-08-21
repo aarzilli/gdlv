@@ -4,14 +4,15 @@ import (
 	"image"
 
 	nstyle "github.com/aarzilli/nucular/style"
-	"github.com/aarzilli/nucular/types"
+
+	"golang.org/x/image/font"
 )
 
 func (mw *MasterWindow) Style() (style *nstyle.Style, scaling float64) {
 	return &mw.ctx.Style, mw.ctx.Scaling
 }
 
-func (mw *MasterWindow) SetStyle(style *nstyle.Style, ff *types.Face, scaling float64) {
+func (mw *MasterWindow) SetStyle(style *nstyle.Style, ff font.Face, scaling float64) {
 	mw.ctx.Style = *style
 
 	if ff == nil {

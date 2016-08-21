@@ -7,13 +7,14 @@ import (
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
 
+	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 
 	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/label"
+	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
-	"github.com/aarzilli/nucular/types"
 )
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -26,10 +27,10 @@ type textWidget struct {
 	Text       color.RGBA
 }
 
-func textClamp(f *types.Face, text []rune, space int) []rune {
+func textClamp(f font.Face, text []rune, space int) []rune {
 	text_width := 0
 	for i, ch := range text {
-		_, _, _, xwfixed, _ := f.Face.Glyph(fixed.P(0, 0), ch)
+		_, _, _, xwfixed, _ := f.Glyph(fixed.P(0, 0), ch)
 		xw := xwfixed.Ceil()
 		if text_width+xw >= space {
 			return text[:i]
@@ -39,9 +40,9 @@ func textClamp(f *types.Face, text []rune, space int) []rune {
 	return text
 }
 
-func widgetText(o *command.Buffer, b types.Rect, str string, t *textWidget, a label.Align, f *types.Face) {
+func widgetText(o *command.Buffer, b rect.Rect, str string, t *textWidget, a label.Align, f font.Face) {
 	b.H = max(b.H, 2*t.Padding.Y)
-	lblrect := types.Rect{X: 0, W: 0, Y: b.Y + t.Padding.Y, H: b.H - 2*t.Padding.Y}
+	lblrect := rect.Rect{X: 0, W: 0, Y: b.Y + t.Padding.Y, H: b.H - 2*t.Padding.Y}
 
 	/* align in x-axis */
 	switch a[0] {
@@ -83,9 +84,9 @@ func widgetText(o *command.Buffer, b types.Rect, str string, t *textWidget, a la
 	o.DrawText(lblrect, str, f, t.Text)
 }
 
-func widgetTextWrap(o *command.Buffer, b types.Rect, str []rune, t *textWidget, f *types.Face) {
+func widgetTextWrap(o *command.Buffer, b rect.Rect, str []rune, t *textWidget, f font.Face) {
 	var done int = 0
-	var line types.Rect
+	var line rect.Rect
 	var text textWidget
 
 	text.Padding = image.Point{0, 0}
@@ -255,29 +256,36 @@ type textUndoState struct {
 }
 
 func strInsertText(str []rune, pos int, runes []rune) []rune {
-	r := make([]rune, 0, len(str)+len(runes))
-	r = append(r, str[:pos]...)
-	r = append(r, runes...)
-	r = append(r, str[pos:]...)
-	return r
+	if cap(str) < len(str)+len(runes) {
+		newcap := (cap(str) + 1) * 2
+		if newcap < len(str)+len(runes) {
+			newcap = len(str) + len(runes)
+		}
+		newstr := make([]rune, len(str), newcap)
+		copy(newstr, str)
+		str = newstr
+	}
+	str = str[:len(str)+len(runes)]
+	copy(str[pos+len(runes):], str[pos:])
+	copy(str[pos:], runes)
+	return str
 }
 
 func strDeleteText(s []rune, pos int, dlen int) []rune {
-	r := make([]rune, 0, len(s)-dlen)
-	r = append(r, s[:pos]...)
-	r = append(r, s[pos+dlen:]...)
-	return r
+	copy(s[pos:], s[pos+dlen:])
+	s = s[:len(s)-dlen]
+	return s
 }
 
 func textHasSelection(s *TextEditor) bool {
 	return s.SelectStart != s.SelectEnd
 }
 
-func (edit *TextEditor) getWidth(line_start int, char_id int, font *types.Face) int {
+func (edit *TextEditor) getWidth(line_start int, char_id int, font font.Face) int {
 	return FontWidth(font, string(edit.Buffer[line_start+char_id:line_start+char_id+1]))
 }
 
-func textCalculateTextBounds(font *types.Face, text []rune, rowHeight int, stopOnNewline bool) (textSize image.Point, n int) {
+func textCalculateTextBounds(font font.Face, text []rune, rowHeight int, stopOnNewline bool) (textSize image.Point, n int) {
 	lineStart := 0
 
 	flushLine := func(lineEnd int) {
@@ -312,7 +320,7 @@ func textCalculateTextBounds(font *types.Face, text []rune, rowHeight int, stopO
 	return
 }
 
-func texteditLayoutRow(r *textEditRow, edit *TextEditor, line_start_id int, row_height int, font *types.Face) {
+func texteditLayoutRow(r *textEditRow, edit *TextEditor, line_start_id int, row_height int, font font.Face) {
 	size, glyphs := textCalculateTextBounds(font, edit.Buffer[line_start_id:], row_height, true)
 
 	r.X0 = 0.0
@@ -323,7 +331,7 @@ func texteditLayoutRow(r *textEditRow, edit *TextEditor, line_start_id int, row_
 	r.NumChars = glyphs
 }
 
-func (edit *TextEditor) locateCoord(p image.Point, font *types.Face, row_height int) int {
+func (edit *TextEditor) locateCoord(p image.Point, font font.Face, row_height int) int {
 	var r textEditRow
 	var base_y int = 0
 	var prev_x int
@@ -394,7 +402,7 @@ func (edit *TextEditor) locateCoord(p image.Point, font *types.Face, row_height 
 	}
 }
 
-func (state *TextEditor) click(coord image.Point, font *types.Face, row_height int) {
+func (state *TextEditor) click(coord image.Point, font font.Face, row_height int) {
 	/* API click: on mouse down, move the cursor to the clicked location,
 	 * and reset the selection */
 	state.Cursor = state.locateCoord(coord, font, row_height)
@@ -404,7 +412,7 @@ func (state *TextEditor) click(coord image.Point, font *types.Face, row_height i
 	state.HasPreferredX = false
 }
 
-func (state *TextEditor) drag(coord image.Point, font *types.Face, row_height int) {
+func (state *TextEditor) drag(coord image.Point, font font.Face, row_height int) {
 	/* API drag: on mouse drag, move the cursor and selection endpoint
 	 * to the clicked location */
 	var p int = state.locateCoord(coord, font, row_height)
@@ -415,7 +423,7 @@ func (state *TextEditor) drag(coord image.Point, font *types.Face, row_height in
 	state.Cursor = state.SelectEnd
 }
 
-func (state *TextEditor) findCharpos(n int, single_line bool, font *types.Face, row_height int) (find textFind) {
+func (state *TextEditor) findCharpos(n int, single_line bool, font font.Face, row_height int) (find textFind) {
 	var r textEditRow
 	var prev_start int = 0
 	/* find the x/y location of a character, and remember info about the previous
@@ -679,7 +687,7 @@ func (edit *TextEditor) Text(text []rune) {
 	}
 }
 
-func (state *TextEditor) key(e key.Event, font *types.Face, row_height int) {
+func (state *TextEditor) key(e key.Event, font font.Face, row_height int) {
 	readOnly := state.Flags&EditReadOnly != 0
 retry:
 	switch e.Code {
@@ -1148,7 +1156,7 @@ func (edit *TextEditor) SelectAll() {
 	edit.SelectEnd = len(edit.Buffer) + 1
 }
 
-func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_margin int, text []rune, row_height int, font *types.Face, background color.RGBA, foreground color.RGBA, is_selected bool) image.Point {
+func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_margin int, text []rune, row_height int, font font.Face, background color.RGBA, foreground color.RGBA, is_selected bool) image.Point {
 	if len(text) == 0 {
 		return pos
 	}
@@ -1165,7 +1173,7 @@ func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_ma
 	for index, glyph := range text {
 		if glyph == '\n' {
 			// new line sepeator so draw previous line
-			var lblrect types.Rect
+			var lblrect rect.Rect
 			lblrect.Y = pos_y + line_offset
 			lblrect.H = row_height
 			lblrect.W = FontWidth(font, string(text[start:index]))
@@ -1196,7 +1204,7 @@ func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_ma
 	}
 
 	// draw last line
-	var lblrect types.Rect
+	var lblrect rect.Rect
 	lblrect.Y = pos_y + line_offset
 	lblrect.H = row_height
 	lblrect.W = FontWidth(font, string(text[start:]))
@@ -1210,14 +1218,14 @@ func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_ma
 	return image.Point{lblrect.X + lblrect.W, lblrect.Y}
 }
 
-func (ed *TextEditor) doEdit(bounds types.Rect, style *nstyle.Edit, inp *Input) (ret EditEvents) {
+func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (ret EditEvents) {
 	font := ed.win.ctx.Style.Font
 	state := ed.win.widgets.PrevState(bounds)
 
 	ed.clamp()
 
 	// visible text area calculation
-	var area types.Rect
+	var area rect.Rect
 	area.X = bounds.X + style.Padding.X + style.Border
 	area.Y = bounds.Y + style.Padding.Y + style.Border
 	area.W = bounds.W - (2.0*style.Padding.X + 2*style.Border)
@@ -1380,12 +1388,12 @@ func (ed *TextEditor) doEdit(bounds types.Rect, style *nstyle.Edit, inp *Input) 
 
 	/* set widget state */
 	if ed.Active {
-		state = types.WidgetStateActive
+		state = nstyle.WidgetStateActive
 	} else {
-		state = types.WidgetStateInactive
+		state = nstyle.WidgetStateInactive
 	}
 	if is_hovered {
-		state |= types.WidgetStateHovered
+		state |= nstyle.WidgetStateHovered
 	}
 
 	var d drawableTextEditor
@@ -1513,7 +1521,7 @@ func (ed *TextEditor) doEdit(bounds types.Rect, style *nstyle.Edit, inp *Input) 
 
 	if !ed.SingleLine {
 		/* scrollbar widget */
-		var scroll types.Rect
+		var scroll rect.Rect
 		scroll.X = (area.X + area.W) - style.ScrollbarSize.X
 		scroll.Y = area.Y
 		scroll.W = style.ScrollbarSize.X
@@ -1531,10 +1539,10 @@ func (ed *TextEditor) doEdit(bounds types.Rect, style *nstyle.Edit, inp *Input) 
 
 type drawableTextEditor struct {
 	Edit      *TextEditor
-	State     types.WidgetStates
+	State     nstyle.WidgetStates
 	Style     *nstyle.Edit
-	Bounds    types.Rect
-	Area      types.Rect
+	Bounds    rect.Rect
+	Area      rect.Rect
 	RowHeight int
 
 	SelectionBegin, SelectionEnd int
@@ -1554,12 +1562,12 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 	cursor_pos := d.CursorPos
 
 	/* select background colors/images  */
-	var old_clip types.Rect = out.Clip
+	var old_clip rect.Rect = out.Clip
 	{
 		var background *nstyle.Item
-		if state&types.WidgetStateActive != 0 {
+		if state&nstyle.WidgetStateActive != 0 {
 			background = &style.Active
-		} else if state&types.WidgetStateHovered != 0 {
+		} else if state&nstyle.WidgetStateHovered != 0 {
 			background = &style.Hover
 		} else {
 			background = &style.Normal
@@ -1587,14 +1595,14 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 	var background *nstyle.Item
 
 	/* select correct colors to draw */
-	if state&types.WidgetStateActive != 0 {
+	if state&nstyle.WidgetStateActive != 0 {
 		background = &style.Active
 		text_color = style.TextActive
 		sel_text_color = style.SelectedTextHover
 		sel_background_color = style.SelectedHover
 		cursor_color = style.CursorHover
 		cursor_text_color = style.CursorTextHover
-	} else if state&types.WidgetStateHovered != 0 {
+	} else if state&nstyle.WidgetStateHovered != 0 {
 		background = &style.Hover
 		text_color = style.TextHover
 		sel_text_color = style.SelectedTextHover
@@ -1639,7 +1647,7 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 	if edit.SelectStart == edit.SelectEnd && edit.Active {
 		if edit.Cursor >= len(edit.Buffer) || edit.Buffer[edit.Cursor] == '\n' {
 			/* draw cursor at end of line */
-			var cursor types.Rect
+			var cursor rect.Rect
 			cursor.W = style.CursorSize
 			cursor.H = row_height
 			cursor.X = area.X + cursor_pos.X - edit.Scrollbar.X
@@ -1650,7 +1658,7 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 			var txt textWidget
 			/* draw cursor at inside text */
 
-			var lblrect types.Rect
+			var lblrect rect.Rect
 			lblrect.X = area.X + cursor_pos.X - edit.Scrollbar.X
 			lblrect.Y = area.Y + cursor_pos.Y - edit.Scrollbar.Y
 			lblrect.W = FontWidth(font, string(edit.Buffer[edit.Cursor:edit.Cursor+1]))
@@ -1688,7 +1696,7 @@ func (edit *TextEditor) Edit(win *Window) EditEvents {
 		edit.SelectEnd = edit.Cursor
 	}
 
-	var bounds types.Rect
+	var bounds rect.Rect
 
 	style := &edit.win.ctx.Style
 	widget_state, bounds := edit.win.widget()
