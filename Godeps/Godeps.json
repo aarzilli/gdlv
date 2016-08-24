@@ -24,81 +24,81 @@
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular",
-			"Rev": "bfad20c589e40e77f621467b726c54da6cd0ec04"
+			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/clipboard",
-			"Rev": "bfad20c589e40e77f621467b726c54da6cd0ec04"
+			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/command",
-			"Rev": "bfad20c589e40e77f621467b726c54da6cd0ec04"
+			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/internal/assets",
-			"Rev": "bfad20c589e40e77f621467b726c54da6cd0ec04"
+			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/label",
-			"Rev": "bfad20c589e40e77f621467b726c54da6cd0ec04"
+			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/rect",
-			"Rev": "bfad20c589e40e77f621467b726c54da6cd0ec04"
+			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/style",
-			"Rev": "bfad20c589e40e77f621467b726c54da6cd0ec04"
+			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/dwarf/frame",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/dwarf/line",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/dwarf/op",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/dwarf/reader",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/dwarf/util",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/proc",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/service",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/service/api",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/service/debugger",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/service/rpc2",
-			"Comment": "v0.11.0-alpha-126-g6607a9b",
-			"Rev": "6607a9bfbc8b988b81cc2d98ff9ef56b3c898448"
+			"Comment": "v0.11.0-alpha-127-gfa24c16",
+			"Rev": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
 		},
 		{
 			"ImportPath": "github.com/golang/freetype",

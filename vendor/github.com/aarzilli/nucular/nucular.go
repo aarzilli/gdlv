@@ -1035,7 +1035,6 @@ func (ctr *RowConstructor) StaticScaled(width ...int) {
 	layout.Row.ItemWidth = 0
 	layout.Row.ItemRatio = 0.0
 	layout.Row.ItemOffset = 0
-	layout.Row.ItemOffset = 0
 	layout.Row.Filled = 0
 }
 
@@ -1124,14 +1123,17 @@ func (win *Window) LayoutSpacePushRatio(x, y, w, h float64) {
 func (win *Window) layoutPeek(bounds *rect.Rect) {
 	layout := win.layout
 	y := layout.AtY
+	off := layout.Row.ItemOffset
 	index := layout.Row.Index
 	if layout.Row.Columns > 0 && layout.Row.Index >= layout.Row.Columns {
 		layout.AtY += layout.Row.Height
+		layout.Row.ItemOffset = 0
 		layout.Row.Index = 0
 	}
 
 	layoutWidgetSpace(bounds, win.ctx, win, false)
 	layout.AtY = y
+	layout.Row.ItemOffset = off
 	layout.Row.Index = index
 }
 

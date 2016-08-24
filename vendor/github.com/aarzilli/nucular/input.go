@@ -53,19 +53,13 @@ func (i *MouseInput) HasClickInRect(id mouse.Button, b rect.Rect) bool {
 	return b.Contains(btn.ClickedPos)
 }
 
-func (i *MouseInput) HasClickDownInRect(id mouse.Button, b rect.Rect, down bool) bool {
-	btn := &i.Buttons[id]
-	return i.HasClickInRect(id, b) && (btn.Down == down)
-}
-
 func (i *MouseInput) IsClickInRect(id mouse.Button, b rect.Rect) bool {
-	btn := &i.Buttons[id]
-	return i.HasClickDownInRect(id, b, false) && btn.Clicked
+	return i.IsClickDownInRect(id, b, false)
 }
 
 func (i *MouseInput) IsClickDownInRect(id mouse.Button, b rect.Rect, down bool) bool {
 	btn := &i.Buttons[id]
-	return i.HasClickDownInRect(id, b, down) && btn.Clicked
+	return i.HasClickInRect(id, b) && btn.Down == down && btn.Clicked
 }
 
 func (i *MouseInput) AnyClickInRect(b rect.Rect) bool {

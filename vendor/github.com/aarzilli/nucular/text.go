@@ -151,10 +151,6 @@ type TextEditor struct {
 	SingleLine             bool
 	PreferredX             int
 	Undo                   textUndoState
-
-	lastSelectionBegin, lastSelectionEnd int
-	lastCursorPos                        image.Point
-	TextSize                             image.Point
 }
 
 func (ed *TextEditor) init(win *Window) {
@@ -380,7 +376,7 @@ func (edit *TextEditor) locateCoord(p image.Point, font font.Face, row_height in
 		for i = 0; i < r.NumChars; i++ {
 			w := edit.getWidth(k, i, font)
 			if x < prev_x+w {
-				if x < prev_x+w/2 {
+				if x < prev_x+w {
 					return k + i
 				} else {
 					return k + i + 1
@@ -1156,7 +1152,7 @@ func (edit *TextEditor) SelectAll() {
 	edit.SelectEnd = len(edit.Buffer) + 1
 }
 
-func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_margin int, text []rune, row_height int, font font.Face, background color.RGBA, foreground color.RGBA, is_selected bool) image.Point {
+func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_margin int, text []rune, row_height int, f font.Face, background color.RGBA, foreground color.RGBA, is_selected bool) (posOut image.Point) {
 	if len(text) == 0 {
 		return pos
 	}
@@ -1167,27 +1163,37 @@ func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_ma
 	txt.Text = foreground
 
 	pos_x, pos_y := pos.X, pos.Y
-
 	start := 0
+
+	d := font.Drawer{Face: f}
+
+	flushLine := func(index int) rect.Rect {
+		// new line sepeator so draw previous line
+		var lblrect rect.Rect
+		lblrect.Y = pos_y + line_offset
+		lblrect.H = row_height
+		lblrect.W = nk_null_rect.W
+		lblrect.X = pos_x
+
+		if is_selected { // selection needs to draw different background color
+			if index == len(text) || (index == start && start == 0) {
+				// XXX calculating text width here is slow figure out why
+				lblrect.W = d.MeasureString(string(text[start:index])).Ceil()
+			}
+			out.FillRect(lblrect, 0, background)
+		}
+		widgetText(out, lblrect, string(text[start:index]), &txt, "LC", f)
+
+		if line_count == 0 {
+			pos_x = x_margin
+		}
+
+		return lblrect
+	}
 
 	for index, glyph := range text {
 		if glyph == '\n' {
-			// new line sepeator so draw previous line
-			var lblrect rect.Rect
-			lblrect.Y = pos_y + line_offset
-			lblrect.H = row_height
-			lblrect.W = FontWidth(font, string(text[start:index]))
-			lblrect.X = pos_x
-
-			if is_selected { // selection needs to draw different background color
-				out.FillRect(lblrect, 0, background)
-			}
-			widgetText(out, lblrect, string(text[start:index]), &txt, "CC", font)
-
-			if line_count == 0 {
-				pos_x = x_margin
-			}
-
+			flushLine(index)
 			line_count++
 			start = index + 1
 			line_offset += row_height
@@ -1204,16 +1210,8 @@ func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_ma
 	}
 
 	// draw last line
-	var lblrect rect.Rect
-	lblrect.Y = pos_y + line_offset
-	lblrect.H = row_height
-	lblrect.W = FontWidth(font, string(text[start:]))
-	lblrect.X = pos_x
-
-	if is_selected {
-		out.FillRect(lblrect, 0, background)
-	}
-	widgetText(out, lblrect, string(text[start:]), &txt, "LC", font)
+	lblrect := flushLine(len(text))
+	lblrect.W = d.MeasureString(string(text[start:])).Ceil()
 
 	return image.Point{lblrect.X + lblrect.W, lblrect.Y}
 }
@@ -1302,6 +1300,9 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 		inpos := inp.Mouse.Pos
 		indelta := inp.Mouse.Delta
 		coord := image.Point{(inpos.X - area.X) + ed.Scrollbar.X, (inpos.Y - area.Y) + ed.Scrollbar.Y}
+		areaWithoutScrollbar := area
+		areaWithoutScrollbar.W -= style.ScrollbarSize.X
+		is_hovered := inp.Mouse.HoveringRect(areaWithoutScrollbar)
 
 		/* mouse click handler */
 		if select_all {
@@ -1398,118 +1399,17 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 
 	var d drawableTextEditor
 
-	if ed.Active || ed.Redraw {
-		ed.Redraw = false
-		var text_size image.Point
-		var total_lines int = 1
-
-		/* text pointer positions */
-		var selection_begin, selection_end int
-		if ed.SelectStart < ed.SelectEnd {
-			selection_begin = ed.SelectStart
-			selection_end = ed.SelectEnd
-		} else {
-			selection_begin = ed.SelectEnd
-			selection_end = ed.SelectStart
-		}
-
-		d.SelectionBegin, d.SelectionEnd = selection_begin, selection_end
-
-		/* 2D pixel positions */
-		var cursor_pos image.Point
-		var line_width int = 0
-
-		/* calculate total line count + total space + cursor/selection position */
-		if len(ed.Buffer) != 0 {
-			var row_begin int = 0
-
-			line_width = 0
-
-			for index, glyph := range ed.Buffer {
-				glyph_width := FontWidth(font, string(glyph))
-
-				if index == ed.Cursor {
-					/* calculate 2d position */
-					cursor_pos.Y = (total_lines - 1) * row_height
-
-					rowSize, _ := textCalculateTextBounds(font, ed.Buffer[row_begin:index], row_height, true)
-					cursor_pos.X = rowSize.X
-				}
-
-				/* set start selection 2D position and line */
-				if ed.SelectStart != ed.SelectEnd && index == selection_begin {
-					/* calculate 2d position */
-					if ed.Buffer[selection_begin] == '\n' {
-						selection_begin++
-					}
-				}
-
-				/* set end selection 2D position and line */
-				if ed.SelectStart != ed.SelectEnd && index == selection_end {
-					/* calculate 2d position */
-					if ed.Buffer[selection_end] == '\n' {
-						selection_end++
-					}
-				}
-
-				if glyph == '\n' {
-					text_size.X = max(text_size.X, line_width)
-					total_lines++
-					line_width = 0
-					row_begin = index + 1
-					continue
-				}
-
-				line_width += glyph_width
-
-				continue
-			}
-
-			text_size.Y = total_lines * row_height
-
-			/* handle case if cursor is at end of text buffer */
-			if ed.Cursor == len(ed.Buffer) {
-				cursor_pos.X = line_width
-				cursor_pos.Y = text_size.Y - row_height
-			}
-		}
-
-		d.CursorPos = cursor_pos
-
-		/* scrollbar */
-		if cursor_follow {
-			/* update scrollbar to follow cursor */
-			if ed.Flags&EditNoHorizontalScroll == 0 {
-				/* horizontal scroll */
-				scroll_increment := area.W / 2
-				if (cursor_pos.X < ed.Scrollbar.X) || ((ed.Scrollbar.X+area.W)-cursor_pos.X < style.CursorSize) {
-					ed.Scrollbar.X = max(0, cursor_pos.X-scroll_increment)
-				}
-			} else {
-				ed.Scrollbar.X = 0
-			}
-
-			if ed.Flags&EditMultiline != 0 {
-				/* vertical scroll */
-				if cursor_pos.Y < ed.Scrollbar.Y {
-					ed.Scrollbar.Y = max(0, cursor_pos.Y-row_height)
-				}
-				for (ed.Scrollbar.Y+area.H)-cursor_pos.Y < row_height {
-					ed.Scrollbar.Y = ed.Scrollbar.Y + row_height
-				}
-			} else {
-				ed.Scrollbar.Y = 0
-			}
-		}
-		ed.lastCursorPos = d.CursorPos
-		ed.lastSelectionBegin = d.SelectionBegin
-		ed.lastSelectionEnd = d.SelectionEnd
-		ed.TextSize = text_size
+	/* text pointer positions */
+	var selection_begin, selection_end int
+	if ed.SelectStart < ed.SelectEnd {
+		selection_begin = ed.SelectStart
+		selection_end = ed.SelectEnd
 	} else {
-		d.CursorPos = ed.lastCursorPos
-		d.SelectionBegin = ed.lastSelectionBegin
-		d.SelectionEnd = ed.lastSelectionEnd
+		selection_begin = ed.SelectEnd
+		selection_end = ed.SelectStart
 	}
+
+	d.SelectionBegin, d.SelectionEnd = selection_begin, selection_end
 
 	d.Edit = ed
 	d.State = state
@@ -1518,6 +1418,33 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 	d.Area = area
 	d.RowHeight = row_height
 	ed.win.widgets.Add(state, bounds, &d)
+
+	/* scrollbar */
+	if cursor_follow {
+		cursor_pos := d.CursorPos
+		/* update scrollbar to follow cursor */
+		if ed.Flags&EditNoHorizontalScroll == 0 {
+			/* horizontal scroll */
+			scroll_increment := area.W / 2
+			if (cursor_pos.X < ed.Scrollbar.X) || ((ed.Scrollbar.X+area.W)-cursor_pos.X < style.CursorSize) {
+				ed.Scrollbar.X = max(0, cursor_pos.X-scroll_increment)
+			}
+		} else {
+			ed.Scrollbar.X = 0
+		}
+
+		if ed.Flags&EditMultiline != 0 {
+			/* vertical scroll */
+			if cursor_pos.Y < ed.Scrollbar.Y {
+				ed.Scrollbar.Y = max(0, cursor_pos.Y-row_height)
+			}
+			for (ed.Scrollbar.Y+area.H)-cursor_pos.Y < row_height {
+				ed.Scrollbar.Y = ed.Scrollbar.Y + row_height
+			}
+		} else {
+			ed.Scrollbar.Y = 0
+		}
+	}
 
 	if !ed.SingleLine {
 		/* scrollbar widget */
@@ -1530,7 +1457,7 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 		scroll_offset := float64(ed.Scrollbar.Y)
 		scroll_step := float64(scroll.H) * 0.1
 		scroll_inc := float64(scroll.H) * 0.01
-		scroll_target := float64(ed.TextSize.Y + row_height)
+		scroll_target := float64(d.TextSize.Y + row_height)
 		ed.Scrollbar.Y = int(doScrollbarv(ed.win, scroll, bounds, scroll_offset, scroll_target, scroll_step, scroll_inc, &style.Scrollbar, inp, font))
 	}
 
@@ -1546,7 +1473,9 @@ type drawableTextEditor struct {
 	RowHeight int
 
 	SelectionBegin, SelectionEnd int
-	CursorPos                    image.Point
+
+	TextSize  image.Point
+	CursorPos image.Point
 }
 
 func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
@@ -1559,7 +1488,6 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 	row_height := d.RowHeight
 	selection_begin := d.SelectionBegin
 	selection_end := d.SelectionEnd
-	cursor_pos := d.CursorPos
 
 	/* select background colors/images  */
 	var old_clip rect.Rect = out.Clip
@@ -1624,28 +1552,12 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 		background_color = background.Data.Color
 	}
 
-	pos := image.Point{area.X - edit.Scrollbar.X, area.Y - edit.Scrollbar.Y}
+	startPos := image.Point{area.X - edit.Scrollbar.X, area.Y - edit.Scrollbar.Y}
+	pos := startPos
 	x_margin := pos.X
 	if edit.SelectStart == edit.SelectEnd {
-		/* no selection so just draw the complete text */
-		editDrawText(out, style, pos, x_margin, edit.Buffer, row_height, font, background_color, text_color, false)
-	} else {
-		/* edit has selection so draw 1-3 text chunks */
-		if selection_begin > 0 {
-			/* draw unselected text before selection */
-			pos = editDrawText(out, style, pos, x_margin, edit.Buffer[:selection_begin], row_height, font, background_color, text_color, false)
-		}
-
-		pos = editDrawText(out, style, pos, x_margin, edit.Buffer[selection_begin:selection_end], row_height, font, sel_background_color, sel_text_color, true)
-
-		if selection_end < len(edit.Buffer) {
-			editDrawText(out, style, pos, x_margin, edit.Buffer[selection_end:], row_height, font, background_color, text_color, true)
-		}
-	}
-
-	/* cursor */
-	if edit.SelectStart == edit.SelectEnd && edit.Active {
-		if edit.Cursor >= len(edit.Buffer) || edit.Buffer[edit.Cursor] == '\n' {
+		drawEolCursor := func() {
+			cursor_pos := d.CursorPos
 			/* draw cursor at end of line */
 			var cursor rect.Rect
 			cursor.W = style.CursorSize
@@ -1654,23 +1566,47 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 			cursor.Y = area.Y + cursor_pos.Y + row_height/2.0 - cursor.H/2.0
 			cursor.Y -= edit.Scrollbar.Y
 			out.FillRect(cursor, 0, cursor_color)
-		} else {
-			var txt textWidget
-			/* draw cursor at inside text */
 
-			var lblrect rect.Rect
-			lblrect.X = area.X + cursor_pos.X - edit.Scrollbar.X
-			lblrect.Y = area.Y + cursor_pos.Y - edit.Scrollbar.Y
-			lblrect.W = FontWidth(font, string(edit.Buffer[edit.Cursor:edit.Cursor+1]))
-			lblrect.H = row_height
+		}
 
-			txt.Padding = image.Point{}
-			txt.Background = cursor_color
-			txt.Text = cursor_text_color
-			out.FillRect(lblrect, 0, cursor_color)
-			widgetText(out, lblrect, string(edit.Buffer[edit.Cursor:edit.Cursor+1]), &txt, "LC", font)
+		/* no selection so just draw the complete text */
+		pos = editDrawText(out, style, pos, x_margin, edit.Buffer[:edit.Cursor], row_height, font, background_color, text_color, false)
+		d.CursorPos = pos.Sub(startPos)
+		if edit.Active {
+			if edit.Cursor < len(edit.Buffer) {
+				pos = editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor:edit.Cursor+1], row_height, font, cursor_color, cursor_text_color, true)
+				if edit.Buffer[edit.Cursor] == '\n' {
+					drawEolCursor()
+				}
+				pos = editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor+1:], row_height, font, background_color, text_color, false)
+			} else {
+				drawEolCursor()
+			}
+		} else if edit.Cursor < len(edit.Buffer) {
+			pos = editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor:], row_height, font, background_color, text_color, false)
+		}
+	} else {
+		/* edit has selection so draw 1-3 text chunks */
+		if selection_begin > 0 {
+			/* draw unselected text before selection */
+			pos = editDrawText(out, style, pos, x_margin, edit.Buffer[:selection_begin], row_height, font, background_color, text_color, false)
+		}
+
+		if selection_begin == edit.SelectEnd {
+			d.CursorPos = pos.Sub(startPos)
+		}
+
+		pos = editDrawText(out, style, pos, x_margin, edit.Buffer[selection_begin:selection_end], row_height, font, sel_background_color, sel_text_color, true)
+
+		if selection_begin != edit.SelectEnd {
+			d.CursorPos = pos.Sub(startPos)
+		}
+
+		if selection_end < len(edit.Buffer) {
+			pos = editDrawText(out, style, pos, x_margin, edit.Buffer[selection_end:], row_height, font, background_color, text_color, false)
 		}
 	}
+	d.TextSize = pos.Sub(startPos)
 
 	out.PushScissor(old_clip)
 	return

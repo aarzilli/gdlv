@@ -75,7 +75,7 @@ func getSelection(selAtom xproto.Atom) string {
 	csc := xproto.ConvertSelectionChecked(X, win, selAtom, textAtom, selAtom, xproto.TimeCurrentTime)
 	err := csc.Check()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 		return ""
 	}
 
@@ -87,16 +87,16 @@ func getSelection(selAtom xproto.Atom) string {
 		gpc := xproto.GetProperty(X, true, win, selAtom, textAtom, 0, 5*1024*1024)
 		gpr, err := gpc.Reply()
 		if err != nil {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, err)
 			return ""
 		}
 		if gpr.BytesAfter != 0 {
-			fmt.Println("Clipboard too large")
+			fmt.Fprintln(os.Stderr, "Clipboard too large")
 			return ""
 		}
 		return string(gpr.Value[:gpr.ValueLen])
 	case <-time.After(1 * time.Second):
-		fmt.Println("Clipboard retrieval failed, timeout")
+		fmt.Fprintln(os.Stderr, "Clipboard retrieval failed, timeout")
 		return ""
 	}
 }
@@ -112,26 +112,26 @@ func eventLoop() {
 		case xproto.SelectionRequestEvent:
 			if debugClipboardRequests {
 				tgtname := lookupAtom(e.Target)
-				fmt.Println("SelectionRequest", e, textAtom, tgtname, "isPrimary:", e.Selection == primaryAtom, "isClipboard:", e.Selection == clipboardAtom)
+				fmt.Fprintln(os.Stderr, "SelectionRequest", e, textAtom, tgtname, "isPrimary:", e.Selection == primaryAtom, "isClipboard:", e.Selection == clipboardAtom)
 			}
 			t := clipboardText
 
 			switch e.Target {
 			case textAtom:
 				if debugClipboardRequests {
-					fmt.Println("Sending as text")
+					fmt.Fprintln(os.Stderr, "Sending as text")
 				}
 				cpc := xproto.ChangePropertyChecked(X, xproto.PropModeReplace, e.Requestor, e.Property, textAtom, 8, uint32(len(t)), []byte(t))
 				err := cpc.Check()
 				if err == nil {
 					sendSelectionNotify(e)
 				} else {
-					fmt.Println(err)
+					fmt.Fprintln(os.Stderr, err)
 				}
 
 			case targetsAtom:
 				if debugClipboardRequests {
-					fmt.Println("Sending targets")
+					fmt.Fprintln(os.Stderr, "Sending targets")
 				}
 				buf := make([]byte, len(targetAtoms)*4)
 				for i, atom := range targetAtoms {
@@ -142,12 +142,12 @@ func eventLoop() {
 				if err == nil {
 					sendSelectionNotify(e)
 				} else {
-					fmt.Println(err)
+					fmt.Fprintln(os.Stderr, err)
 				}
 
 			default:
 				if debugClipboardRequests {
-					fmt.Println("Skipping")
+					fmt.Fprintln(os.Stderr, "Skipping")
 				}
 				e.Property = 0
 				sendSelectionNotify(e)
@@ -185,7 +185,7 @@ func sendSelectionNotify(e xproto.SelectionRequestEvent) {
 	sec := xproto.SendEventChecked(X, false, e.Requestor, 0, string(sn.Bytes()))
 	err := sec.Check()
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, err)
 	}
 }
 

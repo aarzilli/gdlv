@@ -283,7 +283,7 @@ func (p *panel) updateIntl(mw *nucular.MasterWindow, w *nucular.Window, bounds r
 		w.LayoutSpacePushScaled(rszbounds)
 		rszbounds, _ = w.Custom(nstyle.WidgetStateInactive)
 
-		if w.Input().Mouse.HasClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
+		if w.Input().Mouse.IsClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
 			p.resize = true
 		}
 		if p.resize {
@@ -351,7 +351,7 @@ func (p *panel) updateIntl(mw *nucular.MasterWindow, w *nucular.Window, bounds r
 		w.LayoutSpacePushScaled(rszbounds)
 		rszbounds, _ = w.Custom(nstyle.WidgetStateInactive)
 
-		if w.Input().Mouse.HasClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
+		if w.Input().Mouse.IsClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
 			p.resize = true
 		}
 		if p.resize {
