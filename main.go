@@ -97,8 +97,8 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '-'):
 			conf.Scaling -= 0.1
 			setupStyle()
-		
-		case (e.Modifiers == key.ModControl) && (e.Rune == 'f'):	
+
+		case (e.Modifiers == key.ModControl) && (e.Rune == 'f'):
 			mw.Perf = !mw.Perf
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):
