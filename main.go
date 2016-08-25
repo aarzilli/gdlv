@@ -22,6 +22,8 @@ import (
 	"golang.org/x/mobile/event/key"
 )
 
+var zeroWidth, arrowWidth, starWidth int
+
 func setupStyle() {
 	theme := nstyle.DarkTheme
 	if conf.WhiteTheme {
@@ -34,6 +36,9 @@ func setupStyle() {
 	style.GroupWindow.FooterPadding.Y = 0
 	style.MenuWindow.FooterPadding.Y = 0
 	style.ContextualWindow.FooterPadding.Y = 0
+	zeroWidth = nucular.FontWidth(style.Font, "0")
+	arrowWidth = nucular.FontWidth(style.Font, "=>")
+	starWidth = nucular.FontWidth(style.Font, "*")
 	saveConfiguration()
 }
 
@@ -92,6 +97,9 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '-'):
 			conf.Scaling -= 0.1
 			setupStyle()
+		
+		case (e.Modifiers == key.ModControl) && (e.Rune == 'f'):	
+			mw.Perf = !mw.Perf
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):
 			mw.ActivateEditor(&commandLineEditor)

@@ -51,6 +51,9 @@ type MasterWindow struct {
 	img    *image.RGBA
 	bounds image.Rectangle
 
+	// show performance counters
+	Perf bool
+
 	ctx        *context
 	layout     panel
 	prevCmds   []command.Command
@@ -267,7 +270,7 @@ func (w *MasterWindow) updateLocked() {
 	in.Keyboard.Text = w.textbuffer.String()
 	w.ctx.Windows[0].Bounds = rect.FromRectangle(w.bounds)
 	var t0, t1, te time.Time
-	if perfUpdate {
+	if perfUpdate || w.Perf {
 		t0 = time.Now()
 	}
 	for i := 0; i < len(w.ctx.Windows); i++ { // this must not use range or tooltips won't work
@@ -340,7 +343,7 @@ func (w *MasterWindow) updateLocked() {
 	}
 	contextEnd(w.ctx)
 	b := w.bounds
-	if perfUpdate {
+	if perfUpdate || w.Perf {
 		t1 = time.Now()
 	}
 	nwidgets, nprimitives := w.draw()
@@ -350,6 +353,26 @@ func (w *MasterWindow) updateLocked() {
 		fps := 1.0 / te.Sub(t0).Seconds()
 
 		fmt.Printf("Update %0.4f msec = %0.4f updatefn (%d widgets)+ %0.4f draw (%d primitives) [max fps %0.2f]\n", te.Sub(t0).Seconds()*1000, t1.Sub(t0).Seconds()*1000, nwidgets, te.Sub(t1).Seconds()*1000, nprimitives, fps)
+	}
+	if w.Perf && nprimitives > 0 {
+		te = time.Now()
+
+		fps := 1.0 / te.Sub(t0).Seconds()
+
+		s := fmt.Sprintf("%0.4fms + %0.4fms (%0.2f)", t1.Sub(t0).Seconds()*1000, te.Sub(t1).Seconds()*1000, fps)
+		d := font.Drawer{
+			Dst:  w.img,
+			Src:  image.White,
+			Face: w.ctx.Style.Font}
+
+		width := d.MeasureString(s).Ceil()
+
+		bounds := w.img.Bounds()
+		bounds.Min.X = bounds.Max.X - width
+		bounds.Min.Y = bounds.Max.Y - (w.ctx.Style.Font.Metrics().Ascent + w.ctx.Style.Font.Metrics().Descent).Ceil()
+		draw.Draw(w.img, bounds, image.Black, bounds.Min, draw.Src)
+		d.Dot = fixed.P(bounds.Min.X, bounds.Min.Y+w.ctx.Style.Font.Metrics().Ascent.Ceil())
+		d.DrawString(s)
 	}
 	for i := 0; i < len(w.ctx.Windows); i++ {
 		if w.ctx.Windows[i].close {
@@ -670,7 +693,6 @@ func (w *MasterWindow) draw() (int, int) {
 	if perfUpdate && (cnt%100) == 0 {
 		fmt.Printf("ln %d, frect %d, frrect %d, brrect %d, ftri %d, circ %d, fcirc %d, txt %d\n", ln, frect, frrect, brrect, ftri, circ, fcirc, txt)
 		ln, frect, frrect, brrect, ftri, circ, fcirc, txt = 0, 0, 0, 0, 0, 0, 0, 0
-
 	}
 
 	return nwidgets, len(cmds)

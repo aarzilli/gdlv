@@ -24,31 +24,31 @@
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular",
-			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
+			"Rev": "af4c77765edf206253cb3ef2183749a306386923"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/clipboard",
-			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
+			"Rev": "af4c77765edf206253cb3ef2183749a306386923"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/command",
-			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
+			"Rev": "af4c77765edf206253cb3ef2183749a306386923"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/internal/assets",
-			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
+			"Rev": "af4c77765edf206253cb3ef2183749a306386923"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/label",
-			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
+			"Rev": "af4c77765edf206253cb3ef2183749a306386923"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/rect",
-			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
+			"Rev": "af4c77765edf206253cb3ef2183749a306386923"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/style",
-			"Rev": "0403ee04b9cc1d4d10b1de2bab0f6b0739aa306c"
+			"Rev": "af4c77765edf206253cb3ef2183749a306386923"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/dwarf/frame",
@@ -102,18 +102,26 @@
 		},
 		{
 			"ImportPath": "github.com/golang/freetype",
-			"Comment": "release-128-gf9531a3",
-			"Rev": "f9531a36062a85d4cef2daae173a3c9a35ae9f17"
+			"Comment": "release-131-g38b4c39",
+			"Rev": "38b4c392adc5eed94207994c4848fff99f4ac234"
 		},
 		{
 			"ImportPath": "github.com/golang/freetype/raster",
-			"Comment": "release-128-gf9531a3",
-			"Rev": "f9531a36062a85d4cef2daae173a3c9a35ae9f17"
+			"Comment": "release-131-g38b4c39",
+			"Rev": "38b4c392adc5eed94207994c4848fff99f4ac234"
 		},
 		{
 			"ImportPath": "github.com/golang/freetype/truetype",
-			"Comment": "release-128-gf9531a3",
-			"Rev": "f9531a36062a85d4cef2daae173a3c9a35ae9f17"
+			"Comment": "release-131-g38b4c39",
+			"Rev": "38b4c392adc5eed94207994c4848fff99f4ac234"
+		},
+		{
+			"ImportPath": "github.com/hashicorp/golang-lru",
+			"Rev": "0a025b7e63adc15a622f29b0b2c4c3848243bbf6"
+		},
+		{
+			"ImportPath": "github.com/hashicorp/golang-lru/simplelru",
+			"Rev": "0a025b7e63adc15a622f29b0b2c4c3848243bbf6"
 		},
 		{
 			"ImportPath": "golang.org/x/debug/dwarf",

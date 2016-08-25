@@ -329,7 +329,7 @@ func updateThreads(mw *nucular.MasterWindow, container *nucular.Window) {
 	if len(threads) > 0 {
 		d = digits(threads[len(threads)-1].ID)
 	}
-	w.Row(20).StaticScaled(nucular.FontWidth(style.Font, "0")*d+pad, 0)
+	w.Row(20).StaticScaled(zeroWidth*d+pad, 0)
 
 	for _, thread := range threads {
 		selected := curThread == thread.ID
@@ -648,7 +648,7 @@ func updateBreakpoints(mw *nucular.MasterWindow, container *nucular.Window) {
 		d = 3
 	}
 
-	w.Row(40).StaticScaled(nucular.FontWidth(style.Font, "0")*d+pad, 0)
+	w.Row(40).StaticScaled(zeroWidth*d+pad, 0)
 	for _, breakpoint := range breakpoints {
 		selected := breakpointsPanel.selected == breakpoint.ID
 		w.SelectableLabel(fmt.Sprintf("%*d", d, breakpoint.ID), "LT", &selected)
@@ -1139,8 +1139,8 @@ func updateListingPanel(mw *nucular.MasterWindow, container *nucular.Window) {
 
 	style, _ := mw.Style()
 
-	arroww := nucular.FontWidth(style.Font, "=>") + style.Text.Padding.X*2
-	starw := nucular.FontWidth(style.Font, "*") + style.Text.Padding.X*2
+	arroww := arrowWidth + style.Text.Padding.X*2
+	starw := starWidth + style.Text.Padding.X*2
 
 	idxw := style.Text.Padding.X * 2
 	if len(listingPanel.listing) > 0 {

@@ -9,6 +9,8 @@ import (
 	"golang.org/x/mobile/event/mouse"
 
 	"github.com/aarzilli/nucular/rect"
+
+	"github.com/hashicorp/golang-lru"
 )
 
 type Heading int
@@ -162,9 +164,20 @@ func FontHeight(f font.Face) int {
 	return f.Metrics().Ascent.Ceil() + f.Metrics().Descent.Ceil()
 }
 
+var fontWidthCache *lru.Cache
+
+func init() {
+	fontWidthCache, _ = lru.New(256)
+}
+
 func FontWidth(f font.Face, string string) int {
+	if val, ok := fontWidthCache.Get(string); ok {
+		return val.(int)
+	}
 	d := font.Drawer{Face: f}
-	return d.MeasureString(string).Ceil()
+	r := d.MeasureString(string).Ceil()
+	fontWidthCache.Add(string, r)
+	return r
 }
 
 func unify(a rect.Rect, b rect.Rect) (clip rect.Rect) {
