@@ -387,9 +387,11 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 	case clearGoroutineSwitch:
 		stackPanel.asyncLoad.clear()
 		localsPanel.asyncLoad.clear()
+		exprsPanel.asyncLoad.clear()
 		regsPanel.asyncLoad.clear()
 	case clearStop:
 		localsPanel.asyncLoad.clear()
+		exprsPanel.asyncLoad.clear()
 		regsPanel.asyncLoad.clear()
 		goroutinesPanel.asyncLoad.clear()
 		stackPanel.asyncLoad.clear()
