@@ -518,14 +518,24 @@ func exprsEditor(w *nucular.Window) {
 	}
 }
 
-func showExprMenu(w *nucular.Window, exprMenuIdx int) {
-	if exprMenuIdx < 0 || running {
+func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
+	if running {
 		return
 	}
-	if w.Input().Mouse.AnyClickInRect(w.LastWidgetBounds) {
-		exprsPanel.menuSelected = exprMenuIdx
+	if exprMenuIdx >= 0 {
+		if w.Input().Mouse.AnyClickInRect(w.LastWidgetBounds) {
+			exprsPanel.menuSelected = exprMenuIdx
+		}
+		w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, exprMenu)
+	} else {
+		switch v.Kind {
+		case reflect.String:
+			if w.Input().Mouse.AnyClickInRect(w.LastWidgetBounds) {
+				selectedVariable = v
+			}
+			w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, variableMenu)
+		}
 	}
-	w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, exprMenu)
 }
 
 func exprMenu(mw *nucular.MasterWindow, w *nucular.Window) {
@@ -546,6 +556,16 @@ func exprMenu(mw *nucular.MasterWindow, w *nucular.Window) {
 		}
 		exprsPanel.expressions = exprsPanel.expressions[:len(exprsPanel.expressions)-1]
 		exprsPanel.v = exprsPanel.v[:len(exprsPanel.v)-1]
+	}
+}
+
+var selectedVariable *api.Variable
+
+func variableMenu(mw *nucular.MasterWindow, w *nucular.Window) {
+	w.Row(20).Dynamic(1)
+	if w.MenuItem(label.TA("Details", "LC")) {
+		viewer := &stringViewer{v: selectedVariable}
+		mw.PopupOpen("Viewing string: "+selectedVariable.Name, nucular.WindowNoScrollbar|nucular.WindowTitle|nucular.WindowMovable|nucular.WindowBorder|nucular.WindowDynamic, rect.Rect{100, 100, 400, 700}, true, viewer.Update)
 	}
 }
 
@@ -870,91 +890,85 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 	}
 	if v.Unreadable != "" {
 		w.Label(fmt.Sprintf("%s = (unreadable %s)", name, v.Unreadable), "LC")
-		showExprMenu(w, exprMenu)
+		showExprMenu(w, exprMenu, v)
 		return
 	}
 
 	if depth > 0 && v.Addr == 0 {
 		w.Label(fmt.Sprintf("%s = nil", name, v.Type), "LC")
-		showExprMenu(w, exprMenu)
+		showExprMenu(w, exprMenu, v)
 		return
 	}
 
 	switch v.Kind {
 	case reflect.Slice:
 		if w.TreePush(nucular.TreeNode, name, false) {
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 			w.Scrollbar.X -= ind
 			w.Label(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap), "LC")
 			showArrayOrSliceContents(mw, w, depth, addr, v, ind)
 			w.Scrollbar.X += ind
 			w.TreePop()
 		} else {
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 		}
 	case reflect.Array:
 		if w.TreePush(nucular.TreeNode, name, false) {
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 			w.Scrollbar.X -= ind
 			w.Label(fmt.Sprintf("len: %d", v.Len), "LC")
 			showArrayOrSliceContents(mw, w, depth, addr, v, ind)
 			w.Scrollbar.X += ind
 			w.TreePop()
 		} else {
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 		}
 	case reflect.Ptr:
 		if v.Type == "" || v.Children[0].Addr == 0 {
 			w.Label(fmt.Sprintf("%s = nil", name), "LC")
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 		} else if v.Children[0].OnlyAddr && v.Children[0].Addr != 0 {
 			w.Label(fmt.Sprintf("%s = (%s)(%#x)", name, v.Type, v.Children[0].Addr), "LC")
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
-				showExprMenu(w, exprMenu)
+				showExprMenu(w, exprMenu, v)
 				w.Scrollbar.X -= ind
 				showVariable(mw, w, depth+1, addr, -1, "", &v.Children[0], ind)
 				w.Scrollbar.X += ind
 				w.TreePop()
 			} else {
-				showExprMenu(w, exprMenu)
+				showExprMenu(w, exprMenu, v)
 			}
 		}
 	case reflect.UnsafePointer:
 		w.Label(fmt.Sprintf("%s = unsafe.Pointer(%#x)", name, v.Children[0].Addr), "LC")
-		showExprMenu(w, exprMenu)
+		showExprMenu(w, exprMenu, v)
 	case reflect.String:
-		w.Row(varRowHeight).Static(0, moreBtnWidth)
 		if v.Len == int64(len(v.Value)) {
 			w.Label(fmt.Sprintf("%s = %q", name, v.Value), "LC")
 		} else {
 			w.Label(fmt.Sprintf("%s = %q...", name, v.Value), "LC")
 		}
-		showExprMenu(w, exprMenu)
-		if w.ButtonText("details") {
-			viewer := &stringViewer{name: name, v: v}
-			mw.PopupOpen(name, nucular.WindowNoScrollbar|nucular.WindowTitle|nucular.WindowMovable|nucular.WindowBorder|nucular.WindowDynamic, rect.Rect{100, 100, 400, 700}, true, viewer.Update)
-		}
-		w.Row(varRowHeight).Dynamic(1)
+		showExprMenu(w, exprMenu, v)
 	case reflect.Chan:
 		if len(v.Children) == 0 {
 			w.Label(fmt.Sprintf("%s = nil", name), "LC")
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
-				showExprMenu(w, exprMenu)
+				showExprMenu(w, exprMenu, v)
 				w.Scrollbar.X -= ind
 				showStructContents(mw, w, depth, addr, v, ind)
 				w.Scrollbar.X += ind
 				w.TreePop()
 			} else {
-				showExprMenu(w, exprMenu)
+				showExprMenu(w, exprMenu, v)
 			}
 		}
 	case reflect.Struct:
 		if w.TreePush(nucular.TreeNode, name, false) {
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 			w.Scrollbar.X -= ind
 			if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
 				loadMoreStruct(v)
@@ -965,15 +979,15 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 			w.Scrollbar.X += ind
 			w.TreePop()
 		} else {
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 		}
 	case reflect.Interface:
 		if v.Children[0].Kind == reflect.Invalid {
 			w.Label(fmt.Sprintf("%s = nil", name), "LC")
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
-				showExprMenu(w, exprMenu)
+				showExprMenu(w, exprMenu, v)
 				w.Scrollbar.X -= ind
 				if v.Children[0].Kind == reflect.Ptr {
 					showVariable(mw, w, depth+1, addr, -1, "data", &v.Children[0].Children[0], ind)
@@ -983,12 +997,12 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 				w.Scrollbar.X += ind
 				w.TreePop()
 			} else {
-				showExprMenu(w, exprMenu)
+				showExprMenu(w, exprMenu, v)
 			}
 		}
 	case reflect.Map:
 		if w.TreePush(nucular.TreeNode, name, false) {
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 			w.Scrollbar.X -= ind
 			for i := 0; i < len(v.Children); i += 2 {
 				key, value := &v.Children[i], &v.Children[i+1]
@@ -1015,7 +1029,7 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 			w.Scrollbar.X += ind
 			w.TreePop()
 		} else {
-			showExprMenu(w, exprMenu)
+			showExprMenu(w, exprMenu, v)
 		}
 	case reflect.Func:
 		if v.Value == "" {
@@ -1023,17 +1037,17 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 		} else {
 			w.Label(fmt.Sprintf("%s = %s", name, v.Value), "LC")
 		}
-		showExprMenu(w, exprMenu)
+		showExprMenu(w, exprMenu, v)
 	case reflect.Complex64, reflect.Complex128:
 		w.Label(fmt.Sprintf("%s = (%s + %si)", name, v.Children[0].Value, v.Children[1].Value), "LC")
-		showExprMenu(w, exprMenu)
+		showExprMenu(w, exprMenu, v)
 	default:
 		if v.Value != "" {
 			w.Label(fmt.Sprintf("%s = %s", name, v.Value), "LC")
 		} else {
 			w.Label(fmt.Sprintf("%s = (unknown %s)", name, v.Kind), "LC")
 		}
-		showExprMenu(w, exprMenu)
+		showExprMenu(w, exprMenu, v)
 	}
 }
 
@@ -1259,17 +1273,16 @@ func updateDisassemblyPanel(mw *nucular.MasterWindow, container *nucular.Window)
 }
 
 type stringViewer struct {
-	name string
-	v    *api.Variable
-	ed   nucular.TextEditor
-	mu   sync.Mutex
+	v  *api.Variable
+	ed nucular.TextEditor
+	mu sync.Mutex
 }
 
 func (sv *stringViewer) Update(mw *nucular.MasterWindow, w *nucular.Window) {
 	sv.mu.Lock()
 	defer sv.mu.Unlock()
 	w.Row(20).Dynamic(1)
-	w.Label(sv.name, "LC")
+	w.Label(sv.v.Name, "LC")
 
 	w.Row(29).Dynamic(1)
 
