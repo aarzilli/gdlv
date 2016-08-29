@@ -1,3 +1,5 @@
+// Copyright 2016, Alessandro Arzilli
+
 package main
 
 import (

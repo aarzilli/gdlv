@@ -1,3 +1,5 @@
+// Copyright 2016, Alessandro Arzilli
+
 package main
 
 import (
@@ -512,6 +514,12 @@ func main() {
 	err := cmd.Start()
 
 	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+
+	fmt.Fprintf(&scrollbackOut, `gdlv  Copyright (C) 2016  Alessandro Arzilli
+This program comes with ABSOLUTELY NO WARRANTY;
+This is free software, and you are welcome to redistribute it
+under certain conditions; see COPYING for details.
+`)
 
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not start delve: %v\n", err)
