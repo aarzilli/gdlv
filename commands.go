@@ -16,6 +16,9 @@ import (
 
 	"github.com/derekparker/delve/service"
 	"github.com/derekparker/delve/service/api"
+
+	"github.com/aarzilli/nucular"
+	"github.com/aarzilli/nucular/rect"
 )
 
 type cmdfunc func(c service.Client, out io.Writer, args string) error
@@ -632,9 +635,12 @@ func executeCommand(cmdstr string) {
 	cmdstr, args := parseCommand(cmdstr)
 	if err := cmds.Call(cmdstr, args, &out); err != nil {
 		if _, ok := err.(ExitRequestError); ok {
-			//TODO: ask if we should kill
-			client.Detach(true)
-			wnd.Close()
+			if client.AttachedToExistingProcess() {
+				wnd.PopupOpen("Confirm Quit", nucular.WindowDynamic|nucular.WindowTitle|nucular.WindowTitle|nucular.WindowNoScrollbar|nucular.WindowMovable|nucular.WindowBorder, rect.Rect{100, 100, 400, 700}, true, confirmQuit)
+			} else {
+				client.Detach(true)
+				wnd.Close()
+			}
 		}
 		// The type information gets lost in serialization / de-serialization,
 		// so we do a string compare on the error message to see if the process
@@ -645,6 +651,28 @@ func executeCommand(cmdstr string) {
 			fmt.Fprintf(&out, "Command failed: %s\n", err)
 		}
 	}
+}
+
+func confirmQuit(mw *nucular.MasterWindow, w *nucular.Window) {
+	w.Row(20).Dynamic(1)
+	w.Label("Would you like to kill the process?", "LT")
+	w.Row(20).Static(0, 80, 80, 0)
+	w.Spacing(1)
+	exit := false
+	kill := false
+	if w.ButtonText("Yes") {
+		exit = true
+		kill = true
+	}
+	if w.ButtonText("No") {
+		exit = true
+		kill = false
+	}
+	if exit {
+		client.Detach(kill)
+		go wnd.Close()
+	}
+	w.Spacing(1)
 }
 
 func parseCommand(cmdstr string) (string, string) {

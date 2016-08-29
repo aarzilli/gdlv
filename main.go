@@ -68,6 +68,7 @@ var wnd *nucular.MasterWindow
 
 var running bool
 var client service.Client
+var serverProcess *os.Process
 var curThread int
 var curGid int
 var curFrame int
@@ -513,6 +514,7 @@ func main() {
 	stdout, _ := cmd.StdoutPipe()
 	stderr, _ := cmd.StderrPipe()
 	err := cmd.Start()
+	serverProcess = cmd.Process
 
 	var scrollbackOut = editorWriter{&scrollbackEditor, true}
 
@@ -572,4 +574,6 @@ under certain conditions; see COPYING for details.
 	}
 
 	wnd.Main()
+
+	serverProcess.Signal(os.Interrupt)
 }
