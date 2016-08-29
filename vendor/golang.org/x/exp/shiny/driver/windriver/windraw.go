@@ -61,6 +61,13 @@ func copyBitmapToDC(dc syscall.Handle, dr image.Rectangle, src syscall.Handle, s
 		}
 	}()
 
+	if _GetDeviceCaps(dc, _SHADEBLENDCAPS) == _SB_NONE {
+		// This output device does not support blending capabilities,
+		// so the subsequent output is incorrect, but is the best we
+		// can do on systems that do not support AlphaBlend.
+		op = draw.Src
+	}
+
 	switch op {
 	case draw.Src:
 		return _StretchBlt(dc, int32(dr.Min.X), int32(dr.Min.Y), int32(dr.Dx()), int32(dr.Dy()),

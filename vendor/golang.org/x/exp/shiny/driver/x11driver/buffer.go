@@ -123,7 +123,7 @@ func (b *bufferImpl) upload(xd xproto.Drawable, xg xproto.Gcontext, depth uint8,
 	b.s.nPendingUploads++
 	b.s.mu.Unlock()
 
-	cookie := shm.PutImageChecked(
+	cookie := shm.PutImage(
 		b.s.xc, xd, xg,
 		uint16(b.size.X), uint16(b.size.Y), // TotalWidth, TotalHeight,
 		uint16(sr.Min.X), uint16(sr.Min.Y), // SrcX, SrcY,
@@ -132,16 +132,6 @@ func (b *bufferImpl) upload(xd xproto.Drawable, xg xproto.Gcontext, depth uint8,
 		depth, xproto.ImageFormatZPixmap,
 		1, b.xs, 0, // 1 means send a completion event, 0 means a zero offset.
 	)
-
-	err := cookie.Check()
-	if err != nil {
-		b.s.mu.Lock()
-		b.s.nPendingUploads--
-		b.s.handleCompletions()
-		b.s.mu.Unlock()
-		//fmt.Fprintf(os.Stderr, "Error drawing image size:%v sr:%v, dr:%v, depth:%v, %v\n", b.size, sr, dr, depth, err)
-		return
-	}
 
 	completion := make(chan struct{})
 

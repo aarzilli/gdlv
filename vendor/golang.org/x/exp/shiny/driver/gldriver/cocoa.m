@@ -173,24 +173,30 @@ uint64 threadID() {
 	[self callSetGeom];
 }
 
+// TODO: catch windowDidMiniaturize?
+
 - (void)windowDidExpose:(NSNotification *)notification {
-	lifecycleVisible((GoUintptr)self);
+	lifecycleVisible((GoUintptr)self, true);
 }
 
 - (void)windowDidBecomeKey:(NSNotification *)notification {
-	lifecycleFocused((GoUintptr)self);
+	lifecycleFocused((GoUintptr)self, true);
 }
 
 - (void)windowDidResignKey:(NSNotification *)notification {
-	if (![NSApp isHidden]) {
-		lifecycleVisible((GoUintptr)self);
+	lifecycleFocused((GoUintptr)self, false);
+	if ([NSApp isHidden]) {
+		lifecycleVisible((GoUintptr)self, false);
 	}
 }
 
 - (void)windowWillClose:(NSNotification *)notification {
+	// TODO: is this right? Closing a window via the top-left red button
+	// seems to return early without ever calling windowClosing.
 	if (self.window.nextResponder == NULL) {
 		return; // already called close
 	}
+
 	windowClosing((GoUintptr)self);
 	[self.window.nextResponder release];
 	self.window.nextResponder = NULL;
@@ -213,7 +219,7 @@ uint64 threadID() {
 }
 
 - (void)applicationWillHide:(NSNotification *)aNotification {
-	lifecycleAliveAll();
+	lifecycleHideAll();
 }
 @end
 

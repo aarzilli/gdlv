@@ -30,6 +30,7 @@ var (
 	procSetGraphicsMode        = modgdi32.NewProc("SetGraphicsMode")
 	procSetWorldTransform      = modgdi32.NewProc("SetWorldTransform")
 	procStretchBlt             = modgdi32.NewProc("StretchBlt")
+	procGetDeviceCaps          = modgdi32.NewProc("GetDeviceCaps")
 )
 
 func _AlphaBlend(dcdest syscall.Handle, xoriginDest int32, yoriginDest int32, wDest int32, hDest int32, dcsrc syscall.Handle, xoriginSrc int32, yoriginSrc int32, wsrc int32, hsrc int32, ftn uintptr) (err error) {
@@ -203,5 +204,11 @@ func _StretchBlt(dcdest syscall.Handle, xdest int32, ydest int32, wdest int32, h
 			err = syscall.EINVAL
 		}
 	}
+	return
+}
+
+func _GetDeviceCaps(dc syscall.Handle, index int32) (ret int32) {
+	r0, _, _ := syscall.Syscall(procGetDeviceCaps.Addr(), 2, uintptr(dc), uintptr(index), 0)
+	ret = int32(r0)
 	return
 }

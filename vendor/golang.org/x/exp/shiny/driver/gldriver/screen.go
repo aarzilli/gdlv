@@ -139,7 +139,7 @@ func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, er
 	s.mu.Unlock()
 
 	if useLifecycler {
-		w.lifecycler.SendEvent(w)
+		w.lifecycler.SendEvent(w, nil)
 	}
 
 	showWindow(w)

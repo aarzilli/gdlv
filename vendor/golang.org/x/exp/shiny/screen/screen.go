@@ -216,10 +216,6 @@ type Window interface {
 	// Publish flushes any pending Upload and Draw calls to the window, and
 	// swaps the back buffer to the front.
 	Publish() PublishResult
-
-	SetTitle(string) error
-	SetCursor(Cursor) error
-	WarpMouse(p image.Point) error
 }
 
 // PublishResult is the result of an Window.Publish call.
@@ -251,6 +247,10 @@ type Uploader interface {
 	// accessed while it is uploading. A Buffer is re-usable, in that its pixel
 	// contents can be further modified, once all outstanding calls to Upload
 	// have returned.
+	//
+	// TODO: make it optional that a Buffer's contents is preserved after
+	// Upload? Undoing a swizzle is a non-trivial amount of work, and can be
+	// redundant if the next paint cycle starts by clearing the buffer.
 	//
 	// When uploading to a Window, there will not be any visible effect until
 	// Publish is called.
@@ -321,26 +321,3 @@ type DrawOptions struct {
 	// TODO: transparency in [0x0000, 0xffff]?
 	// TODO: scaler (nearest neighbor vs linear)?
 }
-
-type Cursor int
-
-const (
-	NoneCursor Cursor = iota
-	NormalCursor
-	ResizeNCursor
-	ResizeECursor
-	ResizeSCursor
-	ResizeWCursor
-	ResizeEWCursor
-	ResizeNSCursor
-	ResizeNECursor
-	ResizeSECursor
-	ResizeSWCursor
-	ResizeNWCursor
-	CrosshairCursor
-	IBeamCursor
-	GrabHoverCursor
-	GrabActiveCursor
-	NotAllowedCursor
-	FleurCursor
-)

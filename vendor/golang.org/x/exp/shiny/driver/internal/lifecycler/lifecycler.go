@@ -44,7 +44,7 @@ func (s *State) SetVisible(b bool) {
 	s.mu.Unlock()
 }
 
-func (s *State) SendEvent(r Sender) {
+func (s *State) SendEvent(r Sender, drawContext interface{}) {
 	s.mu.Lock()
 	from, to := s.stage, lifecycle.StageAlive
 	// The order of these if's is important. For example, once a window becomes
@@ -67,6 +67,9 @@ func (s *State) SendEvent(r Sender) {
 		r.Send(lifecycle.Event{
 			From: from,
 			To:   to,
+
+			// TODO: does shiny use this at all?
+			DrawContext: drawContext,
 		})
 	}
 }

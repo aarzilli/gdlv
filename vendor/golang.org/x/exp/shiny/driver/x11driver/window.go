@@ -91,57 +91,26 @@ func (w *windowImpl) Scale(dr image.Rectangle, src screen.Texture, sr image.Rect
 }
 
 func (w *windowImpl) Publish() screen.PublishResult {
-	// TODO.
+	// TODO: implement a back buffer, and copy or flip that here to the front
+	// buffer.
+
+	// This sync isn't needed to flush the outgoing X11 requests. Instead, it
+	// acts as a form of flow control. Outgoing requests can be quite small on
+	// the wire, e.g. draw this texture ID (an integer) to this rectangle (four
+	// more integers), but much more expensive on the server (blending a
+	// million source and destination pixels). Without this sync, the Go X11
+	// client could easily end up sending work at a faster rate than the X11
+	// server can serve.
+	w.s.xc.Sync()
+
 	return screen.PublishResult{}
-}
-
-func (w *windowImpl) SetTitle(title string) error {
-	buf := []byte(title)
-	return xproto.ChangePropertyChecked(w.s.xc, xproto.PropModeReplace, w.xw, w.s.atomNetWMName, w.s.atomUTF8String, 8, uint32(len(buf)), buf).Check()
-}
-
-func (w *windowImpl) SetCursor(cursor screen.Cursor) error {
-	if cursorId, ok := w.s.cursorCache[cursor]; ok {
-		xproto.ChangeWindowAttributes(w.s.xc, w.xw, xproto.CwCursor, []uint32{uint32(cursorId)})
-	}
-	return nil
-}
-
-func (w *windowImpl) WarpMouse(p image.Point) error {
-	gifr, err := xproto.GetInputFocus(w.s.xc).Reply()
-	if err != nil {
-		return err
-	}
-
-	if gifr.Focus != w.xw {
-		return nil
-	}
-
-	screen := xproto.Setup(w.s.xc).DefaultScreen(w.s.xc)
-	tp, err := w.translateToScreen(screen, p)
-	if err != nil {
-		return err
-	}
-	wpc := xproto.WarpPointerChecked(w.s.xc, 0, screen.Root, 0, 0, 0, 0, int16(tp.X), int16(tp.Y))
-	return wpc.Check()
-}
-
-func (w *windowImpl) translateToScreen(screen *xproto.ScreenInfo, p image.Point) (r image.Point, err error) {
-	tcc := xproto.TranslateCoordinates(w.s.xc, w.xw, screen.Root, int16(p.X), int16(p.Y))
-	tcr, err := tcc.Reply()
-	if err != nil {
-		return
-	}
-	r.X = int(tcr.DstX)
-	r.Y = int(tcr.DstY)
-	return
 }
 
 func (w *windowImpl) handleConfigureNotify(ev xproto.ConfigureNotifyEvent) {
 	// TODO: does the order of these lifecycle and size events matter? Should
 	// they really be a single, atomic event?
 	w.lifecycler.SetVisible((int(ev.X)+int(ev.Width)) > 0 && (int(ev.Y)+int(ev.Height)) > 0)
-	w.lifecycler.SendEvent(w)
+	w.lifecycler.SendEvent(w, nil)
 
 	newWidth, newHeight := int(ev.Width), int(ev.Height)
 	if w.width == newWidth && w.height == newHeight {

@@ -34,9 +34,9 @@ import (
 	"log"
 	"runtime"
 
+	"golang.org/x/exp/shiny/driver/internal/lifecycler"
 	"golang.org/x/exp/shiny/screen"
 	"golang.org/x/mobile/event/key"
-	"golang.org/x/mobile/event/lifecycle"
 	"golang.org/x/mobile/event/mouse"
 	"golang.org/x/mobile/event/paint"
 	"golang.org/x/mobile/event/size"
@@ -44,7 +44,7 @@ import (
 	"golang.org/x/mobile/gl"
 )
 
-const useLifecycler = false
+const useLifecycler = true
 
 var initThreadID C.uint64_t
 
@@ -117,7 +117,10 @@ func drawgl(id uintptr) {
 		return // closing window
 	}
 
-	sendLifecycle(id, lifecycle.StageVisible)
+	// TODO: is this necessary?
+	w.lifecycler.SetVisible(true)
+	w.lifecycler.SendEvent(w, w.glctx)
+
 	w.Send(paint.Event{External: true})
 	<-w.drawDone
 }
@@ -193,7 +196,7 @@ func setGeom(id uintptr, ppp float32, widthPx, heightPx int) {
 
 //export windowClosing
 func windowClosing(id uintptr) {
-	sendLifecycle(id, lifecycle.StageDead)
+	sendLifecycle(id, (*lifecycler.State).SetDead, true)
 }
 
 func sendWindowEvent(id uintptr, e interface{}) {
@@ -336,12 +339,7 @@ func flagEvent(id uintptr, flags uint32) {
 
 var lastFlags uint32
 
-// TODO: move sendLifecycle out of cocoa.go, for other platforms to use.
-//
-// TODO: figure out whether we need to mutex-protect windowImpl.lifecycleStage
-// (by re-using glctxMu, if we're also reading windowImpl.glctx??)
-
-func sendLifecycle(id uintptr, to lifecycle.Stage) {
+func sendLifecycle(id uintptr, setter func(*lifecycler.State, bool), val bool) {
 	theScreen.mu.Lock()
 	w := theScreen.windows[id]
 	theScreen.mu.Unlock()
@@ -349,44 +347,44 @@ func sendLifecycle(id uintptr, to lifecycle.Stage) {
 	if w == nil {
 		return
 	}
-	if w.lifecycleStage == to {
-		return
-	}
-	w.Send(lifecycle.Event{
-		From:        w.lifecycleStage,
-		To:          to,
-		DrawContext: w.glctx,
-	})
-	w.lifecycleStage = to
+	setter(&w.lifecycler, val)
+	w.lifecycler.SendEvent(w, w.glctx)
 }
 
-func sendLifecycleAll(to lifecycle.Stage) {
+func sendLifecycleAll(dead bool) {
+	windows := []*windowImpl{}
+
 	theScreen.mu.Lock()
-	defer theScreen.mu.Unlock()
 	for _, w := range theScreen.windows {
-		if w.lifecycleStage == to {
-			continue
+		windows = append(windows, w)
+	}
+	theScreen.mu.Unlock()
+
+	for _, w := range windows {
+		w.lifecycler.SetFocused(false)
+		w.lifecycler.SetVisible(false)
+		if dead {
+			w.lifecycler.SetDead(true)
 		}
-		w.Send(lifecycle.Event{
-			From:        w.lifecycleStage,
-			To:          to,
-			DrawContext: w.glctx,
-		})
-		w.lifecycleStage = to
+		w.lifecycler.SendEvent(w, w.glctx)
 	}
 }
 
 //export lifecycleDeadAll
-func lifecycleDeadAll() { sendLifecycleAll(lifecycle.StageDead) }
+func lifecycleDeadAll() { sendLifecycleAll(true) }
 
-//export lifecycleAliveAll
-func lifecycleAliveAll() { sendLifecycleAll(lifecycle.StageAlive) }
+//export lifecycleHideAll
+func lifecycleHideAll() { sendLifecycleAll(false) }
 
 //export lifecycleVisible
-func lifecycleVisible(id uintptr) { sendLifecycle(id, lifecycle.StageVisible) }
+func lifecycleVisible(id uintptr, val bool) {
+	sendLifecycle(id, (*lifecycler.State).SetVisible, val)
+}
 
 //export lifecycleFocused
-func lifecycleFocused(id uintptr) { sendLifecycle(id, lifecycle.StageFocused) }
+func lifecycleFocused(id uintptr, val bool) {
+	sendLifecycle(id, (*lifecycler.State).SetFocused, val)
+}
 
 // cocoaRune marks the Carbon/Cocoa private-range unicode rune representing
 // a non-unicode key event to -1, used for Rune in the key package.

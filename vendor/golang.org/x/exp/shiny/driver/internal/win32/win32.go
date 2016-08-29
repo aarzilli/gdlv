@@ -289,6 +289,8 @@ func screenWindowWndProc(hwnd syscall.Handle, uMsg uint32, wParam uintptr, lPara
 	return _DefWindowProc(hwnd, uMsg, wParam, lParam)
 }
 
+//go:uintptrescapes
+
 func SendScreenMessage(uMsg uint32, wParam uintptr, lParam uintptr) (lResult uintptr) {
 	return SendMessage(screenHWND, uMsg, wParam, lParam)
 }
@@ -415,6 +417,12 @@ func initCommon() (err error) {
 	}
 	// TODO(andlabs) hThisInstance
 	return nil
+}
+
+//go:uintptrescapes
+
+func SendMessage(hwnd syscall.Handle, uMsg uint32, wParam uintptr, lParam uintptr) (lResult uintptr) {
+	return sendMessage(hwnd, uMsg, wParam, lParam)
 }
 
 var mainCallback func()

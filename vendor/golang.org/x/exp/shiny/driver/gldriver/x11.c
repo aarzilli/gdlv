@@ -180,7 +180,10 @@ processEvents() {
 			}
 			break;
 		case ConfigureNotify:
-			onConfigure(ev.xconfigure.window, ev.xconfigure.x, ev.xconfigure.y, ev.xconfigure.width, ev.xconfigure.height);
+			onConfigure(ev.xconfigure.window, ev.xconfigure.x, ev.xconfigure.y,
+				ev.xconfigure.width, ev.xconfigure.height,
+				DisplayWidth(x_dpy, DefaultScreen(x_dpy)),
+				DisplayWidthMM(x_dpy, DefaultScreen(x_dpy)));
 			break;
 		case ClientMessage:
 			if ((ev.xclient.message_type != wm_protocols) || (ev.xclient.format != 32)) {
