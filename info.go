@@ -38,7 +38,7 @@ func (l *asyncLoad) done(err error) {
 	wnd.Changed()
 }
 
-func (l *asyncLoad) showRequest(mw *nucular.MasterWindow, container *nucular.Window, name string, load func(*asyncLoad)) *nucular.Window {
+func (l *asyncLoad) showRequest(mw *nucular.MasterWindow, container *nucular.Window, flags nucular.WindowFlags, name string, load func(*asyncLoad)) *nucular.Window {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -67,7 +67,7 @@ func (l *asyncLoad) showRequest(mw *nucular.MasterWindow, container *nucular.Win
 		return nil
 	}
 
-	if w := container.GroupBegin(name, 0); w != nil {
+	if w := container.GroupBegin(name, flags); w != nil {
 		return w
 	}
 	return nil
@@ -180,7 +180,7 @@ func loadGoroutines(p *asyncLoad) {
 }
 
 func updateGoroutines(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := goroutinesPanel.asyncLoad.showRequest(mw, container, "goroutines", loadGoroutines)
+	w := goroutinesPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "goroutines", loadGoroutines)
 	if w == nil {
 		return
 	}
@@ -249,7 +249,7 @@ func loadStacktrace(p *asyncLoad) {
 }
 
 func updateStacktrace(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := stackPanel.asyncLoad.showRequest(mw, container, "stack", loadStacktrace)
+	w := stackPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "stack", loadStacktrace)
 	if w == nil {
 		return
 	}
@@ -317,7 +317,7 @@ func loadThreads(p *asyncLoad) {
 }
 
 func updateThreads(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := threadsPanel.asyncLoad.showRequest(mw, container, "threads", loadThreads)
+	w := threadsPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "threads", loadThreads)
 	if w == nil {
 		return
 	}
@@ -405,7 +405,7 @@ const (
 )
 
 func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := localsPanel.asyncLoad.showRequest(mw, container, "locals", loadLocals)
+	w := localsPanel.asyncLoad.showRequest(mw, container, 0, "locals", loadLocals)
 	if w == nil {
 		return
 	}
@@ -418,7 +418,6 @@ func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 	filter := string(localsPanel.filterEditor.Buffer)
 	w.CheckboxText("Address", &localsPanel.showAddr)
 	w.MenubarEnd()
-	w.Row(varRowHeight).Dynamic(1)
 
 	args, locals := localsPanel.args, localsPanel.locals
 
@@ -431,7 +430,6 @@ func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 	if len(args) > 0 {
 		w.Row(varRowHeight / 2).Dynamic(1)
 		w.Spacing(1)
-		w.Row(varRowHeight).Dynamic(1)
 	}
 
 	for i := range locals {
@@ -457,13 +455,11 @@ func loadExprs(l *asyncLoad) {
 }
 
 func updateExprs(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := exprsPanel.asyncLoad.showRequest(mw, container, "exprs", loadExprs)
+	w := exprsPanel.asyncLoad.showRequest(mw, container, 0, "exprs", loadExprs)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
-
-	w.Row(varRowHeight).Dynamic(1)
 
 	editorShown := false
 
@@ -482,6 +478,7 @@ func updateExprs(mw *nucular.MasterWindow, container *nucular.Window) {
 }
 
 func exprsEditor(w *nucular.Window) {
+	w.Row(varRowHeight).Dynamic(1)
 	active := exprsPanel.ed.Edit(w)
 	if active&nucular.EditCommitted == 0 {
 		return
@@ -571,7 +568,7 @@ func loadRegs(p *asyncLoad) {
 }
 
 func updateRegs(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := regsPanel.asyncLoad.showRequest(mw, container, "registers", loadRegs)
+	w := regsPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "registers", loadRegs)
 	if w == nil {
 		return
 	}
@@ -597,7 +594,7 @@ func loadGlobals(p *asyncLoad) {
 }
 
 func updateGlobals(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := globalsPanel.asyncLoad.showRequest(mw, container, "globals", loadGlobals)
+	w := globalsPanel.asyncLoad.showRequest(mw, container, 0, "globals", loadGlobals)
 	if w == nil {
 		return
 	}
@@ -610,7 +607,6 @@ func updateGlobals(mw *nucular.MasterWindow, container *nucular.Window) {
 	filter := string(globalsPanel.filterEditor.Buffer)
 	w.CheckboxText("Address", &globalsPanel.showAddr)
 	w.MenubarEnd()
-	w.Row(varRowHeight).Dynamic(1)
 
 	globals := globalsPanel.globals
 
@@ -641,7 +637,7 @@ func loadBreakpoints(p *asyncLoad) {
 }
 
 func updateBreakpoints(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := breakpointsPanel.asyncLoad.showRequest(mw, container, "breakpoints", loadBreakpoints)
+	w := breakpointsPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "breakpoints", loadBreakpoints)
 	if w == nil {
 		return
 	}
@@ -880,6 +876,7 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 			}
 		}
 	}
+	w.Row(varRowHeight).StaticScaled(84 * zeroWidth)
 	if v.Unreadable != "" {
 		w.Label(fmt.Sprintf("%s = (unreadable %s)", name, v.Unreadable), "LC")
 		showExprMenu(w, exprMenu, v)
@@ -1003,7 +1000,6 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 				if w.ButtonText(fmt.Sprintf("%d more", int(v.Len)-(len(v.Children)/2))) {
 					loadMoreMap(v)
 				}
-				w.Row(varRowHeight).Dynamic(1)
 			}
 			w.TreePop()
 		} else {
@@ -1038,7 +1034,6 @@ func showArrayOrSliceContents(mw *nucular.MasterWindow, w *nucular.Window, depth
 		if w.ButtonText(fmt.Sprintf("%d more", int(v.Len)-len(v.Children))) {
 			loadMoreArrayOrSlice(v)
 		}
-		w.Row(varRowHeight).Dynamic(1)
 	}
 }
 
