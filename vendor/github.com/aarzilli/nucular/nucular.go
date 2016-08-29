@@ -1265,9 +1265,9 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 
 	/* increase x-axis cursor widget position pointer */
 	if node.Open {
-		layout.AtX = header.X + layout.Offset.X
+		layout.AtX = header.X + layout.Offset.X + style.Tab.Indent
 		layout.Width = max(layout.Width, 2*panel_padding.X)
-		layout.Width -= 2 * panel_padding.X
+		layout.Width -= (style.Tab.Indent + panel_padding.X)
 		layout.Row.TreeDepth++
 		win.curNode = node
 		return true
@@ -1305,8 +1305,8 @@ func (win *Window) TreeClose(path ...string) {
 func (win *Window) TreePop() {
 	layout := win.layout
 	panel_padding := win.style().Padding
-	layout.AtX -= panel_padding.X
-	layout.Width += 2 * panel_padding.X
+	layout.AtX -= panel_padding.X + win.ctx.Style.Tab.Indent
+	layout.Width += panel_padding.X + win.ctx.Style.Tab.Indent
 	assert(layout.Row.TreeDepth != 0)
 	win.curNode = win.curNode.Parent
 	layout.Row.TreeDepth--

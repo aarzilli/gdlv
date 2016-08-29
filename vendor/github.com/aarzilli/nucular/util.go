@@ -170,13 +170,19 @@ func init() {
 	fontWidthCache, _ = lru.New(256)
 }
 
+type fontWidthCacheKey struct {
+	f      font.Face
+	string string
+}
+
 func FontWidth(f font.Face, string string) int {
-	if val, ok := fontWidthCache.Get(string); ok {
+	k := fontWidthCacheKey{f, string}
+	if val, ok := fontWidthCache.Get(k); ok {
 		return val.(int)
 	}
 	d := font.Drawer{Face: f}
 	r := d.MeasureString(string).Ceil()
-	fontWidthCache.Add(string, r)
+	fontWidthCache.Add(k, r)
 	return r
 }
 

@@ -404,8 +404,6 @@ const (
 	moreBtnWidth = 70
 )
 
-const variableIndent = 18
-
 func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 	w := localsPanel.asyncLoad.showRequest(mw, container, "locals", loadLocals)
 	if w == nil {
@@ -422,14 +420,11 @@ func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 	w.MenubarEnd()
 	w.Row(varRowHeight).Dynamic(1)
 
-	_, scaling := mw.Style()
-	ind := int(variableIndent * scaling)
-
 	args, locals := localsPanel.args, localsPanel.locals
 
 	for i := range args {
 		if strings.Index(args[i].Name, filter) >= 0 {
-			showVariable(mw, w, 0, localsPanel.showAddr, -1, args[i].Name, &args[i], ind)
+			showVariable(mw, w, 0, localsPanel.showAddr, -1, args[i].Name, &args[i])
 		}
 	}
 
@@ -441,7 +436,7 @@ func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 
 	for i := range locals {
 		if strings.Index(locals[i].Name, filter) >= 0 {
-			showVariable(mw, w, 0, localsPanel.showAddr, -1, locals[i].Name, &locals[i], ind)
+			showVariable(mw, w, 0, localsPanel.showAddr, -1, locals[i].Name, &locals[i])
 		}
 	}
 }
@@ -470,8 +465,6 @@ func updateExprs(mw *nucular.MasterWindow, container *nucular.Window) {
 
 	w.Row(varRowHeight).Dynamic(1)
 
-	_, scaling := mw.Style()
-	ind := int(variableIndent * scaling)
 	editorShown := false
 
 	for i := range exprsPanel.expressions {
@@ -479,7 +472,7 @@ func updateExprs(mw *nucular.MasterWindow, container *nucular.Window) {
 			exprsEditor(w)
 			editorShown = true
 		} else {
-			showVariable(mw, w, 0, false, i, exprsPanel.v[i].Name, exprsPanel.v[i], ind)
+			showVariable(mw, w, 0, false, i, exprsPanel.v[i].Name, exprsPanel.v[i])
 		}
 	}
 
@@ -619,14 +612,11 @@ func updateGlobals(mw *nucular.MasterWindow, container *nucular.Window) {
 	w.MenubarEnd()
 	w.Row(varRowHeight).Dynamic(1)
 
-	_, scaling := mw.Style()
-	ind := int(18 * scaling)
-
 	globals := globalsPanel.globals
 
 	for i := range globals {
 		if strings.Index(globals[i].Name, filter) >= 0 {
-			showVariable(mw, w, 0, globalsPanel.showAddr, -1, globals[i].Name, &globals[i], ind)
+			showVariable(mw, w, 0, globalsPanel.showAddr, -1, globals[i].Name, &globals[i])
 		}
 	}
 }
@@ -865,7 +855,7 @@ func (p *stringSlicePanel) update(mw *nucular.MasterWindow, container *nucular.W
 	}
 }
 
-func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *api.Variable, ind int) {
+func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *api.Variable) {
 	const minInlineKeyValueLen = 20
 	if v.Type != "" {
 		if addr {
@@ -906,10 +896,8 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 	case reflect.Slice:
 		if w.TreePush(nucular.TreeNode, name, false) {
 			showExprMenu(w, exprMenu, v)
-			w.Scrollbar.X -= ind
 			w.Label(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap), "LC")
-			showArrayOrSliceContents(mw, w, depth, addr, v, ind)
-			w.Scrollbar.X += ind
+			showArrayOrSliceContents(mw, w, depth, addr, v)
 			w.TreePop()
 		} else {
 			showExprMenu(w, exprMenu, v)
@@ -917,10 +905,8 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 	case reflect.Array:
 		if w.TreePush(nucular.TreeNode, name, false) {
 			showExprMenu(w, exprMenu, v)
-			w.Scrollbar.X -= ind
 			w.Label(fmt.Sprintf("len: %d", v.Len), "LC")
-			showArrayOrSliceContents(mw, w, depth, addr, v, ind)
-			w.Scrollbar.X += ind
+			showArrayOrSliceContents(mw, w, depth, addr, v)
 			w.TreePop()
 		} else {
 			showExprMenu(w, exprMenu, v)
@@ -935,9 +921,7 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
 				showExprMenu(w, exprMenu, v)
-				w.Scrollbar.X -= ind
-				showVariable(mw, w, depth+1, addr, -1, "", &v.Children[0], ind)
-				w.Scrollbar.X += ind
+				showVariable(mw, w, depth+1, addr, -1, "", &v.Children[0])
 				w.TreePop()
 			} else {
 				showExprMenu(w, exprMenu, v)
@@ -960,9 +944,7 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
 				showExprMenu(w, exprMenu, v)
-				w.Scrollbar.X -= ind
-				showStructContents(mw, w, depth, addr, v, ind)
-				w.Scrollbar.X += ind
+				showStructContents(mw, w, depth, addr, v)
 				w.TreePop()
 			} else {
 				showExprMenu(w, exprMenu, v)
@@ -971,14 +953,12 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 	case reflect.Struct:
 		if w.TreePush(nucular.TreeNode, name, false) {
 			showExprMenu(w, exprMenu, v)
-			w.Scrollbar.X -= ind
 			if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
 				loadMoreStruct(v)
 				w.Label("Loading...", "LC")
 			} else {
-				showStructContents(mw, w, depth, addr, v, ind)
+				showStructContents(mw, w, depth, addr, v)
 			}
-			w.Scrollbar.X += ind
 			w.TreePop()
 		} else {
 			showExprMenu(w, exprMenu, v)
@@ -990,13 +970,11 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
 				showExprMenu(w, exprMenu, v)
-				w.Scrollbar.X -= ind
 				if v.Children[0].Kind == reflect.Ptr {
-					showVariable(mw, w, depth+1, addr, -1, "data", &v.Children[0].Children[0], ind)
+					showVariable(mw, w, depth+1, addr, -1, "data", &v.Children[0].Children[0])
 				} else {
-					showVariable(mw, w, depth+1, addr, -1, "data", &v.Children[0], ind)
+					showVariable(mw, w, depth+1, addr, -1, "data", &v.Children[0])
 				}
-				w.Scrollbar.X += ind
 				w.TreePop()
 			} else {
 				showExprMenu(w, exprMenu, v)
@@ -1005,7 +983,6 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 	case reflect.Map:
 		if w.TreePush(nucular.TreeNode, name, false) {
 			showExprMenu(w, exprMenu, v)
-			w.Scrollbar.X -= ind
 			for i := 0; i < len(v.Children); i += 2 {
 				key, value := &v.Children[i], &v.Children[i+1]
 				if len(key.Children) == 0 && len(key.Value) < minInlineKeyValueLen {
@@ -1015,10 +992,10 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 					} else {
 						keyname = fmt.Sprintf("[%s]", key.Value)
 					}
-					showVariable(mw, w, depth+1, addr, -1, keyname, value, ind)
+					showVariable(mw, w, depth+1, addr, -1, keyname, value)
 				} else {
-					showVariable(mw, w, depth+1, addr, -1, fmt.Sprintf("[%d key]", i/2), key, ind)
-					showVariable(mw, w, depth+1, addr, -1, fmt.Sprintf("[%d value]", i/2), value, ind)
+					showVariable(mw, w, depth+1, addr, -1, fmt.Sprintf("[%d key]", i/2), key)
+					showVariable(mw, w, depth+1, addr, -1, fmt.Sprintf("[%d value]", i/2), value)
 				}
 			}
 			if len(v.Children)/2 != int(v.Len) {
@@ -1028,7 +1005,6 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 				}
 				w.Row(varRowHeight).Dynamic(1)
 			}
-			w.Scrollbar.X += ind
 			w.TreePop()
 		} else {
 			showExprMenu(w, exprMenu, v)
@@ -1053,9 +1029,9 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 	}
 }
 
-func showArrayOrSliceContents(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr bool, v *api.Variable, ind int) {
+func showArrayOrSliceContents(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr bool, v *api.Variable) {
 	for i := range v.Children {
-		showVariable(mw, w, depth+1, addr, -1, fmt.Sprintf("[%d]", i), &v.Children[i], ind)
+		showVariable(mw, w, depth+1, addr, -1, fmt.Sprintf("[%d]", i), &v.Children[i])
 	}
 	if len(v.Children) != int(v.Len) {
 		w.Row(varRowHeight).Static(moreBtnWidth)
@@ -1066,9 +1042,9 @@ func showArrayOrSliceContents(mw *nucular.MasterWindow, w *nucular.Window, depth
 	}
 }
 
-func showStructContents(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr bool, v *api.Variable, ind int) {
+func showStructContents(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr bool, v *api.Variable) {
 	for i := range v.Children {
-		showVariable(mw, w, depth+1, addr, -1, v.Children[i].Name, &v.Children[i], ind)
+		showVariable(mw, w, depth+1, addr, -1, v.Children[i].Name, &v.Children[i])
 	}
 }
 

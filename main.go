@@ -33,6 +33,7 @@ func setupStyle() {
 	}
 	wnd.SetStyle(nstyle.FromTheme(theme), nil, conf.Scaling)
 	style, _ := wnd.Style()
+	style.Tab.Indent = style.Tab.Padding.X + style.Tab.Spacing.X  + nucular.FontHeight(style.Font)
 	style.Selectable.Normal.Data.Color = style.NormalWindow.Background
 	style.GroupWindow.Padding.Y = 0
 	style.GroupWindow.FooterPadding.Y = 0

@@ -324,6 +324,7 @@ type Tab struct {
 	Rounding    uint16
 	Padding     image.Point
 	Spacing     image.Point
+	Indent int
 }
 
 type HeaderAlign int
