@@ -466,7 +466,11 @@ func updateExprs(mw *nucular.MasterWindow, container *nucular.Window) {
 			exprsEditor(w)
 			editorShown = true
 		} else {
-			showVariable(mw, w, 0, false, i, exprsPanel.v[i].Name, exprsPanel.v[i])
+			if exprsPanel.v[i] == nil {
+				w.Label(fmt.Sprintf("loading %s", exprsPanel.expressions[i]), "LC")
+			} else {
+				showVariable(mw, w, 0, false, i, exprsPanel.v[i].Name, exprsPanel.v[i])
+			}
 		}
 	}
 
