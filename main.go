@@ -48,10 +48,11 @@ func setupStyle() {
 const commandLineHeight = 28
 
 type listline struct {
-	idx        string
-	text       string
-	pc         bool
-	breakpoint bool
+	idx    string
+	lineno int
+	text   string
+	pc     bool
+	bp     *api.Breakpoint
 }
 
 var listingPanel struct {
@@ -316,6 +317,7 @@ const (
 	clearFrameSwitch clearKind = iota
 	clearGoroutineSwitch
 	clearStop
+	clearBreakpoint
 )
 
 func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState) {
@@ -385,6 +387,8 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 	}
 
 	switch clearKind {
+	case clearBreakpoint:
+		breakpointsPanel.asyncLoad.clear()
 	case clearFrameSwitch:
 		localsPanel.asyncLoad.clear()
 		exprsPanel.asyncLoad.clear()
@@ -437,8 +441,8 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 		lineno := 0
 		for buf.Scan() {
 			lineno++
-			_, breakpoint := bpmap[lineno]
-			listingPanel.listing = append(listingPanel.listing, listline{"", expandTabs(buf.Text()), lineno == loc.Line, breakpoint})
+			breakpoint := bpmap[lineno]
+			listingPanel.listing = append(listingPanel.listing, listline{"", lineno, expandTabs(buf.Text()), lineno == loc.Line, breakpoint})
 		}
 
 		if err := buf.Err(); err != nil {

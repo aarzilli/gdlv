@@ -180,7 +180,7 @@ func (c *Commands) help(client service.Client, out io.Writer, args string) error
 }
 
 func setBreakpoint(client service.Client, out io.Writer, tracepoint bool, argstr string) error {
-	defer breakpointsPanel.asyncLoad.clear()
+	defer refreshState(true, clearBreakpoint, nil)
 	args := strings.SplitN(argstr, " ", 2)
 
 	requestedBp := &api.Breakpoint{}
@@ -200,7 +200,7 @@ func setBreakpoint(client service.Client, out io.Writer, tracepoint bool, argstr
 	}
 
 	requestedBp.Tracepoint = tracepoint
-	locs, err := client.FindLocation(api.EvalScope{GoroutineID: -1, Frame: 0}, locspec)
+	locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, locspec)
 	if err != nil {
 		if requestedBp.Name == "" {
 			return err
@@ -208,7 +208,7 @@ func setBreakpoint(client service.Client, out io.Writer, tracepoint bool, argstr
 		requestedBp.Name = ""
 		locspec = argstr
 		var err2 error
-		locs, err2 = client.FindLocation(api.EvalScope{GoroutineID: -1, Frame: 0}, locspec)
+		locs, err2 = client.FindLocation(api.EvalScope{curGid, curFrame}, locspec)
 		if err2 != nil {
 			return err
 		}
@@ -636,7 +636,7 @@ func executeCommand(cmdstr string) {
 	if err := cmds.Call(cmdstr, args, &out); err != nil {
 		if _, ok := err.(ExitRequestError); ok {
 			if client.AttachedToExistingProcess() {
-				wnd.PopupOpen("Confirm Quit", nucular.WindowDynamic|nucular.WindowTitle|nucular.WindowTitle|nucular.WindowNoScrollbar|nucular.WindowMovable|nucular.WindowBorder, rect.Rect{100, 100, 400, 700}, true, confirmQuit)
+				wnd.PopupOpen("Confirm Quit", dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, confirmQuit)
 			} else {
 				client.Detach(true)
 				wnd.Close()
