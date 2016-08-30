@@ -154,25 +154,6 @@ func (dwb *drawableWindowBody) Draw(z *nstyle.Style, out *command.Buffer) {
 	return
 }
 
-type drawableScissor struct {
-	R rect.Rect
-}
-
-func (d *drawableScissor) Draw(style *nstyle.Style, out *command.Buffer) {
-	out.PushScissor(d.R)
-	return
-}
-
-type drawableFillRect struct {
-	R rect.Rect
-	C color.RGBA
-}
-
-func (d *drawableFillRect) Draw(style *nstyle.Style, out *command.Buffer) {
-	out.FillRect(d.R, 0, d.C)
-	return
-}
-
 type drawableScalerAndBorders struct {
 	DrawScaler bool
 	ScalerRect rect.Rect
@@ -222,20 +203,9 @@ func (d *drawableScalerAndBorders) Draw(z *nstyle.Style, out *command.Buffer) {
 // TREE
 ///////////////////////////////////////////////////////////////////////////////////
 
-type drawableTreeNode struct {
-	Style  *nstyle.Window
-	Type   TreeType
-	Header rect.Rect
-	Sym    rect.Rect
-	Title  string
-}
-
-func (d *drawableTreeNode) Draw(z *nstyle.Style, out *command.Buffer) {
-	type_ := d.Type
-	header := d.Header
-	sym := d.Sym
-	title := d.Title
-	style := d.Style
+func drawTreeNode(win *Window, style *nstyle.Window, type_ TreeType, header rect.Rect, sym rect.Rect, title string) {
+	z := &win.ctx.Style
+	out := &win.cmds
 
 	item_spacing := style.Spacing
 	panel_padding := style.Padding
@@ -245,7 +215,7 @@ func (d *drawableTreeNode) Draw(z *nstyle.Style, out *command.Buffer) {
 	if type_ == TreeTab {
 		var background *nstyle.Item = &z.Tab.Background
 		if background.Type == nstyle.ItemImage {
-			out.DrawImage(header, background.Data.Image)
+			win.cmds.DrawImage(header, background.Data.Image)
 			text.Background = color.RGBA{0, 0, 0, 0}
 		} else {
 			text.Background = background.Data.Color
@@ -266,42 +236,6 @@ func (d *drawableTreeNode) Draw(z *nstyle.Style, out *command.Buffer) {
 
 	text.Text = z.Tab.Text
 	widgetText(out, lblrect, title, &text, "LC", z.Font)
-	return
-}
-
-///////////////////////////////////////////////////////////////////////////////////
-// NON-INTERACTIVE WIDGETS
-///////////////////////////////////////////////////////////////////////////////////
-
-type drawableNonInteractive struct {
-	Bounds    rect.Rect
-	Color     color.RGBA
-	Wrap      bool
-	Text      textWidget
-	Alignment label.Align
-	Str       string
-	Img       *image.RGBA
-	Fn        func(rect.Rect, *nstyle.Style, *command.Buffer)
-}
-
-func (d *drawableNonInteractive) Draw(z *nstyle.Style, out *command.Buffer) {
-	if d.Fn != nil {
-		oldClip := out.Clip
-		clip := unify(oldClip, d.Bounds)
-		out.PushScissor(clip)
-		d.Fn(d.Bounds, z, out)
-		out.PushScissor(oldClip)
-		return
-	}
-	if d.Img != nil {
-		out.DrawImage(d.Bounds, d.Img)
-		return
-	}
-	if d.Wrap {
-		widgetTextWrap(out, d.Bounds, []rune(d.Str), &d.Text, z.Font)
-	} else {
-		widgetText(out, d.Bounds, d.Str, &d.Text, d.Alignment, z.Font)
-	}
 	return
 }
 
@@ -329,23 +263,9 @@ func drawButton(out *command.Buffer, bounds rect.Rect, state nstyle.WidgetStates
 	return background
 }
 
-type drawableTextButton struct {
-	Bounds        rect.Rect
-	Content       rect.Rect
-	State         nstyle.WidgetStates
-	Style         *nstyle.Button
-	Txt           string
-	TextAlignment label.Align
-}
-
-func (d *drawableTextButton) Draw(z *nstyle.Style, out *command.Buffer) {
-	style := d.Style
-	bounds := d.Bounds
-	content := d.Content
-	state := d.State
-	txt := d.Txt
-	align := d.TextAlignment
-	font := z.Font
+func drawTextButton(win *Window, bounds rect.Rect, content rect.Rect, state nstyle.WidgetStates, style *nstyle.Button, txt string, align label.Align) {
+	out := &win.cmds
+	font := win.ctx.Style.Font
 
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
@@ -380,21 +300,9 @@ func (d *drawableTextButton) Draw(z *nstyle.Style, out *command.Buffer) {
 	return
 }
 
-type drawableSymbolButton struct {
-	Bounds  rect.Rect
-	Content rect.Rect
-	State   nstyle.WidgetStates
-	Style   *nstyle.Button
-	Symbol  label.SymbolType
-}
-
-func (d *drawableSymbolButton) Draw(z *nstyle.Style, out *command.Buffer) {
-	style := d.Style
-	bounds := d.Bounds
-	content := d.Content
-	state := d.State
-	symbol := d.Symbol
-	font := z.Font
+func drawSymbolButton(win *Window, bounds rect.Rect, content rect.Rect, state nstyle.WidgetStates, style *nstyle.Button, symbol label.SymbolType) {
+	out := &win.cmds
+	font := win.ctx.Style.Font
 
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
@@ -427,21 +335,8 @@ func (d *drawableSymbolButton) Draw(z *nstyle.Style, out *command.Buffer) {
 	return
 }
 
-type drawableImageButton struct {
-	Bounds  rect.Rect
-	Content rect.Rect
-	State   nstyle.WidgetStates
-	Style   *nstyle.Button
-	Img     *image.RGBA
-}
-
-func (d *drawableImageButton) Draw(z *nstyle.Style, out *command.Buffer) {
-	bounds := d.Bounds
-	content := d.Content
-	state := d.State
-	style := d.Style
-	img := d.Img
-
+func drawImageButton(win *Window, bounds rect.Rect, content rect.Rect, state nstyle.WidgetStates, style *nstyle.Button, img *image.RGBA) {
+	out := &win.cmds
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
 	}
@@ -457,23 +352,9 @@ func (d *drawableImageButton) Draw(z *nstyle.Style, out *command.Buffer) {
 	return
 }
 
-type drawableTextSymbolButton struct {
-	Bounds            rect.Rect
-	Label, SymbolRect rect.Rect
-	State             nstyle.WidgetStates
-	Style             *nstyle.Button
-	Txt               string
-	Symbol            label.SymbolType
-}
-
-func (d *drawableTextSymbolButton) Draw(z *nstyle.Style, out *command.Buffer) {
-	bounds := d.Bounds
-	symbolrect := d.SymbolRect
-	state := d.State
-	style := d.Style
-	str := d.Txt
-	symbol := d.Symbol
-	font := z.Font
+func drawTextSymbolButton(win *Window, bounds, labelrect, symbolrect rect.Rect, state nstyle.WidgetStates, style *nstyle.Button, str string, symbol label.SymbolType) {
+	out := &win.cmds
+	font := win.ctx.Style.Font
 
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
@@ -482,7 +363,7 @@ func (d *drawableTextSymbolButton) Draw(z *nstyle.Style, out *command.Buffer) {
 		defer style.DrawEnd(out)
 	}
 	if style.Draw.ButtonTextSymbol != nil {
-		style.Draw.ButtonTextSymbol(out, bounds.Rectangle(), d.Label.Rectangle(), d.SymbolRect.Rectangle(), state, style, str, symbol, font)
+		style.Draw.ButtonTextSymbol(out, bounds.Rectangle(), labelrect.Rectangle(), symbolrect.Rectangle(), state, style, str, symbol, font)
 		return
 	}
 
@@ -511,27 +392,13 @@ func (d *drawableTextSymbolButton) Draw(z *nstyle.Style, out *command.Buffer) {
 
 	text.Padding = image.Point{0, 0}
 	drawSymbol(out, symbol, symbolrect, style.TextBackground, sym, 0, font)
-	widgetText(out, d.Label, str, &text, "CC", font)
+	widgetText(out, labelrect, str, &text, "CC", font)
 	return
 }
 
-type drawableTextImageButton struct {
-	Bounds         rect.Rect
-	Label, ImgRect rect.Rect
-	State          nstyle.WidgetStates
-	Style          *nstyle.Button
-	Str            string
-	Img            *image.RGBA
-}
-
-func (d *drawableTextImageButton) Draw(z *nstyle.Style, out *command.Buffer) {
-	bounds := d.Bounds
-	imgrect := d.ImgRect
-	state := d.State
-	style := d.Style
-	str := d.Str
-	img := d.Img
-	font := z.Font
+func drawTextImageButton(win *Window, bounds, labelrect, imgrect rect.Rect, state nstyle.WidgetStates, style *nstyle.Button, str string, img *image.RGBA) {
+	out := &win.cmds
+	font := win.ctx.Style.Font
 
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
@@ -540,7 +407,7 @@ func (d *drawableTextImageButton) Draw(z *nstyle.Style, out *command.Buffer) {
 		defer style.DrawEnd(out)
 	}
 	if style.Draw.ButtonTextImage != nil {
-		style.Draw.ButtonTextImage(out, bounds.Rectangle(), d.Label.Rectangle(), imgrect.Rectangle(), state, style, str, font, img)
+		style.Draw.ButtonTextImage(out, bounds.Rectangle(), labelrect.Rectangle(), imgrect.Rectangle(), state, style, str, font, img)
 		return
 	}
 
@@ -562,7 +429,7 @@ func (d *drawableTextImageButton) Draw(z *nstyle.Style, out *command.Buffer) {
 	}
 
 	text.Padding = image.Point{0, 0}
-	widgetText(out, d.Label, str, &text, "CC", font)
+	widgetText(out, labelrect, str, &text, "CC", font)
 	out.DrawImage(imgrect, img)
 	return
 }
@@ -571,23 +438,9 @@ func (d *drawableTextImageButton) Draw(z *nstyle.Style, out *command.Buffer) {
 // SELECTABLE
 ///////////////////////////////////////////////////////////////////////////////////
 
-type drawableSelectable struct {
-	State  nstyle.WidgetStates
-	Style  *nstyle.Selectable
-	Active bool
-	Bounds rect.Rect
-	Str    string
-	Align  label.Align
-}
-
-func (d *drawableSelectable) Draw(z *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	style := d.Style
-	active := d.Active
-	bounds := d.Bounds
-	str := d.Str
-	align := d.Align
-	font := z.Font
+func drawSelectable(win *Window, state nstyle.WidgetStates, style *nstyle.Selectable, active bool, bounds rect.Rect, str string, align label.Align) {
+	out := &win.cmds
+	font := win.ctx.Style.Font
 
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
@@ -646,19 +499,8 @@ func (d *drawableSelectable) Draw(z *nstyle.Style, out *command.Buffer) {
 // SCROLLBARS
 ///////////////////////////////////////////////////////////////////////////////////
 
-type drawableScrollbar struct {
-	State  nstyle.WidgetStates
-	Style  *nstyle.Scrollbar
-	Bounds rect.Rect
-	Scroll rect.Rect
-}
-
-func (d *drawableScrollbar) Draw(z *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	style := d.Style
-	bounds := d.Bounds
-	scroll := d.Scroll
-
+func drawScrollbar(win *Window, state nstyle.WidgetStates, style *nstyle.Scrollbar, bounds, scroll rect.Rect) {
+	out := &win.cmds
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
 	}
@@ -705,23 +547,9 @@ func (d *drawableScrollbar) Draw(z *nstyle.Style, out *command.Buffer) {
 // TOGGLE BOXES
 ///////////////////////////////////////////////////////////////////////////////////
 
-type drawableTogglebox struct {
-	Type                     toggleType
-	State                    nstyle.WidgetStates
-	Style                    *nstyle.Toggle
-	Active                   bool
-	Label, Selector, Cursors rect.Rect
-	Str                      string
-}
-
-func (d *drawableTogglebox) Draw(z *nstyle.Style, out *command.Buffer) {
-	type_ := d.Type
-	state := d.State
-	style := d.Style
-	active := d.Active
-	select_, cursor := d.Selector, d.Cursors
-	str := d.Str
-	font := z.Font
+func drawTogglebox(win *Window, type_ toggleType, state nstyle.WidgetStates, style *nstyle.Toggle, active bool, labelrect, select_, cursor rect.Rect, str string) {
+	out := &win.cmds
+	font := win.ctx.Style.Font
 
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
@@ -732,12 +560,12 @@ func (d *drawableTogglebox) Draw(z *nstyle.Style, out *command.Buffer) {
 	switch type_ {
 	case toggleCheck:
 		if style.Draw.Checkbox != nil {
-			style.Draw.Checkbox(out, state, style, active, d.Label.Rectangle(), select_.Rectangle(), cursor.Rectangle(), str, font)
+			style.Draw.Checkbox(out, state, style, active, labelrect.Rectangle(), select_.Rectangle(), cursor.Rectangle(), str, font)
 			return
 		}
 	default:
 		if style.Draw.Radio != nil {
-			style.Draw.Radio(out, state, style, active, d.Label.Rectangle(), select_.Rectangle(), cursor.Rectangle(), str, font)
+			style.Draw.Radio(out, state, style, active, labelrect.Rectangle(), select_.Rectangle(), cursor.Rectangle(), str, font)
 			return
 		}
 	}
@@ -787,7 +615,7 @@ func (d *drawableTogglebox) Draw(z *nstyle.Style, out *command.Buffer) {
 	text.Padding.X = 0
 	text.Padding.Y = 0
 	text.Background = style.TextBackground
-	widgetText(out, d.Label, str, &text, "LC", font)
+	widgetText(out, labelrect, str, &text, "LC", font)
 	return
 }
 
@@ -795,23 +623,8 @@ func (d *drawableTogglebox) Draw(z *nstyle.Style, out *command.Buffer) {
 // PROGRESS BAR
 ///////////////////////////////////////////////////////////////////////////////////
 
-type drawableProgress struct {
-	State   nstyle.WidgetStates
-	Style   *nstyle.Progress
-	Bounds  rect.Rect
-	Scursor rect.Rect
-	Value   int
-	MaxVal  int
-}
-
-func (d *drawableProgress) Draw(z *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	style := d.Style
-	bounds := d.Bounds
-	scursor := d.Scursor
-	value := d.Value
-	maxval := d.MaxVal
-
+func drawProgress(win *Window, state nstyle.WidgetStates, style *nstyle.Progress, bounds, scursor rect.Rect, value, maxval int) {
+	out := &win.cmds
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
 	}
@@ -859,21 +672,8 @@ func (d *drawableProgress) Draw(z *nstyle.Style, out *command.Buffer) {
 // SLIDER
 ///////////////////////////////////////////////////////////////////////////////////
 
-type drawableSlider struct {
-	State               nstyle.WidgetStates
-	Style               *nstyle.Slider
-	Bounds              rect.Rect
-	VirtualCursor       rect.Rect
-	MinVal, Val, MaxVal float64
-}
-
-func (d *drawableSlider) Draw(z *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	style := d.Style
-	bounds := d.Bounds
-	virtual_cursor := d.VirtualCursor
-	minval, value, maxval := d.MinVal, d.Val, d.MaxVal
-
+func drawSlider(win *Window, state nstyle.WidgetStates, style *nstyle.Slider, bounds, virtual_cursor rect.Rect, minval, value, maxval float64) {
+	out := &win.cmds
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
 	}
@@ -952,20 +752,9 @@ func (d *drawableSlider) Draw(z *nstyle.Style, out *command.Buffer) {
 // PROPERTY
 ///////////////////////////////////////////////////////////////////////////////////
 
-type drawableProperty struct {
-	Style  *nstyle.Property
-	Bounds rect.Rect
-	Label  rect.Rect
-	state  nstyle.WidgetStates
-	Name   string
-}
-
-func (d *drawableProperty) Draw(z *nstyle.Style, out *command.Buffer) {
-	style := d.Style
-	bounds := d.Bounds
-	ws := d.state
-	name := d.Name
-	font := z.Font
+func drawProperty(win *Window, style *nstyle.Property, bounds, labelrect rect.Rect, ws nstyle.WidgetStates, name string) {
+	out := &win.cmds
+	font := win.ctx.Style.Font
 
 	if style.DrawBegin != nil {
 		style.DrawBegin(out)
@@ -974,7 +763,7 @@ func (d *drawableProperty) Draw(z *nstyle.Style, out *command.Buffer) {
 		defer style.DrawEnd(out)
 	}
 	if style.Draw != nil {
-		style.Draw(out, style, bounds.Rectangle(), d.Label.Rectangle(), ws, name, font)
+		style.Draw(out, style, bounds.Rectangle(), labelrect.Rectangle(), ws, name, font)
 		return
 	}
 
@@ -1004,7 +793,7 @@ func (d *drawableProperty) Draw(z *nstyle.Style, out *command.Buffer) {
 	}
 
 	// draw label
-	widgetText(out, d.Label, name, &text, "CC", font)
+	widgetText(out, labelrect, name, &text, "CC", font)
 	return
 }
 
@@ -1012,28 +801,9 @@ func (d *drawableProperty) Draw(z *nstyle.Style, out *command.Buffer) {
 // COMBO-BOX
 ///////////////////////////////////////////////////////////////////////////////////
 
-type drawableCombo struct {
-	State    nstyle.WidgetStates
-	Header   rect.Rect
-	Active   bool
-	Selected string
-	Color    color.RGBA
-	Symbol   label.SymbolType
-	Image    *image.RGBA
-	Fn       func(*drawableCombo, *nstyle.Style, *command.Buffer)
-}
-
-func (d *drawableCombo) Draw(style *nstyle.Style, out *command.Buffer) {
-	d.Fn(d, style, out)
-	return
-}
-
-func drawableComboColor(d *drawableCombo, style *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	header := d.Header
-	is_active := d.Active
-	color := d.Color
-
+func drawComboColor(win *Window, state nstyle.WidgetStates, header rect.Rect, is_active bool, color color.RGBA) {
+	style := &win.ctx.Style
+	out := &win.cmds
 	/* draw combo box header background and border */
 	var background *nstyle.Item
 	if state&nstyle.WidgetStateActive != 0 {
@@ -1084,17 +854,13 @@ func drawableComboColor(d *drawableCombo, style *nstyle.Style, out *command.Buff
 		out.FillRect(bounds, 0, color)
 
 		/* draw open/close button */
-		dbs := &drawableSymbolButton{button, content, state, &style.Combo.Button, sym}
-		dbs.Draw(style, out)
+		drawSymbolButton(win, button, content, state, &style.Combo.Button, sym)
 	}
 }
 
-func drawableComboSymbol(d *drawableCombo, style *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	header := d.Header
-	is_active := d.Active
-	symbol := d.Symbol
-
+func drawComboSymbol(win *Window, state nstyle.WidgetStates, header rect.Rect, is_active bool, symbol label.SymbolType) {
+	style := &win.ctx.Style
+	out := &win.cmds
 	var background *nstyle.Item
 	var sym_background color.RGBA
 	var symbol_color color.RGBA
@@ -1153,18 +919,13 @@ func drawableComboSymbol(d *drawableCombo, style *nstyle.Style, out *command.Buf
 		drawSymbol(out, symbol, bounds, sym_background, symbol_color, 1.0, style.Font)
 
 		/* draw open/close button */
-		dbs := &drawableSymbolButton{button, content, state, &style.Combo.Button, sym}
-		dbs.Draw(style, out)
+		drawSymbolButton(win, button, content, state, &style.Combo.Button, sym)
 	}
 }
 
-func drawableComboSymbolText(d *drawableCombo, style *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	header := d.Header
-	is_active := d.Active
-	symbol := d.Symbol
-	selected := d.Selected
-
+func drawComboSymbolText(win *Window, state nstyle.WidgetStates, header rect.Rect, is_active bool, symbol label.SymbolType, selected string) {
+	style := &win.ctx.Style
+	out := &win.cmds
 	var background *nstyle.Item
 	var symbol_color color.RGBA
 	var text textWidget
@@ -1216,8 +977,7 @@ func drawableComboSymbolText(d *drawableCombo, style *nstyle.Style, out *command
 		content.Y = button.Y + style.Combo.Button.Padding.Y
 		content.W = button.W - 2*style.Combo.Button.Padding.X
 		content.H = button.H - 2*style.Combo.Button.Padding.Y
-		dbs := &drawableSymbolButton{button, content, state, &style.Combo.Button, sym}
-		dbs.Draw(style, out)
+		drawSymbolButton(win, button, content, state, &style.Combo.Button, sym)
 
 		/* draw symbol */
 		imrect.X = header.X + style.Combo.ContentPadding.X
@@ -1239,12 +999,9 @@ func drawableComboSymbolText(d *drawableCombo, style *nstyle.Style, out *command
 	}
 }
 
-func drawableComboImage(d *drawableCombo, style *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	header := d.Header
-	is_active := d.Active
-	img := d.Image
-
+func drawComboImage(win *Window, state nstyle.WidgetStates, header rect.Rect, is_active bool, img *image.RGBA) {
+	style := &win.ctx.Style
+	out := &win.cmds
 	var background *nstyle.Item
 
 	/* draw combo box header background and border */
@@ -1294,18 +1051,13 @@ func drawableComboImage(d *drawableCombo, style *nstyle.Style, out *command.Buff
 		out.DrawImage(bounds, img)
 
 		/* draw open/close button */
-		dbs := &drawableSymbolButton{button, content, state, &style.Combo.Button, sym}
-		dbs.Draw(style, out)
+		drawSymbolButton(win, button, content, state, &style.Combo.Button, sym)
 	}
 }
 
-func drawableComboImageText(d *drawableCombo, style *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	header := d.Header
-	is_active := d.Active
-	selected := d.Selected
-	img := d.Image
-
+func drawComboImageText(win *Window, state nstyle.WidgetStates, header rect.Rect, is_active bool, selected string, img *image.RGBA) {
+	style := &win.ctx.Style
+	out := &win.cmds
 	var background *nstyle.Item
 	var text textWidget
 
@@ -1353,8 +1105,7 @@ func drawableComboImageText(d *drawableCombo, style *nstyle.Style, out *command.
 		content.Y = button.Y + style.Combo.Button.Padding.Y
 		content.W = button.W - 2*style.Combo.Button.Padding.X
 		content.H = button.H - 2*style.Combo.Button.Padding.Y
-		dbs := &drawableSymbolButton{button, content, state, &style.Combo.Button, sym}
-		dbs.Draw(style, out)
+		drawSymbolButton(win, button, content, state, &style.Combo.Button, sym)
 
 		/* draw image */
 		imrect.X = header.X + style.Combo.ContentPadding.X
@@ -1375,12 +1126,9 @@ func drawableComboImageText(d *drawableCombo, style *nstyle.Style, out *command.
 	}
 }
 
-func drawableComboText(d *drawableCombo, style *nstyle.Style, out *command.Buffer) {
-	state := d.State
-	header := d.Header
-	is_active := d.Active
-	selected := d.Selected
-
+func drawComboText(win *Window, state nstyle.WidgetStates, header rect.Rect, is_active bool, selected string) {
+	style := &win.ctx.Style
+	out := &win.cmds
 	/* draw combo box header background and border */
 	var background *nstyle.Item
 	var text textWidget
@@ -1440,6 +1188,5 @@ func drawableComboText(d *drawableCombo, style *nstyle.Style, out *command.Buffe
 	widgetText(out, lblrect, selected, &text, "LC", style.Font)
 
 	/* draw open/close button */
-	dbs := &drawableSymbolButton{button, content, state, &style.Combo.Button, sym}
-	dbs.Draw(style, out)
+	drawSymbolButton(win, button, content, state, &style.Combo.Button, sym)
 }

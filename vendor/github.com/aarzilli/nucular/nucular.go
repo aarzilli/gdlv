@@ -156,8 +156,35 @@ func createTreeNode(initialState bool, parent *treeNode) *treeNode {
 func createWindow(ctx *context, title string) *Window {
 	rootNode := createTreeNode(false, nil)
 	r := &Window{ctx: ctx, title: title, rootNode: rootNode, curNode: rootNode, groupWnd: map[string]*Window{}, first: true}
-	r.widgets.win = r
+	r.widgets.cur = make(map[rect.Rect]frozenWidget)
 	return r
+}
+
+type frozenWidget struct {
+	ws         nstyle.WidgetStates
+	frameCount int
+}
+
+type widgetBuffer struct {
+	cur        map[rect.Rect]frozenWidget
+	frameCount int
+}
+
+func (wbuf *widgetBuffer) PrevState(bounds rect.Rect) nstyle.WidgetStates {
+	return wbuf.cur[bounds].ws
+}
+
+func (wbuf *widgetBuffer) Add(ws nstyle.WidgetStates, bounds rect.Rect) {
+	wbuf.cur[bounds] = frozenWidget{ws, wbuf.frameCount}
+}
+
+func (wbuf *widgetBuffer) reset() {
+	for k, v := range wbuf.cur {
+		if v.frameCount != wbuf.frameCount {
+			delete(wbuf.cur, k)
+		}
+	}
+	wbuf.frameCount++
 }
 
 func contextBegin(ctx *context, layout *panel) {
@@ -334,7 +361,8 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 		dwh.RowHeight = layout.Row.Height
 		dwh.Title = title
 
-		win.widgets.Add(nstyle.WidgetStateInactive, layout.Bounds, &dwh)
+		win.widgets.Add(nstyle.WidgetStateInactive, layout.Bounds)
+		dwh.Draw(&win.ctx.Style, &win.cmds)
 
 		var button rect.Rect
 		/* window close button */
@@ -387,7 +415,8 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	} else {
 		dwh.LayoutHeaderH = layout.HeaderH
 		dwh.RowHeight = layout.Row.Height
-		win.widgets.Add(nstyle.WidgetStateInactive, layout.Bounds, &dwh)
+		win.widgets.Add(nstyle.WidgetStateInactive, layout.Bounds)
+		dwh.Draw(&win.ctx.Style, &win.cmds)
 	}
 
 	/* fix header height for transition between minimized and maximized window state */
@@ -424,14 +453,15 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 		layout.Clip.Y += layout.HeaderH
 	}
 
-	clip := unify(win.widgets.Clip, layout.Clip)
+	clip := unify(win.cmds.Clip, layout.Clip)
 	layout.Clip = clip
 
 	dwb.Bounds = layout.Bounds
 	dwb.LayoutWidth = layout.Width
 	dwb.Clip = layout.Clip
-	win.widgets.Clip = dwb.Clip
-	win.widgets.Add(nstyle.WidgetStateInactive, dwb.Bounds, &dwb)
+	win.cmds.Clip = dwb.Clip
+	win.widgets.Add(nstyle.WidgetStateInactive, dwb.Bounds)
+	dwb.Draw(&win.ctx.Style, &win.cmds)
 
 	layout.Row.Type = layoutInvalid
 
@@ -451,10 +481,9 @@ func panelEnd(ctx *context, window *Window) {
 	}
 	outclip := nk_null_rect
 	if window.flags&windowGroup != 0 {
-		outclip = window.parent.widgets.Clip
+		outclip = window.parent.cmds.Clip
 	}
-	window.widgets.Clip = outclip
-	window.widgets.Add(nstyle.WidgetStateInactive, outclip, &drawableScissor{outclip})
+	window.cmds.PushScissor(outclip)
 
 	wstyle := window.style()
 
@@ -480,7 +509,7 @@ func panelEnd(ctx *context, window *Window) {
 			bounds.W = window.Bounds.W
 			bounds.H = window.Bounds.Y + layout.Height + item_spacing.Y + window.style().Padding.Y - bounds.Y
 
-			window.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableFillRect{bounds, wstyle.Background})
+			window.cmds.FillRect(bounds, 0, wstyle.Background)
 		}
 
 		if (layout.Offset.X == 0) || (layout.Flags&WindowNoScrollbar != 0) {
@@ -501,7 +530,7 @@ func panelEnd(ctx *context, window *Window) {
 				bounds.W = scrollbar_size.X
 				bounds.H = layout.Height
 
-				window.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableFillRect{bounds, wstyle.Background})
+				window.cmds.FillRect(bounds, 0, wstyle.Background)
 			}
 		} else {
 			/* dynamic window with visible scrollbars and therefore bigger footer */
@@ -513,7 +542,7 @@ func panelEnd(ctx *context, window *Window) {
 			} else {
 				footer.Y = window.Bounds.Y + layout.Height + layout.FooterH
 			}
-			window.widgets.Add(nstyle.WidgetStateInactive, footer, &drawableFillRect{footer, wstyle.Background})
+			window.cmds.FillRect(footer, 0, wstyle.Background)
 
 			if layout.Flags&windowCombo == 0 && layout.Flags&windowMenu == 0 {
 				/* fill empty scrollbar space */
@@ -522,7 +551,7 @@ func panelEnd(ctx *context, window *Window) {
 				bounds.Y = window.Bounds.Y + layout.Height
 				bounds.W = layout.Bounds.W
 				bounds.H = layout.Row.Height
-				window.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableFillRect{bounds, wstyle.Background})
+				window.cmds.FillRect(bounds, 0, wstyle.Background)
 			}
 		}
 	}
@@ -640,13 +669,13 @@ func panelEnd(ctx *context, window *Window) {
 		}
 	}
 
-	window.widgets.Add(nstyle.WidgetStateInactive, dsab.Bounds, &dsab)
+	window.widgets.Add(nstyle.WidgetStateInactive, dsab.Bounds)
+	dsab.Draw(&window.ctx.Style, &window.cmds)
 
 	if window.flags&windowSub == 0 {
 		if layout.Flags&windowHidden != 0 {
 			/* window is hidden so clear command buffer  */
 			window.widgets.reset()
-			window.widgets.prev = []frozenWidget{}
 		}
 	}
 
@@ -686,8 +715,7 @@ func (win *Window) MenubarEnd() {
 	*layout.Offset = layout.Menu.Offset
 	layout.Clip.H -= layout.Menu.H + layout.Row.Height
 	layout.AtY = layout.Menu.Y + layout.Menu.H
-	win.widgets.Clip = layout.Clip
-	win.widgets.Add(nstyle.WidgetStateInactive, layout.Clip, &drawableScissor{layout.Clip})
+	win.cmds.PushScissor(layout.Clip)
 }
 
 type widgetLayoutStates int
@@ -786,10 +814,7 @@ func panelLayout(ctx *context, win *Window, height int, cols int) {
 	layout.Row.Height = height + item_spacing.Y
 	layout.Row.ItemOffset = 0
 	if layout.Flags&WindowDynamic != 0 {
-		var drect drawableFillRect
-		drect.R = rect.Rect{layout.Bounds.X, layout.AtY, layout.Bounds.W, height + item_spacing.Y}
-		drect.C = style.Background
-		win.widgets.Add(nstyle.WidgetStateInactive, drect.R, &drect)
+		win.cmds.FillRect(rect.Rect{layout.Bounds.X, layout.AtY, layout.Bounds.W, height + item_spacing.Y}, 0, style.Background)
 	}
 }
 
@@ -1250,7 +1275,8 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 	sym.Y = header.Y + style.Tab.Padding.Y
 	sym.X = header.X + panel_padding.X + style.Tab.Padding.X
 
-	win.widgets.Add(ws, header, &drawableTreeNode{win.style(), type_, header, sym, title})
+	win.widgets.Add(ws, header)
+	drawTreeNode(win, win.style(), type_, header, sym, title)
 
 	/* calculate the triangle points and draw triangle */
 	symbolType := style.Tab.SymMaximize
@@ -1329,7 +1355,8 @@ func (win *Window) LabelColored(str string, alignment label.Align, color color.R
 	text.Padding.Y = item_padding.Y
 	text.Background = win.style().Background
 	text.Text = color
-	win.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableNonInteractive{bounds, color, false, text, alignment, str, nil, nil})
+	win.widgets.Add(nstyle.WidgetStateInactive, bounds)
+	widgetText(&win.cmds, bounds, str, &text, alignment, win.ctx.Style.Font)
 
 }
 
@@ -1347,7 +1374,8 @@ func (win *Window) LabelWrapColored(str string, color color.RGBA) {
 	text.Padding.Y = item_padding.Y
 	text.Background = win.style().Background
 	text.Text = color
-	win.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableNonInteractive{bounds, color, true, text, "LT", str, nil, nil})
+	win.widgets.Add(nstyle.WidgetStateInactive, bounds)
+	widgetTextWrap(&win.cmds, bounds, []rune(str), &text, win.ctx.Style.Font)
 }
 
 // Label draws a text label.
@@ -1368,7 +1396,8 @@ func (win *Window) Image(img *image.RGBA) {
 	if s, bounds = win.widget(); s == 0 {
 		return
 	}
-	win.widgets.Add(nstyle.WidgetStateInactive, bounds, &drawableNonInteractive{Bounds: bounds, Img: img})
+	win.widgets.Add(nstyle.WidgetStateInactive, bounds)
+	win.cmds.DrawImage(bounds, img)
 }
 
 // Spacing adds empty space
@@ -1403,7 +1432,7 @@ func (win *Window) Custom(state nstyle.WidgetStates) (bounds rect.Rect, out *com
 	if state != nstyle.WidgetStateActive {
 		state = exitstate
 	}
-	win.widgets.Add(state, bounds, nil)
+	win.widgets.Add(state, bounds)
 	return bounds, &win.cmds
 }
 
@@ -1466,16 +1495,22 @@ func doButton(win *Window, lbl label.Label, r rect.Rect, style *nstyle.Button, i
 		if lbl.Align == "" {
 			lbl.Align = "CC"
 		}
-		out.Add(state, bounds, &drawableTextButton{bounds, content, state, style, lbl.Text, lbl.Align})
+		out.Add(state, bounds)
+		drawTextButton(win, bounds, content, state, style, lbl.Text, lbl.Align)
+
 	case label.SymbolLabel:
-		out.Add(state, bounds, &drawableSymbolButton{bounds, content, state, style, lbl.Symbol})
+		out.Add(state, bounds)
+		drawSymbolButton(win, bounds, content, state, style, lbl.Symbol)
+
 	case label.ImageLabel:
 		content.X += style.ImagePadding.X
 		content.Y += style.ImagePadding.Y
 		content.W -= 2 * style.ImagePadding.X
 		content.H -= 2 * style.ImagePadding.Y
 
-		out.Add(state, bounds, &drawableImageButton{bounds, content, state, style, lbl.Img})
+		out.Add(state, bounds)
+		drawImageButton(win, bounds, content, state, style, lbl.Img)
+
 	case label.SymbolTextLabel:
 		if lbl.Align == "" {
 			lbl.Align = "CC"
@@ -1492,7 +1527,8 @@ func doButton(win *Window, lbl label.Label, r rect.Rect, style *nstyle.Button, i
 			tri.X = content.X + 2*style.Padding.X
 		}
 
-		out.Add(state, bounds, &drawableTextSymbolButton{bounds, content, tri, state, style, lbl.Text, lbl.Symbol})
+		out.Add(state, bounds)
+		drawTextSymbolButton(win, bounds, content, tri, state, style, lbl.Text, lbl.Symbol)
 
 	case label.ImageTextLabel:
 		if lbl.Align == "" {
@@ -1514,10 +1550,12 @@ func doButton(win *Window, lbl label.Label, r rect.Rect, style *nstyle.Button, i
 		icon.W -= 2 * style.ImagePadding.X
 		icon.H -= 2 * style.ImagePadding.Y
 
-		out.Add(state, bounds, &drawableTextImageButton{bounds, content, icon, state, style, lbl.Text, lbl.Img})
+		out.Add(state, bounds)
+		drawTextImageButton(win, bounds, content, icon, state, style, lbl.Text, lbl.Img)
 
 	case label.ColorLabel:
-		out.Add(state, bounds, &drawableSymbolButton{bounds, bounds, state, style, label.SymbolNone})
+		out.Add(state, bounds)
+		drawSymbolButton(win, bounds, bounds, state, style, label.SymbolNone)
 
 	}
 
@@ -1544,7 +1582,7 @@ func (win *Window) ButtonText(text string) bool {
 // SELECTABLE
 ///////////////////////////////////////////////////////////////////////////////////
 
-func doSelectable(out *widgetBuffer, bounds rect.Rect, str string, align label.Align, value *bool, style *nstyle.Selectable, in *Input) bool {
+func doSelectable(win *Window, bounds rect.Rect, str string, align label.Align, value *bool, style *nstyle.Selectable, in *Input) bool {
 	if str == "" {
 		return false
 	}
@@ -1558,12 +1596,13 @@ func doSelectable(out *widgetBuffer, bounds rect.Rect, str string, align label.A
 	touch.H = bounds.H + style.TouchPadding.Y*2
 
 	/* update button */
-	state := out.PrevState(bounds)
+	state := win.widgets.PrevState(bounds)
 	if buttonBehaviorDo(&state, touch, in, false) {
 		*value = !*value
 	}
 
-	out.Add(state, bounds, &drawableSelectable{state, style, *value, bounds, str, align})
+	win.widgets.Add(state, bounds)
+	drawSelectable(win, state, style, *value, bounds, str, align)
 	return old_value != *value
 }
 
@@ -1578,7 +1617,7 @@ func (win *Window) SelectableLabel(str string, align label.Align, value *bool) b
 		return false
 	}
 	in := win.inputMaybe(state)
-	return doSelectable(&win.widgets, bounds, str, align, value, &style.Selectable, in)
+	return doSelectable(win, bounds, str, align, value, &style.Selectable, in)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -1592,7 +1631,7 @@ const (
 	horizontal
 )
 
-func scrollbarBehavior(state *nstyle.WidgetStates, in *Input, scroll, cursor, scrollwheel_bounds rect.Rect, scroll_offset float64, target float64, scroll_step float64, o orientation) float64 {
+func scrollbarBehavior(state *nstyle.WidgetStates, in *Input, scroll, cursor, scrollwheel_bounds, empty0, empty1 rect.Rect, scroll_offset float64, target float64, scroll_step float64, o orientation) float64 {
 	exitstate := basicWidgetStateControl(state, in, cursor)
 
 	if *state == nstyle.WidgetStateActive {
@@ -1628,6 +1667,31 @@ func scrollbarBehavior(state *nstyle.WidgetStates, in *Input, scroll, cursor, sc
 			in.Mouse.ScrollDelta = int(math.Ceil(residual))
 		} else {
 			in.Mouse.ScrollDelta = int(math.Floor(residual))
+		}
+	} else if in.Mouse.IsClickInRect(mouse.ButtonLeft, empty0) {
+		switch o {
+		case vertical:
+			scroll_offset -= float64(scroll.H)
+		case horizontal:
+			scroll_offset -= float64(scroll.W)
+		}
+
+		if scroll_offset < 0 {
+			scroll_offset = 0
+		}
+	} else if in.Mouse.IsClickInRect(mouse.ButtonLeft, empty1) {
+		var max float64
+		switch o {
+		case vertical:
+			scroll_offset += float64(scroll.H)
+			max = target - float64(scroll.H)
+		case horizontal:
+			scroll_offset += float64(scroll.W)
+			max = target - float64(scroll.W)
+		}
+
+		if scroll_offset > max {
+			scroll_offset = max
 		}
 	}
 
@@ -1690,20 +1754,27 @@ func doScrollbarv(win *Window, scroll, scrollwheel_bounds rect.Rect, offset floa
 
 	/* calculate scrollbar cursor bounds */
 	cursor.H = int(scroll_ratio*float64(scroll.H) - 2)
-
 	cursor.Y = scroll.Y + int(scroll_off*float64(scroll.H)) + 1
 	cursor.W = scroll.W - 2
 	cursor.X = scroll.X + 1
 
+	emptyNorth := scroll
+	emptyNorth.H = cursor.Y - scroll.Y
+
+	emptySouth := scroll
+	emptySouth.Y = cursor.Y + cursor.H
+	emptySouth.H = (scroll.Y + scroll.H) - emptySouth.Y
+
 	/* update scrollbar */
 	out := &win.widgets
 	state := out.PrevState(scroll)
-	scroll_offset = scrollbarBehavior(&state, in, scroll, cursor, scrollwheel_bounds, scroll_offset, target, scroll_step, vertical)
+	scroll_offset = scrollbarBehavior(&state, in, scroll, cursor, scrollwheel_bounds, emptyNorth, emptySouth, scroll_offset, target, scroll_step, vertical)
 
 	scroll_off = scroll_offset / target
 	cursor.Y = scroll.Y + int(scroll_off*float64(scroll.H))
 
-	out.Add(state, scroll, &drawableScrollbar{state, style, scroll, cursor})
+	out.Add(state, scroll)
+	drawScrollbar(win, state, style, scroll, cursor)
 
 	return scroll_offset
 }
@@ -1770,15 +1841,23 @@ func doScrollbarh(win *Window, scroll rect.Rect, offset float64, target float64,
 	cursor.H = scroll.H - 2
 	cursor.Y = scroll.Y + 1
 
+	emptyWest := scroll
+	emptyWest.W = cursor.X - scroll.X
+
+	emptyEast := scroll
+	emptyEast.X = cursor.X + cursor.W
+	emptyEast.W = (scroll.X + scroll.W) - emptyEast.X
+
 	/* update scrollbar */
 	out := &win.widgets
 	state := out.PrevState(scroll)
-	scroll_offset = scrollbarBehavior(&state, in, scroll, cursor, rect.Rect{0, 0, 0, 0}, scroll_offset, target, scroll_step, horizontal)
+	scroll_offset = scrollbarBehavior(&state, in, scroll, cursor, rect.Rect{0, 0, 0, 0}, emptyWest, emptyEast, scroll_offset, target, scroll_step, horizontal)
 
 	scroll_off = scroll_offset / target
 	cursor.X = scroll.X + int(scroll_off*float64(scroll.W))
 
-	out.Add(state, scroll, &drawableScrollbar{state, style, scroll, cursor})
+	out.Add(state, scroll)
+	drawScrollbar(win, state, style, scroll, cursor)
 
 	return scroll_offset
 }
@@ -1809,7 +1888,7 @@ func toggleBehavior(in *Input, b rect.Rect, state *nstyle.WidgetStates, active b
 	return active
 }
 
-func doToggle(out *widgetBuffer, r rect.Rect, active bool, str string, type_ toggleType, style *nstyle.Toggle, in *Input, font font.Face) bool {
+func doToggle(win *Window, r rect.Rect, active bool, str string, type_ toggleType, style *nstyle.Toggle, in *Input, font font.Face) bool {
 	var bounds rect.Rect
 	var select_ rect.Rect
 	var cursor rect.Rect
@@ -1853,10 +1932,11 @@ func doToggle(out *widgetBuffer, r rect.Rect, active bool, str string, type_ tog
 	label.H = select_.W
 
 	/* update selector */
-	state := out.PrevState(bounds)
+	state := win.widgets.PrevState(bounds)
 	active = toggleBehavior(in, bounds, &state, active)
 
-	out.Add(state, r, &drawableTogglebox{type_, state, style, active, label, select_, cursor, str})
+	win.widgets.Add(state, r)
+	drawTogglebox(win, type_, state, style, active, label, select_, cursor, str)
 
 	return active
 }
@@ -1872,7 +1952,7 @@ func (win *Window) OptionText(text string, is_active bool) bool {
 		return false
 	}
 	in := win.inputMaybe(state)
-	is_active = doToggle(&win.widgets, bounds, is_active, text, toggleOption, &style.Option, in, style.Font)
+	is_active = doToggle(win, bounds, is_active, text, toggleOption, &style.Option, in, style.Font)
 	return is_active
 }
 
@@ -1886,7 +1966,7 @@ func (win *Window) CheckboxText(text string, active *bool) bool {
 	}
 	in := win.inputMaybe(state)
 	old_active := *active
-	*active = doToggle(&win.widgets, bounds, *active, text, toggleCheck, &win.ctx.Style.Checkbox, in, win.ctx.Style.Font)
+	*active = doToggle(win, bounds, *active, text, toggleCheck, &win.ctx.Style.Checkbox, in, win.ctx.Style.Font)
 	return *active != old_active
 }
 
@@ -1974,7 +2054,8 @@ func doSlider(win *Window, bounds rect.Rect, minval float64, val float64, maxval
 	out := &win.widgets
 	state := out.PrevState(bounds)
 	slider_value = sliderBehavior(&state, &cursor, in, style, bounds, minval, slider_value, maxval, step, slider_steps)
-	out.Add(state, bounds, &drawableSlider{state, style, bounds, cursor, minval, slider_value, maxval})
+	out.Add(state, bounds)
+	drawSlider(win, state, style, bounds, cursor, minval, slider_value, maxval)
 	return slider_value
 }
 
@@ -2032,7 +2113,7 @@ func progressBehavior(state *nstyle.WidgetStates, in *Input, r rect.Rect, maxval
 	return value
 }
 
-func doProgress(out *widgetBuffer, bounds rect.Rect, value int, maxval int, modifiable bool, style *nstyle.Progress, in *Input) int {
+func doProgress(win *Window, bounds rect.Rect, value int, maxval int, modifiable bool, style *nstyle.Progress, in *Input) int {
 	var prog_scale float64
 	var cursor rect.Rect
 
@@ -2046,9 +2127,10 @@ func doProgress(out *widgetBuffer, bounds rect.Rect, value int, maxval int, modi
 		value = maxval
 	}
 
-	state := out.PrevState(bounds)
+	state := win.widgets.PrevState(bounds)
 	value = progressBehavior(&state, in, bounds, maxval, value, modifiable)
-	out.Add(state, bounds, &drawableProgress{state, style, bounds, cursor, value, maxval})
+	win.widgets.Add(state, bounds)
+	drawProgress(win, state, style, bounds, cursor, value, maxval)
 
 	return value
 }
@@ -2065,7 +2147,7 @@ func (win *Window) Progress(cur *int, maxval int, is_modifiable bool) bool {
 
 	in := win.inputMaybe(state)
 	old_value := *cur
-	*cur = doProgress(&win.widgets, bounds, *cur, maxval, is_modifiable, &style.Progress, in)
+	*cur = doProgress(win, bounds, *cur, maxval, is_modifiable, &style.Progress, in)
 	return *cur != old_value
 }
 
@@ -2196,7 +2278,8 @@ func (win *Window) doProperty(property rect.Rect, name string, text string, filt
 	} else if oldws == nstyle.WidgetStateActive {
 		win.editor = nil
 	}
-	ed.win.widgets.Add(ws, property, &drawableProperty{style, property, lblrect, ws, name})
+	ed.win.widgets.Add(ws, property)
+	drawProperty(ed.win, style, property, lblrect, ws, name)
 
 	/* execute right and left button  */
 	if doButton(ed.win, label.S(style.SymLeft), left, &style.DecButton, in, false) {
@@ -2471,17 +2554,23 @@ func (win *Window) Combo(lbl label.Label, height int, updateFn UpdateFn) {
 
 	switch lbl.Kind {
 	case label.ColorLabel:
-		win.widgets.Add(state, header, &drawableCombo{State: state, Header: header, Active: is_active, Color: lbl.Color, Fn: drawableComboColor})
+		win.widgets.Add(state, header)
+		drawComboColor(win, state, header, is_active, lbl.Color)
 	case label.ImageLabel:
-		win.widgets.Add(state, header, &drawableCombo{State: state, Header: header, Active: is_active, Image: lbl.Img, Fn: drawableComboImage})
+		win.widgets.Add(state, header)
+		drawComboImage(win, state, header, is_active, lbl.Img)
 	case label.ImageTextLabel:
-		win.widgets.Add(state, header, &drawableCombo{State: state, Header: header, Active: is_active, Image: lbl.Img, Selected: lbl.Text, Fn: drawableComboImageText})
+		win.widgets.Add(state, header)
+		drawComboImageText(win, state, header, is_active, lbl.Text, lbl.Img)
 	case label.SymbolLabel:
-		win.widgets.Add(state, header, &drawableCombo{State: state, Header: header, Active: is_active, Symbol: lbl.Symbol, Fn: drawableComboSymbol})
+		win.widgets.Add(state, header)
+		drawComboSymbol(win, state, header, is_active, lbl.Symbol)
 	case label.SymbolTextLabel:
-		win.widgets.Add(state, header, &drawableCombo{State: state, Header: header, Active: is_active, Symbol: lbl.Symbol, Selected: lbl.Text, Fn: drawableComboSymbolText})
+		win.widgets.Add(state, header)
+		drawComboSymbolText(win, state, header, is_active, lbl.Symbol, lbl.Text)
 	case label.TextLabel:
-		win.widgets.Add(state, header, &drawableCombo{State: state, Header: header, Active: is_active, Selected: lbl.Text, Fn: drawableComboText})
+		win.widgets.Add(state, header)
+		drawComboText(win, state, header, is_active, lbl.Text)
 	}
 
 	win.ctx.comboOpen(height, is_active, header, updateFn)
@@ -2567,7 +2656,6 @@ func (win *Window) GroupBegin(title string, flags WindowFlags) *Window {
 	sw.cmds.Reset()
 	sw.idx = win.idx
 
-	sw.widgets.Clip = win.widgets.Clip
 	sw.cmds.Clip = win.cmds.Clip
 
 	state, bounds := win.widget()
@@ -2593,8 +2681,6 @@ func (win *Window) GroupBegin(title string, flags WindowFlags) *Window {
 func (win *Window) GroupEnd() {
 	panelEnd(win.ctx, win)
 	win.parent.usingSub = false
-	win.parent.widgets.prev = append(win.parent.widgets.prev, win.widgets.prev...)
-	win.parent.widgets.cur = append(win.parent.widgets.cur, win.widgets.cur...)
 
 	// immediate drawing
 	win.parent.cmds.Commands = append(win.parent.cmds.Commands, win.cmds.Commands...)

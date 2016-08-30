@@ -1417,7 +1417,8 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 	d.Bounds = bounds
 	d.Area = area
 	d.RowHeight = row_height
-	ed.win.widgets.Add(state, bounds, &d)
+	ed.win.widgets.Add(state, bounds)
+	d.Draw(&ed.win.ctx.Style, &ed.win.cmds)
 
 	/* scrollbar */
 	if cursor_follow {
