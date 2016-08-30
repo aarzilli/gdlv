@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"os/exec"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -23,6 +24,8 @@ import (
 
 	"golang.org/x/mobile/event/key"
 )
+
+const profileEnabled = false
 
 var zeroWidth, arrowWidth, starWidth int
 
@@ -497,6 +500,14 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 
 func main() {
 	loadConfiguration()
+
+	if profileEnabled {
+		if f, err := os.Create("cpu.pprof"); err == nil {
+			if err := pprof.StartCPUProfile(f); err == nil {
+				defer pprof.StopCPUProfile()
+			}
+		}
+	}
 
 	wnd = nucular.NewMasterWindow(guiUpdate, nucular.WindowNoScrollbar)
 	setupStyle()
