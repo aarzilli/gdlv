@@ -358,7 +358,6 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 		curGid = state.SelectedGoroutine.ID
 	} else {
 		curGid = -1
-		curFrame = 0
 	}
 	var loc *api.Location
 	if !keepframe {
