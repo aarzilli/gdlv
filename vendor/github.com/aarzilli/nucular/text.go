@@ -1333,7 +1333,9 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 				} else if ed.Flags&EditSigEnter != 0 {
 					ret = EditInactive
 					ret |= EditDeactivated
-					ret |= EditCommitted
+					if ed.Flags&EditReadOnly == 0 {
+						ret |= EditCommitted
+					}
 					ed.Active = false
 				} else {
 					ed.Text([]rune{'\n'})

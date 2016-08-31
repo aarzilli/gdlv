@@ -71,6 +71,7 @@ var mu sync.Mutex
 var wnd *nucular.MasterWindow
 
 var running bool
+var connectionFailed bool
 var client service.Client
 var serverProcess *os.Process
 var curThread int
@@ -146,7 +147,11 @@ func updateCommandPanel(mw *nucular.MasterWindow, container *nucular.Window) {
 	if running {
 		p = "running"
 	} else if client == nil {
-		p = "connecting"
+		if connectionFailed {
+			p = "failed"
+		} else {
+			p = "connecting"
+		}
 	} else {
 		if curThread < 0 {
 			p = "dlv>"
@@ -576,6 +581,10 @@ under certain conditions; see COPYING for details.
 			}
 			if err := scan.Err(); err != nil {
 				fmt.Fprintf(&scrollbackOut, "Error reading stdout: %v\n", err)
+			}
+			if first {
+				connectionFailed = true
+				fmt.Fprintf(&scrollbackOut, "connection failed\n")
 			}
 		}()
 
