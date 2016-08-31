@@ -1649,25 +1649,6 @@ func scrollbarBehavior(state *nstyle.WidgetStates, in *Input, scroll, cursor, sc
 				scroll_offset = clampFloat(0, scroll_offset+delta, target-float64(scroll.W))
 			}
 		}
-	}
-
-	if o == vertical && ((in.Mouse.ScrollDelta < 0) || (in.Mouse.ScrollDelta > 0)) && in.Mouse.HoveringRect(scrollwheel_bounds) {
-		/* update cursor by mouse scrolling */
-		old_scroll_offset := scroll_offset
-		scroll_offset = scroll_offset + scroll_step*float64(-in.Mouse.ScrollDelta)
-
-		if o == vertical {
-			scroll_offset = clampFloat(0, scroll_offset, target-float64(scroll.H))
-		} else {
-			scroll_offset = clampFloat(0, scroll_offset, target-float64(scroll.W))
-		}
-		used_delta := (scroll_offset - old_scroll_offset) / scroll_step
-		residual := float64(in.Mouse.ScrollDelta) + used_delta
-		if residual < 0 {
-			in.Mouse.ScrollDelta = int(math.Ceil(residual))
-		} else {
-			in.Mouse.ScrollDelta = int(math.Floor(residual))
-		}
 	} else if in.Mouse.IsClickInRect(mouse.ButtonLeft, empty0) {
 		switch o {
 		case vertical:
@@ -1692,6 +1673,25 @@ func scrollbarBehavior(state *nstyle.WidgetStates, in *Input, scroll, cursor, sc
 
 		if scroll_offset > max {
 			scroll_offset = max
+		}
+	}
+
+	if o == vertical && ((in.Mouse.ScrollDelta < 0) || (in.Mouse.ScrollDelta > 0)) && in.Mouse.HoveringRect(scrollwheel_bounds) {
+		/* update cursor by mouse scrolling */
+		old_scroll_offset := scroll_offset
+		scroll_offset = scroll_offset + scroll_step*float64(-in.Mouse.ScrollDelta)
+
+		if o == vertical {
+			scroll_offset = clampFloat(0, scroll_offset, target-float64(scroll.H))
+		} else {
+			scroll_offset = clampFloat(0, scroll_offset, target-float64(scroll.W))
+		}
+		used_delta := (scroll_offset - old_scroll_offset) / scroll_step
+		residual := float64(in.Mouse.ScrollDelta) + used_delta
+		if residual < 0 {
+			in.Mouse.ScrollDelta = int(math.Ceil(residual))
+		} else {
+			in.Mouse.ScrollDelta = int(math.Floor(residual))
 		}
 	}
 
