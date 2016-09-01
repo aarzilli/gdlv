@@ -38,7 +38,7 @@ func (l *asyncLoad) done(err error) {
 	wnd.Changed()
 }
 
-func (l *asyncLoad) showRequest(mw *nucular.MasterWindow, container *nucular.Window, flags nucular.WindowFlags, name string, load func(*asyncLoad)) *nucular.Window {
+func (l *asyncLoad) showRequest(container *nucular.Window, flags nucular.WindowFlags, name string, load func(*asyncLoad)) *nucular.Window {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -177,13 +177,13 @@ func loadGoroutines(p *asyncLoad) {
 	p.done(err)
 }
 
-func updateGoroutines(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := goroutinesPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "goroutines", loadGoroutines)
+func updateGoroutines(container *nucular.Window) {
+	w := goroutinesPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "goroutines", loadGoroutines)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
-	style, _ := mw.Style()
+	style, _ := container.Master().Style()
 
 	goroutines := goroutinesPanel.goroutines
 
@@ -246,13 +246,13 @@ func loadStacktrace(p *asyncLoad) {
 	p.done(err)
 }
 
-func updateStacktrace(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := stackPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "stack", loadStacktrace)
+func updateStacktrace(container *nucular.Window) {
+	w := stackPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "stack", loadStacktrace)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
-	style, _ := mw.Style()
+	style, _ := container.Master().Style()
 
 	w.MenubarBegin()
 	w.Row(20).Static(120)
@@ -314,13 +314,13 @@ func loadThreads(p *asyncLoad) {
 	p.done(err)
 }
 
-func updateThreads(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := threadsPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "threads", loadThreads)
+func updateThreads(container *nucular.Window) {
+	w := threadsPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "threads", loadThreads)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
-	style, _ := mw.Style()
+	style, _ := w.Master().Style()
 
 	threads := threadsPanel.threads
 
@@ -402,8 +402,8 @@ const (
 	moreBtnWidth = 70
 )
 
-func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := localsPanel.asyncLoad.showRequest(mw, container, 0, "locals", loadLocals)
+func updateLocals(container *nucular.Window) {
+	w := localsPanel.asyncLoad.showRequest(container, 0, "locals", loadLocals)
 	if w == nil {
 		return
 	}
@@ -421,7 +421,7 @@ func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 
 	for i := range args {
 		if strings.Index(args[i].Name, filter) >= 0 {
-			showVariable(mw, w, 0, localsPanel.showAddr, -1, args[i].Name, &args[i])
+			showVariable(w, 0, localsPanel.showAddr, -1, args[i].Name, &args[i])
 		}
 	}
 
@@ -432,7 +432,7 @@ func updateLocals(mw *nucular.MasterWindow, container *nucular.Window) {
 
 	for i := range locals {
 		if strings.Index(locals[i].Name, filter) >= 0 {
-			showVariable(mw, w, 0, localsPanel.showAddr, -1, locals[i].Name, &locals[i])
+			showVariable(w, 0, localsPanel.showAddr, -1, locals[i].Name, &locals[i])
 		}
 	}
 }
@@ -452,8 +452,8 @@ func loadExprs(l *asyncLoad) {
 	l.done(nil)
 }
 
-func updateExprs(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := exprsPanel.asyncLoad.showRequest(mw, container, 0, "exprs", loadExprs)
+func updateExprs(container *nucular.Window) {
+	w := exprsPanel.asyncLoad.showRequest(container, 0, "exprs", loadExprs)
 	if w == nil {
 		return
 	}
@@ -469,7 +469,7 @@ func updateExprs(mw *nucular.MasterWindow, container *nucular.Window) {
 			if exprsPanel.v[i] == nil {
 				w.Label(fmt.Sprintf("loading %s", exprsPanel.expressions[i]), "LC")
 			} else {
-				showVariable(mw, w, 0, false, i, exprsPanel.v[i].Name, exprsPanel.v[i])
+				showVariable(w, 0, false, i, exprsPanel.v[i].Name, exprsPanel.v[i])
 			}
 		}
 	}
@@ -532,7 +532,7 @@ func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 	}
 }
 
-func exprMenu(mw *nucular.MasterWindow, w *nucular.Window) {
+func exprMenu(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 
 	if w.MenuItem(label.TA("Edit", "LC")) {
@@ -555,11 +555,11 @@ func exprMenu(mw *nucular.MasterWindow, w *nucular.Window) {
 
 var selectedVariable *api.Variable
 
-func variableMenu(mw *nucular.MasterWindow, w *nucular.Window) {
+func variableMenu(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 	if w.MenuItem(label.TA("Details", "LC")) {
 		viewer := &stringViewer{v: selectedVariable}
-		mw.PopupOpen("Viewing string: "+selectedVariable.Name, dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, viewer.Update)
+		w.Master().PopupOpen("Viewing string: "+selectedVariable.Name, dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, viewer.Update)
 	}
 }
 
@@ -569,8 +569,8 @@ func loadRegs(p *asyncLoad) {
 	p.done(err)
 }
 
-func updateRegs(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := regsPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "registers", loadRegs)
+func updateRegs(container *nucular.Window) {
+	w := regsPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "registers", loadRegs)
 	if w == nil {
 		return
 	}
@@ -595,8 +595,8 @@ func loadGlobals(p *asyncLoad) {
 	p.done(err)
 }
 
-func updateGlobals(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := globalsPanel.asyncLoad.showRequest(mw, container, 0, "globals", loadGlobals)
+func updateGlobals(container *nucular.Window) {
+	w := globalsPanel.asyncLoad.showRequest(container, 0, "globals", loadGlobals)
 	if w == nil {
 		return
 	}
@@ -614,7 +614,7 @@ func updateGlobals(mw *nucular.MasterWindow, container *nucular.Window) {
 
 	for i := range globals {
 		if strings.Index(globals[i].Name, filter) >= 0 {
-			showVariable(mw, w, 0, globalsPanel.showAddr, -1, globals[i].Name, &globals[i])
+			showVariable(w, 0, globalsPanel.showAddr, -1, globals[i].Name, &globals[i])
 		}
 	}
 }
@@ -638,14 +638,14 @@ func loadBreakpoints(p *asyncLoad) {
 	p.done(err)
 }
 
-func updateBreakpoints(mw *nucular.MasterWindow, container *nucular.Window) {
-	w := breakpointsPanel.asyncLoad.showRequest(mw, container, nucular.WindowNoHScrollbar, "breakpoints", loadBreakpoints)
+func updateBreakpoints(container *nucular.Window) {
+	w := breakpointsPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "breakpoints", loadBreakpoints)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
 
-	style, _ := mw.Style()
+	style, _ := w.Master().Style()
 
 	breakpoints := breakpointsPanel.breakpoints
 
@@ -674,13 +674,13 @@ func updateBreakpoints(mw *nucular.MasterWindow, container *nucular.Window) {
 	}
 }
 
-func breakpointsMenu(mw *nucular.MasterWindow, w *nucular.Window) {
+func breakpointsMenu(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 	if breakpointsPanel.selected > 0 {
 		if w.MenuItem(label.TA("Edit...", "LC")) {
 			for _, bp := range breakpointsPanel.breakpoints {
 				if bp.ID == breakpointsPanel.selected {
-					openBreakpointEditor(mw, bp)
+					openBreakpointEditor(w.Master(), bp)
 					break
 				}
 			}
@@ -738,7 +738,7 @@ func openBreakpointEditor(mw *nucular.MasterWindow, bp *api.Breakpoint) {
 	mw.PopupOpen(fmt.Sprintf("Editing breakpoint %d", breakpointsPanel.selected), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, ed.update)
 }
 
-func (bped *breakpointEditor) update(mw *nucular.MasterWindow, w *nucular.Window) {
+func (bped *breakpointEditor) update(w *nucular.Window) {
 	w.Row(20).Dynamic(2)
 	if w.OptionText("breakpoint", !bped.bp.Tracepoint) {
 		bped.bp.Tracepoint = false
@@ -828,7 +828,7 @@ func (bped *breakpointEditor) amendBreakpoint() {
 	refreshState(true, clearBreakpoint, nil)
 }
 
-func (p *stringSlicePanel) update(mw *nucular.MasterWindow, container *nucular.Window) {
+func (p *stringSlicePanel) update(container *nucular.Window) {
 	name, filterEditor, values := p.name, p.filterEditor, p.slice
 	if filterEditor.Filter == nil {
 		filterEditor.Filter = spacefilter
@@ -856,7 +856,7 @@ func (p *stringSlicePanel) update(mw *nucular.MasterWindow, container *nucular.W
 	}
 }
 
-func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *api.Variable) {
+func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *api.Variable) {
 	const minInlineKeyValueLen = 20
 	if v.Type != "" {
 		if addr {
@@ -899,7 +899,7 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 		if w.TreePush(nucular.TreeNode, name, false) {
 			showExprMenu(w, exprMenu, v)
 			w.Label(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap), "LC")
-			showArrayOrSliceContents(mw, w, depth, addr, v)
+			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
 		} else {
 			showExprMenu(w, exprMenu, v)
@@ -908,7 +908,7 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 		if w.TreePush(nucular.TreeNode, name, false) {
 			showExprMenu(w, exprMenu, v)
 			w.Label(fmt.Sprintf("len: %d", v.Len), "LC")
-			showArrayOrSliceContents(mw, w, depth, addr, v)
+			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
 		} else {
 			showExprMenu(w, exprMenu, v)
@@ -923,7 +923,7 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
 				showExprMenu(w, exprMenu, v)
-				showVariable(mw, w, depth+1, addr, -1, "", &v.Children[0])
+				showVariable(w, depth+1, addr, -1, "", &v.Children[0])
 				w.TreePop()
 			} else {
 				showExprMenu(w, exprMenu, v)
@@ -946,7 +946,7 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 		} else {
 			if w.TreePush(nucular.TreeNode, name, false) {
 				showExprMenu(w, exprMenu, v)
-				showStructContents(mw, w, depth, addr, v)
+				showStructContents(w, depth, addr, v)
 				w.TreePop()
 			} else {
 				showExprMenu(w, exprMenu, v)
@@ -959,7 +959,7 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 				loadMoreStruct(v)
 				w.Label("Loading...", "LC")
 			} else {
-				showStructContents(mw, w, depth, addr, v)
+				showStructContents(w, depth, addr, v)
 			}
 			w.TreePop()
 		} else {
@@ -973,9 +973,9 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 			if w.TreePush(nucular.TreeNode, name, false) {
 				showExprMenu(w, exprMenu, v)
 				if v.Children[0].Kind == reflect.Ptr {
-					showVariable(mw, w, depth+1, addr, -1, "data", &v.Children[0].Children[0])
+					showVariable(w, depth+1, addr, -1, "data", &v.Children[0].Children[0])
 				} else {
-					showVariable(mw, w, depth+1, addr, -1, "data", &v.Children[0])
+					showVariable(w, depth+1, addr, -1, "data", &v.Children[0])
 				}
 				w.TreePop()
 			} else {
@@ -994,10 +994,10 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 					} else {
 						keyname = fmt.Sprintf("[%s]", key.Value)
 					}
-					showVariable(mw, w, depth+1, addr, -1, keyname, value)
+					showVariable(w, depth+1, addr, -1, keyname, value)
 				} else {
-					showVariable(mw, w, depth+1, addr, -1, fmt.Sprintf("[%d key]", i/2), key)
-					showVariable(mw, w, depth+1, addr, -1, fmt.Sprintf("[%d value]", i/2), value)
+					showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d key]", i/2), key)
+					showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d value]", i/2), value)
 				}
 			}
 			if len(v.Children)/2 != int(v.Len) {
@@ -1030,9 +1030,9 @@ func showVariable(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr b
 	}
 }
 
-func showArrayOrSliceContents(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr bool, v *api.Variable) {
+func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *api.Variable) {
 	for i := range v.Children {
-		showVariable(mw, w, depth+1, addr, -1, fmt.Sprintf("[%d]", i), &v.Children[i])
+		showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d]", i), &v.Children[i])
 	}
 	if len(v.Children) != int(v.Len) {
 		w.Row(varRowHeight).Static(moreBtnWidth)
@@ -1042,9 +1042,9 @@ func showArrayOrSliceContents(mw *nucular.MasterWindow, w *nucular.Window, depth
 	}
 }
 
-func showStructContents(mw *nucular.MasterWindow, w *nucular.Window, depth int, addr bool, v *api.Variable) {
+func showStructContents(w *nucular.Window, depth int, addr bool, v *api.Variable) {
 	for i := range v.Children {
-		showVariable(mw, w, depth+1, addr, -1, v.Children[i].Name, &v.Children[i])
+		showVariable(w, depth+1, addr, -1, v.Children[i].Name, &v.Children[i])
 	}
 }
 
@@ -1121,7 +1121,7 @@ func loadMoreStruct(v *api.Variable) {
 	}
 }
 
-func updateListingPanel(mw *nucular.MasterWindow, container *nucular.Window) {
+func updateListingPanel(container *nucular.Window) {
 	const lineheight = 14
 
 	listp := container.GroupBegin("listing", nucular.WindowNoHScrollbar)
@@ -1130,7 +1130,7 @@ func updateListingPanel(mw *nucular.MasterWindow, container *nucular.Window) {
 	}
 	defer listp.GroupEnd()
 
-	style, _ := mw.Style()
+	style, _ := container.Master().Style()
 
 	arroww := arrowWidth + style.Text.Padding.X*2
 	starw := starWidth + style.Text.Padding.X*2
@@ -1188,11 +1188,11 @@ type lineMenu struct {
 	line listline
 }
 
-func (m *lineMenu) Update(mw *nucular.MasterWindow, w *nucular.Window) {
+func (m *lineMenu) Update(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 	if m.line.bp != nil {
 		if w.MenuItem(label.TA("Edit breakpoint", "LC")) {
-			openBreakpointEditor(mw, m.line.bp)
+			openBreakpointEditor(w.Master(), m.line.bp)
 		}
 		if w.MenuItem(label.TA("Clear breakpoint", "LC")) {
 			go execClearBreakpoint(m.line.bp.ID)
@@ -1214,7 +1214,7 @@ func (m *lineMenu) setBreakpoint() {
 	}
 }
 
-func updateDisassemblyPanel(mw *nucular.MasterWindow, container *nucular.Window) {
+func updateDisassemblyPanel(container *nucular.Window) {
 	const lineheight = 14
 
 	listp := container.GroupBegin("disassembly", nucular.WindowNoHScrollbar)
@@ -1223,7 +1223,7 @@ func updateDisassemblyPanel(mw *nucular.MasterWindow, container *nucular.Window)
 	}
 	defer listp.GroupEnd()
 
-	style, _ := mw.Style()
+	style, _ := container.Master().Style()
 
 	arroww := nucular.FontWidth(style.Font, "=>") + style.Text.Padding.X*2
 	starw := nucular.FontWidth(style.Font, "*") + style.Text.Padding.X*2
@@ -1294,7 +1294,7 @@ type stringViewer struct {
 	mu sync.Mutex
 }
 
-func (sv *stringViewer) Update(mw *nucular.MasterWindow, w *nucular.Window) {
+func (sv *stringViewer) Update(w *nucular.Window) {
 	sv.mu.Lock()
 	defer sv.mu.Unlock()
 	w.Row(20).Dynamic(1)

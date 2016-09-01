@@ -12,9 +12,6 @@ import (
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
-	nstyle "github.com/aarzilli/nucular/style"
-
-	"golang.org/x/mobile/event/mouse"
 )
 
 type panelKind string
@@ -43,7 +40,7 @@ const (
 	infoExprs       = "Expressions"
 )
 
-var infoNameToFunc = map[string]func(mw *nucular.MasterWindow, w *nucular.Window){
+var infoNameToFunc = map[string]func(w *nucular.Window){
 	infoCommand:     updateCommandPanel,
 	infoListing:     updateListingPanel,
 	infoDisassembly: updateDisassemblyPanel,
@@ -100,14 +97,12 @@ func (kind panelKind) Internal() bool {
 
 type panel struct {
 	kind     panelKind
-	size     int
+	split    nucular.ScalableSplit
 	infoMode int
 	child    [2]*panel
 	parent   *panel
 
-	name     string
-	resize   bool
-	lastsize int
+	name string
 }
 
 var rootPanel *panel
@@ -124,16 +119,19 @@ const (
 )
 
 func parsePanelDescr(in string, parent *panel) (p *panel, rest string) {
-	var kind panelKind
 	switch in[0] {
 	case '0':
 		p = &panel{kind: fullPanelKind, name: randomname(), parent: parent}
 		p.child[0], rest = parsePanelDescr(in[1:], p)
 		return p, rest
 	case '_', '|':
-		kind = splitHorizontalPanelKind
+		kind := splitHorizontalPanelKind
+		minSize := splitMinHeight
+		spacing := horizontalSpacing
 		if in[0] == '|' {
 			kind = splitVerticalPanelKind
+			minSize = splitMinWidth
+			spacing = verticalSpacing
 		}
 		var i int
 		for i = 1; i < len(in); i++ {
@@ -142,7 +140,10 @@ func parsePanelDescr(in string, parent *panel) (p *panel, rest string) {
 			}
 		}
 		size, _ := strconv.Atoi(in[1:i])
-		p = &panel{kind: kind, name: randomname(), size: size, parent: parent}
+		p = &panel{kind: kind, name: randomname(), parent: parent}
+		p.split.Size = size
+		p.split.MinSize = minSize
+		p.split.Spacing = spacing
 		rest = in[i:]
 		p.child[0], rest = parsePanelDescr(rest, p)
 		p.child[1], rest = parsePanelDescr(rest, p)
@@ -171,11 +172,11 @@ func (p *panel) serialize(out io.Writer) {
 		out.Write([]byte{'0'})
 		p.child[0].serialize(out)
 	case splitHorizontalPanelKind:
-		fmt.Fprintf(out, "_%d", p.size)
+		fmt.Fprintf(out, "_%d", p.split.Size)
 		p.child[0].serialize(out)
 		p.child[1].serialize(out)
 	case splitVerticalPanelKind:
-		fmt.Fprintf(out, "|%d", p.size)
+		fmt.Fprintf(out, "|%d", p.split.Size)
 		p.child[0].serialize(out)
 		p.child[1].serialize(out)
 	case infoPanelKind:
@@ -205,21 +206,18 @@ func randomname() string {
 	return string(out)
 }
 
-func (p *panel) update(mw *nucular.MasterWindow, w *nucular.Window) {
+func (p *panel) update(w *nucular.Window) {
 	w.Row(0).SpaceBegin(0)
 
 	bounds := rect.Rect{0, 0, w.LayoutAvailableWidth(), w.LayoutAvailableHeight()}
 
-	p.updateIntl(mw, w, bounds)
+	p.updateIntl(w, bounds)
 }
 
-func (p *panel) updateIntl(mw *nucular.MasterWindow, w *nucular.Window, bounds rect.Rect) {
-	style, scaling := mw.Style()
-	_ = style
-
+func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 	switch p.kind {
 	case fullPanelKind:
-		p.child[0].updateIntl(mw, w, bounds)
+		p.child[0].updateIntl(w, bounds)
 
 	case infoPanelKind:
 		w.LayoutSpacePushScaled(bounds)
@@ -230,163 +228,49 @@ func (p *panel) updateIntl(mw *nucular.MasterWindow, w *nucular.Window, bounds r
 			sw.ComboSimple(infoModes, &p.infoMode, 22)
 			sw.Row(0).Dynamic(1)
 			if p.infoMode >= 0 {
-				infoNameToFunc[infoModes[p.infoMode]](mw, sw)
+				infoNameToFunc[infoModes[p.infoMode]](sw)
 			}
 			sw.GroupEnd()
 		}
 
 	case splitHorizontalPanelKind:
-		if p.lastsize == 0 {
-			p.lastsize = bounds.H
-		}
-		if p.lastsize != bounds.H {
-			diff := int(float64(bounds.H-p.lastsize) / scaling)
-			p.size += diff / 2
-			p.lastsize = bounds.H
-		}
-
-		hs := int(horizontalSpacing * scaling)
-		h := bounds.H - hs - style.NormalWindow.Padding.Y
-		var h0, h1 int
-		if p.size == 0 {
-			h0 = h / 2
-			h1 = h - h0
-			p.size = int(float64(h0) / scaling)
-		} else {
-			h0 = int(float64(p.size) * scaling)
-			h1 = h - h0
-		}
-
-		minh := int(splitMinHeight * scaling)
-		if h1 < minh {
-			h1 = minh
-			h0 = h - h1
-		}
-		if h0 < minh {
-			h0 = minh
-			h1 = h - h0
-		}
-
-		bounds0 := bounds
-		bounds0.H = h0
-
-		rszbounds := bounds
-		rszbounds.Y += bounds0.H
-		rszbounds.H = hs
-
-		bounds1 := bounds
-		bounds1.Y = rszbounds.Y + rszbounds.H
-		bounds1.H = h1
+		bounds0, bounds1 := p.split.Horizontal(w, bounds)
 
 		if bounds0.H > 0 {
-			p.child[0].updateIntl(mw, w, bounds0)
-		}
-
-		w.LayoutSpacePushScaled(rszbounds)
-		rszbounds, _ = w.Custom(nstyle.WidgetStateInactive)
-
-		if w.Input().Mouse.IsClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
-			p.resize = true
-		}
-		if p.resize {
-			if !w.Input().Mouse.Down(mouse.ButtonLeft) {
-				p.resize = false
-			} else {
-				p.size += int(float64(w.Input().Mouse.Delta.Y) / scaling)
-				if p.size <= splitMinHeight {
-					p.size = splitMinHeight
-				}
-			}
+			p.child[0].updateIntl(w, bounds0)
 		}
 
 		if bounds1.H > 0 {
-			p.child[1].updateIntl(mw, w, bounds1)
+			p.child[1].updateIntl(w, bounds1)
 		}
 
 	case splitVerticalPanelKind:
-		if p.lastsize == 0 {
-			p.lastsize = bounds.W
-		}
-		if p.lastsize != bounds.W {
-			diff := int(float64(bounds.W-p.lastsize) / scaling)
-			p.size += diff / 2
-			p.lastsize = bounds.W
-		}
-
-		ws := int(verticalSpacing * scaling)
-		wt := bounds.W - ws
-		var w0, w1 int
-		if p.size == 0 {
-			w0 = wt / 2
-			w1 = wt - w0
-			p.size = int(float64(w0) / scaling)
-		} else {
-			w0 = int(float64(p.size) * scaling)
-			w1 = wt - w0
-		}
-
-		minw := int(splitMinWidth * scaling)
-		if w1 < minw {
-			w1 = minw
-			w0 = wt - w1
-		}
-		if w0 < minw {
-			w0 = minw
-			w1 = wt - w0
-		}
-
-		bounds0 := bounds
-		bounds0.W = w0
-
-		rszbounds := bounds
-		rszbounds.X += bounds0.W
-		rszbounds.W = ws
-
-		bounds1 := bounds
-		bounds1.X = rszbounds.X + rszbounds.W
-		bounds1.W = w1
+		bounds0, bounds1 := p.split.Vertical(w, bounds)
 
 		if bounds0.W > 0 {
-			p.child[0].updateIntl(mw, w, bounds0)
-		}
-
-		w.LayoutSpacePushScaled(rszbounds)
-		rszbounds, _ = w.Custom(nstyle.WidgetStateInactive)
-
-		if w.Input().Mouse.IsClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
-			p.resize = true
-		}
-		if p.resize {
-			if !w.Input().Mouse.Down(mouse.ButtonLeft) {
-				p.resize = false
-			} else {
-				p.size += int(float64(w.Input().Mouse.Delta.X) / scaling)
-				if p.size <= splitMinWidth {
-					p.size = splitMinWidth
-				}
-			}
+			p.child[0].updateIntl(w, bounds0)
 		}
 
 		if bounds1.W > 0 {
-			p.child[1].updateIntl(mw, w, bounds1)
+			p.child[1].updateIntl(w, bounds1)
 		}
 	}
 }
 
-func (p *panel) splitMenu(mw *nucular.MasterWindow, w *nucular.Window) {
+func (p *panel) splitMenu(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 	if w.MenuItem(label.TA("Horizontal", "LC")) {
-		p.split(splitHorizontalPanelKind)
+		p.dosplit(splitHorizontalPanelKind)
 	}
 	if w.MenuItem(label.TA("Vertical", "LC")) {
-		p.split(splitVerticalPanelKind)
+		p.dosplit(splitVerticalPanelKind)
 	}
 	if w.MenuItem(label.TA("Close", "LC")) {
 		p.closeMyself()
 	}
 }
 
-func (p *panel) split(kind panelKind) {
+func (p *panel) dosplit(kind panelKind) {
 	if p.parent == nil {
 		return
 	}
@@ -402,7 +286,16 @@ func (p *panel) split(kind panelKind) {
 		return
 	}
 
-	newpanel := &panel{kind: kind, name: randomname(), size: 0, parent: p.parent}
+	newpanel := &panel{kind: kind, name: randomname(), parent: p.parent}
+	newpanel.split.Size = 0
+	switch kind {
+	case splitHorizontalPanelKind:
+		newpanel.split.MinSize = splitMinHeight
+		newpanel.split.Spacing = horizontalSpacing
+	case splitVerticalPanelKind:
+		newpanel.split.MinSize = splitMinWidth
+		newpanel.split.Spacing = verticalSpacing
+	}
 
 	newpanel.child[0] = p
 	newpanel.child[1] = &panel{kind: p.kind, name: randomname(), infoMode: p.infoMode, parent: newpanel}

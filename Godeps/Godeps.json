@@ -3,7 +3,7 @@
 	"GoVersion": "go1.7",
 	"GodepVersion": "v74",
 	"Packages": [
-		"./..."
+		"."
 	],
 	"Deps": [
 		{
@@ -24,31 +24,31 @@
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular",
-			"Rev": "f0c95e696a8d43c375c4525f80a1ff8327bbbda1"
+			"Rev": "daec26f471a36bc60cd26016b5dd02de1c530233"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/clipboard",
-			"Rev": "f0c95e696a8d43c375c4525f80a1ff8327bbbda1"
+			"Rev": "daec26f471a36bc60cd26016b5dd02de1c530233"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/command",
-			"Rev": "f0c95e696a8d43c375c4525f80a1ff8327bbbda1"
+			"Rev": "daec26f471a36bc60cd26016b5dd02de1c530233"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/internal/assets",
-			"Rev": "f0c95e696a8d43c375c4525f80a1ff8327bbbda1"
+			"Rev": "daec26f471a36bc60cd26016b5dd02de1c530233"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/label",
-			"Rev": "f0c95e696a8d43c375c4525f80a1ff8327bbbda1"
+			"Rev": "daec26f471a36bc60cd26016b5dd02de1c530233"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/rect",
-			"Rev": "f0c95e696a8d43c375c4525f80a1ff8327bbbda1"
+			"Rev": "daec26f471a36bc60cd26016b5dd02de1c530233"
 		},
 		{
 			"ImportPath": "github.com/aarzilli/nucular/style",
-			"Rev": "f0c95e696a8d43c375c4525f80a1ff8327bbbda1"
+			"Rev": "daec26f471a36bc60cd26016b5dd02de1c530233"
 		},
 		{
 			"ImportPath": "github.com/derekparker/delve/dwarf/frame",

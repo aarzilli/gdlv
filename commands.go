@@ -653,7 +653,7 @@ func executeCommand(cmdstr string) {
 	}
 }
 
-func confirmQuit(mw *nucular.MasterWindow, w *nucular.Window) {
+func confirmQuit(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 	w.Label("Would you like to kill the process?", "LT")
 	w.Row(20).Static(0, 80, 80, 0)

@@ -97,6 +97,7 @@ func NewMasterWindow(updatefn UpdateFn, flags WindowFlags) *MasterWindow {
 	ctx.Windows[0].flags = wnd.layout.Flags
 	ctx.Windows[0].cmds.UseClipping = true
 	ctx.Windows[0].updateFn = updatefn
+	ctx.mw = wnd
 
 	return wnd
 }
@@ -329,7 +330,7 @@ func (w *MasterWindow) updateLocked() {
 
 		win.first = false
 
-		win.updateFn(w, win)
+		win.updateFn(win)
 
 		if win.title == tooltipWindowTitle {
 			win.close = true

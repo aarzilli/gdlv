@@ -23,6 +23,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////////
 
 type context struct {
+	mw             *MasterWindow
 	Input          Input
 	Style          nstyle.Style
 	Windows        []*Window
@@ -31,9 +32,10 @@ type context struct {
 	activateEditor *TextEditor
 }
 
-type UpdateFn func(*MasterWindow, *Window)
+type UpdateFn func(*Window)
 
 type Window struct {
+	mw               *MasterWindow
 	LastWidgetBounds rect.Rect
 	title            string
 	ctx              *context
@@ -185,6 +187,10 @@ func (wbuf *widgetBuffer) reset() {
 		}
 	}
 	wbuf.frameCount++
+}
+
+func (w *Window) Master() *MasterWindow {
+	return w.ctx.mw
 }
 
 func contextBegin(ctx *context, layout *panel) {
@@ -2511,7 +2517,7 @@ func (win *Window) Tooltip(text string) {
 	text_height := FontHeight(win.ctx.Style.Font)
 	text_width += win.ctx.scale(2*padding.X) + win.ctx.scale(2*item_spacing.X)
 
-	win.TooltipOpen(text_width, false, func(mw *MasterWindow, tw *Window) {
+	win.TooltipOpen(text_width, false, func(tw *Window) {
 		tw.RowScaled(text_height).Dynamic(1)
 		tw.Label(text, "LC")
 	})
@@ -2587,7 +2593,7 @@ func (win *Window) ComboSimple(items []string, selected *int, item_height int) {
 	item_padding := win.ctx.Style.Combo.ButtonPadding.Y
 	window_padding := win.style().Padding.Y
 	max_height := (len(items)+1)*item_height + item_padding*3 + window_padding*2
-	win.Combo(label.T(items[*selected]), max_height, func(mw *MasterWindow, w *Window) {
+	win.Combo(label.T(items[*selected]), max_height, func(w *Window) {
 		w.RowScaled(item_height).Dynamic(1)
 		for i := range items {
 			if w.MenuItem(label.TA(items[i], "LC")) {

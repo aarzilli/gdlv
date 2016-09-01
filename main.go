@@ -91,11 +91,12 @@ func prompt(thread int, gid, frame int) string {
 	return fmt.Sprintf("goroutine %d frame %d", gid, frame)
 }
 
-func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
+func guiUpdate(w *nucular.Window) {
 	mu.Lock()
 	defer mu.Unlock()
 
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+	mw := w.Master()
 
 	for _, e := range w.Input().Keyboard.Keys {
 		switch {
@@ -127,17 +128,17 @@ func guiUpdate(mw *nucular.MasterWindow, w *nucular.Window) {
 		}
 	}
 
-	rootPanel.update(mw, w)
+	rootPanel.update(w)
 }
 
-func updateCommandPanel(mw *nucular.MasterWindow, container *nucular.Window) {
-	style, _ := mw.Style()
-
+func updateCommandPanel(container *nucular.Window) {
 	w := container.GroupBegin("command", nucular.WindowNoScrollbar)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
+
+	style, _ := w.Master().Style()
 
 	w.LayoutReserveRow(commandLineHeight, 1)
 	w.Row(0).Dynamic(1)
