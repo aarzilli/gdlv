@@ -33,12 +33,15 @@ func completeLocationSetup() {
 
 func completeAny() {
 	buf := commandLineEditor.Buffer
+	if len(buf) == commandLineEditor.Cursor {
+		completeCommand()
+	}
 	for i := range buf {
 		if buf[i] == ' ' {
-			cmdstr := string(buf[:i])
 			if commandLineEditor.Cursor <= i {
 				return
 			}
+			cmdstr := string(buf[:i])
 			for _, v := range cmds.cmds {
 				if v.match(cmdstr) {
 					if v.complete != nil {
@@ -121,6 +124,20 @@ func completeVariable() {
 		}
 	}()
 
+	cm.finish()
+}
+
+func completeCommand() {
+	if cmds == nil || len(commandLineEditor.Buffer) == 0 {
+		return
+	}
+	word := string(commandLineEditor.Buffer)
+	cm := completeMachine{ word: word }
+	for _, cmd := range cmds.cmds {
+		for _, alias := range cmd.aliases {
+			cm.add(alias)
+		}
+	}
 	cm.finish()
 }
 
