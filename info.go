@@ -3,10 +3,13 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"image"
+	"math"
 	"reflect"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -77,7 +80,8 @@ const (
 	currentGoroutineLocation = "Current location"
 	userGoroutineLocation    = "User location"
 	goStatementLocation      = "Go statement location"
-	dynamicPopupFlags        = nucular.WindowDynamic | nucular.WindowTitle | nucular.WindowNoScrollbar | nucular.WindowMovable | nucular.WindowBorder
+	popupFlags               = nucular.WindowTitle | nucular.WindowNoScrollbar | nucular.WindowMovable | nucular.WindowBorder
+	dynamicPopupFlags        = nucular.WindowDynamic | popupFlags
 )
 
 var goroutineLocations = []string{currentGoroutineLocation, userGoroutineLocation, goStatementLocation}
@@ -522,11 +526,10 @@ func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 		}
 		w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, exprMenu)
 	} else {
-		switch v.Kind {
-		case reflect.String:
-			if w.Input().Mouse.AnyClickInRect(w.LastWidgetBounds) {
-				selectedVariable = v
-			}
+		if w.Input().Mouse.AnyClickInRect(w.LastWidgetBounds) {
+			selectedVariable = v
+		}
+		if detailsAvailable(v) != nil {
 			w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, variableMenu)
 		}
 	}
@@ -535,6 +538,11 @@ func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 func exprMenu(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 
+	if fn := detailsAvailable(exprsPanel.v[exprsPanel.selected]); fn != nil {
+		if w.MenuItem(label.TA("Details", "LC")) {
+			fn(w.Master(), exprsPanel.v[exprsPanel.selected])
+		}
+	}
 	if w.MenuItem(label.TA("Edit", "LC")) {
 		exprsPanel.selected = exprsPanel.menuSelected
 		if exprsPanel.selected >= 0 && exprsPanel.selected < len(exprsPanel.expressions) {
@@ -558,8 +566,9 @@ var selectedVariable *api.Variable
 func variableMenu(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 	if w.MenuItem(label.TA("Details", "LC")) {
-		viewer := &stringViewer{v: selectedVariable}
-		w.Master().PopupOpen("Viewing string: "+selectedVariable.Name, dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, viewer.Update)
+		if fn := detailsAvailable(selectedVariable); fn != nil {
+			fn(w.Master(), selectedVariable)
+		}
 	}
 }
 
@@ -1288,10 +1297,60 @@ func updateDisassemblyPanel(container *nucular.Window) {
 	}
 }
 
+type openDetailsWindowFn func(*nucular.MasterWindow, *api.Variable)
+
+func detailsAvailable(v *api.Variable) openDetailsWindowFn {
+	if v == nil {
+		return nil
+	}
+	switch v.Type {
+	case "string", "[]uint8", "[]int32":
+		return newStringViewer
+	case "[]int", "[]int8", "[]int16", "[]int64", "[]uint", "[]uint16", "[]uint32", "[]uint64":
+		return newIntArrayViewer
+	case "int", "int8", "int16", "int32", "uint", "uint8", "uint16", "uint32", "uint64":
+		return newIntViewer
+	}
+	return nil
+}
+
+type stringViewerMode int
+
+const (
+	viewString stringViewerMode = iota
+	viewByteArray
+	viewRuneArray
+)
+
+type numberMode int
+
+const (
+	hexMode = iota
+	decMode = iota
+	octMode = iota
+)
+
 type stringViewer struct {
-	v  *api.Variable
-	ed nucular.TextEditor
-	mu sync.Mutex
+	v          *api.Variable
+	mode       stringViewerMode
+	numberMode numberMode
+	ed         nucular.TextEditor
+	mu         sync.Mutex
+}
+
+func newStringViewer(mw *nucular.MasterWindow, v *api.Variable) {
+	sv := &stringViewer{v: v}
+	switch v.Type {
+	case "string":
+		sv.mode = viewString
+	case "[]uint8":
+		sv.mode = viewByteArray
+	case "[]int32":
+		sv.mode = viewRuneArray
+	}
+	sv.ed.Flags = nucular.EditReadOnly | nucular.EditMultiline | nucular.EditSelectable | nucular.EditClipboard
+	sv.setupView()
+	mw.PopupOpen("Viewing string: "+v.Name, popupFlags|nucular.WindowScalable, rect.Rect{100, 100, 550, 400}, true, sv.Update)
 }
 
 func (sv *stringViewer) Update(w *nucular.Window) {
@@ -1300,19 +1359,53 @@ func (sv *stringViewer) Update(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 	w.Label(sv.v.Name, "LC")
 
-	w.Row(29).Dynamic(1)
-
-	sv.ed.Flags = nucular.EditSelectable | nucular.EditReadOnly | nucular.EditClipboard
-	if len(sv.ed.Buffer) == 0 {
-		sv.ed.Buffer = []rune(sv.v.Value)
+	w.Row(20).Static(100, 80, 80, 80)
+	w.Label("View as:", "LC")
+	newmode := sv.mode
+	if w.OptionText("string", newmode == viewString) {
+		newmode = viewString
 	}
+	if w.OptionText("[]byte", newmode == viewByteArray) {
+		newmode = viewByteArray
+	}
+	if w.OptionText("[]rune", newmode == viewRuneArray) {
+		newmode = viewRuneArray
+	}
+	if newmode != sv.mode {
+		sv.mode = newmode
+		sv.setupView()
+	}
+
+	switch sv.mode {
+	case viewString:
+		// nothing to choose
+	case viewByteArray, viewRuneArray:
+		numberMode := sv.numberMode
+		w.Row(20).Static(120, 120, 120)
+		if w.OptionText("Decimal", numberMode == decMode) {
+			numberMode = decMode
+		}
+		if w.OptionText("Hexadecimal", numberMode == hexMode) {
+			numberMode = hexMode
+		}
+		if w.OptionText("Octal", numberMode == octMode) {
+			numberMode = octMode
+		}
+		if numberMode != sv.numberMode {
+			sv.numberMode = numberMode
+			sv.setupView()
+		}
+	}
+
+	w.Row(0).Dynamic(1)
 	sv.ed.Edit(w)
 
-	w.Row(20).Static(0, 150, 150)
-	w.Spacing(1)
-	if sv.v.Len != int64(len(sv.v.Value)) {
+	w.Row(20).Static(0, 100, 100)
+	l := int64(sv.len())
+	w.Label(fmt.Sprintf("Loaded %d/%d", l, sv.v.Len), "LC")
+	if sv.v.Len != l {
 		if w.ButtonText("Load more") {
-			loadMoreString(sv)
+			sv.loadMore()
 		}
 	} else {
 		w.Spacing(1)
@@ -1322,27 +1415,302 @@ func (sv *stringViewer) Update(w *nucular.Window) {
 	}
 }
 
-func loadMoreString(sv *stringViewer) {
+func (sv *stringViewer) len() int {
+	switch sv.v.Kind {
+	case reflect.String:
+		return len(sv.v.Value)
+	case reflect.Array, reflect.Slice:
+		return len(sv.v.Children)
+	default:
+		return 0
+	}
+}
+
+func (sv *stringViewer) setupView() {
+	var bytes []byte
+	var runes []rune
+
+	switch sv.v.Type {
+	case "string":
+		switch sv.mode {
+		case viewString:
+			sv.ed.Buffer = []rune(sv.v.Value)
+		case viewByteArray:
+			bytes = []byte(sv.v.Value)
+		case viewRuneArray:
+			runes = []rune(sv.v.Value)
+		}
+	case "[]uint8":
+		bytes = make([]byte, len(sv.v.Children))
+		for i := range sv.v.Children {
+			n, _ := strconv.Atoi(sv.v.Children[i].Value)
+			bytes[i] = byte(n)
+		}
+		switch sv.mode {
+		case viewString:
+			sv.ed.Buffer = []rune(string(bytes))
+		case viewByteArray:
+			// nothing to do
+		case viewRuneArray:
+			runes = []rune(string(bytes))
+		}
+	case "[]int32":
+		runes = make([]rune, len(sv.v.Children))
+		for i := range sv.v.Children {
+			n, _ := strconv.Atoi(sv.v.Children[i].Value)
+			runes[i] = rune(n)
+		}
+		switch sv.mode {
+		case viewString:
+			sv.ed.Buffer = runes
+		case viewByteArray:
+			bytes = []byte(string(runes))
+		case viewRuneArray:
+			// nothing to do
+		}
+	}
+
+	switch sv.mode {
+	case viewString:
+		// nothing more to do
+	case viewByteArray:
+		array := make([]int64, len(bytes))
+		for i := range bytes {
+			array[i] = int64(bytes[i])
+		}
+		sv.ed.Buffer = []rune(formatArray(array, true, sv.numberMode, true, 1, 16))
+	case viewRuneArray:
+		array := make([]int64, len(runes))
+		for i := range runes {
+			array[i] = int64(runes[i])
+		}
+		sv.ed.Buffer = []rune(formatArray(array, sv.numberMode != decMode, sv.numberMode, false, 2, 10))
+	}
+}
+
+func formatArray(array []int64, hexaddr bool, mode numberMode, canonical bool, size, stride int) string {
+	var fmtstr, emptyfield string
+	switch mode {
+	case decMode:
+		fmtstr = fmt.Sprintf("%%%dd ", size*3)
+		emptyfield = fmt.Sprintf("%*s", size*3+1, "")
+	case hexMode:
+		fmtstr = fmt.Sprintf("%%0%dx ", size*2)
+		emptyfield = fmt.Sprintf("%*s", size*2+1, "")
+	case octMode:
+		fmtstr = fmt.Sprintf("%%0%do ", size*3)
+		emptyfield = fmt.Sprintf("%*s", size*3+1, "")
+	}
+
+	var addrfmtstr string
+	if hexaddr {
+		d := hexdigits(uint64(len(array)))
+		if d < 2 {
+			d = 2
+		}
+		addrfmtstr = fmt.Sprintf("%%0%dx  ", d)
+	} else {
+		addrfmtstr = fmt.Sprintf("[%%%dd]  ", digits(len(array)))
+	}
+
+	var buf bytes.Buffer
+	i := 0
+	for i < len(array) {
+		fmt.Fprintf(&buf, addrfmtstr, i)
+		start := i
+		for c := 0; c < stride; i, c = i+1, c+1 {
+			if stride%8 == 0 && c%8 == 0 && c != 0 && c != stride-1 {
+				fmt.Fprintf(&buf, " ")
+			}
+			if i < len(array) {
+				fmt.Fprintf(&buf, fmtstr, array[i])
+			} else {
+				fmt.Fprintf(&buf, emptyfield)
+			}
+		}
+
+		if canonical {
+			fmt.Fprintf(&buf, " |")
+			for j := start; j < i; j++ {
+				if j < len(array) {
+					if array[j] >= 0x20 && array[j] <= 0x7e {
+						fmt.Fprintf(&buf, "%c", byte(array[j]))
+					} else {
+						fmt.Fprintf(&buf, ".")
+					}
+				} else {
+					fmt.Fprintf(&buf, " ")
+				}
+			}
+			fmt.Fprintf(&buf, "|\n")
+		} else {
+			fmt.Fprintf(&buf, "\n")
+		}
+	}
+
+	return buf.String()
+}
+
+func (sv *stringViewer) loadMore() {
 	additionalLoadMu.Lock()
 	defer additionalLoadMu.Unlock()
 	if !additionalLoadRunning {
 		additionalLoadRunning = true
 		go func() {
-			expr := fmt.Sprintf("(*(*string)(%#x))[%d:]", sv.v.Addr, len(sv.v.Value))
+			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", sv.v.RealType, sv.v.Addr, len(sv.v.Value))
 			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
 			if err != nil {
 				out := editorWriter{&scrollbackEditor, true}
 				fmt.Fprintf(&out, "Error loading string contents %s: %v\n", expr, err)
 			} else {
-				sv.v.Value += lv.Value
+				switch sv.v.Kind {
+				case reflect.String:
+					sv.v.Value += lv.Value
+				case reflect.Array, reflect.Slice:
+					sv.v.Children = append(sv.v.Children, lv.Children...)
+				}
 			}
 			additionalLoadMu.Lock()
 			additionalLoadRunning = false
 			additionalLoadMu.Unlock()
 			sv.mu.Lock()
-			sv.ed.Buffer = sv.ed.Buffer[:0]
+			sv.setupView()
 			sv.mu.Unlock()
 			wnd.Changed()
 		}()
+	}
+}
+
+type intArrayViewer struct {
+	v          *api.Variable
+	displayLen int
+	mode       numberMode
+	ed         nucular.TextEditor
+	mu         sync.Mutex
+}
+
+func newIntArrayViewer(mw *nucular.MasterWindow, v *api.Variable) {
+	av := &intArrayViewer{v: v}
+	av.mode = decMode
+	av.ed.Flags = nucular.EditReadOnly | nucular.EditMultiline | nucular.EditSelectable | nucular.EditClipboard
+	av.setupView()
+	mw.PopupOpen("Viewing array: "+v.Name, popupFlags|nucular.WindowScalable, rect.Rect{100, 100, 550, 400}, true, av.Update)
+}
+
+func (av *intArrayViewer) Update(w *nucular.Window) {
+	av.mu.Lock()
+	defer av.mu.Unlock()
+
+	if av.displayLen != len(av.v.Children) {
+		av.setupView()
+	}
+
+	w.Row(20).Static(100, 120, 120, 120)
+	w.Label("View as:", "LC")
+	mode := av.mode
+	if w.OptionText("Decimal", mode == decMode) {
+		mode = decMode
+	}
+	if w.OptionText("Hexadecimal", mode == hexMode) {
+		mode = hexMode
+	}
+	if w.OptionText("Octal", mode == octMode) {
+		mode = octMode
+	}
+	if mode != av.mode {
+		av.mode = mode
+		av.setupView()
+	}
+
+	w.Row(0).Dynamic(1)
+	av.ed.Edit(w)
+
+	w.Row(20).Static(0, 100, 100)
+	w.Label(fmt.Sprintf("Loaded %d/%d", len(av.v.Children), av.v.Len), "LC")
+	if av.v.Len != int64(len(av.v.Children)) {
+		if w.ButtonText("Load more") {
+			loadMoreArrayOrSlice(av.v)
+		}
+	} else {
+		w.Spacing(1)
+	}
+	if w.ButtonText("OK") {
+		w.Close()
+	}
+}
+
+func (av *intArrayViewer) setupView() {
+	array := make([]int64, len(av.v.Children))
+	max := int64(0)
+	for i := range av.v.Children {
+		array[i], _ = strconv.ParseInt(av.v.Children[i].Value, 10, 64)
+		x := array[i]
+		if x < 0 {
+			x = -x
+		}
+		if x > max {
+			max = x
+		}
+	}
+
+	if max < 1 {
+		max = 1
+	}
+
+	size := int(math.Ceil((math.Log(float64(max)) / math.Log(2)) / 8))
+	av.ed.Buffer = []rune(formatArray(array, av.mode != decMode, av.mode, false, size, 10))
+}
+
+type intViewer struct {
+	v    *api.Variable
+	mode numberMode
+	ed   nucular.TextEditor
+}
+
+func newIntViewer(mw *nucular.MasterWindow, v *api.Variable) {
+	iv := &intViewer{v: v}
+	iv.mode = decMode
+	iv.ed.Flags = nucular.EditReadOnly | nucular.EditSelectable | nucular.EditClipboard
+	iv.setupView()
+	mw.PopupOpen("Viewing array: "+v.Name, dynamicPopupFlags, rect.Rect{100, 100, 500, 400}, true, iv.Update)
+}
+
+func (iv *intViewer) Update(w *nucular.Window) {
+	w.Row(20).Static(100, 120, 120, 120)
+	w.Label("View as:", "LC")
+	mode := iv.mode
+	if w.OptionText("Decimal", mode == decMode) {
+		mode = decMode
+	}
+	if w.OptionText("Hexadecimal", mode == hexMode) {
+		mode = hexMode
+	}
+	if w.OptionText("Octal", mode == octMode) {
+		mode = octMode
+	}
+	if mode != iv.mode {
+		iv.mode = mode
+		iv.setupView()
+	}
+
+	w.Row(30).Dynamic(1)
+	iv.ed.Edit(w)
+
+	w.Row(20).Static(0, 100)
+	w.Spacing(1)
+	if w.ButtonText("OK") {
+		w.Close()
+	}
+}
+
+func (iv *intViewer) setupView() {
+	n, _ := strconv.Atoi(iv.v.Value)
+	switch iv.mode {
+	case decMode:
+		iv.ed.Buffer = []rune(fmt.Sprintf("%d", n))
+	case hexMode:
+		iv.ed.Buffer = []rune(fmt.Sprintf("%x", n))
+	case octMode:
+		iv.ed.Buffer = []rune(fmt.Sprintf("%o", n))
 	}
 }

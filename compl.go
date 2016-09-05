@@ -132,7 +132,7 @@ func completeCommand() {
 		return
 	}
 	word := string(commandLineEditor.Buffer)
-	cm := completeMachine{ word: word }
+	cm := completeMachine{word: word}
 	for _, cmd := range cmds.cmds {
 		for _, alias := range cmd.aliases {
 			cm.add(alias)
@@ -170,7 +170,6 @@ func (cm *completeMachine) finish() {
 		}
 		fmt.Fprintf(&out, "Completions: %s%s\n", strings.Join(cm.compls, ", "), more)
 	}
-
 }
 
 func dedup(v []string) []string {
