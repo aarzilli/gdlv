@@ -173,9 +173,11 @@ func updateCommandPanel(container *nucular.Window) {
 	}
 	if commandLineEditor.Active {
 		showHistory := false
-		for _, k := range w.Input().Keyboard.Keys {
+		kbd := w.Input().Keyboard
+		for _, k := range kbd.Keys {
 			switch {
 			case k.Modifiers == 0 && k.Code == key.CodeTab:
+				kbd.Text = ""
 				completeAny()
 			case k.Modifiers == 0 && k.Code == key.CodeUpArrow:
 				historyShown--

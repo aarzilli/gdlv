@@ -5,6 +5,7 @@ package main
 import (
 	"encoding/json"
 	"os"
+	"runtime"
 )
 
 type Configuration struct {
@@ -35,9 +36,17 @@ func adjustConfiguration() {
 	}
 }
 
+func configLoc() string {
+	loc := "$HOME/.config/gdlv"
+	if runtime.GOOS == "windows" {
+		loc = "$APPDATA/gdlv"
+	}
+	return os.ExpandEnv(loc)
+}
+
 func loadConfiguration() {
 	defer adjustConfiguration()
-	fh, err := os.Open(os.ExpandEnv("$HOME/.config/gdlv"))
+	fh, err := os.Open(configLoc())
 	if err != nil {
 		return
 	}
@@ -46,7 +55,7 @@ func loadConfiguration() {
 }
 
 func saveConfiguration() {
-	fh, err := os.Create(os.ExpandEnv("$HOME/.config/gdlv"))
+	fh, err := os.Create(configLoc())
 	if err != nil {
 		return
 	}

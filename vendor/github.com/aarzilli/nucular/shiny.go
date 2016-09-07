@@ -220,7 +220,6 @@ func (w *MasterWindow) handleEventLocked(ei interface{}) bool {
 		evinText := func() {
 			if e.Modifiers == 0 || e.Modifiers == key.ModShift {
 				io.WriteString(&w.textbuffer, string(e.Rune))
-				return
 			}
 			
 			evinNotext()
