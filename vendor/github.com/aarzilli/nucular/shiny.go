@@ -208,7 +208,7 @@ func (w *MasterWindow) handleEventLocked(ei interface{}) bool {
 		if e.Direction == key.DirRelease {
 			break
 		}
-		evin := func() {
+		evinNotext := func() {
 			for _, k := range w.ctx.Input.Keyboard.Keys {
 				if k.Code == e.Code {
 					k.Modifiers |= e.Modifiers
@@ -217,14 +217,27 @@ func (w *MasterWindow) handleEventLocked(ei interface{}) bool {
 			}
 			w.ctx.Input.Keyboard.Keys = append(w.ctx.Input.Keyboard.Keys, e)
 		}
-
-		if e.Rune >= 0 && e.Rune != '\n' && (e.Modifiers == 0 || e.Modifiers == key.ModShift) {
-			io.WriteString(&w.textbuffer, string(e.Rune))
-			if e.Modifiers != 0 {
-				evin()
+		evinText := func() {
+			if e.Modifiers == 0 || e.Modifiers == key.ModShift {
+				io.WriteString(&w.textbuffer, string(e.Rune))
+				return
 			}
-		} else {
-			evin()
+			
+			evinNotext()
+		}
+		
+		switch {
+		case e.Code == key.CodeUnknown:
+			if e.Rune > 0 {
+				evinText()
+			}
+		case (e.Code >= key.CodeA && e.Code <= key.Code0) || e.Code == key.CodeTab || e.Code == key.CodeSpacebar || e.Code == key.CodeHyphenMinus || e.Code == key.CodeEqualSign || e.Code == key.CodeLeftSquareBracket || e.Code == key.CodeRightSquareBracket || e.Code == key.CodeBackslash || e.Code == key.CodeSemicolon || e.Code == key.CodeApostrophe || e.Code == key.CodeGraveAccent || e.Code == key.CodeComma || e.Code == key.CodeFullStop || e.Code == key.CodeSlash || (e.Code >= key.CodeKeypadSlash && e.Code <= key.CodeKeypadPlusSign) || (e.Code >= key.CodeKeypad1 && e.Code <= key.CodeKeypadEqualSign):
+			evinText()
+		case e.Code == key.CodeReturnEnter || e.Code == key.CodeKeypadEnter:
+			e.Rune = '\n'
+			evinText()
+		default:
+			evinNotext()
 		}
 	}
 

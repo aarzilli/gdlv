@@ -5,6 +5,8 @@
 package clipboard
 
 import (
+	"fmt"
+	"os"
 	"syscall"
 	"unsafe"
 )

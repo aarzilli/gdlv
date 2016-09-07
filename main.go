@@ -100,15 +100,15 @@ func guiUpdate(w *nucular.Window) {
 
 	for _, e := range w.Input().Keyboard.Keys {
 		switch {
-		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '+') || (e.Rune == '='):
+		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Code == key.CodeEqualSign):
 			conf.Scaling += 0.1
 			setupStyle()
 
-		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Rune == '-'):
+		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Code == key.CodeHyphenMinus):
 			conf.Scaling -= 0.1
 			setupStyle()
 
-		case (e.Modifiers == key.ModControl) && (e.Rune == 'f'):
+		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeF):
 			mw.Perf = !mw.Perf
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):

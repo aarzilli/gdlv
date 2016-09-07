@@ -1,1 +1,229 @@
-{"comment":"","ignore":"test","package":[{"path":"github.com/BurntSushi/xgb","revision":"e13605d223ac0bca1fc3948d9782db9545c331e8"},{"path":"github.com/BurntSushi/xgb/render","revision":"e13605d223ac0bca1fc3948d9782db9545c331e8"},{"path":"github.com/BurntSushi/xgb/shm","revision":"e13605d223ac0bca1fc3948d9782db9545c331e8"},{"path":"github.com/BurntSushi/xgb/xproto","revision":"e13605d223ac0bca1fc3948d9782db9545c331e8"},{"path":"github.com/aarzilli/nucular","revision":"daec26f471a36bc60cd26016b5dd02de1c530233"},{"path":"github.com/aarzilli/nucular/clipboard","revision":"daec26f471a36bc60cd26016b5dd02de1c530233"},{"path":"github.com/aarzilli/nucular/command","revision":"daec26f471a36bc60cd26016b5dd02de1c530233"},{"path":"github.com/aarzilli/nucular/internal/assets","revision":"daec26f471a36bc60cd26016b5dd02de1c530233"},{"path":"github.com/aarzilli/nucular/label","revision":"daec26f471a36bc60cd26016b5dd02de1c530233"},{"path":"github.com/aarzilli/nucular/rect","revision":"daec26f471a36bc60cd26016b5dd02de1c530233"},{"path":"github.com/aarzilli/nucular/style","revision":"daec26f471a36bc60cd26016b5dd02de1c530233"},{"path":"github.com/derekparker/delve/dwarf/frame","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/derekparker/delve/dwarf/line","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/derekparker/delve/dwarf/op","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/derekparker/delve/dwarf/reader","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/derekparker/delve/dwarf/util","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/derekparker/delve/proc","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/derekparker/delve/service","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/derekparker/delve/service/api","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/derekparker/delve/service/debugger","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/derekparker/delve/service/rpc2","revision":"fa24c166e9edcb1a8eac2f786bac2375b94c23ae"},{"path":"github.com/golang/freetype","revision":"38b4c392adc5eed94207994c4848fff99f4ac234"},{"path":"github.com/golang/freetype/raster","revision":"38b4c392adc5eed94207994c4848fff99f4ac234"},{"path":"github.com/golang/freetype/truetype","revision":"38b4c392adc5eed94207994c4848fff99f4ac234"},{"path":"github.com/hashicorp/golang-lru","revision":"0a025b7e63adc15a622f29b0b2c4c3848243bbf6"},{"path":"github.com/hashicorp/golang-lru/simplelru","revision":"0a025b7e63adc15a622f29b0b2c4c3848243bbf6"},{"path":"golang.org/x/debug/dwarf","revision":"fb508927b491eca48a708e9d000fdb7afa53c32b"},{"path":"golang.org/x/debug/elf","revision":"fb508927b491eca48a708e9d000fdb7afa53c32b"},{"path":"golang.org/x/debug/macho","revision":"fb508927b491eca48a708e9d000fdb7afa53c32b"},{"path":"golang.org/x/exp/shiny/driver","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/gldriver","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/internal/drawer","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/internal/errscreen","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/internal/event","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/internal/lifecycler","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/internal/swizzle","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/internal/win32","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/internal/x11key","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/windriver","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/driver/x11driver","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/exp/shiny/screen","revision":"325d5821a8d876702cbc82b93fec4ede356d498b"},{"path":"golang.org/x/image/font","revision":"f551d3a6b7fc11df315ad9e18b404280680f8bec"},{"path":"golang.org/x/image/math/f64","revision":"f551d3a6b7fc11df315ad9e18b404280680f8bec"},{"path":"golang.org/x/image/math/fixed","revision":"f551d3a6b7fc11df315ad9e18b404280680f8bec"},{"path":"golang.org/x/mobile/event/key","revision":"cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"},{"path":"golang.org/x/mobile/event/lifecycle","revision":"cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"},{"path":"golang.org/x/mobile/event/mouse","revision":"cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"},{"path":"golang.org/x/mobile/event/paint","revision":"cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"},{"path":"golang.org/x/mobile/event/size","revision":"cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"},{"path":"golang.org/x/mobile/geom","revision":"cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"},{"path":"golang.org/x/mobile/gl","revision":"cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"},{"path":"golang.org/x/sys/unix","revision":"eb2c74142fd19a79b3f237334c7384d5167b1b46"},{"path":"golang.org/x/sys/windows","revision":"eb2c74142fd19a79b3f237334c7384d5167b1b46"},{"path":"rsc.io/x86/x86asm","revision":"01d8f0379593fd888e08a4c4057d69f5765ab2e4"}]}
+{
+	"comment": "",
+	"ignore": "test",
+	"package": [
+		{
+			"path": "github.com/BurntSushi/xgb",
+			"revision": "e13605d223ac0bca1fc3948d9782db9545c331e8"
+		},
+		{
+			"path": "github.com/BurntSushi/xgb/render",
+			"revision": "e13605d223ac0bca1fc3948d9782db9545c331e8"
+		},
+		{
+			"path": "github.com/BurntSushi/xgb/shm",
+			"revision": "e13605d223ac0bca1fc3948d9782db9545c331e8"
+		},
+		{
+			"path": "github.com/BurntSushi/xgb/xproto",
+			"revision": "e13605d223ac0bca1fc3948d9782db9545c331e8"
+		},
+		{
+			"checksumSHA1": "f9R7poWdwNn3hJ2jDn9ypkXhCN8=",
+			"path": "github.com/aarzilli/nucular",
+			"revision": "25cd18c8db2c9d3ff245455772f67b798ab1784c",
+			"revisionTime": "2016-09-07T08:46:04Z"
+		},
+		{
+			"checksumSHA1": "zF1XMVtzm4anTw0i8NFZM5YE5UI=",
+			"path": "github.com/aarzilli/nucular/clipboard",
+			"revision": "25cd18c8db2c9d3ff245455772f67b798ab1784c",
+			"revisionTime": "2016-09-07T08:46:04Z"
+		},
+		{
+			"path": "github.com/aarzilli/nucular/command",
+			"revision": "daec26f471a36bc60cd26016b5dd02de1c530233"
+		},
+		{
+			"path": "github.com/aarzilli/nucular/internal/assets",
+			"revision": "daec26f471a36bc60cd26016b5dd02de1c530233"
+		},
+		{
+			"path": "github.com/aarzilli/nucular/label",
+			"revision": "daec26f471a36bc60cd26016b5dd02de1c530233"
+		},
+		{
+			"path": "github.com/aarzilli/nucular/rect",
+			"revision": "daec26f471a36bc60cd26016b5dd02de1c530233"
+		},
+		{
+			"path": "github.com/aarzilli/nucular/style",
+			"revision": "daec26f471a36bc60cd26016b5dd02de1c530233"
+		},
+		{
+			"path": "github.com/derekparker/delve/dwarf/frame",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/derekparker/delve/dwarf/line",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/derekparker/delve/dwarf/op",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/derekparker/delve/dwarf/reader",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/derekparker/delve/dwarf/util",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/derekparker/delve/proc",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/derekparker/delve/service",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/derekparker/delve/service/api",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/derekparker/delve/service/debugger",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/derekparker/delve/service/rpc2",
+			"revision": "fa24c166e9edcb1a8eac2f786bac2375b94c23ae"
+		},
+		{
+			"path": "github.com/golang/freetype",
+			"revision": "38b4c392adc5eed94207994c4848fff99f4ac234"
+		},
+		{
+			"path": "github.com/golang/freetype/raster",
+			"revision": "38b4c392adc5eed94207994c4848fff99f4ac234"
+		},
+		{
+			"path": "github.com/golang/freetype/truetype",
+			"revision": "38b4c392adc5eed94207994c4848fff99f4ac234"
+		},
+		{
+			"path": "github.com/hashicorp/golang-lru",
+			"revision": "0a025b7e63adc15a622f29b0b2c4c3848243bbf6"
+		},
+		{
+			"path": "github.com/hashicorp/golang-lru/simplelru",
+			"revision": "0a025b7e63adc15a622f29b0b2c4c3848243bbf6"
+		},
+		{
+			"path": "golang.org/x/debug/dwarf",
+			"revision": "fb508927b491eca48a708e9d000fdb7afa53c32b"
+		},
+		{
+			"path": "golang.org/x/debug/elf",
+			"revision": "fb508927b491eca48a708e9d000fdb7afa53c32b"
+		},
+		{
+			"path": "golang.org/x/debug/macho",
+			"revision": "fb508927b491eca48a708e9d000fdb7afa53c32b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/gldriver",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/internal/drawer",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/internal/errscreen",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/internal/event",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/internal/lifecycler",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/internal/swizzle",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/internal/win32",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/internal/x11key",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/windriver",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/driver/x11driver",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/exp/shiny/screen",
+			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+		},
+		{
+			"path": "golang.org/x/image/font",
+			"revision": "f551d3a6b7fc11df315ad9e18b404280680f8bec"
+		},
+		{
+			"path": "golang.org/x/image/math/f64",
+			"revision": "f551d3a6b7fc11df315ad9e18b404280680f8bec"
+		},
+		{
+			"path": "golang.org/x/image/math/fixed",
+			"revision": "f551d3a6b7fc11df315ad9e18b404280680f8bec"
+		},
+		{
+			"path": "golang.org/x/mobile/event/key",
+			"revision": "cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"
+		},
+		{
+			"path": "golang.org/x/mobile/event/lifecycle",
+			"revision": "cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"
+		},
+		{
+			"path": "golang.org/x/mobile/event/mouse",
+			"revision": "cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"
+		},
+		{
+			"path": "golang.org/x/mobile/event/paint",
+			"revision": "cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"
+		},
+		{
+			"path": "golang.org/x/mobile/event/size",
+			"revision": "cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"
+		},
+		{
+			"path": "golang.org/x/mobile/geom",
+			"revision": "cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"
+		},
+		{
+			"path": "golang.org/x/mobile/gl",
+			"revision": "cf96d36e8fc9f569f9ff6b91168d8305fca0b4f7"
+		},
+		{
+			"path": "golang.org/x/sys/unix",
+			"revision": "eb2c74142fd19a79b3f237334c7384d5167b1b46"
+		},
+		{
+			"checksumSHA1": "fpW2dhGFC6SrVzipJx7fjg2DIH8=",
+			"path": "golang.org/x/sys/windows",
+			"revision": "a646d33e2ee3172a661fc09bca23bb4889a41bc8",
+			"revisionTime": "2016-07-15T05:43:45Z"
+		},
+		{
+			"path": "rsc.io/x86/x86asm",
+			"revision": "01d8f0379593fd888e08a4c4057d69f5765ab2e4"
+		}
+	],
+	"rootPath": "github.com/aarzilli/gdlv"
+}

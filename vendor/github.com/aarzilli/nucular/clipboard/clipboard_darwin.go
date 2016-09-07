@@ -7,6 +7,8 @@
 package clipboard
 
 import (
+	"fmt"
+	"os"
 	"os/exec"
 )
 
