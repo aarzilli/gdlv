@@ -1639,7 +1639,7 @@ func (edit *TextEditor) Edit(win *Window) EditEvents {
 
 	style := &edit.win.ctx.Style
 	widget_state, bounds := edit.win.widget()
-	if widget_state == 0 {
+	if !widget_state {
 		return 0
 	}
 	in := edit.win.inputMaybe(widget_state)

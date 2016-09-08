@@ -233,6 +233,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	style := &ctx.Style
 	font := style.Font
 	in := &ctx.Input
+	in.Mouse.clip = nk_null_rect
 	layout := win.layout
 	wstyle := win.style()
 
@@ -483,6 +484,7 @@ func panelEnd(ctx *context, window *Window) {
 	style := &ctx.Style
 	in := &Input{}
 	if window.toplevel() {
+		ctx.Input.Mouse.clip = nk_null_rect
 		in = &ctx.Input
 	}
 	outclip := nk_null_rect
@@ -724,42 +726,22 @@ func (win *Window) MenubarEnd() {
 	win.cmds.PushScissor(layout.Clip)
 }
 
-type widgetLayoutStates int
-
-const (
-	widgetInvalid = widgetLayoutStates(iota)
-	widgetValid
-	widgetRom
-)
-
-func (win *Window) widget() (widgetLayoutStates, rect.Rect) {
-	var c *rect.Rect = nil
-
-	var bounds rect.Rect
-
+func (win *Window) widget() (valid bool, bounds rect.Rect) {
 	/* allocate space  and check if the widget needs to be updated and drawn */
 	panelAllocSpace(&bounds, win)
 
-	c = &win.layout.Clip
-	if !c.Intersect(&bounds) {
-		return widgetInvalid, bounds
+	if !win.layout.Clip.Intersect(&bounds) {
+		return false, bounds
 	}
 
-	contains := func(r *rect.Rect, b *rect.Rect) bool {
-		return b.Contains(image.Point{r.X, r.Y}) && b.Contains(image.Point{r.X + r.W, r.Y + r.H})
-	}
-
-	if !contains(&bounds, c) {
-		return widgetRom, bounds
-	}
-	return widgetValid, bounds
+	return true, bounds
 }
 
-func (win *Window) widgetFitting(item_padding image.Point) (state widgetLayoutStates, bounds rect.Rect) {
+func (win *Window) widgetFitting(item_padding image.Point) (valid bool, bounds rect.Rect) {
 	/* update the bounds to stand without padding  */
 	style := win.style()
 	layout := win.layout
-	state, bounds = win.widget()
+	valid, bounds = win.widget()
 	if layout.Row.Index == 1 {
 		bounds.W += style.Padding.X
 		bounds.X -= style.Padding.X
@@ -772,7 +754,7 @@ func (win *Window) widgetFitting(item_padding image.Point) (state widgetLayoutSt
 	} else {
 		bounds.W += item_padding.X
 	}
-	return state, bounds
+	return valid, bounds
 }
 
 func panelAllocSpace(bounds *rect.Rect, win *Window) {
@@ -1258,19 +1240,14 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 	/* update node state */
 	in := &Input{}
 	if win.toplevel() {
-		if widget_state == widgetValid || widget_state == widgetRom {
+		if widget_state {
 			in = &win.ctx.Input
+			in.Mouse.clip = win.cmds.Clip
 		}
 	}
 
-	behaviourbounds := header
-
-	if widget_state == widgetRom {
-		behaviourbounds = unify(header, win.layout.Clip)
-	}
-
 	ws := win.widgets.PrevState(header)
-	if buttonBehaviorDo(&ws, behaviourbounds, in, false) {
+	if buttonBehaviorDo(&ws, header, in, false) {
 		node.Open = !node.Open
 	}
 
@@ -1397,9 +1374,9 @@ func (win *Window) LabelWrap(str string) {
 // Image draws an image.
 func (win *Window) Image(img *image.RGBA) {
 	var bounds rect.Rect
-	var s widgetLayoutStates
+	var s bool
 
-	if s, bounds = win.widget(); s == 0 {
+	if s, bounds = win.widget(); !s {
 		return
 	}
 	win.widgets.Add(nstyle.WidgetStateInactive, bounds)
@@ -1416,9 +1393,9 @@ func (win *Window) Spacing(cols int) {
 // CustomState returns the widget state of a custom widget.
 func (win *Window) CustomState() nstyle.WidgetStates {
 	bounds := win.WidgetBounds()
-	s := widgetValid
+	s := true
 	if !win.layout.Clip.Intersect(&bounds) {
-		s = widgetInvalid
+		s = false
 	}
 
 	ws := win.widgets.PrevState(bounds)
@@ -1428,9 +1405,9 @@ func (win *Window) CustomState() nstyle.WidgetStates {
 
 // Custom adds a custom widget.
 func (win *Window) Custom(state nstyle.WidgetStates) (bounds rect.Rect, out *command.Buffer) {
-	var s widgetLayoutStates
+	var s bool
 
-	if s, bounds = win.widget(); s == 0 {
+	if s, bounds = win.widget(); !s {
 		return
 	}
 	prevstate := win.widgets.PrevState(bounds)
@@ -1573,7 +1550,7 @@ func (win *Window) Button(lbl label.Label, repeat bool) bool {
 	style := &win.ctx.Style
 	state, bounds := win.widget()
 
-	if state == 0 {
+	if !state {
 		return false
 	}
 	in := win.inputMaybe(state)
@@ -1619,7 +1596,7 @@ func doSelectable(win *Window, bounds rect.Rect, str string, align label.Align, 
 func (win *Window) SelectableLabel(str string, align label.Align, value *bool) bool {
 	style := &win.ctx.Style
 	state, bounds := win.widget()
-	if state == 0 {
+	if !state {
 		return false
 	}
 	in := win.inputMaybe(state)
@@ -1954,7 +1931,7 @@ func doToggle(win *Window, r rect.Rect, active bool, str string, type_ toggleTyp
 func (win *Window) OptionText(text string, is_active bool) bool {
 	style := &win.ctx.Style
 	state, bounds := win.widget()
-	if state == 0 {
+	if !state {
 		return false
 	}
 	in := win.inputMaybe(state)
@@ -1967,7 +1944,7 @@ func (win *Window) OptionText(text string, is_active bool) bool {
 // Returns true when value changes.
 func (win *Window) CheckboxText(text string, active *bool) bool {
 	state, bounds := win.widget()
-	if state == 0 {
+	if !state {
 		return false
 	}
 	in := win.inputMaybe(state)
@@ -2070,7 +2047,7 @@ func doSlider(win *Window, bounds rect.Rect, minval float64, val float64, maxval
 func (win *Window) SliderFloat(min_value float64, value *float64, max_value float64, value_step float64) bool {
 	style := &win.ctx.Style
 	state, bounds := win.widget()
-	if state == 0 {
+	if !state {
 		return false
 	}
 	in := win.inputMaybe(state)
@@ -2147,7 +2124,7 @@ func doProgress(win *Window, bounds rect.Rect, value int, maxval int, modifiable
 func (win *Window) Progress(cur *int, maxval int, is_modifiable bool) bool {
 	style := &win.ctx.Style
 	state, bounds := win.widget()
-	if state == 0 {
+	if !state {
 		return false
 	}
 
@@ -2327,7 +2304,7 @@ func (win *Window) doProperty(property rect.Rect, name string, text string, filt
 // Returns true when the property's value is changed
 func (win *Window) PropertyFloat(name string, min float64, val *float64, max, step, inc_per_pixel float64, prec int) (changed bool) {
 	s, bounds := win.widget()
-	if s == 0 {
+	if !s {
 		return
 	}
 	in := win.inputMaybe(s)
@@ -2353,7 +2330,7 @@ func (win *Window) PropertyFloat(name string, min float64, val *float64, max, st
 // Same as PropertyFloat but with integer values.
 func (win *Window) PropertyInt(name string, min int, val *int, max, step, inc_per_pixel int) (changed bool) {
 	s, bounds := win.widget()
-	if s == 0 {
+	if !s {
 		return
 	}
 	in := win.inputMaybe(s)
@@ -2466,7 +2443,7 @@ func (win *Window) ContextualOpen(flags WindowFlags, size image.Point, trigger_b
 func (win *Window) MenuItem(lbl label.Label) bool {
 	style := &win.ctx.Style
 	state, bounds := win.widgetFitting(style.ContextualButton.Padding)
-	if state == 0 {
+	if !state {
 		return false
 	}
 
@@ -2548,7 +2525,7 @@ func (win *Window) Combo(lbl label.Label, height int, updateFn UpdateFn) {
 	var is_active bool = false
 
 	s, header := win.widget()
-	if s == widgetInvalid {
+	if !s {
 		return
 	}
 
@@ -2626,12 +2603,13 @@ func (win *Window) menuOpen(is_clicked bool, header rect.Rect, width int, update
 // Adds a menu to win with a text label.
 func (win *Window) Menu(lbl label.Label, width int, updateFn UpdateFn) {
 	state, header := win.widget()
-	if state == 0 {
+	if !state {
 		return
 	}
 	in := &Input{}
-	if !(state == widgetRom || !win.toplevel()) {
+	if win.toplevel() {
 		in = &win.ctx.Input
+		in.Mouse.clip = win.cmds.Clip
 	}
 	is_clicked := doButton(win, lbl, header, &win.ctx.Style.MenuButton, in, false)
 	win.menuOpen(is_clicked, header, width, updateFn)
@@ -2665,7 +2643,7 @@ func (win *Window) GroupBegin(title string, flags WindowFlags) *Window {
 	sw.cmds.Clip = win.cmds.Clip
 
 	state, bounds := win.widget()
-	if state == 0 {
+	if !state {
 		return nil
 	}
 

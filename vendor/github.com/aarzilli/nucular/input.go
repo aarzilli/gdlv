@@ -17,6 +17,7 @@ type mouseButton struct {
 
 type MouseInput struct {
 	valid       bool
+	clip        rect.Rect
 	Buttons     [4]mouseButton
 	Pos         image.Point
 	Prev        image.Point
@@ -38,6 +39,7 @@ func (win *Window) Input() *Input {
 	if !win.toplevel() {
 		return &Input{}
 	}
+	win.ctx.Input.Mouse.clip = win.cmds.Clip
 	return &win.ctx.Input
 }
 
@@ -50,7 +52,7 @@ func (win *Window) KeyboardOnHover(bounds rect.Rect) KeyboardInput {
 
 func (i *MouseInput) HasClickInRect(id mouse.Button, b rect.Rect) bool {
 	btn := &i.Buttons[id]
-	return b.Contains(btn.ClickedPos)
+	return unify(b, i.clip).Contains(btn.ClickedPos)
 }
 
 func (i *MouseInput) IsClickInRect(id mouse.Button, b rect.Rect) bool {
@@ -67,11 +69,11 @@ func (i *MouseInput) AnyClickInRect(b rect.Rect) bool {
 }
 
 func (i *MouseInput) HoveringRect(rect rect.Rect) bool {
-	return i.valid && rect.Contains(i.Pos)
+	return i.valid && unify(rect, i.clip).Contains(i.Pos)
 }
 
 func (i *MouseInput) PrevHoveringRect(rect rect.Rect) bool {
-	return i.valid && rect.Contains(i.Prev)
+	return i.valid && unify(rect, i.clip).Contains(i.Prev)
 }
 
 func (i *MouseInput) Clicked(id mouse.Button, rect rect.Rect) bool {
@@ -102,8 +104,9 @@ func (i *KeyboardInput) Pressed(key key.Code) bool {
 	return false
 }
 
-func (win *Window) inputMaybe(state widgetLayoutStates) *Input {
-	if state != widgetRom && win.toplevel() {
+func (win *Window) inputMaybe(widgetValid bool) *Input {
+	if widgetValid && win.toplevel() {
+		win.ctx.Input.Mouse.clip = win.cmds.Clip
 		return &win.ctx.Input
 	}
 	return &Input{}

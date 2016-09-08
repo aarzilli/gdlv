@@ -52,6 +52,8 @@ type MasterWindow struct {
 
 	// show performance counters
 	Perf bool
+	// window is focused
+	Focus bool
 
 	ctx        *context
 	layout     panel
@@ -144,6 +146,21 @@ func (w *MasterWindow) handleEventLocked(ei interface{}) bool {
 		if w.closing {
 			return false
 		}
+		c := false
+		switch cross := e.Crosses(lifecycle.StageFocused); cross {
+		case lifecycle.CrossOn:
+			w.Focus = true
+			c = true
+		case lifecycle.CrossOff:
+			w.Focus = false
+			c = true
+		}
+		if c {
+			changed := atomic.LoadInt32(&w.ctx.changed)
+			if changed < 2 {
+				atomic.StoreInt32(&w.ctx.changed, 2)
+			}
+		}
 		if e.To == lifecycle.StageDead {
 			w.closing = true
 			w.closeLocked()
@@ -221,10 +238,10 @@ func (w *MasterWindow) handleEventLocked(ei interface{}) bool {
 			if e.Modifiers == 0 || e.Modifiers == key.ModShift {
 				io.WriteString(&w.textbuffer, string(e.Rune))
 			}
-			
+
 			evinNotext()
 		}
-		
+
 		switch {
 		case e.Code == key.CodeUnknown:
 			if e.Rune > 0 {
@@ -279,6 +296,7 @@ func (mw *MasterWindow) Changed() {
 func (w *MasterWindow) updateLocked() {
 	contextBegin(w.ctx, &w.layout)
 	in := &w.ctx.Input
+	in.Mouse.clip = nk_null_rect
 	in.Keyboard.Text = w.textbuffer.String()
 	w.ctx.Windows[0].Bounds = rect.FromRectangle(w.bounds)
 	var t0, t1, te time.Time
