@@ -309,12 +309,17 @@ func expandTabs(in string) string {
 	var buf bytes.Buffer
 	count := 0
 	for _, c := range in {
-		if c == '\t' {
+		switch c {
+		case '\t':
 			d := (((count/8)+1)*8 - count)
 			for i := 0; i < d; i++ {
 				buf.WriteRune(' ')
 			}
-		} else {
+			count = 0
+		case '\n':
+			buf.WriteRune('\n')
+			count = 0
+		default:
 			buf.WriteRune(c)
 			count++
 		}
