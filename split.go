@@ -207,11 +207,8 @@ func randomname() string {
 }
 
 func (p *panel) update(w *nucular.Window) {
-	w.Row(0).SpaceBegin(0)
-
-	bounds := rect.Rect{0, 0, w.LayoutAvailableWidth(), w.LayoutAvailableHeight()}
-
-	p.updateIntl(w, bounds)
+	area := w.Row(0).SpaceBegin(0)
+	p.updateIntl(w, area)
 }
 
 func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {

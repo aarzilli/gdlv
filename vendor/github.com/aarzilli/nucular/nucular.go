@@ -788,10 +788,13 @@ func panelLayout(ctx *context, win *Window, height int, cols int) {
 
 	style := win.style()
 	item_spacing := style.Spacing
-	//panel_padding := style.Padding
 
 	if height == 0 {
-		height = win.LayoutAvailableHeight() - layout.ReservedHeight - item_spacing.Y
+		height = layout.Clip.H - (layout.AtY - layout.Bounds.Y)
+		height -= layout.Row.Height
+		if layout.ReservedHeight > 0 {
+			height -= layout.ReservedHeight + item_spacing.Y
+		}
 	}
 
 	/* update the current row and set the current row layout */
@@ -873,14 +876,22 @@ func layoutWidgetSpace(bounds *rect.Rect, ctx *context, win *Window, modify bool
 		}
 	case layoutStaticFree:
 		/* free widget placing */
-		bounds.X = layout.AtX + layout.Row.Item.X
+		atx, aty := layout.AtX, layout.AtY
+		if atx < layout.Clip.X {
+			atx = layout.Clip.X
+		}
+		if aty < layout.Clip.Y {
+			aty = layout.Clip.Y
+		}
+
+		bounds.X = atx + layout.Row.Item.X
 
 		bounds.W = layout.Row.Item.W
 		if ((bounds.X + bounds.W) > layout.MaxX) && modify {
 			layout.MaxX = (bounds.X + bounds.W)
 		}
 		bounds.X -= layout.Offset.X
-		bounds.Y = layout.AtY + layout.Row.Item.Y
+		bounds.Y = aty + layout.Row.Item.Y
 		bounds.Y -= layout.Offset.Y
 		bounds.H = layout.Row.Item.H
 		return
@@ -1054,7 +1065,7 @@ func (ctr *RowConstructor) StaticScaled(width ...int) {
 // Starts new row that will contain widget_count widgets.
 // The size and position of widgets inside this row will be specified
 // by callling LayoutSpacePush/LayoutSpacePushScaled.
-func (ctr *RowConstructor) SpaceBegin(widget_count int) {
+func (ctr *RowConstructor) SpaceBegin(widget_count int) (bounds rect.Rect) {
 	layout := ctr.win.layout
 	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count)
 	layout.Row.Type = layoutStaticFree
@@ -1064,12 +1075,15 @@ func (ctr *RowConstructor) SpaceBegin(widget_count int) {
 	layout.Row.ItemRatio = 0.0
 	layout.Row.ItemOffset = 0
 	layout.Row.Filled = 0
-	if layout.AtX < layout.Clip.X {
-		layout.AtX = layout.Clip.X
-	}
-	if layout.AtY < layout.Clip.Y {
-		layout.AtY = layout.Clip.Y
-	}
+
+	style := ctr.win.style()
+	spacing := style.Spacing
+	padding := style.Padding
+
+	bounds.W = layout.Width - 2*padding.X
+	bounds.H = layout.Row.Height - spacing.Y
+
+	return bounds
 }
 
 // Starts new row that will contain widget_count widgets.
@@ -1161,12 +1175,7 @@ func (win *Window) WidgetBounds() rect.Rect {
 
 // Returns remaining available height of win in scaled units.
 func (win *Window) LayoutAvailableHeight() int {
-	switch win.layout.Row.Type {
-	case layoutDynamicFree, layoutStaticFree:
-		return win.layout.Clip.H
-	default:
-		return win.layout.Clip.H - (win.layout.AtY - win.layout.Bounds.Y) - win.style().Spacing.Y - win.layout.Row.Height
-	}
+	return win.layout.Clip.H - (win.layout.AtY - win.layout.Bounds.Y) - win.style().Spacing.Y - win.layout.Row.Height
 }
 
 func (win *Window) LayoutAvailableWidth() int {

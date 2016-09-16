@@ -857,7 +857,7 @@ func FromTable(table []color.RGBA) *Style {
 	win.FooterPadding = image.Point{0, 0}
 	win.Rounding = 0.0
 	win.ScalerSize = image.Point{16, 16}
-	win.Padding = image.Point{8, 8}
+	win.Padding = image.Point{4, 4}
 	win.Spacing = image.Point{4, 4}
 	win.ScrollbarSize = image.Point{10, 10}
 	win.MinSize = image.Point{64, 64}

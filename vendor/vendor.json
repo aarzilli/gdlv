@@ -19,10 +19,10 @@
 			"revision": "e13605d223ac0bca1fc3948d9782db9545c331e8"
 		},
 		{
-			"checksumSHA1": "Eg+4O/51Yft47dR7GMQ035U49Xk=",
+			"checksumSHA1": "mh2zA2pq2aM9NJq2fW34oW1s9dY=",
 			"path": "github.com/aarzilli/nucular",
-			"revision": "7a8b683aabd169fc03f40d6dc953e416ba91ea11",
-			"revisionTime": "2016-09-16T09:23:43Z"
+			"revision": "d4c7761e59648fb778a8af744260ca9a62a74a7c",
+			"revisionTime": "2016-09-16T16:02:52Z"
 		},
 		{
 			"checksumSHA1": "zF1XMVtzm4anTw0i8NFZM5YE5UI=",
@@ -47,8 +47,10 @@
 			"revision": "daec26f471a36bc60cd26016b5dd02de1c530233"
 		},
 		{
+			"checksumSHA1": "mWjEvHYdhvF05SygdT/5Se2+FiM=",
 			"path": "github.com/aarzilli/nucular/style",
-			"revision": "daec26f471a36bc60cd26016b5dd02de1c530233"
+			"revision": "d4c7761e59648fb778a8af744260ca9a62a74a7c",
+			"revisionTime": "2016-09-16T16:02:52Z"
 		},
 		{
 			"path": "github.com/derekparker/delve/dwarf/frame",

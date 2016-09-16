@@ -16,7 +16,10 @@ type ScalableSplit struct {
 }
 
 func (s *ScalableSplit) Horizontal(w *Window, bounds rect.Rect) (bounds0, bounds1 rect.Rect) {
-	style, scaling := w.Master().Style()
+	if bounds.H < 0 || bounds.W < 0 {
+		return
+	}
+	_, scaling := w.Master().Style()
 
 	if s.lastsize == 0 {
 		s.lastsize = bounds.H
@@ -28,7 +31,7 @@ func (s *ScalableSplit) Horizontal(w *Window, bounds rect.Rect) (bounds0, bounds
 	}
 
 	hs := int(float64(s.Spacing) * scaling)
-	h := bounds.H - hs - style.NormalWindow.Padding.Y
+	h := bounds.H - hs
 	var h0, h1 int
 	if s.Size == 0 {
 		h0 = h / 2
@@ -81,7 +84,10 @@ func (s *ScalableSplit) Horizontal(w *Window, bounds rect.Rect) (bounds0, bounds
 }
 
 func (s *ScalableSplit) Vertical(w *Window, bounds rect.Rect) (bounds0, bounds1 rect.Rect) {
-	style, scaling := w.Master().Style()
+	if bounds.H < 0 || bounds.W < 0 {
+		return
+	}
+	_, scaling := w.Master().Style()
 
 	if s.lastsize == 0 {
 		s.lastsize = bounds.W
@@ -93,7 +99,7 @@ func (s *ScalableSplit) Vertical(w *Window, bounds rect.Rect) (bounds0, bounds1 
 	}
 
 	ws := int(float64(s.Spacing) * scaling)
-	wt := bounds.W - ws - style.NormalWindow.Padding.X
+	wt := bounds.W - ws
 	var w0, w1 int
 	if s.Size == 0 {
 		w0 = wt / 2
