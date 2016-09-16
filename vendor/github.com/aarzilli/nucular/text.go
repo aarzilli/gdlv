@@ -445,12 +445,14 @@ func (state *TextEditor) findCharpos(n int, single_line bool, font font.Face, ro
 
 			for {
 				texteditLayoutRow(&r, state, i, row_height, font)
-				if i+r.NumChars >= len(state.Buffer) {
+				if state.Buffer[i+r.NumChars-1] == '\n' {
+					prev_start = i
+					find.Y += r.BaselineYDelta
+				}
+				i += r.NumChars
+				if i >= len(state.Buffer) {
 					break
 				}
-				prev_start = i
-				i += r.NumChars
-				find.Y += r.BaselineYDelta
 			}
 
 			find.Length = r.NumChars
@@ -1337,9 +1339,6 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 						ret |= EditCommitted
 					}
 					ed.Active = false
-				} else {
-					ed.Text([]rune{'\n'})
-					cursor_follow = true
 				}
 
 			case key.CodeX:
