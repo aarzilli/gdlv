@@ -1149,6 +1149,8 @@ func updateListingPanel(container *nucular.Window) {
 		idxw += nucular.FontWidth(style.Font, listingPanel.listing[len(listingPanel.listing)-1].idx)
 	}
 
+	scrollbary := listp.Scrollbar.Y
+
 	for _, line := range listingPanel.listing {
 		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, 0)
 
@@ -1169,11 +1171,10 @@ func updateListingPanel(container *nucular.Window) {
 		if line.pc && listingPanel.recenterListing {
 			listingPanel.recenterListing = false
 			if above, below := listp.Invisible(); above || below {
-				listp.Scrollbar.Y = listp.At().Y - listp.Bounds.H/2
-				if listp.Scrollbar.Y < 0 {
-					listp.Scrollbar.Y = 0
+				scrollbary = listp.At().Y - listp.Bounds.H/2
+				if scrollbary < 0 {
+					scrollbary = 0
 				}
-				wnd.Changed()
 			}
 		}
 
@@ -1189,6 +1190,11 @@ func updateListingPanel(container *nucular.Window) {
 			m := &lineMenu{listingPanel.file, line}
 			listp.ContextualOpen(0, image.Point{150, 500}, rowbounds, m.Update)
 		}
+	}
+
+	if scrollbary != listp.Scrollbar.Y {
+		listp.Scrollbar.Y = scrollbary
+		wnd.Changed()
 	}
 }
 
@@ -1250,6 +1256,8 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		listp.Label(fmt.Sprintf("TEXT %s(SB) %s", listingPanel.text[0].Loc.Function.Name, listingPanel.text[0].Loc.File), "LC")
 	}
 
+	scrollbary := listp.Scrollbar.Y
+
 	for _, instr := range listingPanel.text {
 		if instr.Loc.File != lastfile || instr.Loc.Line != lastlineno {
 			listp.Row(lineheight).Dynamic(1)
@@ -1280,11 +1288,10 @@ func updateDisassemblyPanel(container *nucular.Window) {
 			if listingPanel.recenterDisassembly {
 				listingPanel.recenterDisassembly = false
 				if above, below := listp.Invisible(); above || below {
-					listp.Scrollbar.Y = listp.At().Y - listp.Bounds.H/2
-					if listp.Scrollbar.Y < 0 {
-						listp.Scrollbar.Y = 0
+					scrollbary = listp.At().Y - listp.Bounds.H/2
+					if scrollbary < 0 {
+						scrollbary = 0
 					}
-					wnd.Changed()
 				}
 			}
 			listp.Label("=>", "LC")
@@ -1294,6 +1301,11 @@ func updateDisassemblyPanel(container *nucular.Window) {
 
 		listp.Label(fmt.Sprintf("%#x", instr.Loc.PC), "LC")
 		listp.Label(instr.Text, "LC")
+	}
+
+	if scrollbary != listp.Scrollbar.Y {
+		listp.Scrollbar.Y = scrollbary
+		wnd.Changed()
 	}
 }
 
