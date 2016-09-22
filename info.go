@@ -838,11 +838,10 @@ func (bped *breakpointEditor) amendBreakpoint() {
 }
 
 func (p *stringSlicePanel) update(container *nucular.Window) {
-	name, filterEditor, values := p.name, p.filterEditor, p.slice
-	if filterEditor.Filter == nil {
-		filterEditor.Filter = spacefilter
+	if p.filterEditor.Filter == nil {
+		p.filterEditor.Filter = spacefilter
 	}
-	w := container.GroupBegin(name, 0)
+	w := container.GroupBegin(p.name, 0)
 	if w == nil {
 		return
 	}
@@ -851,13 +850,13 @@ func (p *stringSlicePanel) update(container *nucular.Window) {
 	w.MenubarBegin()
 	w.Row(20).Static(90, 0)
 	w.Label("Filter:", "LC")
-	filterEditor.Edit(w)
+	p.filterEditor.Edit(w)
 	w.MenubarEnd()
 
-	filter := string(filterEditor.Buffer)
+	filter := string(p.filterEditor.Buffer)
 
 	w.Row(20).Dynamic(1)
-	for _, value := range values {
+	for _, value := range p.slice {
 		if strings.Index(value, filter) >= 0 {
 			w.Label(value, "LC")
 		}
