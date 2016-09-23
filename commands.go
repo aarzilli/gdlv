@@ -183,7 +183,7 @@ func (c *Commands) help(client service.Client, out io.Writer, args string) error
 }
 
 func setBreakpoint(client service.Client, out io.Writer, tracepoint bool, argstr string) error {
-	defer refreshState(true, clearBreakpoint, nil)
+	defer refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	args := strings.SplitN(argstr, " ", 2)
 
 	requestedBp := &api.Breakpoint{}
@@ -242,7 +242,7 @@ func restart(client service.Client, out io.Writer, args string) error {
 		return err
 	}
 	fmt.Fprintln(out, "Process restarted with PID", client.ProcessPid())
-	refreshState(false, clearStop, nil)
+	refreshState(refreshToFrameZero, clearStop, nil)
 	return nil
 }
 
@@ -255,13 +255,13 @@ func cont(client service.Client, out io.Writer, args string) error {
 		}
 		printcontext(out, state)
 	}
-	refreshState(false, clearStop, state)
+	refreshState(refreshToFrameZero, clearStop, state)
 	return nil
 }
 
 func continueUntilCompleteNext(client service.Client, out io.Writer, state *api.DebuggerState, op string) error {
 	if !state.NextInProgress {
-		refreshState(false, clearStop, state)
+		refreshState(refreshToFrameZero, clearStop, state)
 		return nil
 	}
 	for {
@@ -274,7 +274,7 @@ func continueUntilCompleteNext(client service.Client, out io.Writer, state *api.
 			printcontext(out, state)
 		}
 		if !state.NextInProgress || conf.StopOnNextBreakpoint {
-			refreshState(false, clearStop, state)
+			refreshState(refreshToFrameZero, clearStop, state)
 			return nil
 		}
 		fmt.Fprintf(out, "    breakpoint hit during %s, continuing...\n", op)
@@ -296,7 +296,7 @@ func stepInstruction(client service.Client, out io.Writer, args string) error {
 		return err
 	}
 	printcontext(out, state)
-	refreshState(false, clearStop, state)
+	refreshState(refreshToFrameZero, clearStop, state)
 	return nil
 }
 
@@ -327,7 +327,7 @@ func interrupt(client service.Client, out io.Writer, args string) error {
 	if err != nil {
 		return err
 	}
-	refreshState(false, clearStop, state)
+	refreshState(refreshToFrameZero, clearStop, state)
 	return nil
 }
 

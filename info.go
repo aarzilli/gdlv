@@ -237,7 +237,11 @@ func updateGoroutines(container *nucular.Window) {
 					out := editorWriter{&scrollbackEditor, true}
 					fmt.Fprintf(&out, "Could not switch goroutine: %v\n", err)
 				} else {
-					go refreshState(false, clearGoroutineSwitch, state)
+					refreshto := refreshToFrameZero
+					if goroutineLocations[goroutinesPanel.goroutineLocation] == userGoroutineLocation {
+						refreshto = refreshToUserFrame
+					}
+					go refreshState(refreshto, clearGoroutineSwitch, state)
 				}
 			}(g.ID)
 		}
@@ -294,7 +298,7 @@ func updateStacktrace(container *nucular.Window) {
 		w.SelectableLabel(fmt.Sprintf("%s\nat %s:%d", name, ShortenFilePath(frame.File), frame.Line), "LT", &selected)
 		if selected && curFrame != i && !running {
 			curFrame = i
-			go refreshState(true, clearFrameSwitch, nil)
+			go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
 		}
 	}
 }
@@ -347,7 +351,7 @@ func updateThreads(container *nucular.Window) {
 					out := editorWriter{&scrollbackEditor, true}
 					fmt.Fprintf(&out, "Could not switch thread: %v\n", err)
 				} else {
-					go refreshState(false, clearGoroutineSwitch, state)
+					go refreshState(refreshToFrameZero, clearGoroutineSwitch, state)
 				}
 			}(thread.ID)
 		}
@@ -710,7 +714,7 @@ func breakpointsMenu(w *nucular.Window) {
 					fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint %d: %v\n", bp.ID, err)
 				}
 			}
-			refreshState(true, clearBreakpoint, nil)
+			refreshState(refreshToSameFrame, clearBreakpoint, nil)
 			wnd.Changed()
 		}()
 	}
@@ -722,7 +726,7 @@ func execClearBreakpoint(id int) {
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint %d: %v\n", id, err)
 	}
-	refreshState(true, clearBreakpoint, nil)
+	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	wnd.Changed()
 }
 
@@ -811,7 +815,7 @@ func (bped *breakpointEditor) update(w *nucular.Window) {
 	w.Row(20).Static(0, 80, 80)
 	w.Spacing(1)
 	if w.ButtonText("Cancel") {
-		refreshState(true, clearBreakpoint, nil)
+		refreshState(refreshToSameFrame, clearBreakpoint, nil)
 		w.Close()
 	}
 	if w.ButtonText("OK") {
@@ -834,7 +838,7 @@ func (bped *breakpointEditor) amendBreakpoint() {
 		scrollbackOut := editorWriter{&scrollbackEditor, true}
 		fmt.Fprintf(&scrollbackOut, "Could not amend breakpoint: %v\n", err)
 	}
-	refreshState(true, clearBreakpoint, nil)
+	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 }
 
 func (p *stringSlicePanel) update(container *nucular.Window) {

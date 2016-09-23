@@ -280,7 +280,7 @@ func connectTo(listenstr string) {
 	running = false
 	mu.Unlock()
 
-	refreshState(false, clearStop, nil)
+	refreshState(refreshToFrameZero, clearStop, nil)
 }
 
 func digits(n int) int {
@@ -330,7 +330,7 @@ func expandTabs(in string) string {
 	return buf.String()
 }
 
-type clearKind int
+type clearKind uint16
 
 const (
 	clearFrameSwitch clearKind = iota
@@ -339,7 +339,15 @@ const (
 	clearBreakpoint
 )
 
-func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState) {
+type refreshToFrame uint16
+
+const (
+	refreshToFrameZero refreshToFrame = iota
+	refreshToSameFrame
+	refreshToUserFrame
+)
+
+func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.DebuggerState) {
 	defer wnd.Changed()
 
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
@@ -381,7 +389,9 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 		curGid = -1
 	}
 	var loc *api.Location
-	if !keepframe {
+findCurrentLocation:
+	switch toframe {
+	case refreshToFrameZero:
 		curFrame = 0
 		if state.SelectedGoroutine != nil {
 			if state.CurrentThread != nil && state.SelectedGoroutine.ThreadID == state.CurrentThread.ID {
@@ -392,7 +402,8 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 		} else if state.CurrentThread != nil {
 			loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
 		}
-	} else {
+
+	case refreshToSameFrame:
 		frames, err := client.Stacktrace(curGid, curFrame+1, nil)
 		if err != nil {
 			failstate("Stacktrace()", err)
@@ -404,6 +415,37 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 		if curFrame < len(frames) {
 			loc = &frames[curFrame].Location
 		}
+
+	case refreshToUserFrame:
+		const runtimeprefix = "runtime."
+		curFrame = 0
+		frames, err := client.Stacktrace(curGid, 20, nil)
+		if err != nil {
+			failstate("Stacktrace()", err)
+			return
+		}
+		if len(frames) == 0 {
+			toframe = refreshToFrameZero
+			goto findCurrentLocation
+		}
+		for i := range frames {
+			if frames[i].Function == nil {
+				continue
+			}
+			name := frames[i].Function.Name
+			if !strings.HasPrefix(name, runtimeprefix) {
+				curFrame = i
+				break
+			}
+			if len(name) > len(runtimeprefix) {
+				ch := name[len(runtimeprefix)]
+				if ch >= 'A' && ch <= 'Z' {
+					curFrame = i
+					break
+				}
+			}
+		}
+		loc = &frames[curFrame].Location
 	}
 
 	switch clearKind {
