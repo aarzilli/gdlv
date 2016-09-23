@@ -140,7 +140,7 @@ func (w *MasterWindow) handleEventLocked(ei interface{}) bool {
 		w.updateLocked()
 
 	case lifecycle.Event:
-		if e.Crosses(lifecycle.StageDead) == lifecycle.CrossOn || e.To == lifecycle.StageDead {
+		if e.Crosses(lifecycle.StageDead) == lifecycle.CrossOn || e.To == lifecycle.StageDead || w.closing {
 			w.closing = true
 			w.closeLocked()
 			return false
