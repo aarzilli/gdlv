@@ -9,9 +9,11 @@ import (
 )
 
 type Configuration struct {
-	Scaling    float64
-	WhiteTheme bool
-	Layouts    map[string]LayoutDescr
+	Scaling              float64
+	WhiteTheme           bool
+	StopOnNextBreakpoint bool
+	DisassemblyFlavour   int
+	Layouts              map[string]LayoutDescr
 }
 
 type LayoutDescr struct {

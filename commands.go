@@ -18,6 +18,7 @@ import (
 	"github.com/derekparker/delve/service/api"
 
 	"github.com/aarzilli/nucular"
+	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 )
 
@@ -90,6 +91,8 @@ See also: "help on", "help cond" and "help clear"`},
 		{aliases: []string{"step-instruction", "si"}, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
 		{aliases: []string{"next", "n"}, cmdFn: next, helpMsg: "Step over to next source line."},
 		{aliases: []string{"stepout"}, cmdFn: stepout, helpMsg: "Step out of the current function."},
+		{aliases: []string{"cancelnext"}, cmdFn: cancelnext, helpMsg: "Cancels the next operation currently in progress."},
+		{aliases: []string{"interrupt"}, cmdFn: interrupt, helpMsg: "interrupts execution."},
 		{aliases: []string{"print", "p"}, complete: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
 
 	[goroutine <n>] [frame <m>] print <expression>
@@ -113,7 +116,7 @@ Saves the current layout.
 	layout list
 	
 Lists saved layouts.`},
-		{aliases: []string{"theme"}, cmdFn: themeCommand, helpMsg: `Changes theme`},
+		{aliases: []string{"config"}, cmdFn: configCommand, helpMsg: `Configuration`},
 		{aliases: []string{"scroll"}, cmdFn: scrollCommand, helpMsg: `Controls scrollback behavior.
 	
 	scroll clear		Clears scrollback
@@ -239,6 +242,7 @@ func restart(client service.Client, out io.Writer, args string) error {
 		return err
 	}
 	fmt.Fprintln(out, "Process restarted with PID", client.ProcessPid())
+	refreshState(false, clearStop, nil)
 	return nil
 }
 
@@ -269,7 +273,7 @@ func continueUntilCompleteNext(client service.Client, out io.Writer, state *api.
 			}
 			printcontext(out, state)
 		}
-		if !state.NextInProgress {
+		if !state.NextInProgress || conf.StopOnNextBreakpoint {
 			refreshState(false, clearStop, state)
 			return nil
 		}
@@ -312,6 +316,19 @@ func stepout(client service.Client, out io.Writer, args string) error {
 	}
 	printcontext(out, state)
 	return continueUntilCompleteNext(client, out, state, "stepout")
+}
+
+func cancelnext(client service.Client, out io.Writer, args string) error {
+	return client.CancelNext()
+}
+
+func interrupt(client service.Client, out io.Writer, args string) error {
+	state, err := client.Halt()
+	if err != nil {
+		return err
+	}
+	refreshState(false, clearStop, state)
+	return nil
 }
 
 func printVar(client service.Client, out io.Writer, args string) error {
@@ -401,18 +418,59 @@ func layoutCommand(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func themeCommand(client service.Client, out io.Writer, args string) error {
-	switch args {
-	case "dark":
-		conf.WhiteTheme = false
-		setupStyle()
-		return nil
-	case "white":
-		conf.WhiteTheme = true
-		setupStyle()
-		return nil
-	default:
-		return fmt.Errorf("available themes: 'dark', 'white'")
+func configCommand(client service.Client, out io.Writer, args string) error {
+	wnd.PopupOpen("Configuration", dynamicPopupFlags, rect.Rect{100, 100, 600, 700}, true, configWindow)
+	return nil
+}
+
+func configWindow(w *nucular.Window) {
+	const col1 = 160
+	w.Row(20).Static(col1, 150)
+	w.Label("Theme:", "LC")
+	themeLbl := "Dark theme"
+	if conf.WhiteTheme {
+		themeLbl = "White theme"
+	}
+	w.Combo(label.TA(themeLbl, "LC"), 100, func(w *nucular.Window) {
+		w.Row(20).Dynamic(1)
+		if w.MenuItem(label.TA("Dark theme", "LC")) {
+			conf.WhiteTheme = false
+			setupStyle()
+		}
+		if w.MenuItem(label.TA("White theme", "LC")) {
+			conf.WhiteTheme = true
+			setupStyle()
+		}
+	})
+
+	w.Row(20).Static(col1, 150)
+	w.Label("Disassembly Flavor:", "LC")
+	disassfl := []string{"Intel", "GNU"}
+	w.ComboSimple(disassfl, &conf.DisassemblyFlavour, 20)
+
+	w.Row(20).Dynamic(1)
+	w.Label("When a breakpoint is hit during next/step/stepout gdlv should:", "LC")
+	w.Row(20).Static(col1, 200)
+	w.Spacing(1)
+	breakb := []string{"Automatically continue", "Stop"}
+	breakbLbl := breakb[0]
+	if conf.StopOnNextBreakpoint {
+		breakbLbl = breakb[1]
+	}
+	w.Combo(label.TA(breakbLbl, "LC"), 100, func(w *nucular.Window) {
+		w.Row(20).Dynamic(1)
+		if w.MenuItem(label.TA(breakb[0], "LC")) {
+			conf.StopOnNextBreakpoint = false
+		}
+		if w.MenuItem(label.TA(breakb[1], "LC")) {
+			conf.StopOnNextBreakpoint = true
+		}
+	})
+
+	w.Row(20).Static(0, 100)
+	w.Spacing(1)
+	if w.ButtonText("OK") {
+		w.Close()
 	}
 }
 

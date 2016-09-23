@@ -110,6 +110,7 @@ var rootPanel *panel
 const (
 	headerRow         = 20
 	headerCombo       = 110
+	controlBtnWidth   = 90
 	headerSplitMenu   = 70
 	verticalSpacing   = 8
 	horizontalSpacing = 8
@@ -219,8 +220,12 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 	case infoPanelKind:
 		w.LayoutSpacePushScaled(bounds)
 		if sw := w.GroupBegin(p.name, splitFlags); sw != nil {
-			sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
-			sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
+			if infoModes[p.infoMode] != infoCommand {
+				sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
+				sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
+			} else {
+				p.commandToolbar(sw)
+			}
 			sw.Spacing(1)
 			sw.ComboSimple(infoModes, &p.infoMode, 22)
 			sw.Row(0).Dynamic(1)
@@ -264,6 +269,43 @@ func (p *panel) splitMenu(w *nucular.Window) {
 	}
 	if w.MenuItem(label.TA("Close", "LC")) {
 		p.closeMyself()
+	}
+}
+
+func (p *panel) commandToolbar(sw *nucular.Window) {
+	docmd := func(cmd string) {
+		var scrollbackOut = editorWriter{&scrollbackEditor, false}
+		fmt.Fprintf(&scrollbackOut, "%s %s\n", currentPrompt(), cmd)
+		go executeCommand(cmd)
+	}
+	switch {
+	case client == nil:
+		sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
+		sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
+
+	case running:
+		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, 0, headerCombo, 2)
+		sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
+		if sw.ButtonText("interrupt") {
+			docmd("interrupt")
+		}
+
+	case nextInProgress:
+		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth*1.3, controlBtnWidth*1.3, 0, headerCombo, 2)
+		sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
+		if sw.ButtonText("continue next") {
+			docmd("continue")
+		}
+		if sw.ButtonText("cancel next") {
+			docmd("cancelnext")
+		}
+
+	default:
+		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, 0, headerCombo, 2)
+		sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
+		if sw.ButtonText("continue") {
+			docmd("continue")
+		}
 	}
 }
 

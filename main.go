@@ -70,7 +70,7 @@ var listingPanel struct {
 var mu sync.Mutex
 var wnd *nucular.MasterWindow
 
-var running bool
+var running, nextInProgress bool
 var connectionFailed bool
 var client service.Client
 var serverProcess *os.Process
@@ -131,6 +131,24 @@ func guiUpdate(w *nucular.Window) {
 	rootPanel.update(w)
 }
 
+func currentPrompt() string {
+	if running {
+		return "running"
+	} else if client == nil {
+		if connectionFailed {
+			return "failed"
+		} else {
+			return "connecting"
+		}
+	} else {
+		if curThread < 0 {
+			return "dlv>"
+		} else {
+			return prompt(curThread, curGid, curFrame) + ">"
+		}
+	}
+}
+
 func updateCommandPanel(container *nucular.Window) {
 	w := container.GroupBegin("command", nucular.WindowNoScrollbar)
 	if w == nil {
@@ -144,22 +162,7 @@ func updateCommandPanel(container *nucular.Window) {
 	w.Row(0).Dynamic(1)
 	scrollbackEditor.Edit(w)
 
-	var p string
-	if running {
-		p = "running"
-	} else if client == nil {
-		if connectionFailed {
-			p = "failed"
-		} else {
-			p = "connecting"
-		}
-	} else {
-		if curThread < 0 {
-			p = "dlv>"
-		} else {
-			p = prompt(curThread, curGid, curFrame) + ">"
-		}
-	}
+	p := currentPrompt()
 
 	promptwidth := nucular.FontWidth(style.Font, p) + style.Text.Padding.X*2
 
@@ -359,6 +362,8 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 		}
 	}
 
+	nextInProgress = state.NextInProgress
+
 	mu.Lock()
 	defer mu.Unlock()
 	listingPanel.listing = listingPanel.listing[:0]
@@ -424,7 +429,11 @@ func refreshState(keepframe bool, clearKind clearKind, state *api.DebuggerState)
 	}
 
 	if loc != nil {
-		text, err := client.DisassemblePC(api.EvalScope{curGid, curFrame}, loc.PC, api.IntelFlavour)
+		flavour := api.IntelFlavour
+		if conf.DisassemblyFlavour == 1 {
+			flavour = api.GNUFlavour
+		}
+		text, err := client.DisassemblePC(api.EvalScope{curGid, curFrame}, loc.PC, flavour)
 		if err != nil {
 			failstate("DisassemblePC()", err)
 			return
