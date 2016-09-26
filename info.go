@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"math"
 	"reflect"
 	"sort"
@@ -1167,7 +1168,9 @@ func updateListingPanel(container *nucular.Window) {
 		}
 
 		if line.bp != nil {
-			listp.Label("*", "CC")
+			iconFace, style.Font = style.Font, iconFace
+			listp.LabelColored(breakpointIcon, "CC", color.RGBA{0xff, 0x00, 0x00, 0xff})
+			iconFace, style.Font = style.Font, iconFace
 		} else {
 			listp.Spacing(1)
 		}
@@ -1183,7 +1186,9 @@ func updateListingPanel(container *nucular.Window) {
 		}
 
 		if line.pc && curFrame == 0 {
-			listp.Label("=>", "CC")
+			iconFace, style.Font = style.Font, iconFace
+			listp.LabelColored(arrowIcon, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
+			iconFace, style.Font = style.Font, iconFace
 		} else {
 			listp.Spacing(1)
 		}

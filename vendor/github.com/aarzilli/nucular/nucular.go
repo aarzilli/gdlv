@@ -2482,8 +2482,8 @@ func (win *Window) TooltipOpen(width int, scale bool, updateFn UpdateFn) {
 	var bounds rect.Rect
 	bounds.W = width
 	bounds.H = nk_null_rect.H
-	bounds.X = (in.Mouse.Pos.X + 1) - win.layout.Clip.X
-	bounds.Y = (in.Mouse.Pos.Y + 1) - win.layout.Clip.Y
+	bounds.X = (in.Mouse.Pos.X + 1)
+	bounds.Y = (in.Mouse.Pos.Y + 1)
 
 	win.ctx.popupOpen(tooltipWindowTitle, WindowDynamic|WindowNoScrollbar|windowTooltip, bounds, false, updateFn)
 }
@@ -2499,9 +2499,8 @@ func (win *Window) Tooltip(text string) {
 	item_spacing := win.ctx.Style.TooltipWindow.Spacing
 
 	/* calculate size of the text and tooltip */
-	text_width := FontWidth(win.ctx.Style.Font, text)
+	text_width := FontWidth(win.ctx.Style.Font, text) + win.ctx.scale(4*padding.X) + win.ctx.scale(2*item_spacing.X)
 	text_height := FontHeight(win.ctx.Style.Font)
-	text_width += win.ctx.scale(2*padding.X) + win.ctx.scale(2*item_spacing.X)
 
 	win.TooltipOpen(text_width, false, func(tw *Window) {
 		tw.RowScaled(text_height).Dynamic(1)

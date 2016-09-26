@@ -110,8 +110,8 @@ var rootPanel *panel
 const (
 	headerRow         = 20
 	headerCombo       = 110
-	controlBtnWidth   = 90
-	headerSplitMenu   = 70
+	controlBtnWidth   = 30
+	headerSplitMenu   = 30
 	verticalSpacing   = 8
 	horizontalSpacing = 8
 	splitMinHeight    = 20
@@ -213,6 +213,7 @@ func (p *panel) update(w *nucular.Window) {
 }
 
 func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
+	style, _ := w.Master().Style()
 	switch p.kind {
 	case fullPanelKind:
 		p.child[0].updateIntl(w, bounds)
@@ -222,7 +223,9 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 		if sw := w.GroupBegin(p.name, splitFlags); sw != nil {
 			if infoModes[p.infoMode] != infoCommand {
 				sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
-				sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
+				iconFace, style.Font = style.Font, iconFace
+				sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
+				iconFace, style.Font = style.Font, iconFace
 			} else {
 				p.commandToolbar(sw)
 			}
@@ -273,39 +276,62 @@ func (p *panel) splitMenu(w *nucular.Window) {
 }
 
 func (p *panel) commandToolbar(sw *nucular.Window) {
+	style, _ := sw.Master().Style()
 	docmd := func(cmd string) {
 		var scrollbackOut = editorWriter{&scrollbackEditor, false}
 		fmt.Fprintf(&scrollbackOut, "%s %s\n", currentPrompt(), cmd)
 		go executeCommand(cmd)
 	}
+	iconbtn := func(icon string, tooltip string) bool {
+		iconFace, style.Font = style.Font, iconFace
+		r := sw.ButtonText(icon)
+		if sw.Input().Mouse.HoveringRect(sw.LastWidgetBounds) {
+			sw.Tooltip(tooltip)
+		}
+		iconFace, style.Font = style.Font, iconFace
+		return r
+	}
+	cmdbtn := func(icon, cmd string) {
+		if iconbtn(icon, cmd) {
+			docmd(cmd)
+		}
+	}
 	switch {
 	case client == nil:
 		sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
-		sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
+		iconFace, style.Font = style.Font, iconFace
+		sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
+		iconFace, style.Font = style.Font, iconFace
 
 	case running:
 		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, 0, headerCombo, 2)
-		sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
-		if sw.ButtonText("interrupt") {
-			docmd("interrupt")
-		}
+		iconFace, style.Font = style.Font, iconFace
+		sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
+		iconFace, style.Font = style.Font, iconFace
+		cmdbtn(interruptIcon, "interrupt")
 
 	case nextInProgress:
-		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth*1.3, controlBtnWidth*1.3, 0, headerCombo, 2)
-		sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
-		if sw.ButtonText("continue next") {
+		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, controlBtnWidth, 0, headerCombo, 2)
+		iconFace, style.Font = style.Font, iconFace
+		sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
+		iconFace, style.Font = style.Font, iconFace
+		if iconbtn(continueIcon, "continue next") {
 			docmd("continue")
 		}
-		if sw.ButtonText("cancel next") {
+		if iconbtn(cancelIcon, "cancel next") {
 			docmd("cancelnext")
 		}
 
 	default:
-		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, 0, headerCombo, 2)
-		sw.Menu(label.TA("Split", "CC"), 120, p.splitMenu)
-		if sw.ButtonText("continue") {
-			docmd("continue")
-		}
+		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, controlBtnWidth/2, controlBtnWidth, controlBtnWidth, controlBtnWidth, 0, headerCombo, 2)
+		iconFace, style.Font = style.Font, iconFace
+		sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
+		iconFace, style.Font = style.Font, iconFace
+		cmdbtn(continueIcon, "continue")
+		sw.Spacing(1)
+		cmdbtn(nextIcon, "next")
+		cmdbtn(stepIcon, "step")
+		cmdbtn(stepoutIcon, "stepout")
 	}
 }
 

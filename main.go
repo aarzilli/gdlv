@@ -15,19 +15,42 @@ import (
 	"sync"
 	"time"
 
+	"github.com/aarzilli/gdlv/internal/assets"
 	"github.com/aarzilli/nucular"
 	nstyle "github.com/aarzilli/nucular/style"
-
 	"github.com/derekparker/delve/service"
 	"github.com/derekparker/delve/service/api"
 	"github.com/derekparker/delve/service/rpc2"
+	"github.com/golang/freetype"
+	"github.com/golang/freetype/truetype"
 
+	"golang.org/x/image/font"
 	"golang.org/x/mobile/event/key"
 )
+
+//go:generate go-bindata -o internal/assets/assets.go -pkg assets fontawesome-webfont.ttf
 
 const profileEnabled = false
 
 var zeroWidth, arrowWidth, starWidth int
+
+var iconFontInit sync.Once
+var iconTtfont *truetype.Font
+var iconFace font.Face
+
+const (
+	arrowIcon      = "\uf061"
+	breakpointIcon = "\uf28d"
+
+	interruptIcon = "\uf04c"
+	continueIcon  = "\uf04b"
+	cancelIcon    = "\uf05e"
+	nextIcon      = "\uf050"
+	stepIcon      = "\uf051"
+	stepoutIcon   = "\uf112"
+
+	splitIcon = "\uf0db"
+)
 
 func setupStyle() {
 	theme := nstyle.DarkTheme
@@ -43,8 +66,18 @@ func setupStyle() {
 	style.MenuWindow.FooterPadding.Y = 0
 	style.ContextualWindow.FooterPadding.Y = 0
 	zeroWidth = nucular.FontWidth(style.Font, "0")
-	arrowWidth = nucular.FontWidth(style.Font, "=>")
-	starWidth = nucular.FontWidth(style.Font, "*")
+
+	iconFontInit.Do(func() {
+		iconFontData, _ := assets.Asset("fontawesome-webfont.ttf")
+		iconTtfont, _ = freetype.ParseFont(iconFontData)
+	})
+
+	sz := int(12 * conf.Scaling)
+	iconFace = truetype.NewFace(iconTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
+
+	arrowWidth = nucular.FontWidth(iconFace, arrowIcon)
+	starWidth = nucular.FontWidth(style.Font, breakpointIcon)
+
 	saveConfiguration()
 }
 
