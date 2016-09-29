@@ -263,7 +263,23 @@ func updateCommandPanel(container *nucular.Window) {
 	}
 }
 
-func connectTo(listenstr string) {
+func startServer() (connectString string, stdout, stderr io.ReadCloser, err error) {
+	if os.Args[1] == "connect" && len(os.Args) == 3 {
+		return os.Args[2], nil, nil, nil
+	}
+
+	args := []string{"--headless"}
+	args = append(args, os.Args[1:]...)
+
+	cmd := exec.Command("dlv", args...)
+	stdout, _ = cmd.StdoutPipe()
+	stderr, _ = cmd.StderrPipe()
+	err = cmd.Start()
+	serverProcess = cmd.Process
+	return
+}
+
+func parseListenString(listenstr string) string {
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
 
 	const prefix = "API server listening at: "
@@ -271,10 +287,19 @@ func connectTo(listenstr string) {
 		mu.Lock()
 		fmt.Fprintf(&scrollbackOut, "Could not parse connection string: %q\n", listenstr)
 		mu.Unlock()
+		return ""
+	}
+
+	return listenstr[len(prefix):]
+}
+
+func connectTo(addr string) {
+	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+
+	if addr == "" {
 		return
 	}
 
-	addr := listenstr[len(prefix):]
 	func() {
 		mu.Lock()
 		defer mu.Unlock()
@@ -618,15 +643,6 @@ func main() {
 	commandLineEditor.Flags = nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard
 	commandLineEditor.Active = true
 
-	args := []string{"--headless"}
-	args = append(args, os.Args[1:]...)
-
-	cmd := exec.Command("dlv", args...)
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-	err := cmd.Start()
-	serverProcess = cmd.Process
-
 	var scrollbackOut = editorWriter{&scrollbackEditor, true}
 
 	fmt.Fprintf(&scrollbackOut, `gdlv  Copyright (C) 2016  Alessandro Arzilli
@@ -635,9 +651,16 @@ This is free software, and you are welcome to redistribute it
 under certain conditions; see COPYING for details.
 `)
 
-	if err != nil {
+	connectString, stdout, stderr, err := startServer()
+
+	switch {
+	case err != nil:
 		fmt.Fprintf(&scrollbackOut, "Could not start delve: %v\n", err)
-	} else {
+
+	case connectString != "":
+		go connectTo(connectString)
+
+	default:
 		go func() {
 			bucket := 0
 			t0 := time.Now()
@@ -645,7 +668,7 @@ under certain conditions; see COPYING for details.
 			scan := bufio.NewScanner(stdout)
 			for scan.Scan() {
 				if first {
-					connectTo(scan.Text())
+					connectTo(parseListenString(scan.Text()))
 					first = false
 				} else {
 					mu.Lock()
@@ -690,5 +713,7 @@ under certain conditions; see COPYING for details.
 
 	wnd.Main()
 
-	serverProcess.Signal(os.Interrupt)
+	if serverProcess != nil {
+		serverProcess.Signal(os.Interrupt)
+	}
 }
