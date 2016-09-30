@@ -305,8 +305,8 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 		layout.HeaderH = window_padding.Y
 		layout.Row.Height = window_padding.Y
 	} else {
-		layout.HeaderH = item_spacing.Y + window_padding.Y
-		layout.Row.Height = item_spacing.Y + window_padding.Y
+		layout.HeaderH = window_padding.Y
+		layout.Row.Height = window_padding.Y
 	}
 
 	/* calculate window footer height */
@@ -1211,6 +1211,10 @@ const (
 	TreeTab
 )
 
+func (win *Window) TreePush(type_ TreeType, title string, initialOpen bool) bool {
+	return win.TreePushNamed(type_, title, title, initialOpen)
+}
+
 // Creates a new collapsable section inside win. Returns true
 // when the section is open. Widgets that are inside this collapsable
 // section should be added to win only when this function returns true.
@@ -1219,7 +1223,7 @@ const (
 // Initial_open will determine whether this collapsable section
 // will be initially open.
 // Type_ will determine the style of this collapsable section.
-func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) bool {
+func (win *Window) TreePushNamed(type_ TreeType, name, title string, initial_open bool) bool {
 	/* cache some data */
 	layout := win.layout
 	style := &win.ctx.Style
@@ -1240,10 +1244,10 @@ func (win *Window) TreePush(type_ TreeType, title string, initial_open bool) boo
 
 	/* find or create tab persistent state (open/closed) */
 
-	node := win.curNode.Children[title]
+	node := win.curNode.Children[name]
 	if node == nil {
 		node = createTreeNode(initial_open, win.curNode)
-		win.curNode.Children[title] = node
+		win.curNode.Children[name] = node
 	}
 
 	/* update node state */
@@ -1316,6 +1320,15 @@ func (win *Window) TreeOpen(path ...string) {
 // Closes the collapsable section specified by path
 func (win *Window) TreeClose(path ...string) {
 	win.treeOpenClose(false, path)
+}
+
+// Returns true if the specified node is open
+func (win *Window) TreeIsOpen(name string) bool {
+	node := win.curNode.Children[name]
+	if node != nil {
+		return node.Open
+	}
+	return false
 }
 
 // TreePop signals that the program is done adding elements to the

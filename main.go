@@ -213,7 +213,7 @@ func updateCommandPanel(container *nucular.Window) {
 		for _, k := range kbd.Keys {
 			switch {
 			case k.Modifiers == 0 && k.Code == key.CodeTab:
-				kbd.Text = ""
+				w.Input().Keyboard.Text = ""
 				completeAny()
 			case k.Modifiers == 0 && k.Code == key.CodeUpArrow:
 				historyShown--

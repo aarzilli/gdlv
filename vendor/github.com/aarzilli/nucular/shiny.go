@@ -241,7 +241,10 @@ func (w *MasterWindow) handleEventLocked(ei interface{}) bool {
 			if e.Rune > 0 {
 				evinText()
 			}
-		case (e.Code >= key.CodeA && e.Code <= key.Code0) || e.Code == key.CodeTab || e.Code == key.CodeSpacebar || e.Code == key.CodeHyphenMinus || e.Code == key.CodeEqualSign || e.Code == key.CodeLeftSquareBracket || e.Code == key.CodeRightSquareBracket || e.Code == key.CodeBackslash || e.Code == key.CodeSemicolon || e.Code == key.CodeApostrophe || e.Code == key.CodeGraveAccent || e.Code == key.CodeComma || e.Code == key.CodeFullStop || e.Code == key.CodeSlash || (e.Code >= key.CodeKeypadSlash && e.Code <= key.CodeKeypadPlusSign) || (e.Code >= key.CodeKeypad1 && e.Code <= key.CodeKeypadEqualSign):
+		case (e.Code >= key.CodeA && e.Code <= key.Code0) || e.Code == key.CodeSpacebar || e.Code == key.CodeHyphenMinus || e.Code == key.CodeEqualSign || e.Code == key.CodeLeftSquareBracket || e.Code == key.CodeRightSquareBracket || e.Code == key.CodeBackslash || e.Code == key.CodeSemicolon || e.Code == key.CodeApostrophe || e.Code == key.CodeGraveAccent || e.Code == key.CodeComma || e.Code == key.CodeFullStop || e.Code == key.CodeSlash || (e.Code >= key.CodeKeypadSlash && e.Code <= key.CodeKeypadPlusSign) || (e.Code >= key.CodeKeypad1 && e.Code <= key.CodeKeypadEqualSign):
+			evinText()
+		case e.Code == key.CodeTab:
+			e.Rune = '\t'
 			evinText()
 		case e.Code == key.CodeReturnEnter || e.Code == key.CodeKeypadEnter:
 			e.Rune = '\n'
@@ -493,14 +496,16 @@ func (w *MasterWindow) draw() (int, int) {
 
 	w.prevCmds = cmds
 
-	for i, icmd := range cmds {
-		switch cmd := icmd.(type) {
-		case *command.Scissor:
-			img = w.img.SubImage(cmd.Rect.Rectangle()).(*image.RGBA)
+	for i := range cmds {
+		icmd := &cmds[i]
+		switch icmd.Kind {
+		case command.ScissorCmd:
+			img = w.img.SubImage(icmd.Rectangle()).(*image.RGBA)
 			painter = nil
 			rasterizer = nil
 
-		case *command.Line:
+		case command.LineCmd:
+			cmd := icmd.Line
 			colimg := image.NewUniform(cmd.Color)
 			op := draw.Over
 			if cmd.Color.A == 0xff {
@@ -539,7 +544,8 @@ func (w *MasterWindow) draw() (int, int) {
 			}
 			ln++
 
-		case *command.RectFilled:
+		case command.RectFilledCmd:
+			cmd := icmd.RectFilled
 			if i == 0 {
 				// first command draws the background, insure that it's always fully opaque
 				cmd.Color.A = 0xff
@@ -553,29 +559,29 @@ func (w *MasterWindow) draw() (int, int) {
 				op = draw.Src
 			}
 
-			body := cmd.Rect.Rectangle()
+			body := icmd.Rectangle()
 
 			var lwing, rwing image.Rectangle
 
 			// rounding is true if rounding has been requested AND we can draw it
-			rounding := cmd.Rounding > 0 && int(cmd.Rounding*2) < cmd.W && int(cmd.Rounding*2) < cmd.H
+			rounding := cmd.Rounding > 0 && int(cmd.Rounding*2) < icmd.W && int(cmd.Rounding*2) < icmd.H
 
 			if rounding {
 				body.Min.X += int(cmd.Rounding)
 				body.Max.X -= int(cmd.Rounding)
 
-				lwing = image.Rect(cmd.Rect.X, cmd.Rect.Y+int(cmd.Rounding), cmd.Rect.X+int(cmd.Rounding), cmd.Rect.Y+cmd.Rect.H-int(cmd.Rounding))
-				rwing = image.Rect(cmd.Rect.X+cmd.Rect.W-int(cmd.Rounding), lwing.Min.Y, cmd.Rect.X+cmd.Rect.W, lwing.Max.Y)
+				lwing = image.Rect(icmd.X, icmd.Y+int(cmd.Rounding), icmd.X+int(cmd.Rounding), icmd.Y+icmd.H-int(cmd.Rounding))
+				rwing = image.Rect(icmd.X+icmd.W-int(cmd.Rounding), lwing.Min.Y, icmd.X+icmd.W, lwing.Max.Y)
 			}
 
 			bordopt := false
 
-			if ok, border := borderOptimize(cmd, cmds, i+1); ok {
+			if ok, border := borderOptimize(icmd, cmds, i+1); ok {
 				// only draw parts of body if this command can be optimized to a border with the next command
 
 				bordopt = true
-				cmd2, _ := cmds[i+1].(*command.RectFilled)
-				border += int(cmd2.Rounding)
+				cmd2 := cmds[i+1]
+				border += int(cmd2.RectFilled.Rounding)
 
 				top := image.Rect(body.Min.X, body.Min.Y, body.Max.X, body.Min.Y+border)
 				bot := image.Rect(body.Min.X, body.Max.Y-border, body.Max.X, body.Max.Y)
@@ -622,10 +628,10 @@ func (w *MasterWindow) draw() (int, int) {
 				minx := img.Bounds().Min.X
 				miny := img.Bounds().Min.Y
 
-				roundAngle(cmd.X+cmd.W-int(cmd.Rounding)-minx, cmd.Y+int(cmd.Rounding)-miny, cmd.Rounding, -math.Pi/2, rangle, cmd.Color)
-				roundAngle(cmd.X+cmd.W-int(cmd.Rounding)-minx, cmd.Y+cmd.H-int(cmd.Rounding)-miny, cmd.Rounding, 0, rangle, cmd.Color)
-				roundAngle(cmd.X+int(cmd.Rounding)-minx, cmd.Y+cmd.H-int(cmd.Rounding)-miny, cmd.Rounding, math.Pi/2, rangle, cmd.Color)
-				roundAngle(cmd.X+int(cmd.Rounding)-minx, cmd.Y+int(cmd.Rounding)-miny, cmd.Rounding, math.Pi, rangle, cmd.Color)
+				roundAngle(icmd.X+icmd.W-int(cmd.Rounding)-minx, icmd.Y+int(cmd.Rounding)-miny, cmd.Rounding, -math.Pi/2, rangle, cmd.Color)
+				roundAngle(icmd.X+icmd.W-int(cmd.Rounding)-minx, icmd.Y+icmd.H-int(cmd.Rounding)-miny, cmd.Rounding, 0, rangle, cmd.Color)
+				roundAngle(icmd.X+int(cmd.Rounding)-minx, icmd.Y+icmd.H-int(cmd.Rounding)-miny, cmd.Rounding, math.Pi/2, rangle, cmd.Color)
+				roundAngle(icmd.X+int(cmd.Rounding)-minx, icmd.Y+int(cmd.Rounding)-miny, cmd.Rounding, math.Pi, rangle, cmd.Color)
 			}
 
 			if perfUpdate {
@@ -640,7 +646,8 @@ func (w *MasterWindow) draw() (int, int) {
 				}
 			}
 
-		case *command.TriangleFilled:
+		case command.TriangleFilledCmd:
+			cmd := icmd.TriangleFilled
 			if perfUpdate {
 				t0 = time.Now()
 			}
@@ -662,42 +669,42 @@ func (w *MasterWindow) draw() (int, int) {
 				tritim += time.Now().Sub(t0)
 			}
 
-		case *command.CircleFilled:
+		case command.CircleFilledCmd:
 			if rasterizer == nil {
 				setupRasterizer()
 			}
 			rasterizer.Clear()
-			startp := traceArc(rasterizer, float64(cmd.X-img.Bounds().Min.X)+float64(cmd.W/2), float64(cmd.Y-img.Bounds().Min.Y)+float64(cmd.H/2), float64(cmd.W/2), float64(cmd.H/2), 0, -math.Pi*2, true)
+			startp := traceArc(rasterizer, float64(icmd.X-img.Bounds().Min.X)+float64(icmd.W/2), float64(icmd.Y-img.Bounds().Min.Y)+float64(icmd.H/2), float64(icmd.W/2), float64(icmd.H/2), 0, -math.Pi*2, true)
 			rasterizer.Add1(startp) // closes path
-			painter.SetColor(cmd.Color)
+			painter.SetColor(icmd.CircleFilled.Color)
 			rasterizer.Rasterize(painter)
 			fcirc++
 
-		case *command.Image:
-			draw.Draw(img, cmd.Rect.Rectangle(), cmd.Img, image.Point{}, draw.Src)
+		case command.ImageCmd:
+			draw.Draw(img, icmd.Rectangle(), icmd.Image.Img, image.Point{}, draw.Src)
 
-		case *command.Text:
+		case command.TextCmd:
 			if perfUpdate {
 				t0 = time.Now()
 			}
-			dstimg := w.img.SubImage(img.Bounds().Intersect(cmd.Rect.Rectangle())).(*image.RGBA)
+			dstimg := w.img.SubImage(img.Bounds().Intersect(icmd.Rectangle())).(*image.RGBA)
 			d := font.Drawer{
 				Dst:  dstimg,
-				Src:  image.NewUniform(cmd.Foreground),
-				Face: cmd.Face,
-				Dot:  fixed.P(cmd.X, cmd.Y+cmd.Face.Metrics().Ascent.Ceil())}
+				Src:  image.NewUniform(icmd.Text.Foreground),
+				Face: icmd.Text.Face,
+				Dot:  fixed.P(icmd.X, icmd.Y+icmd.Text.Face.Metrics().Ascent.Ceil())}
 
 			start := 0
-			for i := range cmd.String {
-				if cmd.String[i] == '\n' {
-					d.DrawString(cmd.String[start:i])
-					d.Dot.X = fixed.I(cmd.X)
-					d.Dot.Y += fixed.I(FontHeight(cmd.Face))
+			for i := range icmd.Text.String {
+				if icmd.Text.String[i] == '\n' {
+					d.DrawString(icmd.Text.String[start:i])
+					d.Dot.X = fixed.I(icmd.X)
+					d.Dot.Y += fixed.I(FontHeight(icmd.Text.Face))
 					start = i + 1
 				}
 			}
-			if start < len(cmd.String) {
-				d.DrawString(cmd.String[start:])
+			if start < len(icmd.Text.String) {
+				d.DrawString(icmd.Text.String[start:])
 			}
 			txt++
 			if perfUpdate {
@@ -723,21 +730,23 @@ func (w *MasterWindow) draw() (int, int) {
 
 // Returns true if cmds[idx] is a shrunk version of CommandFillRect and its
 // color is not semitransparent and the border isn't greater than 128
-func borderOptimize(cmd *command.RectFilled, cmds []command.Command, idx int) (ok bool, border int) {
+func borderOptimize(cmd *command.Command, cmds []command.Command, idx int) (ok bool, border int) {
 	if idx >= len(cmds) {
 		return false, 0
 	}
 
-	cmd2, ok := cmds[idx].(*command.RectFilled)
-	if !ok {
+	
+	if cmds[idx].Kind != command.RectFilledCmd {
+		return false, 0
+	}
+	
+	cmd2 := cmds[idx]
+
+	if cmd2.RectFilled.Color.A != 0xff {
 		return false, 0
 	}
 
-	if cmd2.Color.A != 0xff {
-		return false, 0
-	}
-
-	border = cmd2.Rect.X - cmd.Rect.X
+	border = cmd2.X - cmd.X
 	if border <= 0 || border > 128 {
 		return false, 0
 	}
@@ -866,69 +875,48 @@ func (w *MasterWindow) drawChanged(cmds []command.Command) bool {
 	}
 
 	for i := range cmds {
-		switch cmd := cmds[i].(type) {
-		case *command.Scissor:
-			pcmd, ok := w.prevCmds[i].(*command.Scissor)
-			if !ok {
-				return true
-			}
+		if cmds[i].Kind != w.prevCmds[i].Kind {
+			return true
+		}
+		
+		cmd := &cmds[i]
+		pcmd := &w.prevCmds[i]
+		
+		switch cmds[i].Kind {
+		case command.ScissorCmd:
 			if *pcmd != *cmd {
 				return true
 			}
 
-		case *command.Line:
-			pcmd, ok := w.prevCmds[i].(*command.Line)
-			if !ok {
-				return true
-			}
+		case command.LineCmd:
 			if *pcmd != *cmd {
 				return true
 			}
 
-		case *command.RectFilled:
+		case command.RectFilledCmd:
 			if i == 0 {
-				cmd.Color.A = 0xff
-			}
-			pcmd, ok := w.prevCmds[i].(*command.RectFilled)
-			if !ok {
-				return true
+				cmd.RectFilled.Color.A = 0xff
 			}
 			if *pcmd != *cmd {
 				return true
 			}
 
-		case *command.TriangleFilled:
-			pcmd, ok := w.prevCmds[i].(*command.TriangleFilled)
-			if !ok {
-				return true
-			}
+		case command.TriangleFilledCmd:
 			if *pcmd != *cmd {
 				return true
 			}
 
-		case *command.CircleFilled:
-			pcmd, ok := w.prevCmds[i].(*command.CircleFilled)
-			if !ok {
-				return true
-			}
+		case command.CircleFilledCmd:
 			if *pcmd != *cmd {
 				return true
 			}
 
-		case *command.Image:
-			pcmd, ok := w.prevCmds[i].(*command.Image)
-			if !ok {
-				return true
-			}
+		case command.ImageCmd:
 			if *pcmd != *cmd {
 				return true
 			}
 
-		case *command.Text:
-			pcmd, ok := w.prevCmds[i].(*command.Text)
-			if !ok {
-				return true
-			}
+		case command.TextCmd:
 			if *pcmd != *cmd {
 				return true
 			}

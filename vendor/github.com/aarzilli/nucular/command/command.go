@@ -21,19 +21,36 @@ var nk_null_rect = rect.Rect{-8192.0, -8192.0, 16384.0, 16384.0}
 func (buffer *Buffer) Reset() {
 	buffer.UseClipping = true
 	buffer.Clip = nk_null_rect
-	buffer.Commands = []Command{}
+	buffer.Commands = buffer.Commands[:0]
 }
 
 // Represents one drawing directive.
-type Command interface {
-	command()
+type Command struct {
+	rect.Rect
+	Kind CommandKind
+	Scissor Scissor
+	Line Line
+	RectFilled RectFilled
+	TriangleFilled TriangleFilled
+	CircleFilled CircleFilled
+	Image Image
+	Text Text
 }
+
+type CommandKind uint8
+const (
+	ScissorCmd CommandKind = iota
+	LineCmd
+	RectFilledCmd
+	TriangleFilledCmd
+	CircleFilledCmd
+	ImageCmd
+	TextCmd
+)
 
 type Scissor struct {
 	rect.Rect
 }
-
-func (c *Scissor) command() {}
 
 type Line struct {
 	LineThickness uint16
@@ -42,15 +59,11 @@ type Line struct {
 	Color         color.RGBA
 }
 
-func (c *Line) command() {}
-
 type RectFilled struct {
-	rect.Rect
+	//rect.Rect
 	Rounding uint16
 	Color    color.RGBA
 }
-
-func (c *RectFilled) command() {}
 
 type TriangleFilled struct {
 	A     image.Point
@@ -59,52 +72,44 @@ type TriangleFilled struct {
 	Color color.RGBA
 }
 
-func (c *TriangleFilled) command() {}
-
 type CircleFilled struct {
-	rect.Rect
+	//rect.Rect
 	Color color.RGBA
 }
 
-func (c *CircleFilled) command() {}
-
 type Image struct {
-	rect.Rect
+	//rect.Rect
 	Img *image.RGBA
 }
 
-func (c *Image) command() {}
-
 type Text struct {
-	rect.Rect
+	//rect.Rect
 	Face       font.Face
 	Foreground color.RGBA
 	String     string
 }
 
-func (c *Text) command() {}
-
 func (b *Buffer) PushScissor(r rect.Rect) {
-	cmd := &Scissor{}
-
 	b.Clip = r
+	
+	var cmd Command
+	cmd.Kind = ScissorCmd
+	cmd.Rect = r
 
 	b.Commands = append(b.Commands, cmd)
-
-	cmd.Rect = r
 }
 
 func (b *Buffer) StrokeLine(p0, p1 image.Point, line_thickness int, c color.RGBA) {
-	cmd := &Line{}
+	var cmd Command
+	cmd.Kind = LineCmd
+	cmd.Line.LineThickness = uint16(line_thickness)
+	cmd.Line.Begin = p0
+	cmd.Line.End = p1
+	cmd.Line.Color = c
 	b.Commands = append(b.Commands, cmd)
-	cmd.LineThickness = uint16(line_thickness)
-	cmd.Begin = p0
-	cmd.End = p1
-	cmd.Color = c
 }
 
 func (b *Buffer) FillRect(rect rect.Rect, rounding uint16, c color.RGBA) {
-	cmd := &RectFilled{}
 	if c.A == 0 {
 		return
 	}
@@ -114,14 +119,15 @@ func (b *Buffer) FillRect(rect rect.Rect, rounding uint16, c color.RGBA) {
 		}
 	}
 
-	b.Commands = append(b.Commands, cmd)
-	cmd.Rounding = rounding
+	var cmd Command
+	cmd.Kind = RectFilledCmd
+	cmd.RectFilled.Rounding = rounding
 	cmd.Rect = rect
-	cmd.Color = c
+	cmd.RectFilled.Color = c
+	b.Commands = append(b.Commands, cmd)
 }
 
 func (b *Buffer) FillCircle(r rect.Rect, c color.RGBA) {
-	cmd := &CircleFilled{}
 	if c.A == 0 {
 		return
 	}
@@ -130,14 +136,15 @@ func (b *Buffer) FillCircle(r rect.Rect, c color.RGBA) {
 			return
 		}
 	}
-
-	b.Commands = append(b.Commands, cmd)
+	
+	var cmd Command
+	cmd.Kind = CircleFilledCmd
 	cmd.Rect = r
-	cmd.Color = c
+	cmd.CircleFilled.Color = c
+	b.Commands = append(b.Commands, cmd)
 }
 
 func (b *Buffer) FillTriangle(p0, p1, p2 image.Point, c color.RGBA) {
-	cmd := &TriangleFilled{}
 	if c.A == 0 {
 		return
 	}
@@ -147,29 +154,30 @@ func (b *Buffer) FillTriangle(p0, p1, p2 image.Point, c color.RGBA) {
 		}
 	}
 
+	var cmd Command
+	cmd.Kind = TriangleFilledCmd
+	cmd.TriangleFilled.A = p0
+	cmd.TriangleFilled.B = p1
+	cmd.TriangleFilled.C = p2
+	cmd.TriangleFilled.Color = c
 	b.Commands = append(b.Commands, cmd)
-	cmd.A = p0
-	cmd.B = p1
-	cmd.C = p2
-	cmd.Color = c
 }
 
 func (b *Buffer) DrawImage(r rect.Rect, img *image.RGBA) {
-	cmd := &Image{}
 	if b.UseClipping {
 		if !r.Intersect(&b.Clip) {
 			return
 		}
 	}
 
-	b.Commands = append(b.Commands, cmd)
+	var cmd Command
+	cmd.Kind = ImageCmd
 	cmd.Rect = r
-	cmd.Img = img
+	cmd.Image.Img = img
+	b.Commands = append(b.Commands, cmd)
 }
 
 func (b *Buffer) DrawText(r rect.Rect, str string, face font.Face, fg color.RGBA) {
-	cmd := &Text{}
-
 	if len(str) == 0 || (fg.A == 0) {
 		return
 	}
@@ -182,9 +190,12 @@ func (b *Buffer) DrawText(r rect.Rect, str string, face font.Face, fg color.RGBA
 	if len(str) == 0 {
 		return
 	}
-	b.Commands = append(b.Commands, cmd)
+	
+	var cmd Command
+	cmd.Kind = TextCmd
 	cmd.Rect = r
-	cmd.Foreground = fg
-	cmd.Face = face
-	cmd.String = str
+	cmd.Text.Foreground = fg
+	cmd.Text.Face = face
+	cmd.Text.String = str
+	b.Commands = append(b.Commands, cmd)
 }

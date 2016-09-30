@@ -3,6 +3,7 @@ package nucular
 import (
 	"image"
 	"image/color"
+	"math"
 
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
@@ -20,6 +21,10 @@ import (
 ///////////////////////////////////////////////////////////////////////////////////
 // TEXT WIDGETS
 ///////////////////////////////////////////////////////////////////////////////////
+
+const (
+	tabSizeInSpaces = 8
+)
 
 type textWidget struct {
 	Padding    image.Point
@@ -151,6 +156,13 @@ type TextEditor struct {
 	SingleLine             bool
 	PreferredX             int
 	Undo                   textUndoState
+
+	drawchunks []drawchunk
+}
+
+type drawchunk struct {
+	rect.Rect
+	start, end int
 }
 
 func (ed *TextEditor) init(win *Window) {
@@ -185,7 +197,6 @@ const (
 	EditReadOnly EditFlags = 1 << iota
 	EditAutoSelect
 	EditSigEnter
-	EditAllowTab
 	EditNoCursor
 	EditSelectable
 	EditClipboard
@@ -198,7 +209,7 @@ const (
 
 	EditSimple = EditAlwaysInsertMode
 	EditField  = EditAlwaysInsertMode | EditSelectable
-	EditBox    = EditAlwaysInsertMode | EditSelectable | EditMultiline | EditAllowTab
+	EditBox    = EditAlwaysInsertMode | EditSelectable | EditMultiline
 )
 
 type EditEvents int
@@ -234,6 +245,7 @@ type textEditRow struct {
 	Ymin           int
 	Ymax           int
 	NumChars       int
+	CharPos        []int
 }
 
 type textUndoRecord struct {
@@ -277,125 +289,86 @@ func textHasSelection(s *TextEditor) bool {
 	return s.SelectStart != s.SelectEnd
 }
 
-func (edit *TextEditor) getWidth(line_start int, char_id int, font font.Face) int {
-	return FontWidth(font, string(edit.Buffer[line_start+char_id:line_start+char_id+1]))
-}
-
-func textCalculateTextBounds(font font.Face, text []rune, rowHeight int, stopOnNewline bool) (textSize image.Point, n int) {
-	lineStart := 0
-
-	flushLine := func(lineEnd int) {
-		if lineStart >= len(text) {
-			return
-		}
-		w := FontWidth(font, string(text[lineStart:lineEnd]))
-		if w > textSize.X {
-			textSize.X = w
-		}
-		textSize.Y += rowHeight
-	}
-
-	done := false
-	for i := range text {
-		if text[i] == '\n' {
-			flushLine(i)
-			if stopOnNewline {
-				n++
-				done = true
-				break
-			}
-			lineStart = i + 1
-		}
-		n++
-	}
-
-	if !done {
-		flushLine(len(text))
-	}
-
-	return
-}
-
-func texteditLayoutRow(r *textEditRow, edit *TextEditor, line_start_id int, row_height int, font font.Face) {
-	size, glyphs := textCalculateTextBounds(font, edit.Buffer[line_start_id:], row_height, true)
-
-	r.X0 = 0.0
-	r.X1 = size.X
-	r.BaselineYDelta = size.Y
-	r.Ymin = 0.0
-	r.Ymax = size.Y
-	r.NumChars = glyphs
-}
-
 func (edit *TextEditor) locateCoord(p image.Point, font font.Face, row_height int) int {
-	var r textEditRow
-	var base_y int = 0
-	var prev_x int
-	var i int = 0
-	var k int
-
 	x, y := p.X, p.Y
 
-	r.X1 = 0
-	r.X0 = r.X1
-	r.Ymax = 0
-	r.Ymin = r.Ymax
-	r.NumChars = 0
+	var drawchunk *drawchunk
 
-	/* search rows to find one that straddles 'y' */
-	for i < len(edit.Buffer) {
-		texteditLayoutRow(&r, edit, i, row_height, font)
-		if r.NumChars <= 0 {
-			return len(edit.Buffer)
+	for i := range edit.drawchunks {
+		min := edit.drawchunks[i].Min()
+		max := edit.drawchunks[i].Max()
+		getprev := false
+		if min.Y <= y && y <= max.Y {
+			if min.X <= x && x <= max.X {
+				drawchunk = &edit.drawchunks[i]
+			}
+			if min.X > x {
+				getprev = true
+			}
+		} else if min.Y > y {
+			getprev = true
 		}
-
-		if y < base_y+r.Ymax {
+		if getprev {
+			if i == 0 {
+				drawchunk = &edit.drawchunks[0]
+			} else {
+				drawchunk = &edit.drawchunks[i-1]
+			}
 			break
 		}
-
-		i += r.NumChars
-		base_y += r.BaselineYDelta
 	}
 
-	/* below all text, return 'after' last character */
-	if i >= len(edit.Buffer) {
+	if drawchunk == nil {
 		return len(edit.Buffer)
 	}
 
-	/* check if it's before the beginning of the line */
-	if x < r.X0 {
-		return i
-	}
-
-	/* check if it's before the end of the line */
-	if x < r.X1 {
-		/* search characters in row for one that straddles 'x' */
-		k = i
-
-		prev_x = r.X0
-		for i = 0; i < r.NumChars; i++ {
-			w := edit.getWidth(k, i, font)
-			if x < prev_x+w {
-				if x < prev_x+w {
-					return k + i
-				} else {
-					return k + i + 1
-				}
-			}
-
-			prev_x += w
+	curx := drawchunk.X
+	for i := drawchunk.start; i < drawchunk.end && i < len(edit.Buffer); i++ {
+		curx += FontWidth(font, string(edit.Buffer[i:i+1]))
+		if curx > x {
+			return i
 		}
 	}
 
-	/* shouldn't happen, but if it does, fall through to end-of-line case */
-
-	/* if the last character is a newline, return that.
-	 * otherwise return 'after' the last character */
-	if edit.Buffer[i+r.NumChars-1] == '\n' {
-		return i + r.NumChars - 1
-	} else {
-		return i + r.NumChars
+	if drawchunk.end >= len(edit.Buffer) {
+		return len(edit.Buffer)
 	}
+
+	return drawchunk.end
+}
+
+func (edit *TextEditor) indexToCoord(index int, font font.Face, row_height int) image.Point {
+	var drawchunk *drawchunk
+
+	for i := range edit.drawchunks {
+		if edit.drawchunks[i].start > index {
+			if i == 0 {
+				drawchunk = &edit.drawchunks[0]
+			} else {
+				drawchunk = &edit.drawchunks[i-1]
+			}
+			break
+		}
+	}
+
+	if drawchunk == nil {
+		if len(edit.drawchunks) == 0 {
+			return image.Point{}
+		}
+		drawchunk = &edit.drawchunks[len(edit.drawchunks)-1]
+	}
+
+	x := drawchunk.X
+	for i := drawchunk.start; i < drawchunk.end && i < len(edit.Buffer); i++ {
+		if i >= index {
+			break
+		}
+		x += FontWidth(font, string(edit.Buffer[i:i+1]))
+	}
+	if index >= len(edit.Buffer) && len(edit.Buffer) > 0 && edit.Buffer[len(edit.Buffer)-1] == '\n' {
+		return image.Point{x, drawchunk.Y + drawchunk.H + drawchunk.H/2}
+	}
+	return image.Point{x, drawchunk.Y + drawchunk.H/2}
 }
 
 func (state *TextEditor) click(coord image.Point, font font.Face, row_height int) {
@@ -417,82 +390,6 @@ func (state *TextEditor) drag(coord image.Point, font font.Face, row_height int)
 	}
 	state.SelectEnd = p
 	state.Cursor = state.SelectEnd
-}
-
-func (state *TextEditor) findCharpos(n int, single_line bool, font font.Face, row_height int) (find textFind) {
-	var r textEditRow
-	var prev_start int = 0
-	/* find the x/y location of a character, and remember info about the previous
-	 * row in case we get a move-up event (for page up, we'll have to rescan) */
-
-	var i int = 0
-	var first int
-
-	if n == len(state.Buffer) {
-		/* if it's at the end, then find the last line -- simpler than trying to
-		explicitly handle this case in the regular code */
-		if single_line {
-			texteditLayoutRow(&r, state, 0, row_height, font)
-			find.Y = 0
-			find.FirstChar = 0
-			find.Length = len(state.Buffer)
-			find.Height = r.Ymax - r.Ymin
-			find.X = r.X1
-		} else {
-			find.Y = 0
-			find.X = 0
-			find.Height = 1
-
-			for {
-				texteditLayoutRow(&r, state, i, row_height, font)
-				if state.Buffer[i+r.NumChars-1] == '\n' {
-					prev_start = i
-					find.Y += r.BaselineYDelta
-				}
-				i += r.NumChars
-				if i >= len(state.Buffer) {
-					break
-				}
-			}
-
-			find.Length = r.NumChars
-			find.Height = r.Ymax - r.Ymin
-			find.FirstChar = i
-			find.Length = 0
-			find.X = r.X1
-			find.PrevFirst = prev_start
-		}
-
-		return
-	}
-
-	/* search rows to find the one that straddles character n */
-	find.Y = 0
-
-	for {
-		texteditLayoutRow(&r, state, i, row_height, font)
-		if n < i+r.NumChars {
-			break
-		}
-		prev_start = i
-		i += r.NumChars
-		find.Y += r.BaselineYDelta
-	}
-
-	first = i
-	find.FirstChar = first
-	find.Length = r.NumChars
-	find.Height = r.Ymax - r.Ymin
-	find.PrevFirst = prev_start
-
-	/* now scan to find xpos */
-	find.X = r.X0
-
-	for i = 0; first+i < n; i++ {
-		find.X += state.getWidth(first, i, font)
-	}
-
-	return
 }
 
 func (state *TextEditor) clamp() {
@@ -787,11 +684,7 @@ retry:
 			}
 		}
 	case key.CodeDownArrow:
-		var row textEditRow
-		var i int
-
 		if state.SingleLine {
-			/* on windows, up&down in single-line behave like left&right */
 			e.Code = key.CodeRightArrow
 			goto retry
 		}
@@ -802,58 +695,23 @@ retry:
 			state.moveToLast()
 		}
 
-		/* compute current position of cursor point */
 		state.clamp()
 
-		find := state.findCharpos(state.Cursor, state.SingleLine, font, row_height)
-
-		/* now find character position down a row */
-		if find.Length != 0 {
-			var x int
-			var goal_x int
-			if state.HasPreferredX {
-				goal_x = state.PreferredX
-			} else {
-				goal_x = find.X
-			}
-			var start int = find.FirstChar + find.Length
-
-			state.Cursor = start
-			texteditLayoutRow(&row, state, state.Cursor, row_height, font)
-			x = row.X0
-
-			found := false
-			for i = 0; i < row.NumChars; i++ {
-				dx := state.getWidth(start, i, font)
-				x += dx
-				if x > goal_x {
-					found = true
-					break
-				}
-				state.Cursor++
-			}
-
-			if !found && row.NumChars > 0 {
-				state.Cursor--
-			}
-
-			state.clamp()
-
+		p := state.indexToCoord(state.Cursor, font, row_height)
+		p.Y += row_height
+		if state.HasPreferredX {
+			p.X = state.PreferredX
+		} else {
 			state.HasPreferredX = true
-			state.PreferredX = goal_x
-			if e.Modifiers&key.ModShift != 0 {
-				state.SelectEnd = state.Cursor
-			}
+			state.PreferredX = p.X
 		}
+		state.Cursor = state.locateCoord(p, font, row_height)
+
+		state.clamp()
 
 	case key.CodeUpArrow:
-		var row textEditRow
-		var i int
-
 		if state.SingleLine {
-			/* on windows, up&down become left&right */
-			e.Code = key.CodeLeftArrow
-
+			e.Code = key.CodeRightArrow
 			goto retry
 		}
 
@@ -863,49 +721,20 @@ retry:
 			state.moveToFirst()
 		}
 
-		/* compute current position of cursor point */
 		state.clamp()
 
-		find := state.findCharpos(state.Cursor, state.SingleLine, font, row_height)
-
-		/* can only go up if there's a previous row */
-		if find.PrevFirst != find.FirstChar {
-			var x int
-			/* now find character position up a row */
-
-			var goal_x int
+		p := state.indexToCoord(state.Cursor, font, row_height)
+		p.Y -= row_height
+		if p.Y >= 0 {
 			if state.HasPreferredX {
-				goal_x = state.PreferredX
+				p.X = state.PreferredX
 			} else {
-				goal_x = find.X
+				state.HasPreferredX = true
+				state.PreferredX = p.X
 			}
-
-			state.Cursor = find.PrevFirst
-			texteditLayoutRow(&row, state, state.Cursor, row_height, font)
-			x = row.X0
-
-			found := false
-			for i = 0; i < row.NumChars; i++ {
-				dx := state.getWidth(find.PrevFirst, i, font)
-				x += dx
-				if x > goal_x {
-					found = true
-					break
-				}
-				state.Cursor++
-			}
-
-			if !found && row.NumChars > 0 {
-				state.Cursor--
-			}
+			state.Cursor = state.locateCoord(p, font, row_height)
 
 			state.clamp()
-
-			state.HasPreferredX = true
-			state.PreferredX = goal_x
-			if e.Modifiers&key.ModShift != 0 {
-				state.SelectEnd = state.Cursor
-			}
 		}
 
 	case key.CodeDeleteForward:
@@ -952,21 +781,27 @@ retry:
 				state.HasPreferredX = false
 			}
 		} else {
+			state.clamp()
+			start := state.Cursor - 1
+			for start >= 0 {
+				if state.Buffer[start] == '\n' {
+					break
+				}
+				start--
+			}
+			start++
 			if e.Modifiers&key.ModShift != 0 {
 				state.clamp()
 				state.prepSelectionAtCursor()
-				find := state.findCharpos(state.Cursor, state.SingleLine, font, row_height)
-				state.SelectEnd = find.FirstChar
+				state.SelectEnd = start
 				state.Cursor = state.SelectEnd
 				state.HasPreferredX = false
 			} else {
 				state.clamp()
 				state.moveToFirst()
-				find := state.findCharpos(state.Cursor, state.SingleLine, font, row_height)
-				state.Cursor = find.FirstChar
+				state.Cursor = start
 				state.HasPreferredX = false
 			}
-
 		}
 
 	case key.CodeEnd:
@@ -983,26 +818,25 @@ retry:
 				state.HasPreferredX = false
 			}
 		} else {
+			state.clamp()
+			end := state.Cursor
+			for end < len(state.Buffer) {
+				if state.Buffer[end] == '\n' {
+					break
+				}
+				end++
+			}
 			if e.Modifiers&key.ModShift != 0 {
 				state.clamp()
 				state.prepSelectionAtCursor()
-				find := state.findCharpos(state.Cursor, state.SingleLine, font, row_height)
 				state.HasPreferredX = false
-				state.Cursor = find.FirstChar + find.Length
-				if find.Length > 0 && state.Buffer[state.Cursor-1] == '\n' {
-					state.Cursor--
-				}
+				state.Cursor = end
 				state.SelectEnd = state.Cursor
 			} else {
 				state.clamp()
 				state.moveToFirst()
-				find := state.findCharpos(state.Cursor, state.SingleLine, font, row_height)
-
 				state.HasPreferredX = false
-				state.Cursor = find.FirstChar + find.Length
-				if find.Length > 0 && state.Buffer[state.Cursor-1] == '\n' {
-					state.Cursor--
-				}
+				state.Cursor = end
 			}
 		}
 	}
@@ -1154,7 +988,7 @@ func (edit *TextEditor) SelectAll() {
 	edit.SelectEnd = len(edit.Buffer) + 1
 }
 
-func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_margin int, text []rune, row_height int, f font.Face, background color.RGBA, foreground color.RGBA, is_selected bool) (posOut image.Point) {
+func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_margin int, text []rune, textOffset int, row_height int, f font.Face, background color.RGBA, foreground color.RGBA, is_selected bool) (posOut image.Point) {
 	if len(text) == 0 {
 		return pos
 	}
@@ -1168,6 +1002,8 @@ func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_ma
 	start := 0
 
 	d := font.Drawer{Face: f}
+
+	tabsz := d.MeasureString(" ").Ceil() * tabSizeInSpaces
 
 	flushLine := func(index int) rect.Rect {
 		// new line sepeator so draw previous line
@@ -1184,26 +1020,48 @@ func editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_ma
 			}
 			out.FillRect(lblrect, 0, background)
 		}
+		edit.drawchunks = append(edit.drawchunks, drawchunk{lblrect, start + textOffset, index + textOffset})
 		widgetText(out, lblrect, string(text[start:index]), &txt, "LC", f)
 
-		if line_count == 0 {
-			pos_x = x_margin
+		pos_x = x_margin
+
+		return lblrect
+	}
+
+	flushTab := func(index int) rect.Rect {
+		var lblrect rect.Rect
+		lblrect.Y = pos_y + line_offset
+		lblrect.H = row_height
+		lblrect.W = d.MeasureString(string(text[start:index])).Ceil()
+		lblrect.X = pos_x
+
+		lblrect.W = int(math.Floor(float64(lblrect.X+lblrect.W-x_margin)/float64(tabsz))+1)*tabsz + x_margin - lblrect.X
+
+		if is_selected {
+			out.FillRect(lblrect, 0, background)
 		}
+		edit.drawchunks = append(edit.drawchunks, drawchunk{lblrect, start + textOffset, index + textOffset})
+		widgetText(out, lblrect, string(text[start:index]), &txt, "LC", f)
+
+		pos_x += lblrect.W
 
 		return lblrect
 	}
 
 	for index, glyph := range text {
-		if glyph == '\n' {
+		switch glyph {
+		case '\t':
+			flushTab(index)
+			start = index + 1
+
+		case '\n':
 			flushLine(index)
 			line_count++
 			start = index + 1
 			line_offset += row_height
-			continue
-		}
 
-		if glyph == '\r' {
-			continue
+		case '\r':
+			// do nothing
 		}
 	}
 
@@ -1490,6 +1348,9 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 	row_height := d.RowHeight
 	selection_begin := d.SelectionBegin
 	selection_end := d.SelectionEnd
+	if edit.drawchunks != nil {
+		edit.drawchunks = edit.drawchunks[:0]
+	}
 
 	/* select background colors/images  */
 	var old_clip rect.Rect = out.Clip
@@ -1572,43 +1433,49 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 		}
 
 		/* no selection so just draw the complete text */
-		pos = editDrawText(out, style, pos, x_margin, edit.Buffer[:edit.Cursor], row_height, font, background_color, text_color, false)
+		pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[:edit.Cursor], 0, row_height, font, background_color, text_color, false)
 		d.CursorPos = pos.Sub(startPos)
 		if edit.Active {
 			if edit.Cursor < len(edit.Buffer) {
-				pos = editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor:edit.Cursor+1], row_height, font, cursor_color, cursor_text_color, true)
+				pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor:edit.Cursor+1], edit.Cursor, row_height, font, cursor_color, cursor_text_color, true)
 				if edit.Buffer[edit.Cursor] == '\n' {
 					drawEolCursor()
 				}
-				pos = editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor+1:], row_height, font, background_color, text_color, false)
+				pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor+1:], edit.Cursor+1, row_height, font, background_color, text_color, false)
 			} else {
 				drawEolCursor()
 			}
 		} else if edit.Cursor < len(edit.Buffer) {
-			pos = editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor:], row_height, font, background_color, text_color, false)
+			pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor:], edit.Cursor, row_height, font, background_color, text_color, false)
 		}
 	} else {
 		/* edit has selection so draw 1-3 text chunks */
 		if selection_begin > 0 {
 			/* draw unselected text before selection */
-			pos = editDrawText(out, style, pos, x_margin, edit.Buffer[:selection_begin], row_height, font, background_color, text_color, false)
+			pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[:selection_begin], 0, row_height, font, background_color, text_color, false)
 		}
 
 		if selection_begin == edit.SelectEnd {
 			d.CursorPos = pos.Sub(startPos)
 		}
 
-		pos = editDrawText(out, style, pos, x_margin, edit.Buffer[selection_begin:selection_end], row_height, font, sel_background_color, sel_text_color, true)
+		pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[selection_begin:selection_end], selection_begin, row_height, font, sel_background_color, sel_text_color, true)
 
 		if selection_begin != edit.SelectEnd {
 			d.CursorPos = pos.Sub(startPos)
 		}
 
 		if selection_end < len(edit.Buffer) {
-			pos = editDrawText(out, style, pos, x_margin, edit.Buffer[selection_end:], row_height, font, background_color, text_color, false)
+			pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[selection_end:], selection_end, row_height, font, background_color, text_color, false)
 		}
 	}
 	d.TextSize = pos.Sub(startPos)
+
+	// fix rectangles in drawchunks by subtracting area from them
+	for i := range edit.drawchunks {
+		edit.drawchunks[i].X -= area.X
+		edit.drawchunks[i].Y -= area.Y
+	}
 
 	out.PushScissor(old_clip)
 	return
