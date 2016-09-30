@@ -264,10 +264,10 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 
 func (p *panel) splitMenu(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
-	if w.MenuItem(label.TA("Horizontal", "LC")) {
+	if w.MenuItem(label.TA("Split Horizontal", "LC")) {
 		p.dosplit(splitHorizontalPanelKind)
 	}
-	if w.MenuItem(label.TA("Vertical", "LC")) {
+	if w.MenuItem(label.TA("Split Vertical", "LC")) {
 		p.dosplit(splitVerticalPanelKind)
 	}
 	if w.MenuItem(label.TA("Close", "LC")) {

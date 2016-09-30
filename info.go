@@ -214,22 +214,22 @@ func updateGoroutines(container *nucular.Window) {
 
 	zerow := nucular.FontWidth(style.Font, "0")
 
-	w.Row(20).StaticScaled(zerow*d+pad, zerow*dthread+pad, 0)
+	w.Row(40).StaticScaled(zerow*d+pad, zerow*dthread+pad, 0)
 	for _, g := range goroutines {
 		selected := curGid == g.ID
-		w.SelectableLabel(fmt.Sprintf("%*d", d, g.ID), "LC", &selected)
+		w.SelectableLabel(fmt.Sprintf("%*d", d, g.ID), "LT", &selected)
 		if g.ThreadID != 0 {
-			w.SelectableLabel(fmt.Sprintf("%*d", dthread, g.ThreadID), "LC", &selected)
+			w.SelectableLabel(fmt.Sprintf("%*d", dthread, g.ThreadID), "LT", &selected)
 		} else {
-			w.SelectableLabel(" ", "LC", &selected)
+			w.SelectableLabel(" ", "LT", &selected)
 		}
 		switch goroutineLocations[goroutinesPanel.goroutineLocation] {
 		case currentGoroutineLocation:
-			w.SelectableLabel(formatLocation(g.CurrentLoc), "LC", &selected)
+			w.SelectableLabel(formatLocation2(g.CurrentLoc), "LT", &selected)
 		case userGoroutineLocation:
-			w.SelectableLabel(formatLocation(g.UserCurrentLoc), "LC", &selected)
+			w.SelectableLabel(formatLocation2(g.UserCurrentLoc), "LT", &selected)
 		case goStatementLocation:
-			w.SelectableLabel(formatLocation(g.GoStatementLoc), "LC", &selected)
+			w.SelectableLabel(formatLocation2(g.GoStatementLoc), "LT", &selected)
 		}
 		if selected && curGid != g.ID && !running {
 			go func(gid int) {
@@ -292,11 +292,7 @@ func updateStacktrace(container *nucular.Window) {
 		selected := curFrame == i
 		w.SelectableLabel(fmt.Sprintf("%*d", didx, i), "LT", &selected)
 		w.SelectableLabel(fmt.Sprintf("%#0*x", d, frame.PC), "LT", &selected)
-		name := "(nil)"
-		if frame.Function != nil {
-			name = frame.Function.Name
-		}
-		w.SelectableLabel(fmt.Sprintf("%s\nat %s:%d", name, ShortenFilePath(frame.File), frame.Line), "LT", &selected)
+		w.SelectableLabel(formatLocation2(frame.Location), "LT", &selected)
 		if selected && curFrame != i && !running {
 			curFrame = i
 			go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
@@ -338,13 +334,13 @@ func updateThreads(container *nucular.Window) {
 	if len(threads) > 0 {
 		d = digits(threads[len(threads)-1].ID)
 	}
-	w.Row(20).StaticScaled(zeroWidth*d+pad, 0)
+	w.Row(40).StaticScaled(zeroWidth*d+pad, 0)
 
 	for _, thread := range threads {
 		selected := curThread == thread.ID
-		w.SelectableLabel(fmt.Sprintf("%*d", d, thread.ID), "LC", &selected)
+		w.SelectableLabel(fmt.Sprintf("%*d", d, thread.ID), "LT", &selected)
 		loc := api.Location{thread.PC, thread.File, thread.Line, thread.Function}
-		w.SelectableLabel(formatLocation(loc), "LC", &selected)
+		w.SelectableLabel(formatLocation2(loc), "LT", &selected)
 		if selected && curThread != thread.ID && !running {
 			go func(tid int) {
 				state, err := client.SwitchThread(tid)
@@ -544,9 +540,9 @@ func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 func exprMenu(w *nucular.Window) {
 	w.Row(20).Dynamic(1)
 
-	if fn := detailsAvailable(exprsPanel.v[exprsPanel.selected]); fn != nil {
+	if fn := detailsAvailable(exprsPanel.v[exprsPanel.menuSelected]); fn != nil {
 		if w.MenuItem(label.TA("Details", "LC")) {
-			fn(w.Master(), exprsPanel.v[exprsPanel.selected])
+			fn(w.Master(), exprsPanel.v[exprsPanel.menuSelected])
 		}
 	}
 	if w.MenuItem(label.TA("Edit", "LC")) {
@@ -871,6 +867,7 @@ func (p *stringSlicePanel) update(container *nucular.Window) {
 }
 
 func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *api.Variable) {
+	varname := name
 	const minInlineKeyValueLen = 20
 	if v.Type != "" {
 		if addr {
@@ -910,7 +907,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 
 	switch v.Kind {
 	case reflect.Slice:
-		if w.TreePush(nucular.TreeNode, name, false) {
+		if !w.TreeIsOpen(varname) {
+			name += " = " + v.SinglelineString()
+		}
+		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 			showExprMenu(w, exprMenu, v)
 			w.Label(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap), "LC")
 			showArrayOrSliceContents(w, depth, addr, v)
@@ -919,7 +919,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			showExprMenu(w, exprMenu, v)
 		}
 	case reflect.Array:
-		if w.TreePush(nucular.TreeNode, name, false) {
+		if !w.TreeIsOpen(varname) {
+			name += " = " + v.SinglelineString()
+		}
+		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 			showExprMenu(w, exprMenu, v)
 			w.Label(fmt.Sprintf("len: %d", v.Len), "LC")
 			showArrayOrSliceContents(w, depth, addr, v)
@@ -935,7 +938,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			w.Label(fmt.Sprintf("%s = (%s)(%#x)", name, v.Type, v.Children[0].Addr), "LC")
 			showExprMenu(w, exprMenu, v)
 		} else {
-			if w.TreePush(nucular.TreeNode, name, false) {
+			if !w.TreeIsOpen(varname) {
+				name += " = " + v.SinglelineString()
+			}
+			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 				showExprMenu(w, exprMenu, v)
 				showVariable(w, depth+1, addr, -1, "", &v.Children[0])
 				w.TreePop()
@@ -958,7 +964,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			w.Label(fmt.Sprintf("%s = nil", name), "LC")
 			showExprMenu(w, exprMenu, v)
 		} else {
-			if w.TreePush(nucular.TreeNode, name, false) {
+			if !w.TreeIsOpen(varname) {
+				name += " = " + v.SinglelineString()
+			}
+			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 				showExprMenu(w, exprMenu, v)
 				showStructContents(w, depth, addr, v)
 				w.TreePop()
@@ -967,7 +976,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			}
 		}
 	case reflect.Struct:
-		if w.TreePush(nucular.TreeNode, name, false) {
+		if !w.TreeIsOpen(varname) {
+			name += " = " + v.SinglelineString()
+		}
+		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 			showExprMenu(w, exprMenu, v)
 			if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
 				loadMoreStruct(v)
@@ -984,7 +996,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			w.Label(fmt.Sprintf("%s = nil", name), "LC")
 			showExprMenu(w, exprMenu, v)
 		} else {
-			if w.TreePush(nucular.TreeNode, name, false) {
+			if !w.TreeIsOpen(varname) {
+				name += " = " + v.SinglelineString()
+			}
+			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 				showExprMenu(w, exprMenu, v)
 				if v.Children[0].Kind == reflect.Ptr {
 					showVariable(w, depth+1, addr, -1, "data", &v.Children[0].Children[0])
@@ -997,7 +1012,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			}
 		}
 	case reflect.Map:
-		if w.TreePush(nucular.TreeNode, name, false) {
+		if !w.TreeIsOpen(varname) {
+			name += " = " + v.SinglelineString()
+		}
+		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 			showExprMenu(w, exprMenu, v)
 			for i := 0; i < len(v.Children); i += 2 {
 				key, value := &v.Children[i], &v.Children[i+1]
@@ -1036,6 +1054,11 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		showExprMenu(w, exprMenu, v)
 	default:
 		if v.Value != "" {
+			if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) && strings.Index(v.Value, " ") < 0 {
+				n, _ := strconv.Atoi(v.Value)
+				v.Value = fmt.Sprintf("%s %q", v.Value, n)
+			}
+
 			w.Label(fmt.Sprintf("%s = %s", name, v.Value), "LC")
 		} else {
 			w.Label(fmt.Sprintf("%s = (unknown %s)", name, v.Kind), "LC")
@@ -1235,6 +1258,7 @@ func (m *lineMenu) setBreakpoint() {
 		fmt.Fprintf(out, "Could not create breakpoint: %v\n", err)
 	} else {
 		fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
+		refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	}
 }
 
@@ -1249,8 +1273,8 @@ func updateDisassemblyPanel(container *nucular.Window) {
 
 	style, _ := container.Master().Style()
 
-	arroww := nucular.FontWidth(style.Font, "=>") + style.Text.Padding.X*2
-	starw := nucular.FontWidth(style.Font, "*") + style.Text.Padding.X*2
+	arroww := arrowWidth + style.Text.Padding.X*2
+	starw := starWidth + style.Text.Padding.X*2
 
 	var maxaddr uint64 = 0
 	if len(listingPanel.text) > 0 {
@@ -1288,7 +1312,9 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		}
 
 		if instr.Breakpoint {
-			listp.Label("*", "LC")
+			iconFace, style.Font = style.Font, iconFace
+			listp.LabelColored(breakpointIcon, "CC", color.RGBA{0xff, 0x00, 0x00, 0xff})
+			iconFace, style.Font = style.Font, iconFace
 		} else {
 			listp.Label(" ", "LC")
 		}
@@ -1303,7 +1329,9 @@ func updateDisassemblyPanel(container *nucular.Window) {
 					}
 				}
 			}
-			listp.Label("=>", "LC")
+			iconFace, style.Font = style.Font, iconFace
+			listp.LabelColored(arrowIcon, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
+			iconFace, style.Font = style.Font, iconFace
 		} else {
 			listp.Label(" ", "LC")
 		}
@@ -1734,4 +1762,12 @@ func (iv *intViewer) setupView() {
 	case octMode:
 		iv.ed.Buffer = []rune(fmt.Sprintf("%o", n))
 	}
+}
+
+func formatLocation2(loc api.Location) string {
+	name := "(nil)"
+	if loc.Function != nil {
+		name = loc.Function.Name
+	}
+	return fmt.Sprintf("%s\nat %s:%d", name, ShortenFilePath(loc.File), loc.Line)
 }

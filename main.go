@@ -119,9 +119,9 @@ func prompt(thread int, gid, frame int) string {
 		return ""
 	}
 	if gid < 0 {
-		return fmt.Sprintf("thread %d frame %d", thread, frame)
+		return fmt.Sprintf("thread %d:%d", thread, frame)
 	}
-	return fmt.Sprintf("goroutine %d frame %d", gid, frame)
+	return fmt.Sprintf("goroutine %d:%d", gid, frame)
 }
 
 func guiUpdate(w *nucular.Window) {
