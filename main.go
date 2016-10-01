@@ -1,4 +1,4 @@
-// Copyright 2016, Alessandro Arzilli
+// Copyright 2016, Gdlv Authors
 
 package main
 
@@ -645,7 +645,7 @@ func main() {
 
 	var scrollbackOut = editorWriter{&scrollbackEditor, true}
 
-	fmt.Fprintf(&scrollbackOut, `gdlv  Copyright (C) 2016  Alessandro Arzilli
+	fmt.Fprintf(&scrollbackOut, `gdlv  Copyright (C) 2016 Gdlv Authors
 This program comes with ABSOLUTELY NO WARRANTY;
 This is free software, and you are welcome to redistribute it
 under certain conditions; see COPYING for details.

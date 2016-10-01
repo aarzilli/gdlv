@@ -1,4 +1,4 @@
-// Copyright 2016, Alessandro Arzilli
+// Copyright 2016, Gdlv Authors
 
 package main
 
