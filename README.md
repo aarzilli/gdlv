@@ -4,3 +4,13 @@ Gdlv is a graphical frontend to [Delve](https://github.com/derekparker/delve). G
 
 ![Screenshot](https://raw.githubusercontent.com/aarzilli/gdlv/master/doc/screen.png)
 
+# Setup
+
+First make sure you have the current version of delve installed:
+```
+go get -u github.com/derekparker/delve/cmd/dlv
+```
+then install gdlv:
+```
+go get -u github.com/aarzilli/gdlv
+```
