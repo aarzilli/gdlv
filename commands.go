@@ -85,6 +85,9 @@ See also: "help on", "help cond" and "help clear"`},
 A tracepoint is a breakpoint that does not stop the execution of the program, instead when the tracepoint is hit a notification is displayed. See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/locspec.md for the syntax of linespec.
 
 See also: "help on", "help cond" and "help clear"`},
+		{aliases: []string{"clear"}, cmdFn: clear, helpMsg: `Deletes breakpoint.
+		
+			clear <breakpoint name or id>`},
 		{aliases: []string{"restart", "r"}, cmdFn: restart, helpMsg: "Restart process."},
 		{aliases: []string{"continue", "c"}, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
 		{aliases: []string{"step", "s"}, cmdFn: step, helpMsg: "Single step through program."},
@@ -235,6 +238,24 @@ func breakpoint(client service.Client, out io.Writer, args string) error {
 
 func tracepoint(client service.Client, out io.Writer, args string) error {
 	return setBreakpoint(client, out, true, args)
+}
+
+func clear(client service.Client, out io.Writer, args string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("not enough arguments")
+	}
+	id, err := strconv.Atoi(args)
+	var bp *api.Breakpoint
+	if err == nil {
+		bp, err = client.ClearBreakpoint(id)
+	} else {
+		bp, err = client.ClearBreakpointByName(args)
+	}
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s cleared at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
+	return nil
 }
 
 func restart(client service.Client, out io.Writer, args string) error {
