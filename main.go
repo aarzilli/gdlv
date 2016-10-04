@@ -620,6 +620,11 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 	return len(b), nil
 }
 
+func usage() {
+	fmt.Fprintf(os.Stderr, "usage:\n\tgdlv connect <address>\n\tgdlv debug -- <program's arguments...>\n\tgdlv exec <program> -- <program's arguments...>\n\tgdlv test\n\tgdlv attach <pid>\n")
+	os.Exit(1)
+}
+
 func main() {
 	loadConfiguration()
 
@@ -629,6 +634,15 @@ func main() {
 				defer pprof.StopCPUProfile()
 			}
 		}
+	}
+
+	if len(os.Args) < 2 {
+		usage()
+	}
+	switch os.Args[1] {
+	case "connect", "debug", "exec", "test", "attach":
+	default:
+		usage()
 	}
 
 	wnd = nucular.NewMasterWindow(guiUpdate, nucular.WindowNoScrollbar)
