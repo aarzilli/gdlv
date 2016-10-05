@@ -338,7 +338,15 @@ func connectTo(addr string) {
 	running = false
 	mu.Unlock()
 
-	refreshState(refreshToFrameZero, clearStop, nil)
+	state, err := client.GetState()
+	if err == nil && state == nil {
+		mu.Lock()
+		client = nil
+		fmt.Fprintf(&scrollbackOut, "Could not get state, old version of delve?\n")
+		mu.Unlock()
+	}
+
+	refreshState(refreshToFrameZero, clearStop, state)
 }
 
 func digits(n int) int {
