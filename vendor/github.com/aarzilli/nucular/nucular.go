@@ -48,7 +48,7 @@ type Window struct {
 	layout           *panel
 	close, first     bool
 	// trigger rectangle of nonblocking windows
-	triggerBounds, header rect.Rect
+	header rect.Rect
 	// root of the node tree
 	rootNode *treeNode
 	// current tree node see TreePush/TreePop
@@ -62,6 +62,7 @@ type Window struct {
 	// update function
 	updateFn UpdateFn
 	usingSub bool
+	began    bool
 }
 
 type treeNode struct {
@@ -473,6 +474,65 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	layout.Row.Type = layoutInvalid
 
 	return layout.Flags&windowHidden == 0 && layout.Flags&windowMinimized == 0
+}
+
+func (win *Window) specialPanelBegin() {
+	win.began = true
+	w := win.Master()
+	if win.flags&windowContextual != 0 {
+		prevbody := win.Bounds
+		prevbody.H = win.layout.Height
+		// if the contextual menu ended up with its bottom right corner outside
+		// the main window's bounds and it could be moved to be inside the main
+		// window by popping it a different way do it.
+		// Since the size of the contextual menu is only knowable after displaying
+		// it once this must be done on the second frame.
+		max := w.ctx.Windows[0].Bounds.Max()
+		if win.header.Contains(prevbody.Min()) && ((prevbody.Max().X > max.X) || (prevbody.Max().Y > max.Y)) && (win.Bounds.X-prevbody.W >= 0) && (win.Bounds.Y-prevbody.H >= 0) {
+			win.Bounds.X = win.Bounds.X - prevbody.W
+			win.Bounds.Y = win.Bounds.Y - prevbody.H
+		} else {
+			win.Bounds.X = win.Bounds.X
+			win.Bounds.Y = win.Bounds.Y
+		}
+	}
+
+	if win.flags&windowCombo != 0 && win.flags&WindowDynamic != 0 {
+		prevbody := win.Bounds
+		prevbody.H = win.layout.Height
+		// If the combo window ends up with the right corner below the
+		// main winodw's lower bound make it non-dynamic and resize it to its
+		// maximum possible size that will show the whole combo box.
+		max := w.ctx.Windows[0].Bounds.Max()
+		if prevbody.Y+prevbody.H > max.Y {
+			prevbody.H = max.Y - prevbody.Y
+			win.Bounds = prevbody
+			win.flags &= ^windowCombo
+		}
+	}
+
+	if win.flags&windowNonblock != 0 && !win.first {
+		/* check if user clicked outside the popup and close if so */
+		in_panel := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, win.ctx.Windows[0].layout.Bounds)
+		prevbody := win.Bounds
+		prevbody.H = win.layout.Height
+		in_body := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, prevbody)
+		in_header := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, win.header)
+		if !in_body && in_panel || in_header {
+			win.close = true
+		}
+	}
+
+	if win.flags&windowPopup != 0 {
+		win.cmds.PushScissor(nk_null_rect)
+
+		if !panelBegin(w.ctx, win, win.title) {
+			win.close = true
+		}
+		win.layout.Offset = &win.Scrollbar
+	}
+
+	win.first = false
 }
 
 var nk_null_rect = rect.Rect{-8192.0, -8192.0, 16384.0, 16384.0}
@@ -2379,7 +2439,7 @@ func (win *Window) PropertyInt(name string, min int, val *int, max, step, inc_pe
 // POPUP
 ///////////////////////////////////////////////////////////////////////////////////
 
-func (ctx *context) nonblockOpen(flags WindowFlags, body rect.Rect, header rect.Rect, updateFn UpdateFn) {
+func (ctx *context) nonblockOpen(flags WindowFlags, body rect.Rect, header rect.Rect, updateFn UpdateFn) *Window {
 	popup := createWindow(ctx, "")
 	popup.idx = len(ctx.Windows)
 	popup.updateFn = updateFn
@@ -2394,6 +2454,11 @@ func (ctx *context) nonblockOpen(flags WindowFlags, body rect.Rect, header rect.
 	popup.flags |= windowNonblock
 
 	popup.header = header
+
+	if updateFn == nil {
+		popup.specialPanelBegin()
+	}
+	return popup
 }
 
 // Opens a popup window inside win. Will return true until the
@@ -2412,6 +2477,9 @@ func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, s
 	popup := createWindow(ctx, title)
 	popup.idx = len(ctx.Windows)
 	popup.updateFn = updateFn
+	if updateFn == nil {
+		panic("nil update function")
+	}
 	ctx.Windows = append(ctx.Windows, popup)
 	popup.cmds.UseClipping = true
 
@@ -2421,9 +2489,6 @@ func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, s
 		rect.W = ctx.scale(rect.W)
 		rect.H = ctx.scale(rect.H)
 	}
-
-	rect.X += ctx.Windows[0].layout.Clip.X
-	rect.Y += ctx.Windows[0].layout.Clip.Y
 
 	popup.Bounds = rect
 	popup.layout = &panel{}
@@ -2442,11 +2507,17 @@ func (win *Window) Close() {
 ///////////////////////////////////////////////////////////////////////////////////
 
 // Opens a contextual menu with maximum size equal to 'size'.
-func (win *Window) ContextualOpen(flags WindowFlags, size image.Point, trigger_bounds rect.Rect, updateFn UpdateFn) {
+func (win *Window) ContextualOpen(flags WindowFlags, size image.Point, trigger_bounds rect.Rect, updateFn UpdateFn) *Window {
+	if popup := win.ctx.Windows[len(win.ctx.Windows)-1]; popup.header == trigger_bounds {
+		popup.specialPanelBegin()
+		return popup
+	}
 	size.X = win.ctx.scale(size.X)
 	size.Y = win.ctx.scale(size.Y)
-	if !win.Input().Mouse.Clicked(mouse.ButtonRight, trigger_bounds) {
-		return
+	if trigger_bounds.W > 0 && trigger_bounds.H > 0 {
+		if !win.Input().Mouse.Clicked(mouse.ButtonRight, trigger_bounds) {
+			return nil
+		}
 	}
 
 	var body rect.Rect
@@ -2456,9 +2527,7 @@ func (win *Window) ContextualOpen(flags WindowFlags, size image.Point, trigger_b
 	body.H = size.Y
 
 	atomic.AddInt32(&win.ctx.changed, 1)
-	win.ctx.nonblockOpen(flags|windowContextual|WindowNoScrollbar, body, rect.Rect{}, updateFn)
-	popup := win.ctx.Windows[len(win.ctx.Windows)-1]
-	popup.triggerBounds = trigger_bounds
+	return win.ctx.nonblockOpen(flags|windowContextual|WindowNoScrollbar, body, trigger_bounds, updateFn)
 }
 
 // MenuItem adds a menu item
@@ -2526,11 +2595,50 @@ func (win *Window) Tooltip(text string) {
 ///////////////////////////////////////////////////////////////////////////////////
 
 func (ctx *context) comboOpen(height int, is_clicked bool, header rect.Rect, updateFn UpdateFn) {
-	height = ctx.scale(height)
+}
+
+// Adds a drop-down list to win.
+func (win *Window) Combo(lbl label.Label, height int, updateFn UpdateFn) *Window {
+	s, header := win.widget()
+	if !s {
+		return nil
+	}
+
+	in := win.inputMaybe(s)
+	state := win.widgets.PrevState(header)
+	is_clicked := buttonBehaviorDo(&state, header, in, false)
+
+	switch lbl.Kind {
+	case label.ColorLabel:
+		win.widgets.Add(state, header)
+		drawComboColor(win, state, header, is_clicked, lbl.Color)
+	case label.ImageLabel:
+		win.widgets.Add(state, header)
+		drawComboImage(win, state, header, is_clicked, lbl.Img)
+	case label.ImageTextLabel:
+		win.widgets.Add(state, header)
+		drawComboImageText(win, state, header, is_clicked, lbl.Text, lbl.Img)
+	case label.SymbolLabel:
+		win.widgets.Add(state, header)
+		drawComboSymbol(win, state, header, is_clicked, lbl.Symbol)
+	case label.SymbolTextLabel:
+		win.widgets.Add(state, header)
+		drawComboSymbolText(win, state, header, is_clicked, lbl.Symbol, lbl.Text)
+	case label.TextLabel:
+		win.widgets.Add(state, header)
+		drawComboText(win, state, header, is_clicked, lbl.Text)
+	}
+
+	if popup := win.ctx.Windows[len(win.ctx.Windows)-1]; updateFn == nil && popup.header == header {
+		popup.specialPanelBegin()
+		return popup
+	}
 
 	if !is_clicked {
-		return
+		return nil
 	}
+
+	height = win.ctx.scale(height)
 
 	var body rect.Rect
 	body.X = header.X
@@ -2538,79 +2646,59 @@ func (ctx *context) comboOpen(height int, is_clicked bool, header rect.Rect, upd
 	body.Y = header.Y + header.H - 1
 	body.H = height
 
-	ctx.nonblockOpen(windowCombo, body, rect.Rect{0, 0, 0, 0}, updateFn)
-}
-
-// Adds a drop-down list to win.
-func (win *Window) Combo(lbl label.Label, height int, updateFn UpdateFn) {
-	var is_active bool = false
-
-	s, header := win.widget()
-	if !s {
-		return
-	}
-
-	in := win.inputMaybe(s)
-	state := win.widgets.PrevState(header)
-	if buttonBehaviorDo(&state, header, in, false) {
-		is_active = true
-	}
-
-	switch lbl.Kind {
-	case label.ColorLabel:
-		win.widgets.Add(state, header)
-		drawComboColor(win, state, header, is_active, lbl.Color)
-	case label.ImageLabel:
-		win.widgets.Add(state, header)
-		drawComboImage(win, state, header, is_active, lbl.Img)
-	case label.ImageTextLabel:
-		win.widgets.Add(state, header)
-		drawComboImageText(win, state, header, is_active, lbl.Text, lbl.Img)
-	case label.SymbolLabel:
-		win.widgets.Add(state, header)
-		drawComboSymbol(win, state, header, is_active, lbl.Symbol)
-	case label.SymbolTextLabel:
-		win.widgets.Add(state, header)
-		drawComboSymbolText(win, state, header, is_active, lbl.Symbol, lbl.Text)
-	case label.TextLabel:
-		win.widgets.Add(state, header)
-		drawComboText(win, state, header, is_active, lbl.Text)
-	}
-
-	win.ctx.comboOpen(height, is_active, header, updateFn)
+	return win.ctx.nonblockOpen(windowCombo, body, header, updateFn)
 }
 
 // Adds a drop-down list to win. The contents are specified by items,
 // with selected being the index of the selected item.
-func (win *Window) ComboSimple(items []string, selected *int, item_height int) {
+func (win *Window) ComboSimple(items []string, selected int, item_height int) int {
 	if len(items) == 0 {
-		return
+		return selected
 	}
 
 	item_height = win.ctx.scale(item_height)
 	item_padding := win.ctx.Style.Combo.ButtonPadding.Y
 	window_padding := win.style().Padding.Y
 	max_height := (len(items)+1)*item_height + item_padding*3 + window_padding*2
-	win.Combo(label.T(items[*selected]), max_height, func(w *Window) {
+	if w := win.Combo(label.T(items[selected]), max_height, nil); w != nil {
 		w.RowScaled(item_height).Dynamic(1)
 		for i := range items {
 			if w.MenuItem(label.TA(items[i], "LC")) {
-				*selected = i
+				selected = i
 			}
 		}
-	})
+	}
+	return selected
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
 // MENU
 ///////////////////////////////////////////////////////////////////////////////////
 
-func (win *Window) menuOpen(is_clicked bool, header rect.Rect, width int, updateFn UpdateFn) {
-	width = win.ctx.scale(width)
+// Adds a menu to win with a text label.
+func (win *Window) Menu(lbl label.Label, width int, updateFn UpdateFn) *Window {
+	state, header := win.widget()
+	if !state {
+		return nil
+	}
+
+	in := &Input{}
+	if win.toplevel() {
+		in = &win.ctx.Input
+		in.Mouse.clip = win.cmds.Clip
+	}
+	is_clicked := doButton(win, lbl, header, &win.ctx.Style.MenuButton, in, false)
+
+	if popup := win.ctx.Windows[len(win.ctx.Windows)-1]; updateFn == nil && popup.header == header {
+		popup.specialPanelBegin()
+		return popup
+	}
 
 	if !is_clicked {
-		return
+		return nil
 	}
+
+	width = win.ctx.scale(width)
 
 	var body rect.Rect
 	body.X = header.X
@@ -2618,22 +2706,7 @@ func (win *Window) menuOpen(is_clicked bool, header rect.Rect, width int, update
 	body.Y = header.Y + header.H
 	body.H = (win.layout.Bounds.Y + win.layout.Bounds.H) - body.Y
 
-	win.ctx.nonblockOpen(windowMenu|WindowNoScrollbar, body, header, updateFn)
-}
-
-// Adds a menu to win with a text label.
-func (win *Window) Menu(lbl label.Label, width int, updateFn UpdateFn) {
-	state, header := win.widget()
-	if !state {
-		return
-	}
-	in := &Input{}
-	if win.toplevel() {
-		in = &win.ctx.Input
-		in.Mouse.clip = win.cmds.Clip
-	}
-	is_clicked := doButton(win, lbl, header, &win.ctx.Style.MenuButton, in, false)
-	win.menuOpen(is_clicked, header, width, updateFn)
+	return win.ctx.nonblockOpen(windowMenu|WindowNoScrollbar, body, header, updateFn)
 }
 
 ///////////////////////////////////////////////////////////////////////////////////

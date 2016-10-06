@@ -300,64 +300,20 @@ func (w *MasterWindow) updateLocked() {
 	if perfUpdate || w.Perf {
 		t0 = time.Now()
 	}
+	for i := 0; i < len(w.ctx.Windows); i++ {
+		w.ctx.Windows[i].began = false
+	}
 	for i := 0; i < len(w.ctx.Windows); i++ { // this must not use range or tooltips won't work
 		win := w.ctx.Windows[i]
-		if win.flags&windowContextual != 0 {
-			prevbody := win.Bounds
-			prevbody.H = win.layout.Height
-			// if the contextual menu ended up with its bottom right corner outside
-			// the main window's bounds and it could be moved to be inside the main
-			// window by popping it a different way do it.
-			// Since the size of the contextual menu is only knowable after displaying
-			// it once this must be done on the second frame.
-			max := w.ctx.Windows[0].Bounds.Max()
-			if win.triggerBounds.Contains(prevbody.Min()) && ((prevbody.Max().X > max.X) || (prevbody.Max().Y > max.Y)) && (win.Bounds.X-prevbody.W >= 0) && (win.Bounds.Y-prevbody.H >= 0) {
-				win.Bounds.X = win.Bounds.X - prevbody.W
-				win.Bounds.Y = win.Bounds.Y - prevbody.H
-			} else {
-				win.Bounds.X = win.Bounds.X
-				win.Bounds.Y = win.Bounds.Y
-			}
+		if win.updateFn != nil {
+			win.specialPanelBegin()
+			win.updateFn(win)
 		}
 
-		if win.flags&windowCombo != 0 && win.flags&WindowDynamic != 0 {
-			prevbody := win.Bounds
-			prevbody.H = win.layout.Height
-			// If the combo window ends up with the right corner below the
-			// main winodw's lower bound make it non-dynamic and resize it to its
-			// maximum possible size that will show the whole combo box.
-			max := w.ctx.Windows[0].Bounds.Max()
-			if prevbody.Y+prevbody.H > max.Y {
-				prevbody.H = max.Y - prevbody.Y
-				win.Bounds = prevbody
-				win.flags &= ^windowCombo
-			}
+		if !win.began {
+			win.close = true
+			continue
 		}
-
-		if win.flags&windowNonblock != 0 && !win.first {
-			/* check if user clicked outside the popup and close if so */
-			in_panel := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, win.ctx.Windows[0].layout.Bounds)
-			prevbody := win.Bounds
-			prevbody.H = win.layout.Height
-			in_body := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, prevbody)
-			in_header := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, win.header)
-			if !in_body && in_panel || in_header {
-				win.close = true
-			}
-		}
-
-		if win.flags&windowPopup != 0 {
-			win.cmds.PushScissor(nk_null_rect)
-
-			if !panelBegin(w.ctx, win, win.title) {
-				win.close = true
-			}
-			win.layout.Offset = &win.Scrollbar
-		}
-
-		win.first = false
-
-		win.updateFn(win)
 
 		if win.title == tooltipWindowTitle {
 			win.close = true
@@ -735,11 +691,10 @@ func borderOptimize(cmd *command.Command, cmds []command.Command, idx int) (ok b
 		return false, 0
 	}
 
-	
 	if cmds[idx].Kind != command.RectFilledCmd {
 		return false, 0
 	}
-	
+
 	cmd2 := cmds[idx]
 
 	if cmd2.RectFilled.Color.A != 0xff {
@@ -878,10 +833,10 @@ func (w *MasterWindow) drawChanged(cmds []command.Command) bool {
 		if cmds[i].Kind != w.prevCmds[i].Kind {
 			return true
 		}
-		
+
 		cmd := &cmds[i]
 		pcmd := &w.prevCmds[i]
-		
+
 		switch cmds[i].Kind {
 		case command.ScissorCmd:
 			if *pcmd != *cmd {

@@ -230,7 +230,7 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 				p.commandToolbar(sw)
 			}
 			sw.Spacing(1)
-			sw.ComboSimple(infoModes, &p.infoMode, 22)
+			p.infoMode = sw.ComboSimple(infoModes, p.infoMode, 22)
 			sw.Row(0).Dynamic(1)
 			if p.infoMode >= 0 {
 				infoNameToFunc[infoModes[p.infoMode]](sw)

@@ -452,7 +452,7 @@ func configWindow(w *nucular.Window) {
 	if conf.WhiteTheme {
 		themeLbl = "White theme"
 	}
-	w.Combo(label.TA(themeLbl, "LC"), 100, func(w *nucular.Window) {
+	if w := w.Combo(label.TA(themeLbl, "LC"), 100, nil); w != nil {
 		w.Row(20).Dynamic(1)
 		if w.MenuItem(label.TA("Dark theme", "LC")) {
 			conf.WhiteTheme = false
@@ -462,12 +462,12 @@ func configWindow(w *nucular.Window) {
 			conf.WhiteTheme = true
 			setupStyle()
 		}
-	})
+	}
 
 	w.Row(20).Static(col1, 150)
 	w.Label("Disassembly Flavor:", "LC")
 	disassfl := []string{"Intel", "GNU"}
-	w.ComboSimple(disassfl, &conf.DisassemblyFlavour, 20)
+	conf.DisassemblyFlavour = w.ComboSimple(disassfl, conf.DisassemblyFlavour, 20)
 
 	w.Row(20).Dynamic(1)
 	w.Label("When a breakpoint is hit during next/step/stepout gdlv should:", "LC")
@@ -478,7 +478,7 @@ func configWindow(w *nucular.Window) {
 	if conf.StopOnNextBreakpoint {
 		breakbLbl = breakb[1]
 	}
-	w.Combo(label.TA(breakbLbl, "LC"), 100, func(w *nucular.Window) {
+	if w := w.Combo(label.TA(breakbLbl, "LC"), 100, nil); w != nil {
 		w.Row(20).Dynamic(1)
 		if w.MenuItem(label.TA(breakb[0], "LC")) {
 			conf.StopOnNextBreakpoint = false
@@ -486,7 +486,7 @@ func configWindow(w *nucular.Window) {
 		if w.MenuItem(label.TA(breakb[1], "LC")) {
 			conf.StopOnNextBreakpoint = true
 		}
-	})
+	}
 
 	w.Row(20).Static(0, 100)
 	w.Spacing(1)

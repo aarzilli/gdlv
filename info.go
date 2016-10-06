@@ -118,12 +118,11 @@ var localsPanel = struct {
 }
 
 var exprsPanel = struct {
-	asyncLoad    asyncLoad
-	expressions  []string
-	selected     int
-	menuSelected int
-	ed           nucular.TextEditor
-	v            []*api.Variable
+	asyncLoad   asyncLoad
+	expressions []string
+	selected    int
+	ed          nucular.TextEditor
+	v           []*api.Variable
 }{
 	selected: -1,
 	ed:       nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard},
@@ -194,7 +193,7 @@ func updateGoroutines(container *nucular.Window) {
 
 	w.MenubarBegin()
 	w.Row(20).Static(180)
-	w.ComboSimple(goroutineLocations, &goroutinesPanel.goroutineLocation, 22)
+	goroutinesPanel.goroutineLocation = w.ComboSimple(goroutineLocations, goroutinesPanel.goroutineLocation, 22)
 	w.MenubarEnd()
 
 	pad := style.Selectable.Padding.X * 2
@@ -522,54 +521,36 @@ func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 	if running {
 		return
 	}
-	if exprMenuIdx >= 0 {
-		if w.Input().Mouse.AnyClickInRect(w.LastWidgetBounds) {
-			exprsPanel.menuSelected = exprMenuIdx
-		}
-		w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, exprMenu)
-	} else {
-		if w.Input().Mouse.AnyClickInRect(w.LastWidgetBounds) {
-			selectedVariable = v
-		}
-		if detailsAvailable(v) != nil {
-			w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, variableMenu)
-		}
-	}
-}
+	if exprMenuIdx >= 0 && exprMenuIdx < len(exprsPanel.expressions) {
+		if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+			w.Row(20).Dynamic(1)
 
-func exprMenu(w *nucular.Window) {
-	w.Row(20).Dynamic(1)
-
-	if fn := detailsAvailable(exprsPanel.v[exprsPanel.menuSelected]); fn != nil {
-		if w.MenuItem(label.TA("Details", "LC")) {
-			fn(w.Master(), exprsPanel.v[exprsPanel.menuSelected])
+			if fn := detailsAvailable(exprsPanel.v[exprMenuIdx]); fn != nil {
+				if w.MenuItem(label.TA("Details", "LC")) {
+					fn(w.Master(), exprsPanel.v[exprMenuIdx])
+				}
+			}
+			if w.MenuItem(label.TA("Edit", "LC")) {
+				exprsPanel.selected = exprMenuIdx
+				exprsPanel.ed.Buffer = []rune(exprsPanel.expressions[exprsPanel.selected])
+				exprsPanel.ed.Cursor = len(exprsPanel.ed.Buffer)
+				exprsPanel.ed.CursorFollow = true
+			}
+			if w.MenuItem(label.TA("Remove", "LC")) {
+				if exprMenuIdx+1 < len(exprsPanel.expressions) {
+					copy(exprsPanel.expressions[exprMenuIdx:], exprsPanel.expressions[exprMenuIdx+1:])
+					copy(exprsPanel.v[exprMenuIdx:], exprsPanel.v[exprMenuIdx+1:])
+				}
+				exprsPanel.expressions = exprsPanel.expressions[:len(exprsPanel.expressions)-1]
+				exprsPanel.v = exprsPanel.v[:len(exprsPanel.v)-1]
+			}
 		}
-	}
-	if w.MenuItem(label.TA("Edit", "LC")) {
-		exprsPanel.selected = exprsPanel.menuSelected
-		if exprsPanel.selected >= 0 && exprsPanel.selected < len(exprsPanel.expressions) {
-			exprsPanel.ed.Buffer = []rune(exprsPanel.expressions[exprsPanel.selected])
-			exprsPanel.ed.Cursor = len(exprsPanel.ed.Buffer)
-			exprsPanel.ed.CursorFollow = true
-		}
-	}
-	if w.MenuItem(label.TA("Remove", "LC")) {
-		if exprsPanel.menuSelected+1 < len(exprsPanel.expressions) {
-			copy(exprsPanel.expressions[exprsPanel.menuSelected:], exprsPanel.expressions[exprsPanel.menuSelected+1:])
-			copy(exprsPanel.v[exprsPanel.menuSelected:], exprsPanel.v[exprsPanel.menuSelected+1:])
-		}
-		exprsPanel.expressions = exprsPanel.expressions[:len(exprsPanel.expressions)-1]
-		exprsPanel.v = exprsPanel.v[:len(exprsPanel.v)-1]
-	}
-}
-
-var selectedVariable *api.Variable
-
-func variableMenu(w *nucular.Window) {
-	w.Row(20).Dynamic(1)
-	if w.MenuItem(label.TA("Details", "LC")) {
-		if fn := detailsAvailable(selectedVariable); fn != nil {
-			fn(w.Master(), selectedVariable)
+	} else if fn := detailsAvailable(v); fn != nil {
+		if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+			w.Row(20).Dynamic(1)
+			if w.MenuItem(label.TA("Details", "LC")) {
+				fn(w.Master(), v)
+			}
 		}
 	}
 }
@@ -675,46 +656,40 @@ func updateBreakpoints(container *nucular.Window) {
 		w.SelectableLabel(fmt.Sprintf("%*d", d, breakpoint.ID), "LT", &selected)
 		bounds := w.LastWidgetBounds
 		bounds.W = w.Bounds.W
-		if w.Input().Mouse.AnyClickInRect(bounds) {
-			breakpointsPanel.selected = breakpoint.ID
-		}
 		w.SelectableLabel(fmt.Sprintf("%s in %s\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
 		if !running {
-			w.ContextualOpen(0, image.Point{200, 500}, bounds, breakpointsMenu)
-		}
-	}
-}
-
-func breakpointsMenu(w *nucular.Window) {
-	w.Row(20).Dynamic(1)
-	if breakpointsPanel.selected > 0 {
-		if w.MenuItem(label.TA("Edit...", "LC")) {
-			for _, bp := range breakpointsPanel.breakpoints {
-				if bp.ID == breakpointsPanel.selected {
-					openBreakpointEditor(w.Master(), bp)
-					break
+			if w := w.ContextualOpen(0, image.Point{200, 500}, bounds, nil); w != nil {
+				breakpointsPanel.selected = breakpoint.ID
+				w.Row(20).Dynamic(1)
+				if w.MenuItem(label.TA("Edit...", "LC")) {
+					for _, bp := range breakpointsPanel.breakpoints {
+						if bp.ID == breakpointsPanel.selected {
+							openBreakpointEditor(w.Master(), bp)
+							break
+						}
+					}
+				}
+				if w.MenuItem(label.TA("Clear", "LC")) {
+					go execClearBreakpoint(breakpointsPanel.selected)
+				}
+				if w.MenuItem(label.TA("Clear All", "LC")) {
+					go func() {
+						scrollbackOut := editorWriter{&scrollbackEditor, true}
+						for _, bp := range breakpointsPanel.breakpoints {
+							if bp.ID < 0 {
+								continue
+							}
+							_, err := client.ClearBreakpoint(bp.ID)
+							if err != nil {
+								fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint %d: %v\n", bp.ID, err)
+							}
+						}
+						refreshState(refreshToSameFrame, clearBreakpoint, nil)
+						wnd.Changed()
+					}()
 				}
 			}
 		}
-		if w.MenuItem(label.TA("Clear", "LC")) {
-			go execClearBreakpoint(breakpointsPanel.selected)
-		}
-	}
-	if w.MenuItem(label.TA("Clear All", "LC")) {
-		go func() {
-			scrollbackOut := editorWriter{&scrollbackEditor, true}
-			for _, bp := range breakpointsPanel.breakpoints {
-				if bp.ID < 0 {
-					continue
-				}
-				_, err := client.ClearBreakpoint(bp.ID)
-				if err != nil {
-					fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint %d: %v\n", bp.ID, err)
-				}
-			}
-			refreshState(refreshToSameFrame, clearBreakpoint, nil)
-			wnd.Changed()
-		}()
 	}
 }
 
@@ -1218,9 +1193,20 @@ func updateListingPanel(container *nucular.Window) {
 		listp.Label(line.idx, "LC")
 		listp.Label(line.text, "LC")
 
-		if listp.Input().Mouse.AnyClickInRect(rowbounds) {
-			m := &lineMenu{listingPanel.file, line}
-			listp.ContextualOpen(0, image.Point{150, 500}, rowbounds, m.Update)
+		if w := listp.ContextualOpen(0, image.Point{150, 500}, rowbounds, nil); w != nil {
+			w.Row(20).Dynamic(1)
+			if line.bp != nil {
+				if w.MenuItem(label.TA("Edit breakpoint", "LC")) {
+					openBreakpointEditor(w.Master(), line.bp)
+				}
+				if w.MenuItem(label.TA("Clear breakpoint", "LC")) {
+					go execClearBreakpoint(line.bp.ID)
+				}
+			} else {
+				if w.MenuItem(label.TA("Set breakpoint", "LC")) {
+					go listingSetBreakpoint(listingPanel.file, line.lineno)
+				}
+			}
 		}
 	}
 
@@ -1230,30 +1216,9 @@ func updateListingPanel(container *nucular.Window) {
 	}
 }
 
-type lineMenu struct {
-	file string
-	line listline
-}
-
-func (m *lineMenu) Update(w *nucular.Window) {
-	w.Row(20).Dynamic(1)
-	if m.line.bp != nil {
-		if w.MenuItem(label.TA("Edit breakpoint", "LC")) {
-			openBreakpointEditor(w.Master(), m.line.bp)
-		}
-		if w.MenuItem(label.TA("Clear breakpoint", "LC")) {
-			go execClearBreakpoint(m.line.bp.ID)
-		}
-	} else {
-		if w.MenuItem(label.TA("Set breakpoint", "LC")) {
-			go m.setBreakpoint()
-		}
-	}
-}
-
-func (m *lineMenu) setBreakpoint() {
+func listingSetBreakpoint(file string, line int) {
 	out := &editorWriter{&scrollbackEditor, true}
-	bp, err := client.CreateBreakpoint(&api.Breakpoint{File: m.file, Line: m.line.lineno})
+	bp, err := client.CreateBreakpoint(&api.Breakpoint{File: file, Line: line})
 	if err != nil {
 		fmt.Fprintf(out, "Could not create breakpoint: %v\n", err)
 	} else {
