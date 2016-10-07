@@ -213,7 +213,6 @@ func (p *panel) update(w *nucular.Window) {
 }
 
 func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
-	style, _ := w.Master().Style()
 	switch p.kind {
 	case fullPanelKind:
 		p.child[0].updateIntl(w, bounds)
@@ -221,13 +220,17 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 	case infoPanelKind:
 		w.LayoutSpacePushScaled(bounds)
 		if sw := w.GroupBegin(p.name, splitFlags); sw != nil {
-			if infoModes[p.infoMode] != infoCommand {
-				sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
-				iconFace, style.Font = style.Font, iconFace
-				sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
-				iconFace, style.Font = style.Font, iconFace
-			} else {
+			switch infoModes[p.infoMode] {
+			case infoCommand:
 				p.commandToolbar(sw)
+			case infoListing, infoDisassembly:
+				if listingPanel.pinnedLoc != nil {
+					p.resetListingToolbar(sw)
+				} else {
+					p.normalToolbar(sw)
+				}
+			default:
+				p.normalToolbar(sw)
 			}
 			sw.Spacing(1)
 			p.infoMode = sw.ComboSimple(infoModes, p.infoMode, 22)
@@ -263,15 +266,35 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 }
 
 func (p *panel) splitMenu(w *nucular.Window) {
-	w.Row(20).Dynamic(1)
-	if w.MenuItem(label.TA("Split Horizontal", "LC")) {
-		p.dosplit(splitHorizontalPanelKind)
+	style, _ := w.Master().Style()
+	iconFace, style.Font = style.Font, iconFace
+	mw := w.Menu(label.TA(splitIcon, "CC"), 120, nil)
+	iconFace, style.Font = style.Font, iconFace
+	if w := mw; w != nil {
+		w.Row(20).Dynamic(1)
+		if w.MenuItem(label.TA("Split Horizontal", "LC")) {
+			p.dosplit(splitHorizontalPanelKind)
+		}
+		if w.MenuItem(label.TA("Split Vertical", "LC")) {
+			p.dosplit(splitVerticalPanelKind)
+		}
+		if w.MenuItem(label.TA("Close", "LC")) {
+			p.closeMyself()
+		}
 	}
-	if w.MenuItem(label.TA("Split Vertical", "LC")) {
-		p.dosplit(splitVerticalPanelKind)
-	}
-	if w.MenuItem(label.TA("Close", "LC")) {
-		p.closeMyself()
+}
+
+func (p *panel) normalToolbar(sw *nucular.Window) {
+	sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
+	p.splitMenu(sw)
+}
+
+func (p *panel) resetListingToolbar(sw *nucular.Window) {
+	sw.Row(headerRow).Static(headerSplitMenu, 200, 0, headerCombo, 2)
+	p.splitMenu(sw)
+	if sw.ButtonText("Back to current frame") {
+		listingPanel.pinnedLoc = nil
+		go refreshState(refreshToSameFrame, clearNothing, nil)
 	}
 }
 
@@ -299,22 +322,16 @@ func (p *panel) commandToolbar(sw *nucular.Window) {
 	switch {
 	case client == nil:
 		sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
-		iconFace, style.Font = style.Font, iconFace
-		sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
-		iconFace, style.Font = style.Font, iconFace
+		p.splitMenu(sw)
 
 	case running:
 		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, 0, headerCombo, 2)
-		iconFace, style.Font = style.Font, iconFace
-		sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
-		iconFace, style.Font = style.Font, iconFace
+		p.splitMenu(sw)
 		cmdbtn(interruptIcon, "interrupt")
 
 	case nextInProgress:
 		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, controlBtnWidth, 0, headerCombo, 2)
-		iconFace, style.Font = style.Font, iconFace
-		sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
-		iconFace, style.Font = style.Font, iconFace
+		p.splitMenu(sw)
 		if iconbtn(continueIcon, "continue next") {
 			docmd("continue")
 		}
@@ -324,9 +341,7 @@ func (p *panel) commandToolbar(sw *nucular.Window) {
 
 	default:
 		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, controlBtnWidth/2, controlBtnWidth, controlBtnWidth, controlBtnWidth, 0, headerCombo, 2)
-		iconFace, style.Font = style.Font, iconFace
-		sw.Menu(label.TA(splitIcon, "CC"), 120, p.splitMenu)
-		iconFace, style.Font = style.Font, iconFace
+		p.splitMenu(sw)
 		cmdbtn(continueIcon, "continue")
 		sw.Spacing(1)
 		cmdbtn(nextIcon, "next")

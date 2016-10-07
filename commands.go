@@ -98,12 +98,17 @@ See also: "help on", "help cond" and "help clear"`},
 		{aliases: []string{"interrupt"}, cmdFn: interrupt, helpMsg: "interrupts execution."},
 		{aliases: []string{"print", "p"}, complete: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
 
-	[goroutine <n>] [frame <m>] print <expression>
+	print <expression>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.`},
+		{aliases: []string{"list", "ls"}, complete: completeLocation, cmdFn: listCommand, helpMsg: `Show source code.
+		
+			list <linespec>
+		
+		See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.`},
 		{aliases: []string{"set"}, cmdFn: setVar, complete: completeVariable, helpMsg: `Changes the value of a variable.
 
-	[goroutine <n>] [frame <m>] set <variable> = <value>
+	set <variable> = <value>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions. Only numerical variables and pointers can be changed.`},
 		{aliases: []string{"layout"}, cmdFn: layoutCommand, helpMsg: `Manages window layout.
@@ -362,6 +367,26 @@ func printVar(client service.Client, out io.Writer, args string) error {
 	}
 
 	fmt.Fprintln(out, val.MultilineString(""))
+	return nil
+}
+
+func listCommand(client service.Client, out io.Writer, args string) error {
+	locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, args)
+	if err != nil {
+		return err
+	}
+	switch len(locs) {
+	case 1:
+		// ok
+	case 0:
+		return errors.New("no location found")
+	default:
+		return errors.New("can not list multiple locations")
+	}
+
+	listingPanel.pinnedLoc = &locs[0]
+	refreshState(refreshToSameFrame, clearNothing, nil)
+
 	return nil
 }
 

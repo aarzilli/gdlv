@@ -98,6 +98,7 @@ var listingPanel struct {
 	recenterDisassembly bool
 	listing             []listline
 	text                api.AsmInstructions
+	pinnedLoc           *api.Location
 }
 
 var mu sync.Mutex
@@ -403,6 +404,7 @@ const (
 	clearGoroutineSwitch
 	clearStop
 	clearBreakpoint
+	clearNothing
 )
 
 type refreshToFrame uint16
@@ -454,77 +456,22 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 	} else {
 		curGid = -1
 	}
-	var loc *api.Location
-findCurrentLocation:
-	switch toframe {
-	case refreshToFrameZero:
-		curFrame = 0
-		if state.SelectedGoroutine != nil {
-			if state.CurrentThread != nil && state.SelectedGoroutine.ThreadID == state.CurrentThread.ID {
-				loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
-			} else {
-				loc = &state.SelectedGoroutine.CurrentLoc
-			}
-		} else if state.CurrentThread != nil {
-			loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
-		}
-
-	case refreshToSameFrame:
-		frames, err := client.Stacktrace(curGid, curFrame+1, nil)
-		if err != nil {
-			failstate("Stacktrace()", err)
-			return
-		}
-		if curFrame >= len(frames) {
-			curFrame = 0
-		}
-		if curFrame < len(frames) {
-			loc = &frames[curFrame].Location
-		}
-
-	case refreshToUserFrame:
-		const runtimeprefix = "runtime."
-		curFrame = 0
-		frames, err := client.Stacktrace(curGid, 20, nil)
-		if err != nil {
-			failstate("Stacktrace()", err)
-			return
-		}
-		if len(frames) == 0 {
-			toframe = refreshToFrameZero
-			goto findCurrentLocation
-		}
-		for i := range frames {
-			if frames[i].Function == nil {
-				continue
-			}
-			name := frames[i].Function.Name
-			if !strings.HasPrefix(name, runtimeprefix) {
-				curFrame = i
-				break
-			}
-			if len(name) > len(runtimeprefix) {
-				ch := name[len(runtimeprefix)]
-				if ch >= 'A' && ch <= 'Z' {
-					curFrame = i
-					break
-				}
-			}
-		}
-		loc = &frames[curFrame].Location
-	}
 
 	switch clearKind {
+	case clearNothing:
+		// nothing to clear
 	case clearBreakpoint:
 		breakpointsPanel.asyncLoad.clear()
 	case clearFrameSwitch:
 		localsPanel.asyncLoad.clear()
 		exprsPanel.asyncLoad.clear()
+		listingPanel.pinnedLoc = nil
 	case clearGoroutineSwitch:
 		stackPanel.asyncLoad.clear()
 		localsPanel.asyncLoad.clear()
 		exprsPanel.asyncLoad.clear()
 		regsPanel.asyncLoad.clear()
+		listingPanel.pinnedLoc = nil
 	case clearStop:
 		localsPanel.asyncLoad.clear()
 		exprsPanel.asyncLoad.clear()
@@ -534,6 +481,70 @@ findCurrentLocation:
 		threadsPanel.asyncLoad.clear()
 		globalsPanel.asyncLoad.clear()
 		breakpointsPanel.asyncLoad.clear()
+		listingPanel.pinnedLoc = nil
+	}
+
+	loc := listingPanel.pinnedLoc
+
+	if loc == nil {
+	findCurrentLocation:
+		switch toframe {
+		case refreshToFrameZero:
+			curFrame = 0
+			if state.SelectedGoroutine != nil {
+				if state.CurrentThread != nil && state.SelectedGoroutine.ThreadID == state.CurrentThread.ID {
+					loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
+				} else {
+					loc = &state.SelectedGoroutine.CurrentLoc
+				}
+			} else if state.CurrentThread != nil {
+				loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
+			}
+
+		case refreshToSameFrame:
+			frames, err := client.Stacktrace(curGid, curFrame+1, nil)
+			if err != nil {
+				failstate("Stacktrace()", err)
+				return
+			}
+			if curFrame >= len(frames) {
+				curFrame = 0
+			}
+			if curFrame < len(frames) {
+				loc = &frames[curFrame].Location
+			}
+
+		case refreshToUserFrame:
+			const runtimeprefix = "runtime."
+			curFrame = 0
+			frames, err := client.Stacktrace(curGid, 20, nil)
+			if err != nil {
+				failstate("Stacktrace()", err)
+				return
+			}
+			if len(frames) == 0 {
+				toframe = refreshToFrameZero
+				goto findCurrentLocation
+			}
+			for i := range frames {
+				if frames[i].Function == nil {
+					continue
+				}
+				name := frames[i].Function.Name
+				if !strings.HasPrefix(name, runtimeprefix) {
+					curFrame = i
+					break
+				}
+				if len(name) > len(runtimeprefix) {
+					ch := name[len(runtimeprefix)]
+					if ch >= 'A' && ch <= 'Z' {
+						curFrame = i
+						break
+					}
+				}
+			}
+			loc = &frames[curFrame].Location
+		}
 	}
 
 	if loc != nil {
@@ -574,7 +585,7 @@ findCurrentLocation:
 		for buf.Scan() {
 			lineno++
 			breakpoint := bpmap[lineno]
-			listingPanel.listing = append(listingPanel.listing, listline{"", lineno, expandTabs(buf.Text()), lineno == loc.Line, breakpoint})
+			listingPanel.listing = append(listingPanel.listing, listline{"", lineno, expandTabs(buf.Text()), lineno == loc.Line && listingPanel.pinnedLoc == nil, breakpoint})
 		}
 
 		if err := buf.Err(); err != nil {

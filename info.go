@@ -1160,7 +1160,9 @@ func updateListingPanel(container *nucular.Window) {
 		rowbounds := listp.WidgetBounds()
 		rowbounds.W = listp.Bounds.W
 
-		if line.pc {
+		centerline := line.pc || (listingPanel.pinnedLoc != nil && line.lineno == listingPanel.pinnedLoc.Line)
+
+		if centerline {
 			cmds := listp.Commands()
 			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
 		}
@@ -1173,7 +1175,7 @@ func updateListingPanel(container *nucular.Window) {
 			listp.Spacing(1)
 		}
 
-		if line.pc && listingPanel.recenterListing {
+		if centerline && listingPanel.recenterListing {
 			listingPanel.recenterListing = false
 			if above, below := listp.Invisible(); above || below {
 				scrollbary = listp.At().Y - listp.Bounds.H/2
