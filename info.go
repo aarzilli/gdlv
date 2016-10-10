@@ -15,8 +15,10 @@ import (
 	"sync"
 
 	"github.com/aarzilli/nucular"
+	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
+
 	"github.com/derekparker/delve/service/api"
 )
 
@@ -152,11 +154,13 @@ type stringSlicePanel struct {
 	name         string
 	filterEditor nucular.TextEditor
 	slice        []string
+	selected     int
+	interaction  func(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int)
 }
 
-var funcsPanel = stringSlicePanel{name: "functions"}
-var typesPanel = stringSlicePanel{name: "types"}
-var sourcesPanel = stringSlicePanel{name: "sources"}
+var funcsPanel = stringSlicePanel{name: "functions", selected: -1, interaction: funcInteraction}
+var typesPanel = stringSlicePanel{name: "types", selected: -1, interaction: sliceInteraction}
+var sourcesPanel = stringSlicePanel{name: "sources", selected: -1, interaction: sourceInteraction}
 
 func spacefilter(ch rune) bool {
 	return ch != ' ' && ch != '\t'
@@ -652,21 +656,23 @@ func updateBreakpoints(container *nucular.Window) {
 
 	w.Row(40).StaticScaled(zeroWidth*d+pad, 0)
 	for _, breakpoint := range breakpoints {
+		oldselectedId := breakpointsPanel.selected
 		selected := breakpointsPanel.selected == breakpoint.ID
 		w.SelectableLabel(fmt.Sprintf("%*d", d, breakpoint.ID), "LT", &selected)
 		bounds := w.LastWidgetBounds
 		bounds.W = w.Bounds.W
 		w.SelectableLabel(fmt.Sprintf("%s in %s\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
 		if !running {
+			if selected {
+				breakpointsPanel.selected = breakpoint.ID
+			}
+
 			if w := w.ContextualOpen(0, image.Point{200, 500}, bounds, nil); w != nil {
 				breakpointsPanel.selected = breakpoint.ID
 				w.Row(20).Dynamic(1)
 				if w.MenuItem(label.TA("Edit...", "LC")) {
-					for _, bp := range breakpointsPanel.breakpoints {
-						if bp.ID == breakpointsPanel.selected {
-							openBreakpointEditor(w.Master(), bp)
-							break
-						}
+					if bp := breakpointsPanelSelectedBreakpoint(); bp != nil {
+						openBreakpointEditor(w.Master(), bp)
 					}
 				}
 				if w.MenuItem(label.TA("Clear", "LC")) {
@@ -689,8 +695,24 @@ func updateBreakpoints(container *nucular.Window) {
 					}()
 				}
 			}
+
+			if breakpointsPanel.selected != oldselectedId {
+				if bp := breakpointsPanelSelectedBreakpoint(); bp != nil {
+					listingPanel.pinnedLoc = &api.Location{File: bp.File, Line: bp.Line, PC: bp.Addr}
+					go refreshState(refreshToSameFrame, clearNothing, nil)
+				}
+			}
 		}
 	}
+}
+
+func breakpointsPanelSelectedBreakpoint() *api.Breakpoint {
+	for _, bp := range breakpointsPanel.breakpoints {
+		if bp.ID == breakpointsPanel.selected {
+			return bp
+		}
+	}
+	return nil
 }
 
 func execClearBreakpoint(id int) {
@@ -833,11 +855,70 @@ func (p *stringSlicePanel) update(container *nucular.Window) {
 	filter := string(p.filterEditor.Buffer)
 
 	w.Row(20).Dynamic(1)
-	for _, value := range p.slice {
-		if strings.Index(value, filter) >= 0 {
-			w.Label(value, "LC")
+	for i, value := range p.slice {
+		if strings.Index(value, filter) < 0 {
+			continue
 		}
-		// TODO: contextual menu with copy (but functions need to also have a "set breakpoint" entry)
+		selected := i == p.selected
+		clicked := w.SelectableLabel(value, "LC", &selected)
+		if selected {
+			p.selected = i
+		}
+		if p.interaction != nil {
+			p.interaction(p, w, clicked, i)
+		}
+	}
+}
+
+func funcInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int) {
+	if clicked {
+		locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, p.slice[p.selected])
+		if err == nil && len(locs) == 1 {
+			listingPanel.pinnedLoc = &locs[0]
+			go refreshState(refreshToSameFrame, clearNothing, nil)
+		}
+	}
+	if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+		w.Row(20).Dynamic(1)
+		if w.MenuItem(label.TA("Set breakpoint", "LC")) {
+			go functionListSetBreakpoint(p.slice[idx])
+		}
+		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
+			clipboard.Set(p.slice[idx])
+		}
+	}
+}
+
+func functionListSetBreakpoint(name string) {
+	out := &editorWriter{&scrollbackEditor, true}
+	bp, err := client.CreateBreakpoint(&api.Breakpoint{FunctionName: name, Line: -1})
+	if err != nil {
+		fmt.Fprintf(out, "Could not create breakpoint: %v\n", err)
+	} else {
+		fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
+		refreshState(refreshToSameFrame, clearBreakpoint, nil)
+	}
+}
+
+func sourceInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int) {
+	if clicked {
+		listingPanel.pinnedLoc = &api.Location{File: p.slice[p.selected], Line: 1}
+		go refreshState(refreshToSameFrame, clearNothing, nil)
+	}
+	if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+		w.Row(20).Dynamic(1)
+		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
+			clipboard.Set(p.slice[idx])
+		}
+	}
+}
+
+func sliceInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int) {
+	if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+		w.Row(20).Dynamic(1)
+		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
+			clipboard.Set(p.slice[idx])
+		}
 	}
 }
 

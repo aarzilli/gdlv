@@ -552,13 +552,17 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		if conf.DisassemblyFlavour == 1 {
 			flavour = api.GNUFlavour
 		}
-		text, err := client.DisassemblePC(api.EvalScope{curGid, curFrame}, loc.PC, flavour)
-		if err != nil {
-			failstate("DisassemblePC()", err)
-			return
-		}
+		if loc.PC != 0 {
+			text, err := client.DisassemblePC(api.EvalScope{curGid, curFrame}, loc.PC, flavour)
+			if err != nil {
+				failstate("DisassemblePC()", err)
+				return
+			}
 
-		listingPanel.text = text
+			listingPanel.text = text
+		} else {
+			listingPanel.text = nil
+		}
 
 		breakpoints, err := client.ListBreakpoints()
 		if err != nil {
