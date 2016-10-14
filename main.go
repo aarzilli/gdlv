@@ -265,18 +265,56 @@ func updateCommandPanel(container *nucular.Window) {
 }
 
 func startServer() (connectString string, stdout, stderr io.ReadCloser, err error) {
-	if os.Args[1] == "connect" && len(os.Args) == 3 {
-		return os.Args[2], nil, nil, nil
+	//	fmt.Fprintf(os.Stderr, "usage:\n\tgdlv connect <address>\n\tgdlv debug <program's arguments...>\n\tgdlv exec <program> <program's arguments...>\n\tgdlv test <testflags...>\n\tgdlv attach <pid>\n")
+	run := func(args ...string) {
+		cmd := exec.Command("dlv", args...)
+		stdout, _ = cmd.StdoutPipe()
+		stderr, _ = cmd.StderrPipe()
+		err = cmd.Start()
+		serverProcess = cmd.Process
 	}
 
-	args := []string{"--headless"}
-	args = append(args, os.Args[1:]...)
+	if len(os.Args) < 2 {
+		usage()
+	}
 
-	cmd := exec.Command("dlv", args...)
-	stdout, _ = cmd.StdoutPipe()
-	stderr, _ = cmd.StderrPipe()
-	err = cmd.Start()
-	serverProcess = cmd.Process
+	switch os.Args[1] {
+	case "connect":
+		if len(os.Args) != 3 {
+		}
+		return os.Args[2], nil, nil, nil
+	case "attach":
+		if len(os.Args) != 3 {
+			usage()
+		}
+		run("--headless", "attach", os.Args[2])
+	case "debug":
+		args := make([]string, 0, len(os.Args[2:])+3)
+		args = append(args, "--headless", "debug", "--")
+		args = append(args, os.Args[2:]...)
+		run(args...)
+	case "exec":
+		if len(os.Args) < 3 {
+			usage()
+		}
+		args := make([]string, 0, len(os.Args[3:])+4)
+		args = append(args, "--headless", "exec", os.Args[2], "--")
+		args = append(args, os.Args[3:]...)
+		run(args...)
+	case "test":
+		args := make([]string, 0, len(os.Args[2:])+3)
+		args = append(args, "--headless", "test", "--")
+		for _, arg := range os.Args[2:] {
+			if len(arg) > 0 && arg[0] == '-' {
+				arg = "-test." + arg[1:]
+			}
+			args = append(args, arg)
+		}
+		run(args...)
+	default:
+		usage()
+	}
+
 	return
 }
 
@@ -644,7 +682,7 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage:\n\tgdlv connect <address>\n\tgdlv debug -- <program's arguments...>\n\tgdlv exec <program> -- <program's arguments...>\n\tgdlv test\n\tgdlv attach <pid>\n")
+	fmt.Fprintf(os.Stderr, "usage:\n\tgdlv connect <address>\n\tgdlv debug <program's arguments...>\n\tgdlv exec <program> <program's arguments...>\n\tgdlv test <testflags...>\n\tgdlv attach <pid>\n")
 	os.Exit(1)
 }
 
@@ -659,14 +697,7 @@ func main() {
 		}
 	}
 
-	if len(os.Args) < 2 {
-		usage()
-	}
-	switch os.Args[1] {
-	case "connect", "debug", "exec", "test", "attach":
-	default:
-		usage()
-	}
+	connectString, stdout, stderr, err := startServer()
 
 	wnd = nucular.NewMasterWindow(guiUpdate, nucular.WindowNoScrollbar)
 	setupStyle()
@@ -687,8 +718,6 @@ This program comes with ABSOLUTELY NO WARRANTY;
 This is free software, and you are welcome to redistribute it
 under certain conditions; see COPYING for details.
 `)
-
-	connectString, stdout, stderr, err := startServer()
 
 	switch {
 	case err != nil:
