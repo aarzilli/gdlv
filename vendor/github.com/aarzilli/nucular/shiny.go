@@ -16,12 +16,10 @@ import (
 
 	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/command"
-	"github.com/aarzilli/nucular/internal/assets"
 	"github.com/aarzilli/nucular/rect"
+	nstyle "github.com/aarzilli/nucular/style"
 
-	"github.com/golang/freetype"
 	"github.com/golang/freetype/raster"
-	"github.com/golang/freetype/truetype"
 
 	"golang.org/x/exp/shiny/driver"
 	"golang.org/x/exp/shiny/screen"
@@ -64,24 +62,9 @@ type MasterWindow struct {
 	closing bool
 }
 
-var ttfontDefault *truetype.Font
-var defaultFontInit sync.Once
-
-// Returns default font (DroidSansMono) with specified size and scaling
-func DefaultFont(size int, scaling float64) font.Face {
-	defaultFontInit.Do(func() {
-		fontData, _ := assets.Asset("DroidSansMono.ttf")
-		ttfontDefault, _ = freetype.ParseFont(fontData)
-	})
-
-	sz := int(float64(size) * scaling)
-
-	return truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
-}
-
 // Creates new master window
 func NewMasterWindow(updatefn UpdateFn, flags WindowFlags) *MasterWindow {
-	ctx := &context{Scaling: 1.0}
+	ctx := &context{}
 	ctx.Input.Mouse.valid = true
 	wnd := &MasterWindow{ctx: ctx}
 	wnd.layout.Flags = flags
@@ -101,6 +84,8 @@ func NewMasterWindow(updatefn UpdateFn, flags WindowFlags) *MasterWindow {
 	ctx.Windows[0].updateFn = updatefn
 	ctx.mw = wnd
 
+	wnd.SetStyle(nstyle.FromTheme(nstyle.DefaultTheme, 1.0))
+
 	return wnd
 }
 
@@ -112,7 +97,7 @@ func (mw *MasterWindow) Main() {
 func (mw *MasterWindow) main(s screen.Screen) {
 	var err error
 	mw.screen = s
-	width, height := int(640*mw.ctx.Scaling), int(480*mw.ctx.Scaling)
+	width, height := int(640*mw.ctx.Style.Scaling), int(480*mw.ctx.Style.Scaling)
 	mw.wnd, err = s.NewWindow(&screen.NewWindowOptions{width, height})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not create window: %v", err)
@@ -886,4 +871,20 @@ func (w *MasterWindow) drawChanged(cmds []command.Command) bool {
 
 func (mw *MasterWindow) ActivateEditor(ed *TextEditor) {
 	mw.ctx.activateEditor = ed
+}
+
+func (mw *MasterWindow) Style() *nstyle.Style {
+	return &mw.ctx.Style
+}
+
+func (mw *MasterWindow) SetStyle(style *nstyle.Style) {
+	mw.ctx.Style = *style
+
+	if mw.ctx.Style.Scaling == 0.0 {
+		mw.ctx.Style.Scaling = 1.0
+	}
+
+	if mw.ctx.Style.Font == nil {
+		mw.ctx.Style.DefaultFont(mw.ctx.Style.Scaling)
+	}
 }

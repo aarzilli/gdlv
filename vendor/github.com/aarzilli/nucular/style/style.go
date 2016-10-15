@@ -3,11 +3,16 @@ package style
 import (
 	"image"
 	"image/color"
+	"sync"
 
 	"github.com/aarzilli/nucular/command"
+	"github.com/aarzilli/nucular/internal/assets"
 	"github.com/aarzilli/nucular/label"
 
 	"golang.org/x/image/font"
+
+	"github.com/golang/freetype"
+	"github.com/golang/freetype/truetype"
 )
 
 type WidgetStates int
@@ -19,6 +24,9 @@ const (
 )
 
 type Style struct {
+	Scaling          float64
+	unscaled         *Style
+	defaultFont      font.Face
 	Font             font.Face
 	Text             Text
 	Button           Button
@@ -324,7 +332,7 @@ type Tab struct {
 	Rounding    uint16
 	Padding     image.Point
 	Spacing     image.Point
-	Indent int
+	Indent      int
 }
 
 type HeaderAlign int
@@ -372,7 +380,7 @@ var defaultColorStyle = []color.RGBA{color.RGBA{175, 175, 175, 255}, color.RGBA{
 
 var nk_color_names = []string{"ColorText", "ColorWindow", "ColorHeader", "ColorBorder", "ColorButton", "ColorButtonHover", "ColorButtonActive", "ColorToggle", "ColorToggleHover", "ColorToggleCursor", "ColorSelect", "ColorSelectActive", "ColorSlider", "ColorSliderCursor", "ColorSliderCursorHover", "ColorSliderCursorActive", "ColorProperty", "ColorEdit", "ColorEditCursor", "ColorCombo", "ColorChart", "ColorChartColor", "ColorChartColorHighlight", "ColorScrollbar", "ColorScrollbarCursor", "ColorScrollbarCursorHover", "ColorScrollbarCursorActive", "ColorTabHeader"}
 
-func FromTable(table []color.RGBA) *Style {
+func FromTable(table []color.RGBA, scaling float64) *Style {
 	var text *Text
 	var button *Button
 	var toggle *Toggle
@@ -386,7 +394,7 @@ func FromTable(table []color.RGBA) *Style {
 	var tab *Tab
 	var win *Window
 
-	style := &Style{}
+	style := &Style{Scaling: 1.0}
 	if table == nil {
 		table = defaultColorStyle[:]
 	}
@@ -888,6 +896,8 @@ func FromTable(table []color.RGBA) *Style {
 	style.GroupWindow.Padding = image.Point{2, 2}
 	style.GroupWindow.Spacing = image.Point{2, 2}
 
+	style.Scale(scaling)
+
 	return style
 }
 
@@ -1014,17 +1024,186 @@ func init() {
 	darkThemeTable[ColorTabHeader] = color.RGBA{48, 83, 111, 255}
 }
 
-func FromTheme(theme Theme) *Style {
+func FromTheme(theme Theme, scaling float64) *Style {
 	switch theme {
 	case DefaultTheme:
 		fallthrough
 	default:
-		return FromTable(nil)
+		return FromTable(nil, scaling)
 	case WhiteTheme:
-		return FromTable(whiteThemeTable)
+		return FromTable(whiteThemeTable, scaling)
 	case RedTheme:
-		return FromTable(redThemeTable)
+		return FromTable(redThemeTable, scaling)
 	case DarkTheme:
-		return FromTable(darkThemeTable)
+		return FromTable(darkThemeTable, scaling)
 	}
+}
+
+func (style *Style) Scale(scaling float64) {
+	unscaled := style.unscaled
+	if unscaled != nil {
+		*style = *unscaled
+		style.unscaled = unscaled
+	} else {
+		unscaled = &Style{}
+		*unscaled = *style
+		style.unscaled = unscaled
+	}
+
+	style.Scaling = scaling
+
+	if style.Font == nil || style.defaultFont == style.Font {
+		style.DefaultFont(scaling)
+		style.defaultFont = style.Font
+	} else {
+		style.defaultFont = nil
+	}
+
+	style.unscaled.Font = style.Font
+	style.unscaled.defaultFont = style.defaultFont
+
+	if scaling == 1.0 {
+		return
+	}
+
+	scale := func(x *int) {
+		*x = int(float64(*x) * scaling)
+	}
+
+	scaleu := func(x *uint16) {
+		*x = uint16(float64(*x) * scaling)
+	}
+
+	scalept := func(p *image.Point) {
+		if scaling == 1.0 {
+			return
+		}
+		scale(&p.X)
+		scale(&p.Y)
+	}
+
+	scalebtn := func(button *Button) {
+		scalept(&button.Padding)
+		scalept(&button.ImagePadding)
+		scalept(&button.TouchPadding)
+		scale(&button.Border)
+		scaleu(&button.Rounding)
+	}
+
+	z := style
+
+	scalept(&z.Text.Padding)
+
+	scalebtn(&z.Button)
+	scalebtn(&z.ContextualButton)
+	scalebtn(&z.MenuButton)
+
+	scalept(&z.Checkbox.Padding)
+	scalept(&z.Checkbox.TouchPadding)
+
+	scalept(&z.Option.Padding)
+	scalept(&z.Option.TouchPadding)
+
+	scalept(&z.Selectable.Padding)
+	scalept(&z.Selectable.TouchPadding)
+	scaleu(&z.Selectable.Rounding)
+
+	scalept(&z.Slider.CursorSize)
+	scalept(&z.Slider.Padding)
+	scalept(&z.Slider.Spacing)
+	scaleu(&z.Slider.Rounding)
+	scale(&z.Slider.BarHeight)
+
+	scalebtn(&z.Slider.IncButton)
+
+	scalept(&z.Progress.Padding)
+	scaleu(&z.Progress.Rounding)
+
+	scalept(&z.Scrollh.Padding)
+	scale(&z.Scrollh.Border)
+	scaleu(&z.Scrollh.Rounding)
+
+	scalebtn(&z.Scrollh.IncButton)
+	scalebtn(&z.Scrollh.DecButton)
+	scalebtn(&z.Scrollv.IncButton)
+	scalebtn(&z.Scrollv.DecButton)
+
+	scaleedit := func(edit *Edit) {
+		scale(&edit.RowPadding)
+		scalept(&edit.Padding)
+		scalept(&edit.ScrollbarSize)
+		scale(&edit.CursorSize)
+		scale(&edit.Border)
+		scaleu(&edit.Rounding)
+	}
+
+	scaleedit(&z.Edit)
+
+	scalept(&z.Property.Padding)
+	scale(&z.Property.Border)
+	scaleu(&z.Property.Rounding)
+
+	scalebtn(&z.Property.IncButton)
+	scalebtn(&z.Property.DecButton)
+
+	scaleedit(&z.Property.Edit)
+
+	scalept(&z.Combo.ContentPadding)
+	scalept(&z.Combo.ButtonPadding)
+	scalept(&z.Combo.Spacing)
+	scale(&z.Combo.Border)
+	scaleu(&z.Combo.Rounding)
+
+	scalebtn(&z.Combo.Button)
+
+	scale(&z.Tab.Border)
+	scaleu(&z.Tab.Rounding)
+	scalept(&z.Tab.Padding)
+	scalept(&z.Tab.Spacing)
+
+	scalebtn(&z.Tab.TabButton)
+	scalebtn(&z.Tab.NodeButton)
+
+	scalewin := func(win *Window) {
+		scalept(&win.Header.Padding)
+		scalept(&win.Header.Spacing)
+		scalept(&win.Header.LabelPadding)
+		scalebtn(&win.Header.CloseButton)
+		scalebtn(&win.Header.MinimizeButton)
+		scalept(&win.FooterPadding)
+		scaleu(&win.Rounding)
+		scalept(&win.ScalerSize)
+		scalept(&win.Padding)
+		scalept(&win.Spacing)
+		scalept(&win.ScrollbarSize)
+		scalept(&win.MinSize)
+		scale(&win.Border)
+	}
+
+	scalewin(&z.NormalWindow)
+	scalewin(&z.MenuWindow)
+	scalewin(&z.TooltipWindow)
+	scalewin(&z.ComboWindow)
+	scalewin(&z.ContextualWindow)
+	scalewin(&z.GroupWindow)
+}
+
+func (style *Style) DefaultFont(scaling float64) {
+	style.Font = defaultFont(12, scaling)
+	style.defaultFont = style.Font
+}
+
+var ttfontDefault *truetype.Font
+var defaultFontInit sync.Once
+
+// Returns default font (DroidSansMono) with specified size and scaling
+func defaultFont(size int, scaling float64) font.Face {
+	defaultFontInit.Do(func() {
+		fontData, _ := assets.Asset("DroidSansMono.ttf")
+		ttfontDefault, _ = freetype.ParseFont(fontData)
+	})
+
+	sz := int(float64(size) * scaling)
+
+	return truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
 }

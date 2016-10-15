@@ -57,8 +57,8 @@ func setupStyle() {
 	if conf.WhiteTheme {
 		theme = nstyle.WhiteTheme
 	}
-	wnd.SetStyle(nstyle.FromTheme(theme), nil, conf.Scaling)
-	style, _ := wnd.Style()
+	wnd.SetStyle(nstyle.FromTheme(theme, conf.Scaling))
+	style := wnd.Style()
 	style.Tab.Indent = style.Tab.Padding.X + style.Tab.Spacing.X + nucular.FontHeight(style.Font)
 	style.Selectable.Normal.Data.Color = style.NormalWindow.Background
 	style.GroupWindow.Padding.Y = 0
@@ -190,7 +190,7 @@ func updateCommandPanel(container *nucular.Window) {
 	}
 	defer w.GroupEnd()
 
-	style, _ := w.Master().Style()
+	style := w.Master().Style()
 
 	w.LayoutReserveRow(commandLineHeight, 1)
 	w.Row(0).Dynamic(1)

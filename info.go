@@ -191,7 +191,7 @@ func updateGoroutines(container *nucular.Window) {
 		return
 	}
 	defer w.GroupEnd()
-	style, _ := container.Master().Style()
+	style := container.Master().Style()
 
 	goroutines := goroutinesPanel.goroutines
 
@@ -264,7 +264,7 @@ func updateStacktrace(container *nucular.Window) {
 		return
 	}
 	defer w.GroupEnd()
-	style, _ := container.Master().Style()
+	style := container.Master().Style()
 
 	w.MenubarBegin()
 	w.Row(20).Static(120)
@@ -328,7 +328,7 @@ func updateThreads(container *nucular.Window) {
 		return
 	}
 	defer w.GroupEnd()
-	style, _ := w.Master().Style()
+	style := w.Master().Style()
 
 	threads := threadsPanel.threads
 
@@ -641,7 +641,7 @@ func updateBreakpoints(container *nucular.Window) {
 	}
 	defer w.GroupEnd()
 
-	style, _ := w.Master().Style()
+	style := w.Master().Style()
 
 	breakpoints := breakpointsPanel.breakpoints
 
@@ -1223,7 +1223,7 @@ func updateListingPanel(container *nucular.Window) {
 	}
 	defer listp.GroupEnd()
 
-	style, _ := container.Master().Style()
+	style := container.Master().Style()
 
 	arroww := arrowWidth + style.Text.Padding.X*2
 	starw := starWidth + style.Text.Padding.X*2
@@ -1319,7 +1319,7 @@ func updateDisassemblyPanel(container *nucular.Window) {
 	}
 	defer listp.GroupEnd()
 
-	style, _ := container.Master().Style()
+	style := container.Master().Style()
 
 	arroww := arrowWidth + style.Text.Padding.X*2
 	starw := starWidth + style.Text.Padding.X*2

@@ -27,7 +27,6 @@ type context struct {
 	Input          Input
 	Style          nstyle.Style
 	Windows        []*Window
-	Scaling        float64
 	changed        int32
 	activateEditor *TextEditor
 }
@@ -986,7 +985,7 @@ func layoutWidgetSpace(bounds *rect.Rect, ctx *context, win *Window, modify bool
 }
 
 func (ctx *context) scale(x int) int {
-	return int(float64(x) * ctx.Scaling)
+	return int(float64(x) * ctx.Style.Scaling)
 }
 
 func rowLayoutCtr(win *Window, height int, cols int, width int) {

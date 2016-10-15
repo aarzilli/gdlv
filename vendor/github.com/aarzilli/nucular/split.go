@@ -19,7 +19,7 @@ func (s *ScalableSplit) Horizontal(w *Window, bounds rect.Rect) (bounds0, bounds
 	if bounds.H < 0 || bounds.W < 0 {
 		return
 	}
-	_, scaling := w.Master().Style()
+	scaling := w.Master().Style().Scaling
 
 	if s.lastsize == 0 {
 		s.lastsize = bounds.H
@@ -87,7 +87,7 @@ func (s *ScalableSplit) Vertical(w *Window, bounds rect.Rect) (bounds0, bounds1 
 	if bounds.H < 0 || bounds.W < 0 {
 		return
 	}
-	_, scaling := w.Master().Style()
+	scaling := w.Master().Style().Scaling
 
 	if s.lastsize == 0 {
 		s.lastsize = bounds.W

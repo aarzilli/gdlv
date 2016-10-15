@@ -1159,7 +1159,7 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 	if ed.Active && inp != nil {
 		inpos := inp.Mouse.Pos
 		indelta := inp.Mouse.Delta
-		coord := image.Point{(inpos.X - area.X) + ed.Scrollbar.X, (inpos.Y - area.Y) + ed.Scrollbar.Y}
+		coord := image.Point{(inpos.X - area.X), (inpos.Y - area.Y)}
 		areaWithoutScrollbar := area
 		areaWithoutScrollbar.W -= style.ScrollbarSize.X
 		is_hovered := inp.Mouse.HoveringRect(areaWithoutScrollbar)

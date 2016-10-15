@@ -266,7 +266,7 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 }
 
 func (p *panel) splitMenu(w *nucular.Window) {
-	style, _ := w.Master().Style()
+	style := w.Master().Style()
 	iconFace, style.Font = style.Font, iconFace
 	mw := w.Menu(label.TA(splitIcon, "CC"), 120, nil)
 	iconFace, style.Font = style.Font, iconFace
@@ -299,7 +299,7 @@ func (p *panel) resetListingToolbar(sw *nucular.Window) {
 }
 
 func (p *panel) commandToolbar(sw *nucular.Window) {
-	style, _ := sw.Master().Style()
+	style := sw.Master().Style()
 	docmd := func(cmd string) {
 		var scrollbackOut = editorWriter{&scrollbackEditor, false}
 		fmt.Fprintf(&scrollbackOut, "%s %s\n", currentPrompt(), cmd)
