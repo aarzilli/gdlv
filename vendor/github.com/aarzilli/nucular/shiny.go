@@ -152,14 +152,14 @@ func (w *MasterWindow) handleEventLocked(ei interface{}) bool {
 			w.bounds = w.wndb.Bounds()
 			w.bounds.Max.Y = w.bounds.Min.Y + sz.Y
 			w.bounds.Max.X = w.bounds.Min.X + sz.X
-			w.updateLocked()
 		} else {
 			if w.wndb != nil {
 				w.wndb.Release()
 			}
 			w.setupBuffer(sz)
-			w.updateLocked()
 		}
+		w.prevCmds = nil
+		w.Changed()
 
 	case mouse.Event:
 		changed := atomic.LoadInt32(&w.ctx.changed)
@@ -334,7 +334,7 @@ func (w *MasterWindow) updateLocked() {
 
 		width := d.MeasureString(s).Ceil()
 
-		bounds := w.img.Bounds()
+		bounds := w.bounds
 		bounds.Min.X = bounds.Max.X - width
 		bounds.Min.Y = bounds.Max.Y - (w.ctx.Style.Font.Metrics().Ascent + w.ctx.Style.Font.Metrics().Descent).Ceil()
 		draw.Draw(w.img, bounds, image.Black, bounds.Min, draw.Src)
