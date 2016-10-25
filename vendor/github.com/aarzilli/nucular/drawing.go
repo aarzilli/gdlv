@@ -22,23 +22,23 @@ func drawSymbol(out *command.Buffer, type_ label.SymbolType, content rect.Rect, 
 		label.SymbolUnderscore,
 		label.SymbolPlus,
 		label.SymbolMinus:
-		var X rune
+		var X string
 		switch type_ {
 		case label.SymbolX:
-			X = 'x'
+			X = "x"
 		case label.SymbolUnderscore:
-			X = '_'
+			X = "_"
 		case label.SymbolPlus:
-			X = '+'
+			X = "+"
 		case label.SymbolMinus:
-			X = '-'
+			X = "-"
 		}
 
 		var text textWidget
 		text.Padding = image.Point{0, 0}
 		text.Background = background
 		text.Text = foreground
-		widgetText(out, content, string(X), &text, "CC", font)
+		widgetText(out, content, X, &text, "CC", font)
 	case label.SymbolRect, label.SymbolRectFilled:
 		out.FillRect(content, 0, foreground)
 		if type_ == label.SymbolRectFilled {

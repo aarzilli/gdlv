@@ -48,8 +48,7 @@ func assert2(cond bool, reason string) {
 	}
 }
 
-func triangleFromDirection(r rect.Rect, pad_x, pad_y int, direction Heading) (result []image.Point) {
-	result = make([]image.Point, 3)
+func triangleFromDirection(r rect.Rect, pad_x, pad_y int, direction Heading) (result [3]image.Point) {
 	var w_half int
 	var h_half int
 

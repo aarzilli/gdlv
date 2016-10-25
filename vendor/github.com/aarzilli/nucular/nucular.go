@@ -29,6 +29,7 @@ type context struct {
 	Windows        []*Window
 	changed        int32
 	activateEditor *TextEditor
+	cmds           []command.Command
 }
 
 type UpdateFn func(*Window)
@@ -62,6 +63,7 @@ type Window struct {
 	updateFn UpdateFn
 	usingSub bool
 	began    bool
+	rowCtor  rowConstructor
 }
 
 type treeNode struct {
@@ -143,11 +145,11 @@ const (
 	WindowDefaultFlags = WindowBorder | WindowMovable | WindowScalable | WindowClosable | WindowMinimizable | WindowTitle
 )
 
-func contextAllCommands(ctx *context) (nwidgets int, r []command.Command) {
+func contextAllCommands(ctx *context) {
+	ctx.cmds = ctx.cmds[:0]
 	for _, w := range ctx.Windows {
-		r = append(r, w.cmds.Commands...)
+		ctx.cmds = append(ctx.cmds, w.cmds.Commands...)
 	}
-	nwidgets = 1
 	return
 }
 
@@ -158,6 +160,7 @@ func createTreeNode(initialState bool, parent *treeNode) *treeNode {
 func createWindow(ctx *context, title string) *Window {
 	rootNode := createTreeNode(false, nil)
 	r := &Window{ctx: ctx, title: title, rootNode: rootNode, curNode: rootNode, groupWnd: map[string]*Window{}, first: true}
+	r.rowCtor.win = r
 	r.widgets.cur = make(map[rect.Rect]frozenWidget)
 	return r
 }
@@ -1017,29 +1020,31 @@ func (win *Window) LayoutReserveRowScaled(height int, num int) {
 // Use the returned value to configure the new row layout:
 //  win.Row(10).Static(100, 120, 100)
 // If height == 0 all the row is stretched to fill all the remaining space.
-func (win *Window) Row(height int) *RowConstructor {
-	return &RowConstructor{win, win.ctx.scale(height)}
+func (win *Window) Row(height int) *rowConstructor {
+	win.rowCtor.height = win.ctx.scale(height)
+	return &win.rowCtor
 }
 
 // Same as Row but with scaled units.
-func (win *Window) RowScaled(height int) *RowConstructor {
-	return &RowConstructor{win, height}
+func (win *Window) RowScaled(height int) *rowConstructor {
+	win.rowCtor.height = height
+	return &win.rowCtor
 }
 
-type RowConstructor struct {
+type rowConstructor struct {
 	win    *Window
 	height int
 }
 
 // Starts new row that has cols columns of equal width that automatically
 // resize to fill the available space.
-func (ctr *RowConstructor) Dynamic(cols int) {
+func (ctr *rowConstructor) Dynamic(cols int) {
 	rowLayoutCtr(ctr.win, ctr.height, cols, 0)
 }
 
 // Starts new row with a fixed number of columns of width proportional
 // to the size of the window.
-func (ctr *RowConstructor) Ratio(ratio ...float64) {
+func (ctr *rowConstructor) Ratio(ratio ...float64) {
 	layout := ctr.win.layout
 	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(ratio))
 
@@ -1072,7 +1077,7 @@ func (ctr *RowConstructor) Ratio(ratio ...float64) {
 // If no widths are specified the row will never autowrap
 // and the width of the next widget can be specified using
 // LayoutSetWidth/LayoutSetWidthScaled.
-func (ctr *RowConstructor) Static(width ...int) {
+func (ctr *rowConstructor) Static(width ...int) {
 	for i := range width {
 		width[i] = ctr.win.ctx.scale(width[i])
 	}
@@ -1081,7 +1086,7 @@ func (ctr *RowConstructor) Static(width ...int) {
 }
 
 // Like Static but with scaled sizes.
-func (ctr *RowConstructor) StaticScaled(width ...int) {
+func (ctr *rowConstructor) StaticScaled(width ...int) {
 	layout := ctr.win.layout
 	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(width))
 
@@ -1124,7 +1129,7 @@ func (ctr *RowConstructor) StaticScaled(width ...int) {
 // Starts new row that will contain widget_count widgets.
 // The size and position of widgets inside this row will be specified
 // by callling LayoutSpacePush/LayoutSpacePushScaled.
-func (ctr *RowConstructor) SpaceBegin(widget_count int) (bounds rect.Rect) {
+func (ctr *rowConstructor) SpaceBegin(widget_count int) (bounds rect.Rect) {
 	layout := ctr.win.layout
 	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count)
 	layout.Row.Type = layoutStaticFree
@@ -1148,7 +1153,7 @@ func (ctr *RowConstructor) SpaceBegin(widget_count int) (bounds rect.Rect) {
 // Starts new row that will contain widget_count widgets.
 // The size and position of widgets inside this row will be specified
 // by callling LayoutSpacePushRatio.
-func (ctr *RowConstructor) SpaceBeginRatio(widget_count int) {
+func (ctr *rowConstructor) SpaceBeginRatio(widget_count int) {
 	layout := ctr.win.layout
 	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count)
 	layout.Row.Type = layoutDynamicFree

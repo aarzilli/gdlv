@@ -19,7 +19,7 @@ import (
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
 
-	"github.com/golang/freetype/raster"
+	"github.com/aarzilli/nucular/internal/freetype/raster"
 
 	"golang.org/x/exp/shiny/driver"
 	"golang.org/x/exp/shiny/screen"
@@ -158,7 +158,7 @@ func (w *MasterWindow) handleEventLocked(ei interface{}) bool {
 			}
 			w.setupBuffer(sz)
 		}
-		w.prevCmds = nil
+		w.prevCmds = w.prevCmds[:0]
 		w.Changed()
 
 	case mouse.Event:
@@ -313,13 +313,13 @@ func (w *MasterWindow) updateLocked() {
 	if perfUpdate || w.Perf {
 		t1 = time.Now()
 	}
-	nwidgets, nprimitives := w.draw()
+	nprimitives := w.draw()
 	if perfUpdate {
 		te = time.Now()
 
 		fps := 1.0 / te.Sub(t0).Seconds()
 
-		fmt.Printf("Update %0.4f msec = %0.4f updatefn (%d widgets)+ %0.4f draw (%d primitives) [max fps %0.2f]\n", te.Sub(t0).Seconds()*1000, t1.Sub(t0).Seconds()*1000, nwidgets, te.Sub(t1).Seconds()*1000, nprimitives, fps)
+		fmt.Printf("Update %0.4f msec = %0.4f updatefn + %0.4f draw (%d primitives) [max fps %0.2f]\n", te.Sub(t0).Seconds()*1000, t1.Sub(t0).Seconds()*1000, te.Sub(t1).Seconds()*1000, nprimitives, fps)
 	}
 	if w.Perf && nprimitives > 0 {
 		te = time.Now()
@@ -405,7 +405,7 @@ func (w *MasterWindow) setupBuffer(sz image.Point) {
 var cnt = 0
 var ln, frect, brrect, frrect, ftri, circ, fcirc, txt int
 
-func (w *MasterWindow) draw() (int, int) {
+func (w *MasterWindow) draw() int {
 	img := w.img
 
 	var painter *myRGBAPainter
@@ -426,19 +426,19 @@ func (w *MasterWindow) draw() (int, int) {
 		painter = &myRGBAPainter{Image: img}
 	}
 
-	nwidgets, cmds := contextAllCommands(w.ctx)
+	contextAllCommands(w.ctx)
 
 	var txttim, tritim, brecttim, frecttim, frrecttim time.Duration
 	var t0 time.Time
 
-	if !w.drawChanged(cmds) {
-		return 0, 0
+	if !w.drawChanged(w.ctx.cmds) {
+		return 0
 	}
 
-	w.prevCmds = cmds
+	w.prevCmds = append(w.prevCmds[:0], w.ctx.cmds...)
 
-	for i := range cmds {
-		icmd := &cmds[i]
+	for i := range w.ctx.cmds {
+		icmd := &w.ctx.cmds[i]
 		switch icmd.Kind {
 		case command.ScissorCmd:
 			img = w.img.SubImage(icmd.Rectangle()).(*image.RGBA)
@@ -517,11 +517,11 @@ func (w *MasterWindow) draw() (int, int) {
 
 			bordopt := false
 
-			if ok, border := borderOptimize(icmd, cmds, i+1); ok {
+			if ok, border := borderOptimize(icmd, w.ctx.cmds, i+1); ok {
 				// only draw parts of body if this command can be optimized to a border with the next command
 
 				bordopt = true
-				cmd2 := cmds[i+1]
+				cmd2 := w.ctx.cmds[i+1]
 				border += int(cmd2.RectFilled.Rounding)
 
 				top := image.Rect(body.Min.X, body.Min.Y, body.Max.X, body.Min.Y+border)
@@ -666,7 +666,7 @@ func (w *MasterWindow) draw() (int, int) {
 		ln, frect, frrect, brrect, ftri, circ, fcirc, txt = 0, 0, 0, 0, 0, 0, 0, 0
 	}
 
-	return nwidgets, len(cmds)
+	return len(w.ctx.cmds)
 }
 
 // Returns true if cmds[idx] is a shrunk version of CommandFillRect and its
