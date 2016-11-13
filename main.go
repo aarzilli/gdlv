@@ -101,6 +101,13 @@ var listingPanel struct {
 	pinnedLoc           *api.Location
 }
 
+type serverDescr struct {
+	connectString  string
+	stdout, stderr io.ReadCloser
+	serverProcess  *os.Process
+	atStart        bool
+}
+
 var mu sync.Mutex
 var wnd *nucular.MasterWindow
 
@@ -264,14 +271,15 @@ func updateCommandPanel(container *nucular.Window) {
 	}
 }
 
-func startServer() (connectString string, stdout, stderr io.ReadCloser, err error) {
+func startServer() (descr serverDescr, err error) {
 	//	fmt.Fprintf(os.Stderr, "usage:\n\tgdlv connect <address>\n\tgdlv debug <program's arguments...>\n\tgdlv exec <program> <program's arguments...>\n\tgdlv test <testflags...>\n\tgdlv attach <pid>\n")
-	run := func(args ...string) {
+	run := func(atStart bool, args ...string) {
 		cmd := exec.Command("dlv", args...)
-		stdout, _ = cmd.StdoutPipe()
-		stderr, _ = cmd.StderrPipe()
+		descr.atStart = atStart
+		descr.stdout, _ = cmd.StdoutPipe()
+		descr.stderr, _ = cmd.StderrPipe()
 		err = cmd.Start()
-		serverProcess = cmd.Process
+		descr.serverProcess = cmd.Process
 	}
 
 	if len(os.Args) < 2 {
@@ -282,17 +290,17 @@ func startServer() (connectString string, stdout, stderr io.ReadCloser, err erro
 	case "connect":
 		if len(os.Args) != 3 {
 		}
-		return os.Args[2], nil, nil, nil
+		return serverDescr{os.Args[2], nil, nil, nil, false}, nil
 	case "attach":
 		if len(os.Args) != 3 {
 			usage()
 		}
-		run("--headless", "attach", os.Args[2])
+		run(false, "--headless", "attach", os.Args[2])
 	case "debug":
 		args := make([]string, 0, len(os.Args[2:])+3)
 		args = append(args, "--headless", "debug", "--")
 		args = append(args, os.Args[2:]...)
-		run(args...)
+		run(true, args...)
 	case "exec":
 		if len(os.Args) < 3 {
 			usage()
@@ -300,7 +308,7 @@ func startServer() (connectString string, stdout, stderr io.ReadCloser, err erro
 		args := make([]string, 0, len(os.Args[3:])+4)
 		args = append(args, "--headless", "exec", os.Args[2], "--")
 		args = append(args, os.Args[3:]...)
-		run(args...)
+		run(true, args...)
 	case "test":
 		args := make([]string, 0, len(os.Args[2:])+3)
 		args = append(args, "--headless", "test", "--")
@@ -310,7 +318,7 @@ func startServer() (connectString string, stdout, stderr io.ReadCloser, err erro
 			}
 			args = append(args, arg)
 		}
-		run(args...)
+		run(true, args...)
 	default:
 		usage()
 	}
@@ -332,27 +340,23 @@ func parseListenString(listenstr string) string {
 	return listenstr[len(prefix):]
 }
 
-func connectTo(addr string) {
-	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+func (descr serverDescr) connectTo() {
+	var scrollbackOut = editorWriter{&scrollbackEditor, true}
 
-	if addr == "" {
+	if descr.connectString == "" {
 		return
 	}
 
-	func() {
-		mu.Lock()
-		defer mu.Unlock()
-
-		client = rpc2.NewClient(addr)
-		if client == nil {
-			fmt.Fprintf(&scrollbackOut, "Could not connect\n")
-		}
-
-		cmds = DebugCommands(client)
-	}()
-
 	mu.Lock()
 	running = true
+	client = rpc2.NewClient(descr.connectString)
+	mu.Unlock()
+	if client == nil {
+		fmt.Fprintf(&scrollbackOut, "Could not connect\n")
+	}
+
+	cmds = DebugCommands(client)
+
 	fmt.Fprintf(&scrollbackOut, "Loading program info...")
 
 	var err error
@@ -374,6 +378,12 @@ func connectTo(addr string) {
 	completeLocationSetup()
 
 	fmt.Fprintf(&scrollbackOut, "done\n")
+
+	if descr.atStart {
+		continueToRuntimeMain()
+	}
+
+	mu.Lock()
 	running = false
 	mu.Unlock()
 
@@ -381,11 +391,23 @@ func connectTo(addr string) {
 	if err == nil && state == nil {
 		mu.Lock()
 		client = nil
-		fmt.Fprintf(&scrollbackOut, "Could not get state, old version of delve?\n")
 		mu.Unlock()
+		fmt.Fprintf(&scrollbackOut, "Could not get state, old version of delve?\n")
 	}
 
 	refreshState(refreshToFrameZero, clearStop, state)
+}
+
+func continueToRuntimeMain() {
+	bp, err := client.CreateBreakpoint(&api.Breakpoint{FunctionName: "runtime.main", Line: -1})
+	if err != nil {
+		return
+	}
+	defer client.ClearBreakpoint(bp.ID)
+
+	ch := client.Continue()
+	for range ch {
+	}
 }
 
 func digits(n int) int {
@@ -697,7 +719,7 @@ func main() {
 		}
 	}
 
-	connectString, stdout, stderr, err := startServer()
+	serverDescr, err := startServer()
 
 	wnd = nucular.NewMasterWindow(guiUpdate, nucular.WindowNoScrollbar)
 	setupStyle()
@@ -723,18 +745,19 @@ under certain conditions; see COPYING for details.
 	case err != nil:
 		fmt.Fprintf(&scrollbackOut, "Could not start delve: %v\n", err)
 
-	case connectString != "":
-		go connectTo(connectString)
+	case serverDescr.connectString != "":
+		go serverDescr.connectTo()
 
 	default:
 		go func() {
 			bucket := 0
 			t0 := time.Now()
 			first := true
-			scan := bufio.NewScanner(stdout)
+			scan := bufio.NewScanner(serverDescr.stdout)
 			for scan.Scan() {
 				if first {
-					connectTo(parseListenString(scan.Text()))
+					serverDescr.connectString = parseListenString(scan.Text())
+					serverDescr.connectTo()
 					first = false
 				} else {
 					mu.Lock()
@@ -770,7 +793,7 @@ under certain conditions; see COPYING for details.
 		}()
 
 		go func() {
-			_, err := io.Copy(&scrollbackOut, stderr)
+			_, err := io.Copy(&scrollbackOut, serverDescr.stderr)
 			if err != nil {
 				fmt.Fprintf(&scrollbackOut, "Error reading stderr: %v\n", err)
 			}
