@@ -113,5 +113,10 @@ func (win *Window) inputMaybe(widgetValid bool) *Input {
 }
 
 func (win *Window) toplevel() bool {
-	return win.idx == len(win.ctx.Windows)-1
+	for i := len(win.ctx.Windows)-1; i >= 0; i-- {
+		if win.ctx.Windows[i].flags&windowTooltip == 0 {
+			return win.idx == i
+		}
+	}
+	return false
 }

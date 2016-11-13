@@ -19,7 +19,7 @@ import (
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
 
-	"github.com/aarzilli/nucular/internal/freetype/raster"
+	"github.com/golang/freetype/raster"
 
 	"golang.org/x/exp/shiny/driver"
 	"golang.org/x/exp/shiny/screen"
@@ -45,7 +45,6 @@ type MasterWindow struct {
 	screen screen.Screen
 	wnd    screen.Window
 	wndb   screen.Buffer
-	img    *image.RGBA
 	bounds image.Rectangle
 
 	// show performance counters
@@ -309,7 +308,6 @@ func (w *MasterWindow) updateLocked() {
 		}
 	}
 	contextEnd(w.ctx)
-	b := w.bounds
 	if perfUpdate || w.Perf {
 		t1 = time.Now()
 	}
@@ -327,8 +325,9 @@ func (w *MasterWindow) updateLocked() {
 		fps := 1.0 / te.Sub(t0).Seconds()
 
 		s := fmt.Sprintf("%0.4fms + %0.4fms (%0.2f)", t1.Sub(t0).Seconds()*1000, te.Sub(t1).Seconds()*1000, fps)
+		img := w.wndb.RGBA()
 		d := font.Drawer{
-			Dst:  w.img,
+			Dst:  img,
 			Src:  image.White,
 			Face: w.ctx.Style.Font}
 
@@ -337,7 +336,7 @@ func (w *MasterWindow) updateLocked() {
 		bounds := w.bounds
 		bounds.Min.X = bounds.Max.X - width
 		bounds.Min.Y = bounds.Max.Y - (w.ctx.Style.Font.Metrics().Ascent + w.ctx.Style.Font.Metrics().Descent).Ceil()
-		draw.Draw(w.img, bounds, image.Black, bounds.Min, draw.Src)
+		draw.Draw(img, bounds, image.Black, bounds.Min, draw.Src)
 		d.Dot = fixed.P(bounds.Min.X, bounds.Min.Y+w.ctx.Style.Font.Metrics().Ascent.Ceil())
 		d.DrawString(s)
 	}
@@ -363,9 +362,10 @@ func (w *MasterWindow) updateLocked() {
 	in.Mouse.Delta = image.Point{}
 	w.textbuffer.Reset()
 	in.Keyboard.Keys = in.Keyboard.Keys[0:0]
-	draw.Draw(w.wndb.RGBA(), b, w.img, b.Min, draw.Src)
-	w.wnd.Upload(b.Min, w.wndb, b)
-	w.wnd.Publish()
+	if nprimitives > 0 {
+		w.wnd.Upload(w.bounds.Min, w.wndb, w.bounds)
+		w.wnd.Publish()
+	}
 }
 
 func (w *MasterWindow) closeLocked() {
@@ -398,7 +398,6 @@ func (w *MasterWindow) setupBuffer(sz image.Point) {
 		fmt.Fprintf(os.Stderr, "could not setup buffer: %v", err)
 		w.wndb = oldb
 	}
-	w.img = image.NewRGBA(w.wndb.Bounds())
 	w.bounds = w.wndb.Bounds()
 }
 
@@ -406,7 +405,8 @@ var cnt = 0
 var ln, frect, brrect, frrect, ftri, circ, fcirc, txt int
 
 func (w *MasterWindow) draw() int {
-	img := w.img
+	wimg := w.wndb.RGBA()
+	img := wimg
 
 	var painter *myRGBAPainter
 	var rasterizer *raster.Rasterizer
@@ -441,7 +441,7 @@ func (w *MasterWindow) draw() int {
 		icmd := &w.ctx.cmds[i]
 		switch icmd.Kind {
 		case command.ScissorCmd:
-			img = w.img.SubImage(icmd.Rectangle()).(*image.RGBA)
+			img = wimg.SubImage(icmd.Rectangle()).(*image.RGBA)
 			painter = nil
 			rasterizer = nil
 
@@ -628,7 +628,7 @@ func (w *MasterWindow) draw() int {
 			if perfUpdate {
 				t0 = time.Now()
 			}
-			dstimg := w.img.SubImage(img.Bounds().Intersect(icmd.Rectangle())).(*image.RGBA)
+			dstimg := wimg.SubImage(img.Bounds().Intersect(icmd.Rectangle())).(*image.RGBA)
 			d := font.Drawer{
 				Dst:  dstimg,
 				Src:  image.NewUniform(icmd.Text.Foreground),

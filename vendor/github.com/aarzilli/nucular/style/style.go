@@ -888,7 +888,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	style.ComboWindow.BorderColor = table[ColorBorder]
 	style.ComboWindow.Border = 1
 
-	style.ContextualWindow.BorderColor = table[ColorBorder]
+	style.ContextualWindow.BorderColor = table[ColorText]
 	style.ContextualWindow.Border = 1
 
 	style.GroupWindow.BorderColor = table[ColorBorder]
