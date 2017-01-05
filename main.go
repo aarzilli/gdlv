@@ -99,6 +99,7 @@ var listingPanel struct {
 	listing             []listline
 	text                api.AsmInstructions
 	pinnedLoc           *api.Location
+	stale               bool
 }
 
 type serverDescr struct {
@@ -643,6 +644,10 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 			return
 		}
 		defer fh.Close()
+
+		fi, _ := fh.Stat()
+		lastModExe := client.LastModified()
+		listingPanel.stale = fi.ModTime().After(lastModExe)
 
 		buf := bufio.NewScanner(fh)
 		lineno := 0

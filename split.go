@@ -5,6 +5,7 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"image/color"
 	"io"
 	"math/rand"
 	"strconv"
@@ -224,11 +225,7 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 			case infoCommand:
 				p.commandToolbar(sw)
 			case infoListing, infoDisassembly:
-				if listingPanel.pinnedLoc != nil {
-					p.resetListingToolbar(sw)
-				} else {
-					p.normalToolbar(sw)
-				}
+				p.listingToolbar(sw)
 			default:
 				p.normalToolbar(sw)
 			}
@@ -289,12 +286,23 @@ func (p *panel) normalToolbar(sw *nucular.Window) {
 	p.splitMenu(sw)
 }
 
-func (p *panel) resetListingToolbar(sw *nucular.Window) {
-	sw.Row(headerRow).Static(headerSplitMenu, 200, 0, headerCombo, 2)
+func (p *panel) listingToolbar(sw *nucular.Window) {
+	if listingPanel.pinnedLoc != nil {
+		sw.Row(headerRow).Static(headerSplitMenu, 200, 0, 1, headerCombo, 2)
+	} else {
+		sw.Row(headerRow).Static(headerSplitMenu, 0, 1, headerCombo, 2)
+	}
 	p.splitMenu(sw)
-	if sw.ButtonText("Back to current frame") {
-		listingPanel.pinnedLoc = nil
-		go refreshState(refreshToSameFrame, clearNothing, nil)
+	if listingPanel.pinnedLoc != nil {
+		if sw.ButtonText("Back to current frame") {
+			listingPanel.pinnedLoc = nil
+			go refreshState(refreshToSameFrame, clearNothing, nil)
+		}
+	}
+	if listingPanel.stale {
+		sw.LabelColored("Warning: listing may not match stale executable", "LC", color.RGBA{0xff, 0x00, 0x00, 0xff})
+	} else {
+		sw.Spacing(1)
 	}
 }
 
