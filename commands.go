@@ -264,11 +264,14 @@ func clear(client service.Client, out io.Writer, args string) error {
 }
 
 func restart(client service.Client, out io.Writer, args string) error {
-	//TODO: show discarded breakpoints
-	if _, err := client.Restart(); err != nil {
+	discarded, err := client.Restart()
+	if err != nil {
 		return err
 	}
 	fmt.Fprintln(out, "Process restarted with PID", client.ProcessPid())
+	for i := range discarded {
+		fmt.Printf("Discarded %s at %s: %v\n", formatBreakpointName(discarded[i].Breakpoint, false), formatBreakpointLocation(discarded[i].Breakpoint), discarded[i].Reason)
+	}
 	refreshState(refreshToFrameZero, clearStop, nil)
 	return nil
 }
