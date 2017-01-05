@@ -229,8 +229,6 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 			default:
 				p.normalToolbar(sw)
 			}
-			sw.Spacing(1)
-			p.infoMode = sw.ComboSimple(infoModes, p.infoMode, 22)
 			sw.Row(0).Dynamic(1)
 			if p.infoMode >= 0 {
 				infoNameToFunc[infoModes[p.infoMode]](sw)
@@ -263,9 +261,10 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 }
 
 func (p *panel) splitMenu(w *nucular.Window) {
+	w.LayoutSetWidth(headerSplitMenu)
 	style := w.Master().Style()
 	iconFace, style.Font = style.Font, iconFace
-	mw := w.Menu(label.TA(splitIcon, "CC"), 120, nil)
+	mw := w.Menu(label.TA(splitIcon, "CC"), 160, nil)
 	iconFace, style.Font = style.Font, iconFace
 	if w := mw; w != nil {
 		w.Row(20).Dynamic(1)
@@ -281,29 +280,37 @@ func (p *panel) splitMenu(w *nucular.Window) {
 	}
 }
 
+func (p *panel) toolbarHeaderCombo(sw *nucular.Window) {
+	sw.LayoutResetStatic(0, headerCombo, 2)
+	sw.Spacing(1)
+	p.infoMode = sw.ComboSimple(infoModes, p.infoMode, 22)
+}
+
 func (p *panel) normalToolbar(sw *nucular.Window) {
-	sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
+	sw.Row(headerRow).Static()
 	p.splitMenu(sw)
+	p.toolbarHeaderCombo(sw)
 }
 
 func (p *panel) listingToolbar(sw *nucular.Window) {
-	if listingPanel.pinnedLoc != nil {
-		sw.Row(headerRow).Static(headerSplitMenu, 200, 0, 1, headerCombo, 2)
-	} else {
-		sw.Row(headerRow).Static(headerSplitMenu, 0, 1, headerCombo, 2)
-	}
+	sw.Row(headerRow).Static()
+
 	p.splitMenu(sw)
+
 	if listingPanel.pinnedLoc != nil {
+		sw.LayoutSetWidth(200)
 		if sw.ButtonText("Back to current frame") {
 			listingPanel.pinnedLoc = nil
 			go refreshState(refreshToSameFrame, clearNothing, nil)
 		}
 	}
+
 	if listingPanel.stale {
+		sw.LayoutSetWidth(400)
 		sw.LabelColored("Warning: listing may not match stale executable", "LC", color.RGBA{0xff, 0x00, 0x00, 0xff})
-	} else {
-		sw.Spacing(1)
 	}
+
+	p.toolbarHeaderCombo(sw)
 }
 
 func (p *panel) commandToolbar(sw *nucular.Window) {
@@ -327,35 +334,41 @@ func (p *panel) commandToolbar(sw *nucular.Window) {
 			docmd(cmd)
 		}
 	}
+	sw.Row(headerRow).Static()
 	switch {
 	case client == nil:
-		sw.Row(headerRow).Static(headerSplitMenu, 0, headerCombo, 2)
 		p.splitMenu(sw)
 
 	case running:
-		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, 0, headerCombo, 2)
 		p.splitMenu(sw)
+		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(interruptIcon, "interrupt")
 
 	case nextInProgress:
-		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, controlBtnWidth, 0, headerCombo, 2)
 		p.splitMenu(sw)
+		sw.LayoutSetWidth(controlBtnWidth)
 		if iconbtn(continueIcon, "continue next") {
 			docmd("continue")
 		}
+		sw.LayoutSetWidth(controlBtnWidth)
 		if iconbtn(cancelIcon, "cancel next") {
 			docmd("cancelnext")
 		}
 
 	default:
-		sw.Row(headerRow).Static(headerSplitMenu, controlBtnWidth, controlBtnWidth/2, controlBtnWidth, controlBtnWidth, controlBtnWidth, 0, headerCombo, 2)
 		p.splitMenu(sw)
+		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(continueIcon, "continue")
+		sw.LayoutSetWidth(controlBtnWidth / 2)
 		sw.Spacing(1)
+		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(nextIcon, "next")
+		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(stepIcon, "step")
+		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(stepoutIcon, "stepout")
 	}
+	p.toolbarHeaderCombo(sw)
 }
 
 func (p *panel) dosplit(kind panelKind) {
