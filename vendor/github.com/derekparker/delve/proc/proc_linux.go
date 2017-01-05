@@ -45,8 +45,8 @@ type OSProcessDetails struct {
 
 // Launch creates and begins debugging a new process. First entry in
 // `cmd` is the program to run, and then rest are the arguments
-// to be supplied to that process.
-func Launch(cmd []string) (*Process, error) {
+// to be supplied to that process. `wd` is working directory of the program.
+func Launch(cmd []string, wd string) (*Process, error) {
 	var (
 		proc *exec.Cmd
 		err  error
@@ -62,6 +62,9 @@ func Launch(cmd []string) (*Process, error) {
 		proc.Stdout = os.Stdout
 		proc.Stderr = os.Stderr
 		proc.SysProcAttr = &syscall.SysProcAttr{Ptrace: true, Setpgid: true}
+		if wd != "" {
+			proc.Dir = wd
+		}
 		err = proc.Start()
 	})
 	if err != nil {
@@ -170,26 +173,26 @@ func (dbp *Process) updateThreadList() error {
 
 var UnsupportedArchErr = errors.New("unsupported architecture - only linux/amd64 is supported")
 
-func (dbp *Process) findExecutable(path string) (*elf.File, error) {
+func (dbp *Process) findExecutable(path string) (*elf.File, string, error) {
 	if path == "" {
 		path = fmt.Sprintf("/proc/%d/exe", dbp.Pid)
 	}
 	f, err := os.OpenFile(path, 0, os.ModePerm)
 	if err != nil {
-		return nil, err
+		return nil, path, err
 	}
 	elfFile, err := elf.NewFile(f)
 	if err != nil {
-		return nil, err
+		return nil, path, err
 	}
 	if elfFile.Machine != elf.EM_X86_64 {
-		return nil, UnsupportedArchErr
+		return nil, path, UnsupportedArchErr
 	}
 	dbp.dwarf, err = elfFile.DWARF()
 	if err != nil {
-		return nil, err
+		return nil, path, err
 	}
-	return elfFile, nil
+	return elfFile, path, nil
 }
 
 func (dbp *Process) parseDebugFrame(exe *elf.File, wg *sync.WaitGroup) {

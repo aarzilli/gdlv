@@ -27,6 +27,7 @@ type OSProcessDetails struct {
 	task             C.task_t      // mach task for the debugged process.
 	exceptionPort    C.mach_port_t // mach port for receiving mach exceptions.
 	notificationPort C.mach_port_t // mach port for dead name notification (process exit).
+	initialized      bool
 
 	// the main port we use, will return messages from both the
 	// exception and notification ports.
@@ -37,12 +38,11 @@ type OSProcessDetails struct {
 // custom fork/exec process in order to take advantage of
 // PT_SIGEXC on Darwin which will turn Unix signals into
 // Mach exceptions.
-func Launch(cmd []string) (*Process, error) {
+func Launch(cmd []string, wd string) (*Process, error) {
 	// check that the argument to Launch is an executable file
 	if fi, staterr := os.Stat(cmd[0]); staterr == nil && (fi.Mode()&0111) == 0 {
 		return nil, NotExecutableErr
 	}
-
 	argv0Go, err := filepath.Abs(cmd[0])
 	if err != nil {
 		return nil, err
@@ -69,6 +69,7 @@ func Launch(cmd []string) (*Process, error) {
 	var pid int
 	dbp.execPtraceFunc(func() {
 		ret := C.fork_exec(argv0, &argvSlice[0], C.int(len(argvSlice)),
+			C.CString(wd),
 			&dbp.os.task, &dbp.os.portSet, &dbp.os.exceptionPort,
 			&dbp.os.notificationPort)
 		pid = int(ret)
@@ -81,11 +82,51 @@ func Launch(cmd []string) (*Process, error) {
 		C.free(unsafe.Pointer(argvSlice[i]))
 	}
 
+	// Initialize enough of the Process state so that we can use resume and
+	// trapWait to wait until the child process calls execve.
+
+	for {
+		err = dbp.updateThreadListForTask(C.get_task_for_pid(C.int(dbp.Pid)))
+		if err == nil {
+			break
+		}
+		if err != couldNotGetThreadCount && err != couldNotGetThreadList {
+			return nil, err
+		}
+	}
+
+	if err := dbp.resume(); err != nil {
+		return nil, err
+	}
+
+	dbp.allGCache = nil
+	for _, th := range dbp.Threads {
+		th.clearBreakpointState()
+	}
+
+	trapthread, err := dbp.trapWait(-1)
+	if err != nil {
+		return nil, err
+	}
+	if err := dbp.Halt(); err != nil {
+		return nil, dbp.exitGuard(err)
+	}
+
+	_, err = dbp.waitForStop()
+	if err != nil {
+		return nil, err
+	}
+
+	dbp.os.initialized = true
 	dbp, err = initializeDebugProcess(dbp, argv0Go, false)
 	if err != nil {
 		return nil, err
 	}
-	err = dbp.Continue()
+
+	if err := dbp.SwitchThread(trapthread.ID); err != nil {
+		return nil, err
+	}
+
 	return dbp, err
 }
 
@@ -100,6 +141,8 @@ func Attach(pid int) (*Process, error) {
 	if kret != C.KERN_SUCCESS {
 		return nil, fmt.Errorf("could not attach to %d", pid)
 	}
+
+	dbp.os.initialized = true
 
 	return initializeDebugProcess(dbp, "", true)
 }
@@ -119,7 +162,8 @@ func (dbp *Process) Kill() (err error) {
 		}
 	}
 	for {
-		port := C.mach_port_wait(dbp.os.portSet, C.int(0))
+		var task C.task_t
+		port := C.mach_port_wait(dbp.os.portSet, &task, C.int(0))
 		if port == dbp.os.notificationPort {
 			break
 		}
@@ -141,7 +185,14 @@ func (dbp *Process) requestManualStop() (err error) {
 	return nil
 }
 
+var couldNotGetThreadCount = errors.New("could not get thread count")
+var couldNotGetThreadList = errors.New("could not get thread list")
+
 func (dbp *Process) updateThreadList() error {
+	return dbp.updateThreadListForTask(dbp.os.task)
+}
+
+func (dbp *Process) updateThreadListForTask(task C.task_t) error {
 	var (
 		err   error
 		kret  C.kern_return_t
@@ -150,29 +201,41 @@ func (dbp *Process) updateThreadList() error {
 	)
 
 	for {
-		count = C.thread_count(dbp.os.task)
+		count = C.thread_count(task)
 		if count == -1 {
-			return fmt.Errorf("could not get thread count")
+			return couldNotGetThreadCount
 		}
 		list = make([]uint32, count)
 
 		// TODO(dp) might be better to malloc mem in C and then free it here
 		// instead of getting count above and passing in a slice
-		kret = C.get_threads(dbp.os.task, unsafe.Pointer(&list[0]), count)
+		kret = C.get_threads(task, unsafe.Pointer(&list[0]), count)
 		if kret != -2 {
 			break
 		}
 	}
 	if kret != C.KERN_SUCCESS {
-		return fmt.Errorf("could not get thread list")
+		return couldNotGetThreadList
+	}
+
+	for _, thread := range dbp.Threads {
+		thread.os.exists = false
 	}
 
 	for _, port := range list {
-		if _, ok := dbp.Threads[int(port)]; !ok {
-			_, err = dbp.addThread(int(port), false)
+		thread, ok := dbp.Threads[int(port)]
+		if !ok {
+			thread, err = dbp.addThread(int(port), false)
 			if err != nil {
 				return err
 			}
+		}
+		thread.os.exists = true
+	}
+
+	for threadID, thread := range dbp.Threads {
+		if !thread.os.exists {
+			delete(dbp.Threads, threadID)
 		}
 	}
 
@@ -273,30 +336,43 @@ func (dbp *Process) parseDebugLineInfo(exe *macho.File, wg *sync.WaitGroup) {
 
 var UnsupportedArchErr = errors.New("unsupported architecture - only darwin/amd64 is supported")
 
-func (dbp *Process) findExecutable(path string) (*macho.File, error) {
+func (dbp *Process) findExecutable(path string) (*macho.File, string, error) {
 	if path == "" {
 		path = C.GoString(C.find_executable(C.int(dbp.Pid)))
 	}
 	exe, err := macho.Open(path)
 	if err != nil {
-		return nil, err
+		return nil, path, err
 	}
 	if exe.Cpu != macho.CpuAmd64 {
-		return nil, UnsupportedArchErr
+		return nil, path, UnsupportedArchErr
 	}
 	dbp.dwarf, err = exe.DWARF()
 	if err != nil {
-		return nil, err
+		return nil, path, err
 	}
-	return exe, nil
+	return exe, path, nil
 }
 
 func (dbp *Process) trapWait(pid int) (*Thread, error) {
 	for {
-		port := C.mach_port_wait(dbp.os.portSet, C.int(0))
+		task := dbp.os.task
+		port := C.mach_port_wait(dbp.os.portSet, &task, C.int(0))
 
 		switch port {
 		case dbp.os.notificationPort:
+			// on macOS >= 10.12.1 the task_t changes after an execve, we could
+			// receive the notification for the death of the pre-execve task_t,
+			// this could also happen *before* we are notified that our task_t has
+			// changed.
+			if dbp.os.task != task {
+				continue
+			}
+			if !dbp.os.initialized {
+				if pidtask := C.get_task_for_pid(C.int(dbp.Pid)); pidtask != 0 && dbp.os.task != pidtask {
+					continue
+				}
+			}
 			_, status, err := dbp.wait(dbp.Pid, 0)
 			if err != nil {
 				return nil, err
@@ -315,6 +391,17 @@ func (dbp *Process) trapWait(pid int) (*Thread, error) {
 
 		case 0:
 			return nil, fmt.Errorf("error while waiting for task")
+		}
+
+		// In macOS 10.12.1 if we received a notification for a task other than
+		// the inferior's task and the inferior's task is no longer valid, this
+		// means inferior called execve and its task_t changed.
+		if dbp.os.task != task && C.task_is_valid(dbp.os.task) == 0 {
+			dbp.os.task = task
+			kret := C.reset_exception_ports(dbp.os.task, &dbp.os.exceptionPort, &dbp.os.notificationPort)
+			if kret != C.KERN_SUCCESS {
+				return nil, fmt.Errorf("could not follow task across exec: %d\n", kret)
+			}
 		}
 
 		// Since we cannot be notified of new threads on OS X
@@ -343,8 +430,9 @@ func (dbp *Process) waitForStop() ([]int, error) {
 	ports := make([]int, 0, len(dbp.Threads))
 	count := 0
 	for {
-		port := C.mach_port_wait(dbp.os.portSet, C.int(1))
-		if port != 0 {
+		var task C.task_t
+		port := C.mach_port_wait(dbp.os.portSet, &task, C.int(1))
+		if port != 0 && port != dbp.os.notificationPort && port != C.MACH_RCV_INTERRUPTED {
 			count = 0
 			ports = append(ports, int(port))
 		} else {

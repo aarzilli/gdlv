@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/derekparker/delve/proc"
 	"github.com/derekparker/delve/service/api"
@@ -38,6 +39,10 @@ type Debugger struct {
 type Config struct {
 	// ProcessArgs are the arguments to launch a new process.
 	ProcessArgs []string
+	// WorkingDir is working directory of the new process. This field is used
+	// only when launching a new process.
+	WorkingDir string
+
 	// AttachPid is the PID of an existing process to which the debugger should
 	// attach.
 	AttachPid int
@@ -59,7 +64,7 @@ func New(config *Config) (*Debugger, error) {
 		d.process = p
 	} else {
 		log.Printf("launching process with args: %v", d.config.ProcessArgs)
-		p, err := proc.Launch(d.config.ProcessArgs)
+		p, err := proc.Launch(d.config.ProcessArgs, d.config.WorkingDir)
 		if err != nil {
 			if err != proc.NotExecutableErr && err != proc.UnsupportedArchErr {
 				err = fmt.Errorf("could not launch process: %s", err)
@@ -75,6 +80,12 @@ func New(config *Config) (*Debugger, error) {
 // the debugger is debugging.
 func (d *Debugger) ProcessPid() int {
 	return d.process.Pid
+}
+
+// LastModified returns the time that the process' executable was last
+// modified.
+func (d *Debugger) LastModified() time.Time {
+	return d.process.LastModified
 }
 
 // Detach detaches from the target process.
@@ -96,7 +107,7 @@ func (d *Debugger) detach(kill bool) error {
 
 // Restart will restart the target process, first killing
 // and then exec'ing it again.
-func (d *Debugger) Restart() error {
+func (d *Debugger) Restart() ([]api.DiscardedBreakpoint, error) {
 	d.processMutex.Lock()
 	defer d.processMutex.Unlock()
 
@@ -106,30 +117,38 @@ func (d *Debugger) Restart() error {
 		}
 		// Ensure the process is in a PTRACE_STOP.
 		if err := stopProcess(d.ProcessPid()); err != nil {
-			return err
+			return nil, err
 		}
 		if err := d.detach(true); err != nil {
-			return err
+			return nil, err
 		}
 	}
-	p, err := proc.Launch(d.config.ProcessArgs)
+	p, err := proc.Launch(d.config.ProcessArgs, d.config.WorkingDir)
 	if err != nil {
-		return fmt.Errorf("could not launch process: %s", err)
+		return nil, fmt.Errorf("could not launch process: %s", err)
 	}
+	discarded := []api.DiscardedBreakpoint{}
 	for _, oldBp := range d.breakpoints() {
 		if oldBp.ID < 0 {
 			continue
 		}
-		newBp, err := p.SetBreakpoint(oldBp.Addr)
+		if len(oldBp.File) > 0 {
+			oldBp.Addr, err = d.process.FindFileLocation(oldBp.File, oldBp.Line)
+			if err != nil {
+				discarded = append(discarded, api.DiscardedBreakpoint{oldBp, err})
+				continue
+			}
+		}
+		newBp, err := p.SetBreakpoint(oldBp.Addr, proc.UserBreakpoint, nil)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		if err := copyBreakpointInfo(newBp, oldBp); err != nil {
-			return err
+			return nil, err
 		}
 	}
 	d.process = p
-	return nil
+	return discarded, nil
 }
 
 // State returns the current state of the debugger.
@@ -224,7 +243,7 @@ func (d *Debugger) CreateBreakpoint(requestedBp *api.Breakpoint) (*api.Breakpoin
 		return nil, err
 	}
 
-	bp, err := d.process.SetBreakpoint(addr)
+	bp, err := d.process.SetBreakpoint(addr, proc.UserBreakpoint, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -254,7 +273,7 @@ func (d *Debugger) AmendBreakpoint(amend *api.Breakpoint) error {
 }
 
 func (d *Debugger) CancelNext() error {
-	return d.process.ClearTempBreakpoints()
+	return d.process.ClearInternalBreakpoints()
 }
 
 func copyBreakpointInfo(bp *proc.Breakpoint, requested *api.Breakpoint) (err error) {
@@ -598,19 +617,19 @@ func (d *Debugger) PackageVariables(threadID int, filter string, cfg proc.LoadCo
 }
 
 // Registers returns string representation of the CPU registers.
-func (d *Debugger) Registers(threadID int) (string, error) {
+func (d *Debugger) Registers(threadID int, floatingPoint bool) (api.Registers, error) {
 	d.processMutex.Lock()
 	defer d.processMutex.Unlock()
 
 	thread, found := d.process.Threads[threadID]
 	if !found {
-		return "", fmt.Errorf("couldn't find thread %d", threadID)
+		return nil, fmt.Errorf("couldn't find thread %d", threadID)
 	}
-	regs, err := thread.Registers()
+	regs, err := thread.Registers(floatingPoint)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return regs.String(), err
+	return api.ConvertRegisters(regs.Slice()), err
 }
 
 func convertVars(pv []*proc.Variable) []api.Variable {

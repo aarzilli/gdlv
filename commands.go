@@ -264,7 +264,8 @@ func clear(client service.Client, out io.Writer, args string) error {
 }
 
 func restart(client service.Client, out io.Writer, args string) error {
-	if err := client.Restart(); err != nil {
+	//TODO: show discarded breakpoints
+	if _, err := client.Restart(); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, "Process restarted with PID", client.ProcessPid())

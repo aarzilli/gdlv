@@ -5,6 +5,7 @@ import (
 	"log"
 	"net/rpc"
 	"net/rpc/jsonrpc"
+	"time"
 
 	"github.com/derekparker/delve/service"
 	"github.com/derekparker/delve/service/api"
@@ -37,14 +38,21 @@ func (c *RPCClient) ProcessPid() int {
 	return out.Pid
 }
 
+func (c *RPCClient) LastModified() time.Time {
+	out := new(LastModifiedOut)
+	c.call("LastModified", LastModifiedIn{}, out)
+	return out.Time
+}
+
 func (c *RPCClient) Detach(kill bool) error {
 	out := new(DetachOut)
 	return c.call("Detach", DetachIn{kill}, out)
 }
 
-func (c *RPCClient) Restart() error {
+func (c *RPCClient) Restart() ([]api.DiscardedBreakpoint, error) {
 	out := new(RestartOut)
-	return c.call("Restart", RestartIn{}, out)
+	err := c.call("Restart", RestartIn{}, out)
+	return out.DiscardedBreakpoints, err
 }
 
 func (c *RPCClient) GetState() (*api.DebuggerState, error) {
@@ -105,7 +113,7 @@ func (c *RPCClient) Step() (*api.DebuggerState, error) {
 
 func (c *RPCClient) StepOut() (*api.DebuggerState, error) {
 	var out CommandOut
-	err := c.call("Command", &api.DebuggerCommand{ Name: api.StepOut}, &out)
+	err := c.call("Command", &api.DebuggerCommand{Name: api.StepOut}, &out)
 	return &out.State, err
 }
 
@@ -241,10 +249,10 @@ func (c *RPCClient) ListLocalVariables(scope api.EvalScope, cfg api.LoadConfig) 
 	return out.Variables, err
 }
 
-func (c *RPCClient) ListRegisters() (string, error) {
+func (c *RPCClient) ListRegisters(threadID int, includeFp bool) (api.Registers, error) {
 	out := new(ListRegistersOut)
-	err := c.call("ListRegisters", ListRegistersIn{}, out)
-	return out.Registers, err
+	err := c.call("ListRegisters", ListRegistersIn{ThreadID: threadID, IncludeFp: includeFp}, out)
+	return out.Regs, err
 }
 
 func (c *RPCClient) ListFunctionArgs(scope api.EvalScope, cfg api.LoadConfig) ([]api.Variable, error) {

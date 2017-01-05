@@ -560,8 +560,8 @@ func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 }
 
 func loadRegs(p *asyncLoad) {
-	var err error
-	regsPanel.regs, err = client.ListRegisters()
+	regs, err := client.ListRegisters(-1, false)
+	regsPanel.regs = regs.String()
 	p.done(err)
 }
 

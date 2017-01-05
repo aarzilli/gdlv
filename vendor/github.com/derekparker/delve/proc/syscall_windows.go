@@ -54,6 +54,20 @@ type _LOAD_DLL_DEBUG_INFO struct {
 	Unicode             uint16
 }
 
+type _EXCEPTION_DEBUG_INFO struct {
+	ExceptionRecord _EXCEPTION_RECORD
+	FirstChance     uint32
+}
+
+type _EXCEPTION_RECORD struct {
+	ExceptionCode        uint32
+	ExceptionFlags       uint32
+	ExceptionRecord      *_EXCEPTION_RECORD
+	ExceptionAddress     uintptr
+	NumberParameters     uint32
+	ExceptionInformation [_EXCEPTION_MAXIMUM_PARAMETERS]uintptr
+}
+
 const (
 	_ThreadBasicInformation = 0
 
@@ -72,6 +86,11 @@ const (
 
 	// DEBUG_ONLY_THIS_PROCESS tracks https://msdn.microsoft.com/en-us/library/windows/desktop/ms684863(v=vs.85).aspx
 	_DEBUG_ONLY_THIS_PROCESS = 0x00000002
+
+	_EXCEPTION_BREAKPOINT  = 0x80000003
+	_EXCEPTION_SINGLE_STEP = 0x80000004
+
+	_EXCEPTION_MAXIMUM_PARAMETERS = 15
 )
 
 func _NT_SUCCESS(x _NTSTATUS) bool {
@@ -89,4 +108,5 @@ func _NT_SUCCESS(x _NTSTATUS) bool {
 //sys	_DebugBreakProcess(process syscall.Handle) (err error) = kernel32.DebugBreakProcess
 //sys	_WaitForDebugEvent(debugevent *_DEBUG_EVENT, milliseconds uint32) (err error) = kernel32.WaitForDebugEvent
 //sys	_DebugActiveProcess(processid uint32) (err error) = kernel32.DebugActiveProcess
+//sys	_DebugActiveProcessStop(processid uint32) (err error) = kernel32.DebugActiveProcessStop
 //sys	_QueryFullProcessImageName(process syscall.Handle, flags uint32, exename *uint16, size *uint32) (err error) = kernel32.QueryFullProcessImageNameW

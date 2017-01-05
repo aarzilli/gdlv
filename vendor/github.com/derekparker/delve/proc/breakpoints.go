@@ -21,7 +21,7 @@ type Breakpoint struct {
 	OriginalData []byte         // If software breakpoint, the data we replace with breakpoint instruction.
 	Name         string         // User defined name of the breakpoint
 	ID           int            // Monotonically increasing ID.
-	Kind         BreakpointKind // Whether this is a temp breakpoint (for next'ing or stepping).
+	Kind         BreakpointKind // Whether this is an internal breakpoint (for next'ing or stepping).
 
 	// Breakpoint information
 	Tracepoint    bool     // Tracepoint flag
@@ -47,6 +47,8 @@ type Breakpoint struct {
 	Cond ast.Expr
 }
 
+// Breakpoint Kind determines the behavior of delve when the
+// breakpoint is reached.
 type BreakpointKind int
 
 const (
@@ -101,48 +103,6 @@ func (iae InvalidAddressError) Error() string {
 	return fmt.Sprintf("Invalid address %#v\n", iae.address)
 }
 
-func (dbp *Process) setBreakpoint(tid int, addr uint64, kind BreakpointKind) (*Breakpoint, error) {
-	if bp, ok := dbp.FindBreakpoint(addr); ok {
-		return nil, BreakpointExistsError{bp.File, bp.Line, bp.Addr}
-	}
-
-	f, l, fn := dbp.goSymTable.PCToLine(uint64(addr))
-	if fn == nil {
-		return nil, InvalidAddressError{address: addr}
-	}
-
-	newBreakpoint := &Breakpoint{
-		FunctionName: fn.Name,
-		File:         f,
-		Line:         l,
-		Addr:         addr,
-		Kind:         kind,
-		Cond:         nil,
-		HitCount:     map[int]uint64{},
-	}
-
-	if kind != UserBreakpoint {
-		dbp.tempBreakpointIDCounter++
-		newBreakpoint.ID = dbp.tempBreakpointIDCounter
-	} else {
-		dbp.breakpointIDCounter++
-		newBreakpoint.ID = dbp.breakpointIDCounter
-	}
-
-	thread := dbp.Threads[tid]
-	originalData, err := thread.readMemory(uintptr(addr), dbp.arch.BreakpointSize())
-	if err != nil {
-		return nil, err
-	}
-	if err := dbp.writeSoftwareBreakpoint(thread, addr); err != nil {
-		return nil, err
-	}
-	newBreakpoint.OriginalData = originalData
-	dbp.Breakpoints[addr] = newBreakpoint
-
-	return newBreakpoint, nil
-}
-
 func (dbp *Process) writeSoftwareBreakpoint(thread *Thread, addr uint64) error {
 	_, err := thread.writeMemory(uintptr(addr), dbp.arch.BreakpointInstruction())
 	return err
@@ -187,6 +147,7 @@ func (bp *Breakpoint) checkCondition(thread *Thread) (bool, error) {
 	return constant.BoolVal(v.Value), nil
 }
 
+// Internal returns true for breakpoints not set directly by the user.
 func (bp *Breakpoint) Internal() bool {
 	return bp.Kind != UserBreakpoint
 }

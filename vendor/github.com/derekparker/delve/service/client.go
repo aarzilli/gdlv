@@ -1,6 +1,8 @@
 package service
 
 import (
+	"time"
+
 	"github.com/derekparker/delve/service/api"
 )
 
@@ -10,11 +12,14 @@ type Client interface {
 	// Returns the pid of the process we are debugging.
 	ProcessPid() int
 
+	// LastModified returns the time that the process' executable was modified.
+	LastModified() time.Time
+
 	// Detach detaches the debugger, optionally killing the process.
 	Detach(killProcess bool) error
 
 	// Restarts program.
-	Restart() error
+	Restart() ([]api.DiscardedBreakpoint, error)
 
 	// GetState returns the current debugger state.
 	GetState() (*api.DebuggerState, error)
@@ -79,7 +84,7 @@ type Client interface {
 	// ListFunctionArgs lists all arguments to the current function.
 	ListFunctionArgs(scope api.EvalScope, cfg api.LoadConfig) ([]api.Variable, error)
 	// ListRegisters lists registers and their values.
-	ListRegisters() (string, error)
+	ListRegisters(threadID int, includeFp bool) (api.Registers, error)
 
 	// ListGoroutines lists all goroutines.
 	ListGoroutines() ([]*api.Goroutine, error)
