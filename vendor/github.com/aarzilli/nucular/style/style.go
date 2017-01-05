@@ -1207,3 +1207,12 @@ func defaultFont(size int, scaling float64) font.Face {
 
 	return truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
 }
+
+func (style *Style) Defaults() {
+	if style.Scaling == 0.0 {
+		style.Scaling = 1.0
+	}
+	if style.Font == nil {
+		style.DefaultFont(style.Scaling)
+	}
+}

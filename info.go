@@ -731,7 +731,7 @@ type breakpointEditor struct {
 	condEditor  nucular.TextEditor
 }
 
-func openBreakpointEditor(mw *nucular.MasterWindow, bp *api.Breakpoint) {
+func openBreakpointEditor(mw nucular.MasterWindow, bp *api.Breakpoint) {
 	var ed breakpointEditor
 	ed.bp = bp
 
@@ -1394,7 +1394,7 @@ func updateDisassemblyPanel(container *nucular.Window) {
 	}
 }
 
-type openDetailsWindowFn func(*nucular.MasterWindow, *api.Variable)
+type openDetailsWindowFn func(nucular.MasterWindow, *api.Variable)
 
 func detailsAvailable(v *api.Variable) openDetailsWindowFn {
 	if v == nil {
@@ -1435,7 +1435,7 @@ type stringViewer struct {
 	mu         sync.Mutex
 }
 
-func newStringViewer(mw *nucular.MasterWindow, v *api.Variable) {
+func newStringViewer(mw nucular.MasterWindow, v *api.Variable) {
 	sv := &stringViewer{v: v}
 	switch v.Type {
 	case "string":
@@ -1686,7 +1686,7 @@ type intArrayViewer struct {
 	mu         sync.Mutex
 }
 
-func newIntArrayViewer(mw *nucular.MasterWindow, v *api.Variable) {
+func newIntArrayViewer(mw nucular.MasterWindow, v *api.Variable) {
 	av := &intArrayViewer{v: v}
 	av.mode = decMode
 	av.ed.Flags = nucular.EditReadOnly | nucular.EditMultiline | nucular.EditSelectable | nucular.EditClipboard
@@ -1764,7 +1764,7 @@ type intViewer struct {
 	ed   nucular.TextEditor
 }
 
-func newIntViewer(mw *nucular.MasterWindow, v *api.Variable) {
+func newIntViewer(mw nucular.MasterWindow, v *api.Variable) {
 	iv := &intViewer{v: v}
 	iv.mode = decMode
 	iv.ed.Flags = nucular.EditReadOnly | nucular.EditSelectable | nucular.EditClipboard

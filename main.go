@@ -110,7 +110,7 @@ type serverDescr struct {
 }
 
 var mu sync.Mutex
-var wnd *nucular.MasterWindow
+var wnd nucular.MasterWindow
 
 var running, nextInProgress bool
 var connectionFailed bool
@@ -151,7 +151,7 @@ func guiUpdate(w *nucular.Window) {
 			setupStyle()
 
 		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeF):
-			mw.Perf = !mw.Perf
+			mw.SetPerf(!mw.GetPerf())
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):
 			mw.ActivateEditor(&commandLineEditor)

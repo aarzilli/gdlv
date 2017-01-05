@@ -22,20 +22,9 @@ import (
 // CONTEXT & PANELS
 ///////////////////////////////////////////////////////////////////////////////////
 
-type context struct {
-	mw             *MasterWindow
-	Input          Input
-	Style          nstyle.Style
-	Windows        []*Window
-	changed        int32
-	activateEditor *TextEditor
-	cmds           []command.Command
-}
-
 type UpdateFn func(*Window)
 
 type Window struct {
-	mw               *MasterWindow
 	LastWidgetBounds rect.Rect
 	title            string
 	ctx              *context
@@ -129,6 +118,7 @@ const (
 	WindowNoScrollbar
 	WindowNoHScrollbar
 	WindowTitle
+	WindowContextualReplace
 
 	windowPrivate
 	windowHidden
@@ -141,17 +131,10 @@ const (
 	windowCombo
 	windowMenu
 	windowTooltip
+	windowEnabled
 
 	WindowDefaultFlags = WindowBorder | WindowMovable | WindowScalable | WindowClosable | WindowMinimizable | WindowTitle
 )
-
-func contextAllCommands(ctx *context) {
-	ctx.cmds = ctx.cmds[:0]
-	for _, w := range ctx.Windows {
-		ctx.cmds = append(ctx.cmds, w.cmds.Commands...)
-	}
-	return
-}
 
 func createTreeNode(initialState bool, parent *treeNode) *treeNode {
 	return &treeNode{initialState, map[string]*treeNode{}, parent}
@@ -192,26 +175,8 @@ func (wbuf *widgetBuffer) reset() {
 	wbuf.frameCount++
 }
 
-func (w *Window) Master() *MasterWindow {
+func (w *Window) Master() MasterWindow {
 	return w.ctx.mw
-}
-
-func contextBegin(ctx *context, layout *panel) {
-	for _, w := range ctx.Windows {
-		w.usingSub = false
-		w.curNode = w.rootNode
-		w.close = false
-		w.widgets.reset()
-		w.cmds.Reset()
-	}
-
-	ctx.Windows[0].layout = layout
-	panelBegin(ctx, ctx.Windows[0], "")
-	layout.Offset = &ctx.Windows[0].Scrollbar
-}
-
-func contextEnd(ctx *context) {
-	panelEnd(ctx, ctx.Windows[0])
 }
 
 func (win *Window) style() *nstyle.Window {
@@ -481,6 +446,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 func (win *Window) specialPanelBegin() {
 	win.began = true
 	w := win.Master()
+	ctx := w.context()
 	if win.flags&windowContextual != 0 {
 		prevbody := win.Bounds
 		prevbody.H = win.layout.Height
@@ -489,7 +455,7 @@ func (win *Window) specialPanelBegin() {
 		// window by popping it a different way do it.
 		// Since the size of the contextual menu is only knowable after displaying
 		// it once this must be done on the second frame.
-		max := w.ctx.Windows[0].Bounds.Max()
+		max := ctx.Windows[0].Bounds.Max()
 		if win.header.Contains(prevbody.Min()) && ((prevbody.Max().X > max.X) || (prevbody.Max().Y > max.Y)) && (win.Bounds.X-prevbody.W >= 0) && (win.Bounds.Y-prevbody.H >= 0) {
 			win.Bounds.X = win.Bounds.X - prevbody.W
 			win.Bounds.Y = win.Bounds.Y - prevbody.H
@@ -505,7 +471,7 @@ func (win *Window) specialPanelBegin() {
 		// If the combo window ends up with the right corner below the
 		// main winodw's lower bound make it non-dynamic and resize it to its
 		// maximum possible size that will show the whole combo box.
-		max := w.ctx.Windows[0].Bounds.Max()
+		max := ctx.Windows[0].Bounds.Max()
 		if prevbody.Y+prevbody.H > max.Y {
 			prevbody.H = max.Y - prevbody.Y
 			win.Bounds = prevbody
@@ -515,11 +481,11 @@ func (win *Window) specialPanelBegin() {
 
 	if win.flags&windowNonblock != 0 && !win.first {
 		/* check if user clicked outside the popup and close if so */
-		in_panel := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, win.ctx.Windows[0].layout.Bounds)
+		in_panel := ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, win.ctx.Windows[0].layout.Bounds)
 		prevbody := win.Bounds
 		prevbody.H = win.layout.Height
-		in_body := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, prevbody)
-		in_header := w.ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, win.header)
+		in_body := ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, prevbody)
+		in_header := ctx.Input.Mouse.IsClickInRect(mouse.ButtonLeft, win.header)
 		if !in_body && in_panel || in_header {
 			win.close = true
 		}
@@ -528,7 +494,7 @@ func (win *Window) specialPanelBegin() {
 	if win.flags&windowPopup != 0 {
 		win.cmds.PushScissor(nk_null_rect)
 
-		if !panelBegin(w.ctx, win, win.title) {
+		if !panelBegin(ctx, win, win.title) {
 			win.close = true
 		}
 		win.layout.Offset = &win.Scrollbar
@@ -749,6 +715,7 @@ func panelEnd(ctx *context, window *Window) {
 		}
 	}
 
+	layout.Flags |= windowEnabled
 	window.flags = layout.Flags
 
 	/* helper to make sure you have a 'nk_tree_push'
@@ -1085,10 +1052,8 @@ func (ctr *rowConstructor) Static(width ...int) {
 	ctr.StaticScaled(width...)
 }
 
-// Like Static but with scaled sizes.
-func (ctr *rowConstructor) StaticScaled(width ...int) {
-	layout := ctr.win.layout
-	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(width))
+func (win *Window) staticZeros(width []int) {
+	layout := win.layout
 
 	nzero := 0
 	used := 0
@@ -1100,7 +1065,7 @@ func (ctr *rowConstructor) StaticScaled(width ...int) {
 	}
 
 	if nzero > 0 {
-		style := ctr.win.style()
+		style := win.style()
 		spacing := style.Spacing
 		padding := style.Padding
 		panel_padding := 2 * padding.X
@@ -1117,9 +1082,40 @@ func (ctr *rowConstructor) StaticScaled(width ...int) {
 			}
 		}
 	}
+}
+
+// Like Static but with scaled sizes.
+func (ctr *rowConstructor) StaticScaled(width ...int) {
+	layout := ctr.win.layout
+	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(width))
+
+	ctr.win.staticZeros(width)
 
 	layout.Row.WidthArr = width
 	layout.Row.Type = layoutStatic
+	layout.Row.ItemWidth = 0
+	layout.Row.ItemRatio = 0.0
+	layout.Row.ItemOffset = 0
+	layout.Row.Filled = 0
+}
+
+// Reset static row
+func (win *Window) LayoutResetStatic(width ...int) {
+	for i := range width {
+		width[i] = win.ctx.scale(width[i])
+	}
+	win.LayoutResetStaticScaled(width...)
+}
+
+func (win *Window) LayoutResetStaticScaled(width ...int) {
+	layout := win.layout
+	if layout.Row.Type != layoutStatic {
+		panic(WrongLayoutErr)
+	}
+	win.staticZeros(width)
+	layout.Row.Index = 0
+	layout.Row.Columns = len(width)
+	layout.Row.WidthArr = width
 	layout.Row.ItemWidth = 0
 	layout.Row.ItemRatio = 0.0
 	layout.Row.ItemOffset = 0
@@ -2116,8 +2112,9 @@ func doSlider(win *Window, bounds rect.Rect, minval float64, val float64, maxval
 	cursor_offset = (slider_value - minval) / step
 
 	cursor.H = bounds.H
-	cursor.W = bounds.W / (slider_steps + 1)
-	cursor.X = bounds.X + int((float64(cursor.W) * cursor_offset))
+	tempW := float64(bounds.W) / float64(slider_steps+1)
+	cursor.W = int(tempW)
+	cursor.X = bounds.X + int((tempW * cursor_offset))
 	cursor.Y = bounds.Y
 
 	out := &win.widgets
@@ -2468,7 +2465,7 @@ func (ctx *context) nonblockOpen(flags WindowFlags, body rect.Rect, header rect.
 // Opens a popup window inside win. Will return true until the
 // popup window is closed.
 // The contents of the popup window will be updated by updateFn
-func (mw *MasterWindow) PopupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn) {
+func (mw *masterWindow) PopupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn) {
 	go func() {
 		mw.uilock.Lock()
 		defer mw.uilock.Unlock()
@@ -2529,6 +2526,13 @@ func (win *Window) ContextualOpen(flags WindowFlags, size image.Point, trigger_b
 	body.Y = win.ctx.Input.Mouse.Pos.Y
 	body.W = size.X
 	body.H = size.Y
+
+	if flags&WindowContextualReplace != 0 {
+		if popup := win.ctx.Windows[len(win.ctx.Windows)-1]; popup.flags&windowContextual != 0 {
+			body.X = popup.Bounds.X
+			body.Y = popup.Bounds.Y
+		}
+	}
 
 	atomic.AddInt32(&win.ctx.changed, 1)
 	return win.ctx.nonblockOpen(flags|windowContextual|WindowNoScrollbar, body, trigger_bounds, updateFn)
@@ -2746,6 +2750,10 @@ func (win *Window) GroupBegin(title string, flags WindowFlags) *Window {
 	}
 
 	flags |= windowSub | windowGroup
+
+	if win.flags&windowEnabled != 0 {
+		flags |= windowEnabled
+	}
 
 	sw.Bounds = bounds
 	sw.flags = flags
