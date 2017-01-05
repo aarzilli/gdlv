@@ -133,6 +133,9 @@ var exprsPanel = struct {
 var regsPanel = struct {
 	asyncLoad asyncLoad
 	regs      string
+	lines     int
+	allRegs   bool
+	width     int
 }{}
 
 var globalsPanel = struct {
@@ -560,28 +563,40 @@ func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 }
 
 func loadRegs(p *asyncLoad) {
-	regs, err := client.ListRegisters(-1, false)
-	regsPanel.regs = regs.String()
+	regs, err := client.ListRegisters(0, regsPanel.allRegs)
+	regsPanel.regs = expandTabs(regs.String())
+	regsPanel.lines = 1
+	lineStart := 0
+	maxline := 0
+	for i := range regsPanel.regs {
+		if regsPanel.regs[i] == '\n' {
+			if lw := i - lineStart; lw > maxline {
+				maxline = lw
+			}
+			lineStart = i + 1
+			regsPanel.lines++
+		}
+	}
+	regsPanel.width = zeroWidth * maxline
 	p.done(err)
 }
 
 func updateRegs(container *nucular.Window) {
-	w := regsPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "registers", loadRegs)
+	w := regsPanel.asyncLoad.showRequest(container, 0, "registers", loadRegs)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
 
-	regs := regsPanel.regs
-
-	lines := 1
-	for i := range regs {
-		if regs[i] == '\n' {
-			lines++
-		}
+	w.MenubarBegin()
+	w.Row(varRowHeight).Static(100)
+	if w.CheckboxText("Show All", &regsPanel.allRegs) {
+		loadRegs(&regsPanel.asyncLoad)
 	}
-	w.Row(20 * lines).Dynamic(1)
-	w.Label(regs, "LT")
+	w.MenubarEnd()
+
+	w.Row(20 * regsPanel.lines).Static(regsPanel.width)
+	w.Label(regsPanel.regs, "LT")
 }
 
 func loadGlobals(p *asyncLoad) {
