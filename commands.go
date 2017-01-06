@@ -275,6 +275,7 @@ func restart(out io.Writer, args string) error {
 	for i := range discarded {
 		fmt.Printf("Discarded %s at %s: %v\n", formatBreakpointName(discarded[i].Breakpoint, false), formatBreakpointLocation(discarded[i].Breakpoint), discarded[i].Reason)
 	}
+	continueToRuntimeMain()
 	refreshState(refreshToFrameZero, clearStop, nil)
 	return nil
 }
