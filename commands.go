@@ -224,15 +224,19 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 	}
 	for _, loc := range locs {
 		requestedBp.Addr = loc.PC
-
-		bp, err := client.CreateBreakpoint(requestedBp)
-		if err != nil {
-			return err
-		}
-
-		fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
+		setBreakpointEx(out, requestedBp)
 	}
 	return nil
+}
+
+func setBreakpointEx(out io.Writer, requestedBp *api.Breakpoint) {
+	bp, err := client.CreateBreakpoint(requestedBp)
+	if err != nil {
+		fmt.Fprintf(out, "Could not create breakpoint: %v\n", err)
+	}
+
+	fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
+	freezeBreakpoint(out, bp)
 }
 
 func breakpoint(out io.Writer, args string) error {
@@ -254,6 +258,7 @@ func clear(out io.Writer, args string) error {
 	} else {
 		bp, err = client.ClearBreakpointByName(args)
 	}
+	removeFrozenBreakpoint(bp)
 	if err != nil {
 		return err
 	}
@@ -267,14 +272,22 @@ func restart(out io.Writer, args string) error {
 	if !dorestart || !BackendServer.buildok {
 		return nil
 	}
+
+	updateFrozenBreakpoints()
+	clearFrozenBreakpoints()
+
 	discarded, err := client.Restart()
 	if err != nil {
+		fmt.Fprintf(out, "error on restart\n")
 		return err
 	}
 	fmt.Fprintln(out, "Process restarted with PID", client.ProcessPid())
 	for i := range discarded {
-		fmt.Printf("Discarded %s at %s: %v\n", formatBreakpointName(discarded[i].Breakpoint, false), formatBreakpointLocation(discarded[i].Breakpoint), discarded[i].Reason)
+		fmt.Fprintf(out, "Discarded %s at %s: %v\n", formatBreakpointName(discarded[i].Breakpoint, false), formatBreakpointLocation(discarded[i].Breakpoint), discarded[i].Reason)
 	}
+
+	restoreFrozenBreakpoints(out)
+
 	continueToRuntimeMain()
 	refreshState(refreshToFrameZero, clearStop, nil)
 	return nil

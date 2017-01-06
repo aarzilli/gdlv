@@ -708,6 +708,7 @@ func updateBreakpoints(container *nucular.Window) {
 								fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint %d: %v\n", bp.ID, err)
 							}
 						}
+						FrozenBreakpoints = nil
 						refreshState(refreshToSameFrame, clearBreakpoint, nil)
 						wnd.Changed()
 					}()
@@ -735,10 +736,11 @@ func breakpointsPanelSelectedBreakpoint() *api.Breakpoint {
 
 func execClearBreakpoint(id int) {
 	scrollbackOut := editorWriter{&scrollbackEditor, true}
-	_, err := client.ClearBreakpoint(id)
+	bp, err := client.ClearBreakpoint(id)
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint %d: %v\n", id, err)
 	}
+	removeFrozenBreakpoint(bp)
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	wnd.Changed()
 }
@@ -908,14 +910,8 @@ func funcInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx i
 }
 
 func functionListSetBreakpoint(name string) {
-	out := &editorWriter{&scrollbackEditor, true}
-	bp, err := client.CreateBreakpoint(&api.Breakpoint{FunctionName: name, Line: -1})
-	if err != nil {
-		fmt.Fprintf(out, "Could not create breakpoint: %v\n", err)
-	} else {
-		fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
-		refreshState(refreshToSameFrame, clearBreakpoint, nil)
-	}
+	setBreakpointEx(&editorWriter{&scrollbackEditor, true}, &api.Breakpoint{FunctionName: name, Line: -1})
+	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 }
 
 func sourceInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int) {
@@ -1346,14 +1342,8 @@ func updateListingPanel(container *nucular.Window) {
 }
 
 func listingSetBreakpoint(file string, line int) {
-	out := &editorWriter{&scrollbackEditor, true}
-	bp, err := client.CreateBreakpoint(&api.Breakpoint{File: file, Line: line})
-	if err != nil {
-		fmt.Fprintf(out, "Could not create breakpoint: %v\n", err)
-	} else {
-		fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
-		refreshState(refreshToSameFrame, clearBreakpoint, nil)
-	}
+	setBreakpointEx(&editorWriter{&scrollbackEditor, true}, &api.Breakpoint{File: file, Line: line})
+	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 }
 
 func updateDisassemblyPanel(container *nucular.Window) {
