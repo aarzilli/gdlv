@@ -297,17 +297,27 @@ func (p *panel) listingToolbar(sw *nucular.Window) {
 
 	p.splitMenu(sw)
 
+	showfilename := true
+
 	if listingPanel.pinnedLoc != nil {
 		sw.LayoutSetWidth(200)
 		if sw.ButtonText("Back to current frame") {
 			listingPanel.pinnedLoc = nil
 			go refreshState(refreshToSameFrame, clearNothing, nil)
 		}
+		showfilename = false
 	}
 
 	if listingPanel.stale {
 		sw.LayoutSetWidth(400)
 		sw.LabelColored("Warning: listing may not match stale executable", "LC", color.RGBA{0xff, 0x00, 0x00, 0xff})
+		showfilename = false
+	}
+
+	if showfilename {
+		style := sw.Master().Style()
+		sw.LayoutSetWidthScaled(sw.LayoutAvailableWidth() - style.Text.Padding.X*2)
+		sw.Label(listingPanel.abbrevFile, "LC")
 	}
 
 	p.toolbarHeaderCombo(sw)

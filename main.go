@@ -89,7 +89,7 @@ type listline struct {
 
 var listingPanel struct {
 	file                string
-	path                string
+	abbrevFile          string
 	recenterListing     bool
 	recenterDisassembly bool
 	listing             []listline
@@ -489,6 +489,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 			return
 		}
 		listingPanel.file = loc.File
+		listingPanel.abbrevFile = abbrevFileName(loc.File)
 		bpmap := map[int]*api.Breakpoint{}
 		for _, bp := range breakpoints {
 			if bp.File == loc.File {

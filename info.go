@@ -8,6 +8,9 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
@@ -1227,6 +1230,34 @@ func loadMoreStruct(v *api.Variable) {
 			additionalLoadMu.Unlock()
 		}()
 	}
+}
+
+func abbrevFileName(path string) string {
+	gopath := os.Getenv("GOPATH")
+	if gopath == "" {
+		gopath = filepath.Join(os.Getenv("HOME"), "go")
+	}
+	if len(gopath) > 0 && gopath[len(gopath)-1] != '/' {
+		gopath = gopath + "/"
+	}
+	goroot := os.Getenv("GOROOT")
+	if goroot == "" {
+		goexe, err := exec.LookPath("go")
+		if err == nil {
+			goroot = filepath.Dir(filepath.Dir(goexe))
+		}
+	}
+	if len(goroot) > 0 && goroot[len(goroot)-1] != '/' {
+		goroot = goroot + "/"
+	}
+
+	if gopath != "" && strings.HasPrefix(path, gopath) {
+		return "$GOPATH/" + path[len(gopath):]
+	}
+	if goroot != "" && strings.HasPrefix(path, goroot) {
+		return "$GOROOT/" + path[len(goroot):]
+	}
+	return path
 }
 
 func updateListingPanel(container *nucular.Window) {
