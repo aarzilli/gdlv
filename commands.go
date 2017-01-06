@@ -14,7 +14,6 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/derekparker/delve/service"
 	"github.com/derekparker/delve/service/api"
 
 	"github.com/aarzilli/nucular"
@@ -22,7 +21,7 @@ import (
 	"github.com/aarzilli/nucular/rect"
 )
 
-type cmdfunc func(c service.Client, out io.Writer, args string) error
+type cmdfunc func(out io.Writer, args string) error
 
 type command struct {
 	aliases  []string
@@ -44,7 +43,6 @@ func (c command) match(cmdstr string) bool {
 type Commands struct {
 	cmds    []command
 	lastCmd cmdfunc
-	client  service.Client
 }
 
 var (
@@ -62,8 +60,8 @@ var cmdhistory = []string{""}
 var historyShown int = 0
 var cmds *Commands
 
-func DebugCommands(client service.Client) *Commands {
-	c := &Commands{client: client}
+func DebugCommands() *Commands {
+	c := &Commands{}
 
 	c.cmds = []command{
 		{aliases: []string{"help", "h"}, cmdFn: c.help, helpMsg: `Prints the help message.
@@ -140,15 +138,15 @@ Lists saved layouts.`},
 
 var noCmdError = errors.New("command not available")
 
-func noCmdAvailable(client service.Client, out io.Writer, args string) error {
+func noCmdAvailable(out io.Writer, args string) error {
 	return noCmdError
 }
 
-func nullCommand(client service.Client, out io.Writer, args string) error {
+func nullCommand(out io.Writer, args string) error {
 	return nil
 }
 
-func (c *Commands) help(client service.Client, out io.Writer, args string) error {
+func (c *Commands) help(out io.Writer, args string) error {
 	if args != "" {
 		for _, cmd := range c.cmds {
 			for _, alias := range cmd.aliases {
@@ -190,7 +188,7 @@ func (c *Commands) help(client service.Client, out io.Writer, args string) error
 	return nil
 }
 
-func setBreakpoint(client service.Client, out io.Writer, tracepoint bool, argstr string) error {
+func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 	defer refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	args := strings.SplitN(argstr, " ", 2)
 
@@ -237,15 +235,15 @@ func setBreakpoint(client service.Client, out io.Writer, tracepoint bool, argstr
 	return nil
 }
 
-func breakpoint(client service.Client, out io.Writer, args string) error {
-	return setBreakpoint(client, out, false, args)
+func breakpoint(out io.Writer, args string) error {
+	return setBreakpoint(out, false, args)
 }
 
-func tracepoint(client service.Client, out io.Writer, args string) error {
-	return setBreakpoint(client, out, true, args)
+func tracepoint(out io.Writer, args string) error {
+	return setBreakpoint(out, true, args)
 }
 
-func clear(client service.Client, out io.Writer, args string) error {
+func clear(out io.Writer, args string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("not enough arguments")
 	}
@@ -263,7 +261,12 @@ func clear(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func restart(client service.Client, out io.Writer, args string) error {
+func restart(out io.Writer, args string) error {
+	dorestart := BackendServer.serverProcess != nil
+	BackendServer.Rebuild()
+	if !dorestart || !BackendServer.buildok {
+		return nil
+	}
 	discarded, err := client.Restart()
 	if err != nil {
 		return err
@@ -276,7 +279,7 @@ func restart(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func cont(client service.Client, out io.Writer, args string) error {
+func cont(out io.Writer, args string) error {
 	stateChan := client.Continue()
 	var state *api.DebuggerState
 	for state = range stateChan {
@@ -289,7 +292,7 @@ func cont(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func continueUntilCompleteNext(client service.Client, out io.Writer, state *api.DebuggerState, op string) error {
+func continueUntilCompleteNext(out io.Writer, state *api.DebuggerState, op string) error {
 	if !state.NextInProgress {
 		refreshState(refreshToFrameZero, clearStop, state)
 		return nil
@@ -311,16 +314,16 @@ func continueUntilCompleteNext(client service.Client, out io.Writer, state *api.
 	}
 }
 
-func step(client service.Client, out io.Writer, args string) error {
+func step(out io.Writer, args string) error {
 	state, err := client.Step()
 	if err != nil {
 		return err
 	}
 	printcontext(out, state)
-	return continueUntilCompleteNext(client, out, state, "step")
+	return continueUntilCompleteNext(out, state, "step")
 }
 
-func stepInstruction(client service.Client, out io.Writer, args string) error {
+func stepInstruction(out io.Writer, args string) error {
 	state, err := client.StepInstruction()
 	if err != nil {
 		return err
@@ -330,29 +333,29 @@ func stepInstruction(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func next(client service.Client, out io.Writer, args string) error {
+func next(out io.Writer, args string) error {
 	state, err := client.Next()
 	if err != nil {
 		return err
 	}
 	printcontext(out, state)
-	return continueUntilCompleteNext(client, out, state, "next")
+	return continueUntilCompleteNext(out, state, "next")
 }
 
-func stepout(client service.Client, out io.Writer, args string) error {
+func stepout(out io.Writer, args string) error {
 	state, err := client.StepOut()
 	if err != nil {
 		return err
 	}
 	printcontext(out, state)
-	return continueUntilCompleteNext(client, out, state, "stepout")
+	return continueUntilCompleteNext(out, state, "stepout")
 }
 
-func cancelnext(client service.Client, out io.Writer, args string) error {
+func cancelnext(out io.Writer, args string) error {
 	return client.CancelNext()
 }
 
-func interrupt(client service.Client, out io.Writer, args string) error {
+func interrupt(out io.Writer, args string) error {
 	state, err := client.Halt()
 	if err != nil {
 		return err
@@ -361,7 +364,7 @@ func interrupt(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func printVar(client service.Client, out io.Writer, args string) error {
+func printVar(out io.Writer, args string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("not enough arguments")
 	}
@@ -374,7 +377,7 @@ func printVar(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func listCommand(client service.Client, out io.Writer, args string) error {
+func listCommand(out io.Writer, args string) error {
 	locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, args)
 	if err != nil {
 		return err
@@ -394,7 +397,7 @@ func listCommand(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func setVar(client service.Client, out io.Writer, args string) error {
+func setVar(out io.Writer, args string) error {
 	// HACK: in go '=' is not an operator, we detect the error and try to recover from it by splitting the input string
 	_, err := parser.ParseExpr(args)
 	if err == nil {
@@ -419,11 +422,11 @@ func (ere ExitRequestError) Error() string {
 	return ""
 }
 
-func exitCommand(client service.Client, out io.Writer, args string) error {
+func exitCommand(out io.Writer, args string) error {
 	return ExitRequestError{}
 }
 
-func layoutCommand(client service.Client, out io.Writer, args string) error {
+func layoutCommand(out io.Writer, args string) error {
 	argv := strings.SplitN(args, " ", 3)
 	if len(argv) < 0 {
 		return fmt.Errorf("not enough arguments")
@@ -468,7 +471,7 @@ func layoutCommand(client service.Client, out io.Writer, args string) error {
 	return nil
 }
 
-func configCommand(client service.Client, out io.Writer, args string) error {
+func configCommand(out io.Writer, args string) error {
 	wnd.PopupOpen("Configuration", dynamicPopupFlags, rect.Rect{100, 100, 600, 700}, true, configWindow)
 	return nil
 }
@@ -524,7 +527,7 @@ func configWindow(w *nucular.Window) {
 	}
 }
 
-func scrollCommand(client service.Client, out io.Writer, args string) error {
+func scrollCommand(out io.Writer, args string) error {
 	switch args {
 	case "clear":
 		mu.Lock()
@@ -814,5 +817,5 @@ func (c *Commands) Find(cmdstr string) cmdfunc {
 }
 
 func (c *Commands) Call(cmdstr, args string, out io.Writer) error {
-	return c.Find(cmdstr)(client, out, args)
+	return c.Find(cmdstr)(out, args)
 }
