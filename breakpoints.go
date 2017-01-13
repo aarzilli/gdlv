@@ -78,6 +78,7 @@ func removeFrozenBreakpoint(bp *api.Breakpoint) {
 		if FrozenBreakpoints[i].Bp.ID == bp.ID {
 			copy(FrozenBreakpoints[i:], FrozenBreakpoints[i+1:])
 			FrozenBreakpoints = FrozenBreakpoints[:len(FrozenBreakpoints)-1]
+			break
 		}
 	}
 }
