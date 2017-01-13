@@ -2602,9 +2602,6 @@ func (win *Window) Tooltip(text string) {
 // COMBO-BOX
 ///////////////////////////////////////////////////////////////////////////////////
 
-func (ctx *context) comboOpen(height int, is_clicked bool, header rect.Rect, updateFn UpdateFn) {
-}
-
 // Adds a drop-down list to win.
 func (win *Window) Combo(lbl label.Label, height int, updateFn UpdateFn) *Window {
 	s, header := win.widget()

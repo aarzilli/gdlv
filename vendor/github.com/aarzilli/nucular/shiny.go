@@ -213,45 +213,50 @@ func (w *masterWindow) handleEventLocked(ei interface{}) bool {
 		if changed < 2 {
 			atomic.StoreInt32(&w.ctx.changed, 2)
 		}
-		if e.Direction == key.DirRelease {
-			break
-		}
-		evinNotext := func() {
-			for _, k := range w.ctx.Input.Keyboard.Keys {
-				if k.Code == e.Code {
-					k.Modifiers |= e.Modifiers
-					return
-				}
-			}
-			w.ctx.Input.Keyboard.Keys = append(w.ctx.Input.Keyboard.Keys, e)
-		}
-		evinText := func() {
-			if e.Modifiers == 0 || e.Modifiers == key.ModShift {
-				io.WriteString(&w.textbuffer, string(e.Rune))
-			}
-
-			evinNotext()
-		}
-
-		switch {
-		case e.Code == key.CodeUnknown:
-			if e.Rune > 0 {
-				evinText()
-			}
-		case (e.Code >= key.CodeA && e.Code <= key.Code0) || e.Code == key.CodeSpacebar || e.Code == key.CodeHyphenMinus || e.Code == key.CodeEqualSign || e.Code == key.CodeLeftSquareBracket || e.Code == key.CodeRightSquareBracket || e.Code == key.CodeBackslash || e.Code == key.CodeSemicolon || e.Code == key.CodeApostrophe || e.Code == key.CodeGraveAccent || e.Code == key.CodeComma || e.Code == key.CodeFullStop || e.Code == key.CodeSlash || (e.Code >= key.CodeKeypadSlash && e.Code <= key.CodeKeypadPlusSign) || (e.Code >= key.CodeKeypad1 && e.Code <= key.CodeKeypadEqualSign):
-			evinText()
-		case e.Code == key.CodeTab:
-			e.Rune = '\t'
-			evinText()
-		case e.Code == key.CodeReturnEnter || e.Code == key.CodeKeypadEnter:
-			e.Rune = '\n'
-			evinText()
-		default:
-			evinNotext()
-		}
+		w.ctx.processKeyEvent(e, &w.textbuffer)
 	}
 
 	return true
+}
+
+func (ctx *context) processKeyEvent(e key.Event, textbuffer *bytes.Buffer) {
+	if e.Direction == key.DirRelease {
+		return
+	}
+
+	evinNotext := func() {
+		for _, k := range ctx.Input.Keyboard.Keys {
+			if k.Code == e.Code {
+				k.Modifiers |= e.Modifiers
+				return
+			}
+		}
+		ctx.Input.Keyboard.Keys = append(ctx.Input.Keyboard.Keys, e)
+	}
+	evinText := func() {
+		if e.Modifiers == 0 || e.Modifiers == key.ModShift {
+			io.WriteString(textbuffer, string(e.Rune))
+		}
+
+		evinNotext()
+	}
+
+	switch {
+	case e.Code == key.CodeUnknown:
+		if e.Rune > 0 {
+			evinText()
+		}
+	case (e.Code >= key.CodeA && e.Code <= key.Code0) || e.Code == key.CodeSpacebar || e.Code == key.CodeHyphenMinus || e.Code == key.CodeEqualSign || e.Code == key.CodeLeftSquareBracket || e.Code == key.CodeRightSquareBracket || e.Code == key.CodeBackslash || e.Code == key.CodeSemicolon || e.Code == key.CodeApostrophe || e.Code == key.CodeGraveAccent || e.Code == key.CodeComma || e.Code == key.CodeFullStop || e.Code == key.CodeSlash || (e.Code >= key.CodeKeypadSlash && e.Code <= key.CodeKeypadPlusSign) || (e.Code >= key.CodeKeypad1 && e.Code <= key.CodeKeypadEqualSign):
+		evinText()
+	case e.Code == key.CodeTab:
+		e.Rune = '\t'
+		evinText()
+	case e.Code == key.CodeReturnEnter || e.Code == key.CodeKeypadEnter:
+		e.Rune = '\n'
+		evinText()
+	default:
+		evinNotext()
+	}
 }
 
 func (w *masterWindow) updater() {

@@ -521,7 +521,11 @@ func (state *TextEditor) tonl(start int, dir int) int {
 		c := state.Buffer[i]
 
 		if c == '\n' {
-			return i + 1
+			if dir >= 0 {
+				return i
+			} else {
+				return i + 1
+			}
 		}
 	}
 	if dir < 0 {
@@ -929,9 +933,6 @@ retry:
 		} else {
 			state.clamp()
 			end := state.tonl(state.Cursor, +1)
-			if end > state.Cursor {
-				end--
-			}
 			if e.Modifiers&key.ModShift != 0 {
 				state.clamp()
 				state.prepSelectionAtCursor()
@@ -949,9 +950,6 @@ retry:
 	case key.CodeE:
 		if e.Modifiers&key.ModControl != 0 {
 			end := state.tonl(state.Cursor, +1)
-			if end > state.Cursor {
-				end--
-			}
 			state.clamp()
 			state.moveToFirst()
 			state.HasPreferredX = false

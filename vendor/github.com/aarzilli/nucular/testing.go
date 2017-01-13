@@ -1,11 +1,13 @@
 package nucular
 
 import (
+	"bytes"
 	"image"
 
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
 
+	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
 )
 
@@ -112,5 +114,12 @@ func (w *TestWindow) Click(button mouse.Button, p image.Point) {
 // be drawn every time.
 func (w *TestWindow) Type(text string) {
 	w.ctx.Input.Keyboard.Text = text
+	w.Update()
+}
+
+func (w *TestWindow) TypeKey(e key.Event) {
+	var b bytes.Buffer
+	w.ctx.processKeyEvent(e, &b)
+	w.ctx.Input.Keyboard.Text = w.ctx.Input.Keyboard.Text + b.String()
 	w.Update()
 }
