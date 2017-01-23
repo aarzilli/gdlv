@@ -152,8 +152,7 @@ func (w *masterWindow) handleEventLocked(ei interface{}) bool {
 			c = true
 		}
 		if c {
-			changed := atomic.LoadInt32(&w.ctx.changed)
-			if changed < 2 {
+			if changed := atomic.LoadInt32(&w.ctx.changed); changed < 2 {
 				atomic.StoreInt32(&w.ctx.changed, 2)
 			}
 		}
@@ -171,7 +170,9 @@ func (w *masterWindow) handleEventLocked(ei interface{}) bool {
 			w.setupBuffer(sz)
 		}
 		w.prevCmds = w.prevCmds[:0]
-		w.Changed()
+		if changed := atomic.LoadInt32(&w.ctx.changed); changed < 2 {
+			atomic.StoreInt32(&w.ctx.changed, 2)
+		}
 
 	case mouse.Event:
 		changed := atomic.LoadInt32(&w.ctx.changed)

@@ -26,6 +26,7 @@ type context struct {
 	changed        int32
 	activateEditor *TextEditor
 	cmds           []command.Command
+	trashFrame     bool
 }
 
 func contextAllCommands(ctx *context) {
@@ -46,31 +47,36 @@ func (ctx *context) setupMasterWindow(layout *panel, updatefn UpdateFn) {
 }
 
 func (ctx *context) Update() {
-	contextBegin(ctx, ctx.Windows[0].layout)
-	for i := 0; i < len(ctx.Windows); i++ {
-		ctx.Windows[i].began = false
+	for count := 0; count < 2; count++ {
+		contextBegin(ctx, ctx.Windows[0].layout)
+		for i := 0; i < len(ctx.Windows); i++ {
+			ctx.Windows[i].began = false
+		}
+		for i := 0; i < len(ctx.Windows); i++ { // this must not use range or tooltips won't work
+			win := ctx.Windows[i]
+			if win.updateFn != nil {
+				win.specialPanelBegin()
+				win.updateFn(win)
+			}
+
+			if !win.began {
+				win.close = true
+				continue
+			}
+
+			if win.title == tooltipWindowTitle {
+				win.close = true
+			}
+
+			if win.flags&windowPopup != 0 {
+				panelEnd(ctx, win)
+			}
+		}
+		contextEnd(ctx)
+		if !ctx.trashFrame {
+			break
+		}
 	}
-	for i := 0; i < len(ctx.Windows); i++ { // this must not use range or tooltips won't work
-		win := ctx.Windows[i]
-		if win.updateFn != nil {
-			win.specialPanelBegin()
-			win.updateFn(win)
-		}
-
-		if !win.began {
-			win.close = true
-			continue
-		}
-
-		if win.title == tooltipWindowTitle {
-			win.close = true
-		}
-
-		if win.flags&windowPopup != 0 {
-			panelEnd(ctx, win)
-		}
-	}
-	contextEnd(ctx)
 }
 
 func contextBegin(ctx *context, layout *panel) {
@@ -82,6 +88,7 @@ func contextBegin(ctx *context, layout *panel) {
 		w.cmds.Reset()
 	}
 
+	ctx.trashFrame = false
 	ctx.Windows[0].layout = layout
 	panelBegin(ctx, ctx.Windows[0], "")
 	layout.Offset = &ctx.Windows[0].Scrollbar
