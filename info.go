@@ -532,7 +532,7 @@ func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 		return
 	}
 	if exprMenuIdx >= 0 && exprMenuIdx < len(exprsPanel.expressions) {
-		if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+		if w := w.ContextualOpen(0, image.Point{}, w.LastWidgetBounds, nil); w != nil {
 			w.Row(20).Dynamic(1)
 
 			if fn := detailsAvailable(exprsPanel.v[exprMenuIdx]); fn != nil {
@@ -556,7 +556,7 @@ func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 			}
 		}
 	} else if fn := detailsAvailable(v); fn != nil {
-		if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+		if w := w.ContextualOpen(0, image.Point{}, w.LastWidgetBounds, nil); w != nil {
 			w.Row(20).Dynamic(1)
 			if w.MenuItem(label.TA("Details", "LC")) {
 				fn(w.Master(), v)
@@ -685,7 +685,7 @@ func updateBreakpoints(container *nucular.Window) {
 				breakpointsPanel.selected = breakpoint.ID
 			}
 
-			if w := w.ContextualOpen(0, image.Point{200, 500}, bounds, nil); w != nil {
+			if w := w.ContextualOpen(0, image.Point{}, bounds, nil); w != nil {
 				breakpointsPanel.selected = breakpoint.ID
 				w.Row(20).Dynamic(1)
 				if w.MenuItem(label.TA("Edit...", "LC")) {
@@ -898,7 +898,7 @@ func funcInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx i
 			go refreshState(refreshToSameFrame, clearNothing, nil)
 		}
 	}
-	if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+	if w := w.ContextualOpen(0, image.Point{}, w.LastWidgetBounds, nil); w != nil {
 		w.Row(20).Dynamic(1)
 		if w.MenuItem(label.TA("Set breakpoint", "LC")) {
 			go functionListSetBreakpoint(p.slice[idx])
@@ -919,7 +919,7 @@ func sourceInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx
 		listingPanel.pinnedLoc = &api.Location{File: p.slice[p.selected], Line: 1}
 		go refreshState(refreshToSameFrame, clearNothing, nil)
 	}
-	if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+	if w := w.ContextualOpen(0, image.Point{}, w.LastWidgetBounds, nil); w != nil {
 		w.Row(20).Dynamic(1)
 		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
 			clipboard.Set(p.slice[idx])
@@ -928,7 +928,7 @@ func sourceInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx
 }
 
 func sliceInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int) {
-	if w := w.ContextualOpen(0, image.Point{150, 500}, w.LastWidgetBounds, nil); w != nil {
+	if w := w.ContextualOpen(0, image.Point{}, w.LastWidgetBounds, nil); w != nil {
 		w.Row(20).Dynamic(1)
 		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
 			clipboard.Set(p.slice[idx])
@@ -1318,7 +1318,7 @@ func updateListingPanel(container *nucular.Window) {
 		listp.Label(line.idx, "LC")
 		listp.Label(line.text, "LC")
 
-		if w := listp.ContextualOpen(0, image.Point{150, 500}, rowbounds, nil); w != nil {
+		if w := listp.ContextualOpen(0, image.Point{}, rowbounds, nil); w != nil {
 			w.Row(20).Dynamic(1)
 			if line.bp != nil {
 				if w.MenuItem(label.TA("Edit breakpoint", "LC")) {
