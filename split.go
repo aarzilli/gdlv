@@ -30,7 +30,7 @@ const (
 	infoDisassembly = "Disassembly"
 	infoGoroutines  = "Goroutines"
 	infoStacktrace  = "Stacktrace"
-	infoLocals      = "Locals"
+	infoLocals      = "Variables"
 	infoGlobal      = "Globals"
 	infoBps         = "Breakpoints"
 	infoThreads     = "Threads"
@@ -38,7 +38,6 @@ const (
 	infoSources     = "Sources"
 	infoFuncs       = "Functions"
 	infoTypes       = "Types"
-	infoExprs       = "Expressions"
 )
 
 var infoNameToFunc = map[string]func(w *nucular.Window){
@@ -55,11 +54,10 @@ var infoNameToFunc = map[string]func(w *nucular.Window){
 	infoSources:     sourcesPanel.update,
 	infoFuncs:       funcsPanel.update,
 	infoTypes:       typesPanel.update,
-	infoExprs:       updateExprs,
 }
 
 var infoModes = []string{
-	infoCommand, infoListing, infoDisassembly, infoGoroutines, infoStacktrace, infoLocals, infoGlobal, infoExprs, infoBps, infoThreads, infoRegisters, infoSources, infoFuncs, infoTypes,
+	infoCommand, infoListing, infoDisassembly, infoGoroutines, infoStacktrace, infoLocals, infoGlobal, infoBps, infoThreads, infoRegisters, infoSources, infoFuncs, infoTypes,
 }
 
 var codeToInfoMode = map[byte]string{
@@ -76,7 +74,6 @@ var codeToInfoMode = map[byte]string{
 	'f': infoFuncs,
 	't': infoTypes,
 	'T': infoThreads,
-	'e': infoExprs,
 }
 
 var infoModeToCode = map[string]byte{}

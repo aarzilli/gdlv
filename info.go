@@ -118,19 +118,15 @@ var localsPanel = struct {
 	showAddr     bool
 	args         []api.Variable
 	locals       []api.Variable
-}{
-	filterEditor: nucular.TextEditor{Filter: spacefilter},
-}
 
-var exprsPanel = struct {
-	asyncLoad   asyncLoad
 	expressions []string
 	selected    int
 	ed          nucular.TextEditor
 	v           []*api.Variable
 }{
-	selected: -1,
-	ed:       nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard},
+	filterEditor: nucular.TextEditor{Filter: spacefilter},
+	selected:     -1,
+	ed:           nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard},
 }
 
 var regsPanel = struct {
@@ -385,6 +381,9 @@ func loadLocals(p *asyncLoad) {
 	if errloc == nil {
 		sort.Sort(variablesByName(localsPanel.locals))
 	}
+	for i := range localsPanel.expressions {
+		loadOneExpr(i)
+	}
 
 	m := map[string]int{}
 
@@ -404,11 +403,14 @@ func loadLocals(p *asyncLoad) {
 	for i := range localsPanel.locals {
 		changename(&localsPanel.locals[i])
 	}
-	if errarg != nil {
-		p.done(errarg)
-		return
+
+	for _, err := range []error{errarg, errloc} {
+		if err != nil {
+			p.done(err)
+			return
+		}
 	}
-	p.done(errloc)
+	p.done(nil)
 }
 
 const (
@@ -449,110 +451,112 @@ func updateLocals(container *nucular.Window) {
 			showVariable(w, 0, localsPanel.showAddr, -1, locals[i].Name, &locals[i])
 		}
 	}
-}
 
-func loadOneExpr(i int) {
-	var err error
-	exprsPanel.v[i], err = client.EvalVariable(api.EvalScope{curGid, curFrame}, exprsPanel.expressions[i], LongLoadConfig)
-	if err != nil {
-		exprsPanel.v[i] = &api.Variable{Name: exprsPanel.expressions[i], Unreadable: err.Error()}
+	if len(locals) > 0 {
+		w.Row(varRowHeight / 2).Dynamic(1)
+		w.Spacing(1)
 	}
-}
-
-func loadExprs(l *asyncLoad) {
-	for i := range exprsPanel.expressions {
-		loadOneExpr(i)
-	}
-	l.done(nil)
-}
-
-func updateExprs(container *nucular.Window) {
-	w := exprsPanel.asyncLoad.showRequest(container, 0, "exprs", loadExprs)
-	if w == nil {
-		return
-	}
-	defer w.GroupEnd()
 
 	editorShown := false
 
-	for i := range exprsPanel.expressions {
-		if i == exprsPanel.selected {
-			exprsEditor(w)
+	for i := 0; i < len(localsPanel.expressions); i++ {
+		if i == localsPanel.selected {
+			exprsEditor(false, w)
 			editorShown = true
 		} else {
-			if exprsPanel.v[i] == nil {
+			if localsPanel.v[i] == nil {
 				w.Row(varRowHeight).Dynamic(1)
-				w.Label(fmt.Sprintf("loading %s", exprsPanel.expressions[i]), "LC")
+				w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i]), "LC")
 			} else {
-				showVariable(w, 0, false, i, exprsPanel.v[i].Name, exprsPanel.v[i])
+				showVariable(w, 0, false, i, localsPanel.v[i].Name, localsPanel.v[i])
 			}
 		}
 	}
 
 	if !editorShown {
-		exprsEditor(w)
+		exprsEditor(true, w)
 	}
 }
 
-func exprsEditor(w *nucular.Window) {
-	w.Row(varRowHeight).Dynamic(1)
-	active := exprsPanel.ed.Edit(w)
+func loadOneExpr(i int) {
+	var err error
+	localsPanel.v[i], err = client.EvalVariable(api.EvalScope{curGid, curFrame}, localsPanel.expressions[i], LongLoadConfig)
+	if err != nil {
+		localsPanel.v[i] = &api.Variable{Name: localsPanel.expressions[i], Unreadable: err.Error()}
+	}
+}
+
+func exprsEditor(isnew bool, w *nucular.Window) {
+	if isnew {
+		w.Row(varRowHeight).Static(50, 0)
+		w.Label("New: ", "LC")
+		if w.Input().Mouse.HoveringRect(w.LastWidgetBounds) {
+			w.Tooltip("Evaluate new expression")
+		}
+	} else {
+		w.Row(varRowHeight).Dynamic(1)
+	}
+	active := localsPanel.ed.Edit(w)
 	if active&nucular.EditCommitted == 0 {
 		return
 	}
 
-	newexpr := string(exprsPanel.ed.Buffer)
-	exprsPanel.ed.Buffer = exprsPanel.ed.Buffer[:0]
-	exprsPanel.ed.Cursor = 0
-	exprsPanel.ed.Active = true
-	exprsPanel.ed.CursorFollow = true
+	newexpr := string(localsPanel.ed.Buffer)
+	localsPanel.ed.Buffer = localsPanel.ed.Buffer[:0]
+	localsPanel.ed.Cursor = 0
+	localsPanel.ed.Active = true
+	localsPanel.ed.CursorFollow = true
 
-	if exprsPanel.selected < 0 {
-		exprsPanel.expressions = append(exprsPanel.expressions, newexpr)
-		exprsPanel.v = append(exprsPanel.v, nil)
-		i := len(exprsPanel.v) - 1
-		go func(i int) {
-			additionalLoadMu.Lock()
-			defer additionalLoadMu.Unlock()
-			loadOneExpr(i)
-		}(i)
+	if localsPanel.selected < 0 {
+		addExpression(newexpr)
 	} else {
-		exprsPanel.expressions[exprsPanel.selected] = newexpr
+		localsPanel.expressions[localsPanel.selected] = newexpr
 		go func(i int) {
 			additionalLoadMu.Lock()
 			defer additionalLoadMu.Unlock()
 			loadOneExpr(i)
-		}(exprsPanel.selected)
-		exprsPanel.selected = -1
+		}(localsPanel.selected)
+		localsPanel.selected = -1
 	}
+}
+
+func addExpression(newexpr string) {
+	localsPanel.expressions = append(localsPanel.expressions, newexpr)
+	localsPanel.v = append(localsPanel.v, nil)
+	i := len(localsPanel.v) - 1
+	go func(i int) {
+		additionalLoadMu.Lock()
+		defer additionalLoadMu.Unlock()
+		loadOneExpr(i)
+	}(i)
 }
 
 func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
 	if running {
 		return
 	}
-	if exprMenuIdx >= 0 && exprMenuIdx < len(exprsPanel.expressions) {
+	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
 		if w := w.ContextualOpen(0, image.Point{}, w.LastWidgetBounds, nil); w != nil {
 			w.Row(20).Dynamic(1)
 
-			if fn := detailsAvailable(exprsPanel.v[exprMenuIdx]); fn != nil {
+			if fn := detailsAvailable(localsPanel.v[exprMenuIdx]); fn != nil {
 				if w.MenuItem(label.TA("Details", "LC")) {
-					fn(w.Master(), exprsPanel.v[exprMenuIdx])
+					fn(w.Master(), localsPanel.v[exprMenuIdx])
 				}
 			}
 			if w.MenuItem(label.TA("Edit", "LC")) {
-				exprsPanel.selected = exprMenuIdx
-				exprsPanel.ed.Buffer = []rune(exprsPanel.expressions[exprsPanel.selected])
-				exprsPanel.ed.Cursor = len(exprsPanel.ed.Buffer)
-				exprsPanel.ed.CursorFollow = true
+				localsPanel.selected = exprMenuIdx
+				localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected])
+				localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
+				localsPanel.ed.CursorFollow = true
 			}
 			if w.MenuItem(label.TA("Remove", "LC")) {
-				if exprMenuIdx+1 < len(exprsPanel.expressions) {
-					copy(exprsPanel.expressions[exprMenuIdx:], exprsPanel.expressions[exprMenuIdx+1:])
-					copy(exprsPanel.v[exprMenuIdx:], exprsPanel.v[exprMenuIdx+1:])
+				if exprMenuIdx+1 < len(localsPanel.expressions) {
+					copy(localsPanel.expressions[exprMenuIdx:], localsPanel.expressions[exprMenuIdx+1:])
+					copy(localsPanel.v[exprMenuIdx:], localsPanel.v[exprMenuIdx+1:])
 				}
-				exprsPanel.expressions = exprsPanel.expressions[:len(exprsPanel.expressions)-1]
-				exprsPanel.v = exprsPanel.v[:len(exprsPanel.v)-1]
+				localsPanel.expressions = localsPanel.expressions[:len(localsPanel.expressions)-1]
+				localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
 			}
 		}
 	} else if fn := detailsAvailable(v); fn != nil {

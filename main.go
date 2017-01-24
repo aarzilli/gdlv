@@ -383,17 +383,14 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		breakpointsPanel.asyncLoad.clear()
 	case clearFrameSwitch:
 		localsPanel.asyncLoad.clear()
-		exprsPanel.asyncLoad.clear()
 		listingPanel.pinnedLoc = nil
 	case clearGoroutineSwitch:
 		stackPanel.asyncLoad.clear()
 		localsPanel.asyncLoad.clear()
-		exprsPanel.asyncLoad.clear()
 		regsPanel.asyncLoad.clear()
 		listingPanel.pinnedLoc = nil
 	case clearStop:
 		localsPanel.asyncLoad.clear()
-		exprsPanel.asyncLoad.clear()
 		regsPanel.asyncLoad.clear()
 		goroutinesPanel.asyncLoad.clear()
 		stackPanel.asyncLoad.clear()
