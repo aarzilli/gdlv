@@ -386,8 +386,19 @@ func printVar(out io.Writer, args string) error {
 	if err != nil {
 		return err
 	}
-
-	fmt.Fprintln(out, val.MultilineString(""))
+	valstr := val.MultilineString("")
+	nlcount := 0
+	for _, ch := range valstr {
+		if ch == '\n' {
+			nlcount++
+		}
+	}
+	if nlcount > 20 {
+		fmt.Fprintln(out, "Expression added to variables panel")
+		addExpression(args)
+	} else {
+		fmt.Fprintln(out, valstr)
+	}
 	return nil
 }
 
