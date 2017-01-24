@@ -1318,18 +1318,20 @@ func updateListingPanel(container *nucular.Window) {
 		listp.Label(line.idx, "LC")
 		listp.Label(line.text, "LC")
 
-		if w := listp.ContextualOpen(0, image.Point{}, rowbounds, nil); w != nil {
-			w.Row(20).Dynamic(1)
-			if line.bp != nil {
-				if w.MenuItem(label.TA("Edit breakpoint", "LC")) {
-					openBreakpointEditor(w.Master(), line.bp)
-				}
-				if w.MenuItem(label.TA("Clear breakpoint", "LC")) {
-					go execClearBreakpoint(line.bp.ID)
-				}
-			} else {
-				if w.MenuItem(label.TA("Set breakpoint", "LC")) {
-					go listingSetBreakpoint(listingPanel.file, line.lineno)
+		if !running {
+			if w := listp.ContextualOpen(0, image.Point{}, rowbounds, nil); w != nil {
+				w.Row(20).Dynamic(1)
+				if line.bp != nil {
+					if w.MenuItem(label.TA("Edit breakpoint", "LC")) {
+						openBreakpointEditor(w.Master(), line.bp)
+					}
+					if w.MenuItem(label.TA("Clear breakpoint", "LC")) {
+						go execClearBreakpoint(line.bp.ID)
+					}
+				} else {
+					if w.MenuItem(label.TA("Set breakpoint", "LC")) {
+						go listingSetBreakpoint(listingPanel.file, line.lineno)
+					}
 				}
 			}
 		}
