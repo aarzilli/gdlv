@@ -14,3 +14,11 @@ then install gdlv:
 ```
 go get -u github.com/aarzilli/gdlv
 ```
+
+# News
+
+## 2016-01-25
+* Implemented selective step into. Right click on a function call on the current line to step into that function call (note: not that function, that *function call*). Also accessible through the `step` command with `step -list`:
+
+![Step Into](https://raw.githubusercontent.com/aarzilli/gdlv/master/doc/stepinto.png)
+

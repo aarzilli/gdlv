@@ -80,11 +80,12 @@ func setupStyle() {
 const commandLineHeight = 28
 
 type listline struct {
-	idx    string
-	lineno int
-	text   string
-	pc     bool
-	bp     *api.Breakpoint
+	idx          string
+	lineno       int
+	text         string
+	textWithTabs string
+	pc           bool
+	bp           *api.Breakpoint
 }
 
 var listingPanel struct {
@@ -96,6 +97,8 @@ var listingPanel struct {
 	text                api.AsmInstructions
 	pinnedLoc           *api.Location
 	stale               bool
+
+	stepIntoInfo stepIntoInfo
 }
 
 var mu sync.Mutex
@@ -283,7 +286,7 @@ func hexdigits(n uint64) int {
 	return int(math.Floor(math.Log10(float64(n))/math.Log10(16))) + 1
 }
 
-func expandTabs(in string) string {
+func expandTabsEx(in string, colno int) (string, int) {
 	hastab := false
 	for _, c := range in {
 		if c == '\t' {
@@ -292,28 +295,40 @@ func expandTabs(in string) string {
 		}
 	}
 	if !hastab {
-		return in
+		return in, colno
 	}
 
 	var buf bytes.Buffer
 	count := 0
-	for _, c := range in {
+	colidx := -1
+	for i, c := range in {
 		switch c {
 		case '\t':
 			d := (((count/8)+1)*8 - count)
 			for i := 0; i < d; i++ {
+				colno--
 				buf.WriteRune(' ')
 			}
 			count = 0
 		case '\n':
+			colno--
 			buf.WriteRune('\n')
 			count = 0
 		default:
+			colno--
 			buf.WriteRune(c)
 			count++
 		}
+		if colno <= 0 && colidx < 0 {
+			colidx = i
+		}
 	}
-	return buf.String()
+	return buf.String(), colidx
+}
+
+func expandTabs(in string) string {
+	r, _ := expandTabsEx(in, 0)
+	return r
 }
 
 type clearKind uint16
@@ -407,15 +422,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		switch toframe {
 		case refreshToFrameZero:
 			curFrame = 0
-			if state.SelectedGoroutine != nil {
-				if state.CurrentThread != nil && state.SelectedGoroutine.ThreadID == state.CurrentThread.ID {
-					loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
-				} else {
-					loc = &state.SelectedGoroutine.CurrentLoc
-				}
-			} else if state.CurrentThread != nil {
-				loc = &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
-			}
+			loc = currentLocation(state)
 
 		case refreshToSameFrame:
 			frames, err := client.Stacktrace(curGid, curFrame+1, nil)
@@ -510,8 +517,14 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		for buf.Scan() {
 			lineno++
 			breakpoint := bpmap[lineno]
-			listingPanel.listing = append(listingPanel.listing, listline{"", lineno, expandTabs(buf.Text()), lineno == loc.Line && listingPanel.pinnedLoc == nil, breakpoint})
+			atpc := lineno == loc.Line && listingPanel.pinnedLoc == nil
+			listingPanel.listing = append(listingPanel.listing, listline{"", lineno, expandTabs(buf.Text()), buf.Text(), atpc, breakpoint})
 		}
+
+		listingPanel.stepIntoInfo.Filename = ""
+		listingPanel.stepIntoInfo.Lineno = -1
+		listingPanel.stepIntoInfo.Colno = -1
+		listingPanel.stepIntoInfo.Valid = false
 
 		if err := buf.Err(); err != nil {
 			failstate("(reading file)", err)
@@ -526,6 +539,20 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 			listingPanel.listing[i].idx = fmt.Sprintf("%*d", d, i+1)
 		}
 	}
+}
+
+func currentLocation(state *api.DebuggerState) *api.Location {
+	if state.SelectedGoroutine != nil {
+		if state.CurrentThread != nil && state.SelectedGoroutine.ThreadID == state.CurrentThread.ID {
+			return &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
+		} else {
+			return &state.SelectedGoroutine.CurrentLoc
+		}
+	} else if state.CurrentThread != nil {
+		return &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
+	}
+
+	return nil
 }
 
 type editorWriter struct {

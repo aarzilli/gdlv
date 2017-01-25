@@ -73,9 +73,7 @@ Type "help" followed by the name of a command for more information about it.`},
 
 	break [name] <linespec>
 
-See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/locspec.md for the syntax of linespec.
-
-See also: "help on", "help cond" and "help clear"`},
+See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/locspec.md for the syntax of linespec. To set breakpoints you can also right click on a source line and click "Set breakpoint". Breakpoint properties can be changed by right clicking on a breakpoint (either in the source panel or the breakpoints panel) and selecting "Edit breakpoint".`},
 		{aliases: []string{"trace", "t"}, cmdFn: tracepoint, complete: completeLocation, helpMsg: `Set tracepoint.
 
 	trace [name] <linespec>
@@ -88,7 +86,11 @@ See also: "help on", "help cond" and "help clear"`},
 			clear <breakpoint name or id>`},
 		{aliases: []string{"restart", "r"}, cmdFn: restart, helpMsg: "Restart process."},
 		{aliases: []string{"continue", "c"}, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
-		{aliases: []string{"step", "s"}, cmdFn: step, helpMsg: "Single step through program."},
+		{aliases: []string{"step", "s"}, cmdFn: step, helpMsg: `Single step through program.
+		
+		step [-list|name]
+		
+Specify a name to step into one specific function call. Use the -list option for all the function calls on the current line. To step into a specific function call you can also right click on a function call (on the current line) and select "Step into"`},
 		{aliases: []string{"step-instruction", "si"}, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
 		{aliases: []string{"next", "n"}, cmdFn: next, helpMsg: "Step over to next source line."},
 		{aliases: []string{"stepout"}, cmdFn: stepout, helpMsg: "Step out of the current function."},
@@ -329,12 +331,86 @@ func continueUntilCompleteNext(out io.Writer, state *api.DebuggerState, op strin
 }
 
 func step(out io.Writer, args string) error {
-	state, err := client.Step()
+	getsics := func() ([]stepIntoCall, int, uint64, error) {
+		state, err := client.GetState()
+		if err != nil {
+			return nil, -1, 0, err
+		}
+		if state.SelectedGoroutine == nil {
+			return nil, -1, 0, errors.New("no selected goroutine")
+		}
+		loc := currentLocation(state)
+		if loc == nil {
+			return nil, -1, 0, errors.New("could not find current location")
+		}
+		return stepIntoList(*loc), state.SelectedGoroutine.ID, state.CurrentThread.PC, nil
+	}
+
+	switch args {
+	case "":
+		state, err := client.Step()
+		if err != nil {
+			return err
+		}
+		printcontext(out, state)
+		return continueUntilCompleteNext(out, state, "step")
+
+	case "-list":
+		sics, _, pc, err := getsics()
+		if err != nil {
+			return err
+		}
+		for _, sic := range sics {
+			if sic.Inst.Loc.PC >= pc {
+				fmt.Fprintf(out, "%s\t%s\n", sic.Name, sic.ExprString())
+			}
+		}
+	default:
+		sics, gid, _, err := getsics()
+		if err != nil {
+			return err
+		}
+		for _, sic := range sics {
+			if sic.Name == args {
+				return stepInto(out, sic, gid)
+			}
+		}
+		return fmt.Errorf("could not find call %s", args)
+	}
+	return nil
+}
+
+func stepInto(out io.Writer, sic stepIntoCall, gid int) error {
+	bp, err := client.CreateBreakpoint(&api.Breakpoint{Addr: sic.Inst.Loc.PC, Cond: fmt.Sprintf("runtime.curg.goid == %d", gid)})
 	if err != nil {
 		return err
 	}
+
+	// we use next here instead of continue so that if for any reason the
+	// breakpoint can not be reached (for example a panic or a branch) we will
+	// not run the program to completion
+	state, err := client.Next()
+	if err != nil {
+		client.ClearBreakpoint(bp.ID)
+		return err
+	}
 	printcontext(out, state)
-	return continueUntilCompleteNext(out, state, "step")
+	err = continueUntilCompleteNext(out, state, "step")
+	client.ClearBreakpoint(bp.ID)
+	if err != nil {
+		return err
+	}
+	bpfound := false
+	for _, th := range state.Threads {
+		if th.Breakpoint != nil && th.Breakpoint.ID == bp.ID {
+			bpfound = true
+			break
+		}
+	}
+	if bpfound {
+		return step(out, "")
+	}
+	return nil
 }
 
 func stepInstruction(out io.Writer, args string) error {

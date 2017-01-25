@@ -23,6 +23,8 @@ import (
 	"github.com/aarzilli/nucular/rect"
 
 	"github.com/derekparker/delve/service/api"
+
+	"golang.org/x/mobile/event/mouse"
 )
 
 type asyncLoad struct {
@@ -1312,7 +1314,9 @@ func updateListingPanel(container *nucular.Window) {
 			}
 		}
 
-		if line.pc && curFrame == 0 {
+		isCurrentLine := line.pc && curFrame == 0
+
+		if isCurrentLine {
 			iconFace, style.Font = style.Font, iconFace
 			listp.LabelColored(arrowIcon, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
 			iconFace, style.Font = style.Font, iconFace
@@ -1321,6 +1325,7 @@ func updateListingPanel(container *nucular.Window) {
 		}
 		listp.Label(line.idx, "LC")
 		listp.Label(line.text, "LC")
+		textbounds := listp.LastWidgetBounds
 
 		if !running {
 			if w := listp.ContextualOpen(0, image.Point{}, rowbounds, nil); w != nil {
@@ -1335,6 +1340,17 @@ func updateListingPanel(container *nucular.Window) {
 				} else {
 					if w.MenuItem(label.TA("Set breakpoint", "LC")) {
 						go listingSetBreakpoint(listingPanel.file, line.lineno)
+					}
+				}
+				if isCurrentLine {
+					m := w.Input().Mouse.Buttons[mouse.ButtonRight]
+					colno := (m.ClickedPos.X - textbounds.X) / zeroWidth
+					_, colno = expandTabsEx(line.textWithTabs, colno)
+					colno++
+					if listingPanel.stepIntoInfo.Config(listingPanel.file, line.lineno, colno) {
+						if w.MenuItem(label.TA(listingPanel.stepIntoInfo.Msg, "LC")) {
+							go stepInto(&editorWriter{&scrollbackEditor, true}, listingPanel.stepIntoInfo.Call, curGid)
+						}
 					}
 				}
 			}
