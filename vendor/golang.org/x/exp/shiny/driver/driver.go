@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package driver provides the default driver for accessing a screen.
-package driver
+package driver // import "golang.org/x/exp/shiny/driver"
 
 // TODO: figure out what to say about the responsibility for users of this
 // package to check any implicit dependencies' LICENSEs. For example, the

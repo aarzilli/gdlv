@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package windriver provides the Windows driver for accessing a screen.
-package windriver
+package windriver // import "golang.org/x/exp/shiny/driver/windriver"
 
 /*
 Implementation Details

@@ -60,6 +60,10 @@ func newWindow(opts *screen.NewWindowOptions) (uintptr, error) {
 	return <-retc, nil
 }
 
+func initWindow(w *windowImpl) {
+	w.glctx, w.worker = glctx, worker
+}
+
 func showWindow(w *windowImpl) {
 	retc := make(chan uintptr)
 	uic <- uiClosure{
@@ -69,9 +73,6 @@ func showWindow(w *windowImpl) {
 		retc: retc,
 	}
 	w.ctx = <-retc
-	w.glctxMu.Lock()
-	w.glctx, w.worker = glctx, worker
-	w.glctxMu.Unlock()
 	go drawLoop(w)
 }
 

@@ -9,7 +9,7 @@
 // to another should not send multiple events from StageVisible to
 // StageVisible, even though the underlying window system's message might only
 // hold the new position, and not whether the window was previously visible.
-package lifecycler
+package lifecycler // import "golang.org/x/exp/shiny/driver/internal/lifecycler"
 
 import (
 	"sync"

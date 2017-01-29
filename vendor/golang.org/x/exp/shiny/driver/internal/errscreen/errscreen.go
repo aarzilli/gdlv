@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package errscreen provides a stub Screen implementation.
-package errscreen
+package errscreen // import "golang.org/x/exp/shiny/driver/internal/errscreen"
 
 import (
 	"image"

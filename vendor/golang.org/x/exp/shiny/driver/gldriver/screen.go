@@ -133,6 +133,7 @@ func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, er
 		publishDone: make(chan screen.PublishResult),
 		drawDone:    make(chan struct{}),
 	}
+	initWindow(w)
 
 	s.mu.Lock()
 	s.windows[id] = w

@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package drawer provides functions that help implement screen.Drawer methods.
-package drawer
+package drawer // import "golang.org/x/exp/shiny/driver/internal/drawer"
 
 import (
 	"image"

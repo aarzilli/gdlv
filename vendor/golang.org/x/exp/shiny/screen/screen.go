@@ -52,7 +52,7 @@
 // implementation will generally work only with that driver's Buffer
 // implementation, and will not work with an arbitrary type that happens to
 // implement the Buffer methods.
-package screen
+package screen // import "golang.org/x/exp/shiny/screen"
 
 import (
 	"image"

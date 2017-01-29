@@ -178,5 +178,6 @@ func _HIWORD(l uintptr) uint16 {
 //sys   _PostQuitMessage(exitCode int32) = user32.PostQuitMessage
 //sys	_RegisterClass(wc *_WNDCLASS) (atom uint16, err error) = user32.RegisterClassW
 //sys	_ShowWindow(hwnd syscall.Handle, cmdshow int32) (wasvisible bool) = user32.ShowWindow
+//sys	_ScreenToClient(hwnd syscall.Handle, lpPoint *_POINT) (ok bool) = user32.ScreenToClient
 //sys   _ToUnicodeEx(wVirtKey uint32, wScanCode uint32, lpKeyState *byte, pwszBuff *uint16, cchBuff int32, wFlags uint32, dwhkl syscall.Handle) (ret int32) = user32.ToUnicodeEx
 //sys	_TranslateMessage(msg *_MSG) (done bool) = user32.TranslateMessage

@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package x11driver provides the X11 driver for accessing a screen.
-package x11driver
+package x11driver // import "golang.org/x/exp/shiny/driver/x11driver"
 
 // TODO: figure out what to say about the responsibility for users of this
 // package to check any implicit dependencies' LICENSEs. For example, the

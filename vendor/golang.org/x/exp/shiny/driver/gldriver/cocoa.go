@@ -65,11 +65,11 @@ func newWindow(opts *screen.NewWindowOptions) (uintptr, error) {
 	return uintptr(C.doNewWindow(C.int(width), C.int(height))), nil
 }
 
-func showWindow(w *windowImpl) {
-	w.glctxMu.Lock()
+func initWindow(w *windowImpl) {
 	w.glctx, w.worker = gl.NewContext()
-	w.glctxMu.Unlock()
+}
 
+func showWindow(w *windowImpl) {
 	C.doShowWindow(C.uintptr_t(w.id))
 }
 

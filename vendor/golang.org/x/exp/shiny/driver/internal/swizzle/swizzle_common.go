@@ -4,7 +4,7 @@
 
 // Package swizzle provides functions for converting between RGBA pixel
 // formats.
-package swizzle
+package swizzle // import "golang.org/x/exp/shiny/driver/internal/swizzle"
 
 // BGRA converts a pixel buffer between Go's RGBA and other systems' BGRA byte
 // orders.

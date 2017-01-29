@@ -149,52 +149,76 @@
 			"revision": "fb508927b491eca48a708e9d000fdb7afa53c32b"
 		},
 		{
+			"checksumSHA1": "/29BWyFs+MdXG2cVBZTG/uv+v9g=",
 			"path": "golang.org/x/exp/shiny/driver",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "MmZ1IbhgWzd1Q/iFAaWcqme20tQ=",
 			"path": "golang.org/x/exp/shiny/driver/gldriver",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "ZQzUhkR1Pq7AhTC21Rh+X7VOBgo=",
 			"path": "golang.org/x/exp/shiny/driver/internal/drawer",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "8hM+2pDpRhd1jzaEPKA3gkzkaNc=",
 			"path": "golang.org/x/exp/shiny/driver/internal/errscreen",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "OMOAZ6/CxypTNG7zhCNWOZXnLdo=",
 			"path": "golang.org/x/exp/shiny/driver/internal/event",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "WlJipkRBYEWj1Fpz5O7eIiOSm8Q=",
 			"path": "golang.org/x/exp/shiny/driver/internal/lifecycler",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "raR29NHy9nCiZhwk+ify0O9nrq0=",
 			"path": "golang.org/x/exp/shiny/driver/internal/swizzle",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "XTNjms1fSgGLvQZBZuqSm0sHkqU=",
 			"path": "golang.org/x/exp/shiny/driver/internal/win32",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "COu0qxRtt0udmF/fU2kjsZXyVDY=",
 			"path": "golang.org/x/exp/shiny/driver/internal/x11key",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "B3E1NSN6eiApd6xqsc8LoQ9IpoQ=",
 			"path": "golang.org/x/exp/shiny/driver/windriver",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "Q5ulT4rc6Y8jtNCg/FnST2jIlyM=",
 			"path": "golang.org/x/exp/shiny/driver/x11driver",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
+			"checksumSHA1": "WByfWnEqEzLy/G+c5T5df8TV/qI=",
 			"path": "golang.org/x/exp/shiny/screen",
-			"revision": "325d5821a8d876702cbc82b93fec4ede356d498b"
+			"revision": "f2073adf91ee59c0293b4a2e4ea3d15b1ed54fb4",
+			"revisionTime": "2017-01-18T20:52:16Z"
 		},
 		{
 			"path": "golang.org/x/image/font",

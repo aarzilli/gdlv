@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package event provides an infinitely buffered double-ended queue of events.
-package event
+package event // import "golang.org/x/exp/shiny/driver/internal/event"
 
 import (
 	"sync"

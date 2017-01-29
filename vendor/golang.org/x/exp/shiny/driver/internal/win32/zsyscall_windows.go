@@ -11,6 +11,31 @@ import (
 
 var _ unsafe.Pointer
 
+// Do the interface allocations only once for common
+// Errno values.
+const (
+	errnoERROR_IO_PENDING = 997
+)
+
+var (
+	errERROR_IO_PENDING error = syscall.Errno(errnoERROR_IO_PENDING)
+)
+
+// errnoErr returns common boxed Errno values, to prevent
+// allocations at runtime.
+func errnoErr(e syscall.Errno) error {
+	switch e {
+	case 0:
+		return nil
+	case errnoERROR_IO_PENDING:
+		return errERROR_IO_PENDING
+	}
+	// TODO: add more here, after collecting data on the common
+	// error values see on Windows. (perhaps when running
+	// all.bat?)
+	return e
+}
+
 var (
 	moduser32 = windows.NewLazySystemDLL("user32.dll")
 
@@ -32,6 +57,7 @@ var (
 	procPostQuitMessage   = moduser32.NewProc("PostQuitMessage")
 	procRegisterClassW    = moduser32.NewProc("RegisterClassW")
 	procShowWindow        = moduser32.NewProc("ShowWindow")
+	procScreenToClient    = moduser32.NewProc("ScreenToClient")
 	procToUnicodeEx       = moduser32.NewProc("ToUnicodeEx")
 	procTranslateMessage  = moduser32.NewProc("TranslateMessage")
 )
@@ -41,7 +67,7 @@ func GetDC(hwnd syscall.Handle) (dc syscall.Handle, err error) {
 	dc = syscall.Handle(r0)
 	if dc == 0 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -53,7 +79,7 @@ func ReleaseDC(hwnd syscall.Handle, dc syscall.Handle) (err error) {
 	r1, _, e1 := syscall.Syscall(procReleaseDC.Addr(), 2, uintptr(hwnd), uintptr(dc), 0)
 	if r1 == 0 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -72,7 +98,7 @@ func _CreateWindowEx(exstyle uint32, className *uint16, windowText *uint16, styl
 	hwnd = syscall.Handle(r0)
 	if hwnd == 0 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -90,7 +116,7 @@ func _DestroyWindow(hwnd syscall.Handle) (err error) {
 	r1, _, e1 := syscall.Syscall(procDestroyWindow.Addr(), 1, uintptr(hwnd), 0, 0)
 	if r1 == 0 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -108,7 +134,7 @@ func _GetClientRect(hwnd syscall.Handle, rect *_RECT) (err error) {
 	r1, _, e1 := syscall.Syscall(procGetClientRect.Addr(), 2, uintptr(hwnd), uintptr(unsafe.Pointer(rect)), 0)
 	if r1 == 0 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -126,7 +152,7 @@ func _GetKeyboardState(lpKeyState *byte) (err error) {
 	r1, _, e1 := syscall.Syscall(procGetKeyboardState.Addr(), 1, uintptr(unsafe.Pointer(lpKeyState)), 0, 0)
 	if r1 == 0 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -145,7 +171,7 @@ func _GetMessage(msg *_MSG, hwnd syscall.Handle, msgfiltermin uint32, msgfilterm
 	ret = int32(r0)
 	if ret == -1 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -158,7 +184,7 @@ func _LoadCursor(hInstance syscall.Handle, cursorName uintptr) (cursor syscall.H
 	cursor = syscall.Handle(r0)
 	if cursor == 0 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -171,7 +197,7 @@ func _LoadIcon(hInstance syscall.Handle, iconName uintptr) (icon syscall.Handle,
 	icon = syscall.Handle(r0)
 	if icon == 0 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -195,7 +221,7 @@ func _RegisterClass(wc *_WNDCLASS) (atom uint16, err error) {
 	atom = uint16(r0)
 	if atom == 0 {
 		if e1 != 0 {
-			err = error(e1)
+			err = errnoErr(e1)
 		} else {
 			err = syscall.EINVAL
 		}
@@ -206,6 +232,12 @@ func _RegisterClass(wc *_WNDCLASS) (atom uint16, err error) {
 func _ShowWindow(hwnd syscall.Handle, cmdshow int32) (wasvisible bool) {
 	r0, _, _ := syscall.Syscall(procShowWindow.Addr(), 2, uintptr(hwnd), uintptr(cmdshow), 0)
 	wasvisible = r0 != 0
+	return
+}
+
+func _ScreenToClient(hwnd syscall.Handle, lpPoint *_POINT) (ok bool) {
+	r0, _, _ := syscall.Syscall(procScreenToClient.Addr(), 2, uintptr(hwnd), uintptr(unsafe.Pointer(lpPoint)), 0)
+	ok = r0 != 0
 	return
 }
 
