@@ -97,6 +97,7 @@ var listingPanel struct {
 	text                api.AsmInstructions
 	pinnedLoc           *api.Location
 	stale               bool
+	lineWidth           int
 
 	stepIntoInfo stepIntoInfo
 }
@@ -512,13 +513,20 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		lastModExe := client.LastModified()
 		listingPanel.stale = fi.ModTime().After(lastModExe)
 
+		listingPanel.lineWidth = 0
+		style := wnd.Style()
+
 		buf := bufio.NewScanner(fh)
 		lineno := 0
 		for buf.Scan() {
 			lineno++
 			breakpoint := bpmap[lineno]
 			atpc := lineno == loc.Line && listingPanel.pinnedLoc == nil
-			listingPanel.listing = append(listingPanel.listing, listline{"", lineno, expandTabs(buf.Text()), buf.Text(), atpc, breakpoint})
+			linetext := expandTabs(buf.Text())
+			listingPanel.listing = append(listingPanel.listing, listline{"", lineno, linetext, buf.Text(), atpc, breakpoint})
+			if width := nucular.FontWidth(style.Font, linetext); width > listingPanel.lineWidth {
+				listingPanel.lineWidth = width
+			}
 		}
 
 		listingPanel.stepIntoInfo.Filename = ""

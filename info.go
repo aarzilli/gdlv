@@ -1265,7 +1265,7 @@ func abbrevFileName(path string) string {
 func updateListingPanel(container *nucular.Window) {
 	const lineheight = 14
 
-	listp := container.GroupBegin("listing", nucular.WindowNoHScrollbar)
+	listp := container.GroupBegin("listing", 0)
 	if listp == nil {
 		return
 	}
@@ -1284,10 +1284,10 @@ func updateListingPanel(container *nucular.Window) {
 	scrollbary := listp.Scrollbar.Y
 
 	for _, line := range listingPanel.listing {
-		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, 0)
+		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, listingPanel.lineWidth)
 
 		rowbounds := listp.WidgetBounds()
-		rowbounds.W = listp.Bounds.W
+		rowbounds.W = starw + arroww + idxw + listingPanel.lineWidth
 
 		centerline := line.pc || (listingPanel.pinnedLoc != nil && line.lineno == listingPanel.pinnedLoc.Line)
 
