@@ -1284,7 +1284,7 @@ func updateListingPanel(container *nucular.Window) {
 	scrollbary := listp.Scrollbar.Y
 
 	for _, line := range listingPanel.listing {
-		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, listingPanel.lineWidth)
+		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, listingPanel.lineWidth+2*style.Selectable.Padding.X)
 
 		rowbounds := listp.WidgetBounds()
 		rowbounds.W = starw + arroww + idxw + listingPanel.lineWidth
