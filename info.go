@@ -1287,7 +1287,11 @@ func updateListingPanel(container *nucular.Window) {
 		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, listingPanel.lineWidth+2*style.Selectable.Padding.X)
 
 		rowbounds := listp.WidgetBounds()
-		rowbounds.W = starw + arroww + idxw + listingPanel.lineWidth
+		ww := rowbounds.W + listp.LayoutAvailableWidth()
+		rowbounds.W = starw + arroww + idxw + listingPanel.lineWidth + 2*style.Selectable.Padding.X
+		if ww > rowbounds.W {
+			rowbounds.W = ww
+		}
 
 		centerline := line.pc || (listingPanel.pinnedLoc != nil && line.lineno == listingPanel.pinnedLoc.Line)
 
