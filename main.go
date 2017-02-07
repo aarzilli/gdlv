@@ -95,6 +95,7 @@ var listingPanel struct {
 	recenterDisassembly bool
 	listing             []listline
 	text                api.AsmInstructions
+	framePC             uint64
 	pinnedLoc           *api.Location
 	stale               bool
 	lineWidth           int
@@ -484,8 +485,10 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 			}
 
 			listingPanel.text = text
+			listingPanel.framePC = loc.PC
 		} else {
 			listingPanel.text = nil
+			listingPanel.framePC = 0
 		}
 
 		breakpoints, err := client.ListBreakpoints()

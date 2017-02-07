@@ -1433,11 +1433,21 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		}
 		listp.Row(lineheight).StaticScaled(starw, arroww, addrw, 0)
 
-		if instr.AtPC {
+		if instr.AtPC || instr.Loc.PC == listingPanel.framePC {
 			rowbounds := listp.WidgetBounds()
 			rowbounds.W = listp.Bounds.W
 			cmds := listp.Commands()
 			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
+
+			if listingPanel.recenterDisassembly {
+				listingPanel.recenterDisassembly = false
+				if above, below := listp.Invisible(); above || below {
+					scrollbary = listp.At().Y - listp.Bounds.H/2
+					if scrollbary < 0 {
+						scrollbary = 0
+					}
+				}
+			}
 		}
 
 		if instr.Breakpoint {
@@ -1449,15 +1459,6 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		}
 
 		if instr.AtPC {
-			if listingPanel.recenterDisassembly {
-				listingPanel.recenterDisassembly = false
-				if above, below := listp.Invisible(); above || below {
-					scrollbary = listp.At().Y - listp.Bounds.H/2
-					if scrollbary < 0 {
-						scrollbary = 0
-					}
-				}
-			}
 			iconFace, style.Font = style.Font, iconFace
 			listp.LabelColored(arrowIcon, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
 			iconFace, style.Font = style.Font, iconFace
