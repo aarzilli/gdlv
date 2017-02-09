@@ -533,40 +533,39 @@ func addExpression(newexpr string) {
 	}(i)
 }
 
-func showExprMenu(w *nucular.Window, exprMenuIdx int, v *api.Variable) {
+func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *api.Variable, clipb string) {
 	if running {
 		return
 	}
-	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
-		if w := w.ContextualOpen(0, image.Point{}, w.LastWidgetBounds, nil); w != nil {
-			w.Row(20).Dynamic(1)
-
-			if fn := detailsAvailable(localsPanel.v[exprMenuIdx]); fn != nil {
-				if w.MenuItem(label.TA("Details", "LC")) {
-					fn(w.Master(), localsPanel.v[exprMenuIdx])
-				}
-			}
-			if w.MenuItem(label.TA("Edit", "LC")) {
-				localsPanel.selected = exprMenuIdx
-				localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected])
-				localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
-				localsPanel.ed.CursorFollow = true
-			}
-			if w.MenuItem(label.TA("Remove", "LC")) {
-				if exprMenuIdx+1 < len(localsPanel.expressions) {
-					copy(localsPanel.expressions[exprMenuIdx:], localsPanel.expressions[exprMenuIdx+1:])
-					copy(localsPanel.v[exprMenuIdx:], localsPanel.v[exprMenuIdx+1:])
-				}
-				localsPanel.expressions = localsPanel.expressions[:len(localsPanel.expressions)-1]
-				localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
-			}
+	w := parentw.ContextualOpen(0, image.Point{}, parentw.LastWidgetBounds, nil)
+	if w == nil {
+		return
+	}
+	w.Row(20).Dynamic(1)
+	if fn := detailsAvailable(v); fn != nil {
+		if w.MenuItem(label.TA("Details", "LC")) {
+			fn(w.Master(), v)
 		}
-	} else if fn := detailsAvailable(v); fn != nil {
-		if w := w.ContextualOpen(0, image.Point{}, w.LastWidgetBounds, nil); w != nil {
-			w.Row(20).Dynamic(1)
-			if w.MenuItem(label.TA("Details", "LC")) {
-				fn(w.Master(), v)
+	}
+
+	if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
+		clipboard.Set(clipb)
+	}
+
+	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
+		if w.MenuItem(label.TA("Edit", "LC")) {
+			localsPanel.selected = exprMenuIdx
+			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected])
+			localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
+			localsPanel.ed.CursorFollow = true
+		}
+		if w.MenuItem(label.TA("Remove", "LC")) {
+			if exprMenuIdx+1 < len(localsPanel.expressions) {
+				copy(localsPanel.expressions[exprMenuIdx:], localsPanel.expressions[exprMenuIdx+1:])
+				copy(localsPanel.v[exprMenuIdx:], localsPanel.v[exprMenuIdx+1:])
 			}
+			localsPanel.expressions = localsPanel.expressions[:len(localsPanel.expressions)-1]
+			localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
 		}
 	}
 }
@@ -968,16 +967,21 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			}
 		}
 	}
+
+	cblbl := func(fmtstr string, args ...interface{}) {
+		s := fmt.Sprintf(fmtstr, args...)
+		w.Label(s, "LC")
+		showExprMenu(w, exprMenu, v, s)
+	}
+
 	w.Row(varRowHeight).StaticScaled(84 * zeroWidth)
 	if v.Unreadable != "" {
-		w.Label(fmt.Sprintf("%s = (unreadable %s)", name, v.Unreadable), "LC")
-		showExprMenu(w, exprMenu, v)
+		cblbl("%s = (unreadable %s)", name, v.Unreadable)
 		return
 	}
 
 	if depth > 0 && v.Addr == 0 {
-		w.Label(fmt.Sprintf("%s = nil", name, v.Type), "LC")
-		showExprMenu(w, exprMenu, v)
+		cblbl("%s = nil", name, v.Type)
 		return
 	}
 
@@ -987,68 +991,63 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			name += " = " + v.SinglelineString()
 		}
 		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-			showExprMenu(w, exprMenu, v)
+			showExprMenu(w, exprMenu, v, name)
 			w.Label(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap), "LC")
 			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
 		} else {
-			showExprMenu(w, exprMenu, v)
+			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Array:
 		if !w.TreeIsOpen(varname) {
 			name += " = " + v.SinglelineString()
 		}
 		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-			showExprMenu(w, exprMenu, v)
+			showExprMenu(w, exprMenu, v, name)
 			w.Label(fmt.Sprintf("len: %d", v.Len), "LC")
 			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
 		} else {
-			showExprMenu(w, exprMenu, v)
+			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Ptr:
 		if v.Type == "" || v.Children[0].Addr == 0 {
-			w.Label(fmt.Sprintf("%s = nil", name), "LC")
-			showExprMenu(w, exprMenu, v)
+			cblbl("%s = nil", name)
 		} else if v.Children[0].OnlyAddr && v.Children[0].Addr != 0 {
-			w.Label(fmt.Sprintf("%s = (%s)(%#x)", name, v.Type, v.Children[0].Addr), "LC")
-			showExprMenu(w, exprMenu, v)
+			cblbl("%s = (%s)(%#x)", name, v.Type, v.Children[0].Addr)
 		} else {
 			if !w.TreeIsOpen(varname) {
 				name += " = " + v.SinglelineString()
 			}
 			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-				showExprMenu(w, exprMenu, v)
+				showExprMenu(w, exprMenu, v, name)
 				showVariable(w, depth+1, addr, -1, "", &v.Children[0])
 				w.TreePop()
 			} else {
-				showExprMenu(w, exprMenu, v)
+				showExprMenu(w, exprMenu, v, name)
 			}
 		}
 	case reflect.UnsafePointer:
-		w.Label(fmt.Sprintf("%s = unsafe.Pointer(%#x)", name, v.Children[0].Addr), "LC")
-		showExprMenu(w, exprMenu, v)
+		cblbl("%s = unsafe.Pointer(%#x)", name, v.Children[0].Addr)
 	case reflect.String:
 		if v.Len == int64(len(v.Value)) {
-			w.Label(fmt.Sprintf("%s = %q", name, v.Value), "LC")
+			cblbl("%s = %q", name, v.Value)
 		} else {
-			w.Label(fmt.Sprintf("%s = %q...", name, v.Value), "LC")
+			cblbl("%s = %q...", name, v.Value)
 		}
-		showExprMenu(w, exprMenu, v)
 	case reflect.Chan:
 		if len(v.Children) == 0 {
-			w.Label(fmt.Sprintf("%s = nil", name), "LC")
-			showExprMenu(w, exprMenu, v)
+			cblbl("%s = nil", name)
 		} else {
 			if !w.TreeIsOpen(varname) {
 				name += " = " + v.SinglelineString()
 			}
 			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-				showExprMenu(w, exprMenu, v)
+				showExprMenu(w, exprMenu, v, name)
 				showStructContents(w, depth, addr, v)
 				w.TreePop()
 			} else {
-				showExprMenu(w, exprMenu, v)
+				showExprMenu(w, exprMenu, v, name)
 			}
 		}
 	case reflect.Struct:
@@ -1056,7 +1055,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			name += " = " + v.SinglelineString()
 		}
 		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-			showExprMenu(w, exprMenu, v)
+			showExprMenu(w, exprMenu, v, name)
 			if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
 				loadMoreStruct(v)
 				w.Label("Loading...", "LC")
@@ -1065,18 +1064,17 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			}
 			w.TreePop()
 		} else {
-			showExprMenu(w, exprMenu, v)
+			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Interface:
 		if v.Children[0].Kind == reflect.Invalid {
-			w.Label(fmt.Sprintf("%s = nil", name), "LC")
-			showExprMenu(w, exprMenu, v)
+			cblbl("%s = nil", name)
 		} else {
 			if !w.TreeIsOpen(varname) {
 				name += " = " + v.SinglelineString()
 			}
 			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-				showExprMenu(w, exprMenu, v)
+				showExprMenu(w, exprMenu, v, name)
 				if v.Children[0].Kind == reflect.Ptr {
 					showVariable(w, depth+1, addr, -1, "data", &v.Children[0].Children[0])
 				} else {
@@ -1084,7 +1082,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 				}
 				w.TreePop()
 			} else {
-				showExprMenu(w, exprMenu, v)
+				showExprMenu(w, exprMenu, v, name)
 			}
 		}
 	case reflect.Map:
@@ -1092,7 +1090,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			name += " = " + v.SinglelineString()
 		}
 		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-			showExprMenu(w, exprMenu, v)
+			showExprMenu(w, exprMenu, v, name)
 			for i := 0; i < len(v.Children); i += 2 {
 				key, value := &v.Children[i], &v.Children[i+1]
 				if len(key.Children) == 0 && len(key.Value) < minInlineKeyValueLen {
@@ -1116,18 +1114,16 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			}
 			w.TreePop()
 		} else {
-			showExprMenu(w, exprMenu, v)
+			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Func:
 		if v.Value == "" {
-			w.Label(fmt.Sprintf("%s = nil", name), "LC")
+			cblbl("%s = nil", name)
 		} else {
-			w.Label(fmt.Sprintf("%s = %s", name, v.Value), "LC")
+			cblbl(fmt.Sprintf("%s = %s", name, v.Value))
 		}
-		showExprMenu(w, exprMenu, v)
 	case reflect.Complex64, reflect.Complex128:
-		w.Label(fmt.Sprintf("%s = (%s + %si)", name, v.Children[0].Value, v.Children[1].Value), "LC")
-		showExprMenu(w, exprMenu, v)
+		cblbl("%s = (%s + %si)", name, v.Children[0].Value, v.Children[1].Value)
 	default:
 		if v.Value != "" {
 			if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) && strings.Index(v.Value, " ") < 0 {
@@ -1135,11 +1131,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 				v.Value = fmt.Sprintf("%s %q", v.Value, n)
 			}
 
-			w.Label(fmt.Sprintf("%s = %s", name, v.Value), "LC")
+			cblbl("%s = %s", name, v.Value)
 		} else {
-			w.Label(fmt.Sprintf("%s = (unknown %s)", name, v.Kind), "LC")
+			cblbl("%s = (unknown %s)", name, v.Kind)
 		}
-		showExprMenu(w, exprMenu, v)
 	}
 }
 
