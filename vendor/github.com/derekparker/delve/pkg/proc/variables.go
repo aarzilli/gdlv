@@ -8,12 +8,13 @@ import (
 	"go/constant"
 	"go/parser"
 	"go/token"
+	"math"
 	"reflect"
 	"strings"
 	"unsafe"
 
-	"github.com/derekparker/delve/dwarf/op"
-	"github.com/derekparker/delve/dwarf/reader"
+	"github.com/derekparker/delve/pkg/dwarf/op"
+	"github.com/derekparker/delve/pkg/dwarf/reader"
 	"golang.org/x/debug/dwarf"
 )
 
@@ -27,6 +28,15 @@ const (
 
 	hashTophashEmpty = 0 // used by map reading code, indicates an empty bucket
 	hashMinTopHash   = 4 // used by map reading code, indicates minimum value of tophash that isn't empty or evacuated
+)
+
+type FloatSpecial uint8
+
+const (
+	FloatIsNormal FloatSpecial = iota
+	FloatIsNaN
+	FloatIsPosInf
+	FloatIsNegInf
 )
 
 // Variable represents a variable. It contains the address, name,
@@ -43,7 +53,8 @@ type Variable struct {
 	mem       memoryReadWriter
 	dbp       *Process
 
-	Value constant.Value
+	Value        constant.Value
+	FloatSpecial FloatSpecial
 
 	Len int64
 	Cap int64
@@ -111,17 +122,17 @@ type G struct {
 	GoPC       uint64 // PC of 'go' statement that created this goroutine.
 	WaitReason string // Reason for goroutine being parked.
 	Status     uint64
+	stkbarVar  *Variable // stkbar field of g struct
+	stkbarPos  int       // stkbarPos field of g struct
 
 	// Information on goroutine location
 	CurrentLoc Location
 
-	// PC of entry to top-most deferred function.
-	DeferPC uint64
-
 	// Thread that this goroutine is currently allocated to
 	thread *Thread
 
-	dbp *Process
+	variable *Variable
+	dbp      *Process
 }
 
 // EvalScope is the scope for variable evaluation. Contains the thread,
@@ -369,24 +380,25 @@ func (gvar *Variable) parseG() (*G, error) {
 		}
 		return nil, NoGError{tid: id}
 	}
-	gvar.loadValue(loadFullValue)
+	for {
+		if _, isptr := gvar.RealType.(*dwarf.PtrType); !isptr {
+			break
+		}
+		gvar = gvar.maybeDereference()
+	}
+	gvar.loadValue(LoadConfig{false, 1, 64, 0, -1})
 	if gvar.Unreadable != nil {
 		return nil, gvar.Unreadable
 	}
-	schedVar := gvar.toFieldNamed("sched")
-	pc, _ := constant.Int64Val(schedVar.toFieldNamed("pc").Value)
-	sp, _ := constant.Int64Val(schedVar.toFieldNamed("sp").Value)
-	id, _ := constant.Int64Val(gvar.toFieldNamed("goid").Value)
-	gopc, _ := constant.Int64Val(gvar.toFieldNamed("gopc").Value)
-	waitReason := constant.StringVal(gvar.toFieldNamed("waitreason").Value)
-	d := gvar.toFieldNamed("_defer")
-	deferPC := int64(0)
-	fnvar := d.toFieldNamed("fn")
-	if fnvar != nil {
-		fnvalvar := fnvar.toFieldNamed("fn")
-		deferPC, _ = constant.Int64Val(fnvalvar.Value)
-	}
-	status, _ := constant.Int64Val(gvar.toFieldNamed("atomicstatus").Value)
+	schedVar := gvar.fieldVariable("sched")
+	pc, _ := constant.Int64Val(schedVar.fieldVariable("pc").Value)
+	sp, _ := constant.Int64Val(schedVar.fieldVariable("sp").Value)
+	id, _ := constant.Int64Val(gvar.fieldVariable("goid").Value)
+	gopc, _ := constant.Int64Val(gvar.fieldVariable("gopc").Value)
+	waitReason := constant.StringVal(gvar.fieldVariable("waitreason").Value)
+	stkbarVar, _ := gvar.structMember("stkbar")
+	stkbarPos, _ := constant.Int64Val(gvar.fieldVariable("stkbarPos").Value)
+	status, _ := constant.Int64Val(gvar.fieldVariable("atomicstatus").Value)
 	f, l, fn := gvar.dbp.goSymTable.PCToLine(uint64(pc))
 	g := &G{
 		ID:         int(id),
@@ -394,15 +406,17 @@ func (gvar *Variable) parseG() (*G, error) {
 		PC:         uint64(pc),
 		SP:         uint64(sp),
 		WaitReason: waitReason,
-		DeferPC:    uint64(deferPC),
 		Status:     uint64(status),
 		CurrentLoc: Location{PC: uint64(pc), File: f, Line: l, Fn: fn},
+		variable:   gvar,
+		stkbarVar:  stkbarVar,
+		stkbarPos:  int(stkbarPos),
 		dbp:        gvar.dbp,
 	}
 	return g, nil
 }
 
-func (v *Variable) toFieldNamed(name string) *Variable {
+func (v *Variable) loadFieldNamed(name string) *Variable {
 	v, err := v.structMember(name)
 	if err != nil {
 		return nil
@@ -412,6 +426,40 @@ func (v *Variable) toFieldNamed(name string) *Variable {
 		return nil
 	}
 	return v
+}
+
+func (v *Variable) fieldVariable(name string) *Variable {
+	for i := range v.Children {
+		if child := &v.Children[i]; child.Name == name {
+			return child
+		}
+	}
+	return nil
+}
+
+// PC of entry to top-most deferred function.
+func (g *G) DeferPC() uint64 {
+	if g.variable.Unreadable != nil {
+		return 0
+	}
+	d := g.variable.fieldVariable("_defer").maybeDereference()
+	if d.Addr == 0 {
+		return 0
+	}
+	d.loadValue(LoadConfig{false, 1, 64, 0, -1})
+	if d.Unreadable != nil {
+		return 0
+	}
+	fnvar := d.fieldVariable("fn").maybeDereference()
+	if fnvar.Addr == 0 {
+		return 0
+	}
+	fnvar.loadValue(LoadConfig{false, 1, 64, 0, -1})
+	if fnvar.Unreadable != nil {
+		return 0
+	}
+	deferPC, _ := constant.Int64Val(fnvar.fieldVariable("fn").Value)
+	return uint64(deferPC)
 }
 
 // From $GOROOT/src/runtime/traceback.go:597
@@ -446,6 +494,28 @@ func (g *G) UserCurrent() Location {
 func (g *G) Go() Location {
 	f, l, fn := g.dbp.goSymTable.PCToLine(g.GoPC)
 	return Location{PC: g.GoPC, File: f, Line: l, Fn: fn}
+}
+
+// Returns the list of saved return addresses used by stack barriers
+func (g *G) stkbar() ([]savedLR, error) {
+	g.stkbarVar.loadValue(LoadConfig{false, 1, 0, int(g.stkbarVar.Len), 3})
+	if g.stkbarVar.Unreadable != nil {
+		return nil, fmt.Errorf("unreadable stkbar: %v\n", g.stkbarVar.Unreadable)
+	}
+	r := make([]savedLR, len(g.stkbarVar.Children))
+	for i, child := range g.stkbarVar.Children {
+		for _, field := range child.Children {
+			switch field.Name {
+			case "savedLRPtr":
+				ptr, _ := constant.Int64Val(field.Value)
+				r[i].ptr = uint64(ptr)
+			case "savedLRVal":
+				val, _ := constant.Int64Val(field.Value)
+				r[i].val = uint64(val)
+			}
+		}
+	}
+	return r, nil
 }
 
 // EvalVariable returns the value of the given expression (backwards compatibility).
@@ -502,21 +572,24 @@ func (scope *EvalScope) extractVariableFromEntry(entry *dwarf.Entry, cfg LoadCon
 	if err != nil {
 		return nil, err
 	}
-	v.loadValue(cfg)
 	return v, nil
 }
 
 func (scope *EvalScope) extractVarInfo(varName string) (*Variable, error) {
 	reader := scope.DwarfReader()
-
-	_, err := reader.SeekToFunction(scope.PC)
+	off, err := scope.Thread.dbp.findFunctionDebugInfo(scope.PC)
 	if err != nil {
 		return nil, err
 	}
+	reader.Seek(off)
+	reader.Next()
 
 	for entry, err := reader.NextScopeVariable(); entry != nil; entry, err = reader.NextScopeVariable() {
 		if err != nil {
 			return nil, err
+		}
+		if entry.Tag == 0 {
+			break
 		}
 
 		n, ok := entry.Val(dwarf.AttrName).(string)
@@ -566,6 +639,7 @@ func (scope *EvalScope) PackageVariables(cfg LoadConfig) ([]*Variable, error) {
 		if err != nil {
 			continue
 		}
+		val.loadValue(cfg)
 		vars = append(vars, val)
 	}
 
@@ -575,7 +649,7 @@ func (scope *EvalScope) PackageVariables(cfg LoadConfig) ([]*Variable, error) {
 // EvalPackageVariable will evaluate the package level variable
 // specified by 'name'.
 func (dbp *Process) EvalPackageVariable(name string, cfg LoadConfig) (*Variable, error) {
-	scope := &EvalScope{Thread: dbp.CurrentThread, PC: 0, CFA: 0}
+	scope := &EvalScope{Thread: dbp.currentThread, PC: 0, CFA: 0}
 
 	v, err := scope.packageVarAddr(name)
 	if err != nil {
@@ -808,6 +882,14 @@ func (v *Variable) loadValueInternal(recurseLevel int, cfg LoadConfig) {
 		var val float64
 		val, v.Unreadable = v.readFloatRaw(v.RealType.(*dwarf.FloatType).ByteSize)
 		v.Value = constant.MakeFloat64(val)
+		switch {
+		case math.IsInf(val, +1):
+			v.FloatSpecial = FloatIsPosInf
+		case math.IsInf(val, -1):
+			v.FloatSpecial = FloatIsNegInf
+		case math.IsNaN(val):
+			v.FloatSpecial = FloatIsNaN
+		}
 	case reflect.Func:
 		v.readFunctionPtr()
 	default:
@@ -1237,8 +1319,17 @@ func (v *Variable) mapIterator() *mapIterator {
 		}
 	}
 
+	if it.buckets.Kind != reflect.Struct || it.oldbuckets.Kind != reflect.Struct {
+		v.Unreadable = mapBucketsNotStructErr
+		return nil
+	}
+
 	return it
 }
+
+var mapBucketContentsNotArrayErr = errors.New("malformed map type: keys, values or tophash of a bucket is not an array")
+var mapBucketContentsInconsistentLenErr = errors.New("malformed map type: inconsistent array length in bucket")
+var mapBucketsNotStructErr = errors.New("malformed map type: buckets, oldbuckets or overflow field not a struct")
 
 func (it *mapIterator) nextBucket() bool {
 	if it.overflow != nil && it.overflow.Addr > 0 {
@@ -1328,12 +1419,17 @@ func (it *mapIterator) nextBucket() bool {
 	}
 
 	if it.tophashes.Kind != reflect.Array || it.keys.Kind != reflect.Array || it.values.Kind != reflect.Array {
-		it.v.Unreadable = fmt.Errorf("malformed map type: keys, values or tophash of a bucket is not an array")
+		it.v.Unreadable = mapBucketContentsNotArrayErr
 		return false
 	}
 
 	if it.tophashes.Len != it.keys.Len || it.tophashes.Len != it.values.Len {
-		it.v.Unreadable = fmt.Errorf("malformed map type: inconsistent array length in bucket")
+		it.v.Unreadable = mapBucketContentsInconsistentLenErr
+		return false
+	}
+
+	if it.overflow.Kind != reflect.Struct {
+		it.v.Unreadable = mapBucketsNotStructErr
 		return false
 	}
 
@@ -1545,16 +1641,20 @@ func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig
 // Fetches all variables of a specific type in the current function scope
 func (scope *EvalScope) variablesByTag(tag dwarf.Tag, cfg LoadConfig) ([]*Variable, error) {
 	reader := scope.DwarfReader()
-
-	_, err := reader.SeekToFunction(scope.PC)
+	off, err := scope.Thread.dbp.findFunctionDebugInfo(scope.PC)
 	if err != nil {
 		return nil, err
 	}
+	reader.Seek(off)
+	reader.Next()
 
 	var vars []*Variable
 	for entry, err := reader.NextScopeVariable(); entry != nil; entry, err = reader.NextScopeVariable() {
 		if err != nil {
 			return nil, err
+		}
+		if entry.Tag == 0 {
+			break
 		}
 
 		if entry.Tag == tag {
@@ -1566,6 +1666,43 @@ func (scope *EvalScope) variablesByTag(tag dwarf.Tag, cfg LoadConfig) ([]*Variab
 
 			vars = append(vars, val)
 		}
+	}
+	if len(vars) <= 0 {
+		return vars, nil
+	}
+
+	// prefetch the whole chunk of memory relative to these variables
+
+	minaddr := vars[0].Addr
+	var maxaddr uintptr
+	var size int64
+
+	for _, v := range vars {
+		if v.Addr < minaddr {
+			minaddr = v.Addr
+		}
+
+		size += v.DwarfType.Size()
+
+		if end := v.Addr + uintptr(v.DwarfType.Size()); end > maxaddr {
+			maxaddr = end
+		}
+	}
+
+	// check that we aren't trying to cache too much memory: we shouldn't
+	// exceed the real size of the variables by more than the number of
+	// variables times the size of an architecture pointer (to allow for memory
+	// alignment).
+	if int64(maxaddr-minaddr)-size <= int64(len(vars))*int64(scope.PtrSize()) {
+		mem := cacheMemory(vars[0].mem, minaddr, int(maxaddr-minaddr))
+
+		for _, v := range vars {
+			v.mem = mem
+		}
+	}
+
+	for _, v := range vars {
+		v.loadValue(cfg)
 	}
 
 	return vars, nil
