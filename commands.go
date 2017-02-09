@@ -300,6 +300,7 @@ func cont(out io.Writer, args string) error {
 	var state *api.DebuggerState
 	for state = range stateChan {
 		if state.Err != nil {
+			refreshState(refreshToFrameZero, clearStop, state)
 			return state.Err
 		}
 		printcontext(out, state)
@@ -318,6 +319,7 @@ func continueUntilCompleteNext(out io.Writer, state *api.DebuggerState, op strin
 		var state *api.DebuggerState
 		for state = range stateChan {
 			if state.Err != nil {
+				refreshState(refreshToFrameZero, clearStop, state)
 				return state.Err
 			}
 			printcontext(out, state)
@@ -847,7 +849,7 @@ func executeCommand(cmdstr string) {
 	cmdstr, args := parseCommand(cmdstr)
 	if err := cmds.Call(cmdstr, args, &out); err != nil {
 		if _, ok := err.(ExitRequestError); ok {
-			if client.AttachedToExistingProcess() {
+			if client != nil && client.AttachedToExistingProcess() {
 				wnd.PopupOpen("Confirm Quit", dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, confirmQuit)
 			} else {
 				client.Detach(true)

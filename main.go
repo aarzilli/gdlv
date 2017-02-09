@@ -169,9 +169,12 @@ func currentPrompt() string {
 	if running {
 		return "running"
 	} else if client == nil {
-		if BackendServer.connectionFailed {
+		switch {
+		case BackendServer.connectionFailed:
 			return "failed"
-		} else {
+		case !BackendServer.buildok:
+			return "build failed"
+		default:
 			return "connecting"
 		}
 	} else {
