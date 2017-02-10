@@ -35,17 +35,17 @@ var iconTtfont *truetype.Font
 var iconFace font.Face
 
 const (
-	arrowIcon      = "\uf061"
-	breakpointIcon = "\uf28d"
+	arrowIconChar      = "\uf061"
+	breakpointIconChar = "\uf28d"
 
-	interruptIcon = "\uf04c"
-	continueIcon  = "\uf04b"
-	cancelIcon    = "\uf05e"
-	nextIcon      = "\uf050"
-	stepIcon      = "\uf051"
-	stepoutIcon   = "\uf112"
+	interruptIconChar = "\uf04c"
+	continueIconChar  = "\uf04b"
+	cancelIconChar    = "\uf05e"
+	nextIconChar      = "\uf050"
+	stepIconChar      = "\uf051"
+	stepoutIconChar   = "\uf112"
 
-	splitIcon = "\uf0db"
+	splitIconChar = "\uf0db"
 )
 
 func setupStyle() {
@@ -71,8 +71,8 @@ func setupStyle() {
 	sz := int(12 * conf.Scaling)
 	iconFace = truetype.NewFace(iconTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
 
-	arrowWidth = nucular.FontWidth(iconFace, arrowIcon)
-	starWidth = nucular.FontWidth(style.Font, breakpointIcon)
+	arrowWidth = nucular.FontWidth(iconFace, arrowIconChar)
+	starWidth = nucular.FontWidth(style.Font, breakpointIconChar)
 
 	saveConfiguration()
 }
@@ -418,6 +418,17 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		globalsPanel.asyncLoad.clear()
 		breakpointsPanel.asyncLoad.clear()
 		listingPanel.pinnedLoc = nil
+
+		bpcount := 0
+		for _, th := range state.Threads {
+			if th.Breakpoint != nil {
+				bpcount++
+			}
+		}
+
+		if bpcount > 1 {
+			fmt.Fprintf(&scrollbackOut, "Simultaneously stopped on %d goroutines!\n", bpcount)
+		}
 	}
 
 	loc := listingPanel.pinnedLoc

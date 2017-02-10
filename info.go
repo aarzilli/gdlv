@@ -21,6 +21,7 @@ import (
 	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
+	nstyle "github.com/aarzilli/nucular/style"
 
 	"github.com/derekparker/delve/service/api"
 
@@ -92,13 +93,20 @@ const (
 	dynamicPopupFlags        = nucular.WindowDynamic | popupFlags
 )
 
+type wrappedGoroutine struct {
+	api.Goroutine
+	atBreakpoint bool
+}
+
 var goroutineLocations = []string{currentGoroutineLocation, userGoroutineLocation, goStatementLocation}
 var goroutinesPanel = struct {
 	asyncLoad         asyncLoad
 	goroutineLocation int
-	goroutines        []*api.Goroutine
+	goroutines        []wrappedGoroutine
+	onlyStopped       bool
 }{
 	goroutineLocation: 1,
+	goroutines:        make([]wrappedGoroutine, 0, 10),
 }
 
 var stackPanel = struct {
@@ -181,12 +189,41 @@ func (gs goroutinesByID) Swap(i, j int) {
 func (gs goroutinesByID) Less(i, j int) bool { return gs[i].ID < gs[j].ID }
 
 func loadGoroutines(p *asyncLoad) {
-	var err error
-	goroutinesPanel.goroutines, err = client.ListGoroutines()
-	if err == nil {
-		sort.Sort(goroutinesByID(goroutinesPanel.goroutines))
+	gs, err := client.ListGoroutines()
+	if err != nil {
+		p.done(err)
+		return
 	}
-	p.done(err)
+	state, err := client.GetState()
+	if err != nil {
+		p.done(err)
+		return
+	}
+
+	bpgoids := make([]int, 0, 10)
+	for _, th := range state.Threads {
+		if th.Breakpoint != nil && th.GoroutineID > 0 {
+			bpgoids = append(bpgoids, th.GoroutineID)
+		}
+	}
+
+	sort.Sort(goroutinesByID(gs))
+
+	goroutinesPanel.goroutines = goroutinesPanel.goroutines[:0]
+
+	for _, g := range gs {
+		atbp := false
+		for _, bpgoid := range bpgoids {
+			if bpgoid == g.ID {
+				atbp = true
+				break
+			}
+		}
+
+		goroutinesPanel.goroutines = append(goroutinesPanel.goroutines, wrappedGoroutine{*g, atbp})
+	}
+
+	p.done(nil)
 }
 
 func updateGoroutines(container *nucular.Window) {
@@ -200,8 +237,9 @@ func updateGoroutines(container *nucular.Window) {
 	goroutines := goroutinesPanel.goroutines
 
 	w.MenubarBegin()
-	w.Row(20).Static(180)
+	w.Row(20).Static(180, 240)
 	goroutinesPanel.goroutineLocation = w.ComboSimple(goroutineLocations, goroutinesPanel.goroutineLocation, 22)
+	w.CheckboxText("Only stopped at breakpoint", &goroutinesPanel.onlyStopped)
 	w.MenubarEnd()
 
 	pad := style.Selectable.Padding.X * 2
@@ -221,9 +259,13 @@ func updateGoroutines(container *nucular.Window) {
 
 	zerow := nucular.FontWidth(style.Font, "0")
 
-	w.Row(40).StaticScaled(zerow*d+pad, zerow*dthread+pad, 0)
+	w.Row(40).StaticScaled(starWidth+style.Text.Padding.X*2, zerow*d+pad, zerow*dthread+pad, 0)
 	for _, g := range goroutines {
+		if goroutinesPanel.onlyStopped && !g.atBreakpoint {
+			continue
+		}
 		selected := curGid == g.ID
+		breakpointIcon(w, g.atBreakpoint, "CT", style)
 		w.SelectableLabel(fmt.Sprintf("%*d", d, g.ID), "LT", &selected)
 		if g.ThreadID != 0 {
 			w.SelectableLabel(fmt.Sprintf("%*d", dthread, g.ThreadID), "LT", &selected)
@@ -1257,6 +1299,17 @@ func abbrevFileName(path string) string {
 	return path
 }
 
+func breakpointIcon(w *nucular.Window, atbp bool, align label.Align, style *nstyle.Style) {
+	if atbp {
+		iconFace, style.Font = style.Font, iconFace
+		w.LabelColored(breakpointIconChar, align, color.RGBA{0xff, 0x00, 0x00, 0xff})
+		iconFace, style.Font = style.Font, iconFace
+	} else {
+		w.Spacing(1)
+	}
+
+}
+
 func updateListingPanel(container *nucular.Window) {
 	const lineheight = 14
 
@@ -1309,13 +1362,7 @@ func updateListingPanel(container *nucular.Window) {
 			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
 		}
 
-		if line.bp != nil {
-			iconFace, style.Font = style.Font, iconFace
-			listp.LabelColored(breakpointIcon, "CC", color.RGBA{0xff, 0x00, 0x00, 0xff})
-			iconFace, style.Font = style.Font, iconFace
-		} else {
-			listp.Spacing(1)
-		}
+		breakpointIcon(listp, line.bp != nil, "CC", style)
 
 		if centerline && listingPanel.recenterListing {
 			listingPanel.recenterListing = false
@@ -1331,7 +1378,7 @@ func updateListingPanel(container *nucular.Window) {
 
 		if isCurrentLine {
 			iconFace, style.Font = style.Font, iconFace
-			listp.LabelColored(arrowIcon, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
+			listp.LabelColored(arrowIconChar, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
 			iconFace, style.Font = style.Font, iconFace
 		} else {
 			listp.Spacing(1)
@@ -1445,17 +1492,11 @@ func updateDisassemblyPanel(container *nucular.Window) {
 			}
 		}
 
-		if instr.Breakpoint {
-			iconFace, style.Font = style.Font, iconFace
-			listp.LabelColored(breakpointIcon, "CC", color.RGBA{0xff, 0x00, 0x00, 0xff})
-			iconFace, style.Font = style.Font, iconFace
-		} else {
-			listp.Label(" ", "LC")
-		}
+		breakpointIcon(listp, instr.Breakpoint, "CC", style)
 
 		if instr.AtPC {
 			iconFace, style.Font = style.Font, iconFace
-			listp.LabelColored(arrowIcon, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
+			listp.LabelColored(arrowIconChar, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
 			iconFace, style.Font = style.Font, iconFace
 		} else {
 			listp.Label(" ", "LC")

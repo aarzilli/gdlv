@@ -261,7 +261,7 @@ func (p *panel) splitMenu(w *nucular.Window) {
 	w.LayoutSetWidth(headerSplitMenu)
 	style := w.Master().Style()
 	iconFace, style.Font = style.Font, iconFace
-	mw := w.Menu(label.TA(splitIcon, "CC"), 160, nil)
+	mw := w.Menu(label.TA(splitIconChar, "CC"), 160, nil)
 	iconFace, style.Font = style.Font, iconFace
 	if w := mw; w != nil {
 		w.Row(20).Dynamic(1)
@@ -349,31 +349,31 @@ func (p *panel) commandToolbar(sw *nucular.Window) {
 	case running:
 		p.splitMenu(sw)
 		sw.LayoutSetWidth(controlBtnWidth)
-		cmdbtn(interruptIcon, "interrupt")
+		cmdbtn(interruptIconChar, "interrupt")
 
 	case nextInProgress:
 		p.splitMenu(sw)
 		sw.LayoutSetWidth(controlBtnWidth)
-		if iconbtn(continueIcon, "continue next") {
+		if iconbtn(continueIconChar, "continue next") {
 			docmd("continue")
 		}
 		sw.LayoutSetWidth(controlBtnWidth)
-		if iconbtn(cancelIcon, "cancel next") {
+		if iconbtn(cancelIconChar, "cancel next") {
 			docmd("cancelnext")
 		}
 
 	default:
 		p.splitMenu(sw)
 		sw.LayoutSetWidth(controlBtnWidth)
-		cmdbtn(continueIcon, "continue")
+		cmdbtn(continueIconChar, "continue")
 		sw.LayoutSetWidth(controlBtnWidth / 2)
 		sw.Spacing(1)
 		sw.LayoutSetWidth(controlBtnWidth)
-		cmdbtn(nextIcon, "next")
+		cmdbtn(nextIconChar, "next")
 		sw.LayoutSetWidth(controlBtnWidth)
-		cmdbtn(stepIcon, "step")
+		cmdbtn(stepIconChar, "step")
 		sw.LayoutSetWidth(controlBtnWidth)
-		cmdbtn(stepoutIcon, "stepout")
+		cmdbtn(stepoutIconChar, "stepout")
 	}
 	p.toolbarHeaderCombo(sw)
 }
