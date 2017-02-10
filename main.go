@@ -514,7 +514,6 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		listingPanel.stale = fi.ModTime().After(lastModExe)
 
 		listingPanel.lineWidth = 0
-		style := wnd.Style()
 
 		buf := bufio.NewScanner(fh)
 		lineno := 0
@@ -524,9 +523,6 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 			atpc := lineno == loc.Line && listingPanel.pinnedLoc == nil
 			linetext := expandTabs(buf.Text())
 			listingPanel.listing = append(listingPanel.listing, listline{"", lineno, linetext, buf.Text(), atpc, breakpoint})
-			if width := nucular.FontWidth(style.Font, linetext); width > listingPanel.lineWidth {
-				listingPanel.lineWidth = width
-			}
 		}
 
 		listingPanel.stepIntoInfo.Filename = ""

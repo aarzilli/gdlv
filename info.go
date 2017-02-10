@@ -1283,8 +1283,22 @@ func updateListingPanel(container *nucular.Window) {
 
 	scrollbary := listp.Scrollbar.Y
 
+	nextLineWidth := listingPanel.lineWidth
+	curLineWidth := listingPanel.lineWidth
+	if curLineWidth != 0 {
+		curLineWidth += 2 * style.Selectable.Padding.X
+	}
+
 	for _, line := range listingPanel.listing {
-		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, listingPanel.lineWidth+2*style.Selectable.Padding.X)
+		above, below := listp.Invisible()
+
+		if !(above || below) {
+			if width := nucular.FontWidth(style.Font, line.text); width > nextLineWidth {
+				nextLineWidth = width
+			}
+		}
+
+		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, curLineWidth)
 
 		rowbounds := listp.WidgetBounds()
 		ww := rowbounds.W + listp.LayoutAvailableWidth()
@@ -1310,7 +1324,7 @@ func updateListingPanel(container *nucular.Window) {
 
 		if centerline && listingPanel.recenterListing {
 			listingPanel.recenterListing = false
-			if above, below := listp.Invisible(); above || below {
+			if above || below {
 				scrollbary = listp.At().Y - listp.Bounds.H/2
 				if scrollbary < 0 {
 					scrollbary = 0
@@ -1359,6 +1373,11 @@ func updateListingPanel(container *nucular.Window) {
 				}
 			}
 		}
+	}
+
+	if nextLineWidth != listingPanel.lineWidth {
+		listingPanel.lineWidth = nextLineWidth
+		wnd.Changed()
 	}
 
 	if scrollbary != listp.Scrollbar.Y {
