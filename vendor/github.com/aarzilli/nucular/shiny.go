@@ -71,8 +71,9 @@ type masterWindow struct {
 	prevCmds   []command.Command
 	textbuffer bytes.Buffer
 
-	uilock  sync.Mutex
-	closing bool
+	uilock      sync.Mutex
+	closing     bool
+	focusedOnce bool
 }
 
 // Creates new master window
@@ -145,6 +146,12 @@ func (w *masterWindow) handleEventLocked(ei interface{}) bool {
 		c := false
 		switch cross := e.Crosses(lifecycle.StageFocused); cross {
 		case lifecycle.CrossOn:
+			if !w.focusedOnce {
+				// on linux uploads that happen before this event don't get displayed
+				// for some reason, force a reupload
+				w.focusedOnce = true
+				w.prevCmds = w.prevCmds[:0]
+			}
 			w.Focus = true
 			c = true
 		case lifecycle.CrossOff:
@@ -339,7 +346,6 @@ func (w *masterWindow) updateLocked() {
 		d.Dot = fixed.P(bounds.Min.X, bounds.Min.Y+w.ctx.Style.Font.Metrics().Ascent.Ceil())
 		d.DrawString(s)
 	}
-	w.ctx.Reset()
 	if nprimitives > 0 {
 		w.wnd.Upload(w.bounds.Min, w.wndb, w.bounds)
 		w.wnd.Publish()

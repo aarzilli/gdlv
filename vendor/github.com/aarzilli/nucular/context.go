@@ -73,6 +73,7 @@ func (ctx *context) Update() {
 			}
 		}
 		contextEnd(ctx)
+		ctx.Reset()
 		if !ctx.trashFrame {
 			break
 		}
