@@ -353,7 +353,9 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Ptr:
-		if v.Type == "" || v.Children[0].Addr == 0 {
+		if len(v.Children) == 0 {
+			cblbl("%s ?", name)
+		} else if v.Type == "" || v.Children[0].Addr == 0 {
 			cblbl("%s = nil", name)
 		} else if v.Children[0].OnlyAddr && v.Children[0].Addr != 0 {
 			cblbl("%s = (%s)(%#x)", name, v.Type, v.Children[0].Addr)
@@ -418,7 +420,12 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 				showExprMenu(w, exprMenu, v, name)
 				if v.Children[0].Kind == reflect.Ptr {
-					showVariable(w, depth+1, addr, -1, "data", &v.Children[0].Children[0])
+					if len(v.Children[0].Children) > 0 {
+						showVariable(w, depth+1, addr, -1, "data", &v.Children[0].Children[0])
+					} else {
+						loadMoreStruct(v)
+						w.Label("Loading...", "LC")
+					}
 				} else {
 					showVariable(w, depth+1, addr, -1, "data", &v.Children[0])
 				}
