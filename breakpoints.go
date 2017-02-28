@@ -127,7 +127,7 @@ func (fbp *frozenBreakpoint) Restore(out io.Writer) {
 	if fbp.LineInFunction == 0 {
 		fbp.Bp.Addr = 0
 		fbp.Bp.File = ""
-		fbp.Bp.Line = 0
+		fbp.Bp.Line = -1
 		_, err := client.CreateBreakpoint(&fbp.Bp)
 		if err != nil {
 			fmt.Fprintf(out, "Could not restore breakpoint at function %s: %v\n", fbp.Bp.FunctionName, err)
