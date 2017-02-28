@@ -420,7 +420,7 @@ func (bps breakpointsByID) Swap(i, j int) {
 	bps[i] = bps[j]
 	bps[j] = temp
 }
-func (bps breakpointsByID) Less(i, j int) bool { return bps[i].ID < bps[i].ID }
+func (bps breakpointsByID) Less(i, j int) bool { return bps[i].ID < bps[j].ID }
 
 func loadBreakpoints(p *asyncLoad) {
 	var err error
