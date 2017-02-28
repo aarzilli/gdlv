@@ -726,6 +726,14 @@ func (sv *stringViewer) len() int {
 	}
 }
 
+func intValue(s string) (int, error) {
+	idx := strings.Index(s, " ")
+	if idx > 0 {
+		s = s[:idx]
+	}
+	return strconv.Atoi(s)
+}
+
 func (sv *stringViewer) setupView() {
 	var bytes []byte
 	var runes []rune
@@ -743,7 +751,7 @@ func (sv *stringViewer) setupView() {
 	case "[]uint8":
 		bytes = make([]byte, len(sv.v.Children))
 		for i := range sv.v.Children {
-			n, _ := strconv.Atoi(sv.v.Children[i].Value)
+			n, _ := intValue(sv.v.Children[i].Value)
 			bytes[i] = byte(n)
 		}
 		switch sv.mode {
@@ -757,7 +765,7 @@ func (sv *stringViewer) setupView() {
 	case "[]int32":
 		runes = make([]rune, len(sv.v.Children))
 		for i := range sv.v.Children {
-			n, _ := strconv.Atoi(sv.v.Children[i].Value)
+			n, _ := intValue(sv.v.Children[i].Value)
 			runes[i] = rune(n)
 		}
 		switch sv.mode {
@@ -857,7 +865,7 @@ func (sv *stringViewer) loadMore() {
 	if !additionalLoadRunning {
 		additionalLoadRunning = true
 		go func() {
-			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", sv.v.RealType, sv.v.Addr, len(sv.v.Value))
+			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", sv.v.RealType, sv.v.Addr, sv.len())
 			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
 			preformatVariable(lv)
 			if err != nil {
