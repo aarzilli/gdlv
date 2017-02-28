@@ -750,7 +750,7 @@ func (d *Debugger) convertStacktrace(rawlocs []proc.Stackframe, cfg *proc.LoadCo
 	locations := make([]api.Stackframe, 0, len(rawlocs))
 	for i := range rawlocs {
 		frame := api.Stackframe{Location: api.ConvertLocation(rawlocs[i].Call)}
-		if cfg != nil {
+		if cfg != nil && rawlocs[i].Current.Fn != nil {
 			var err error
 			scope := rawlocs[i].Scope(d.target.CurrentThread())
 			locals, err := scope.LocalVariables(*cfg)
