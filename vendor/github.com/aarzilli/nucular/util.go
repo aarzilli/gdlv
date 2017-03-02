@@ -2,6 +2,7 @@ package nucular
 
 import (
 	"image"
+	"strings"
 
 	nstyle "github.com/aarzilli/nucular/style"
 
@@ -174,15 +175,37 @@ type fontWidthCacheKey struct {
 	string string
 }
 
-func FontWidth(f font.Face, string string) int {
-	k := fontWidthCacheKey{f, string}
-	if val, ok := fontWidthCache.Get(k); ok {
-		return val.(int)
+func FontWidth(f font.Face, str string) int {
+	maxw := 0
+	for {
+		newline := strings.Index(str, "\n")
+		line := str
+		if newline >= 0 {
+			line = str[:newline]
+		}
+
+		k := fontWidthCacheKey{f, line}
+
+		var w int
+		if val, ok := fontWidthCache.Get(k); ok {
+			w = val.(int)
+		} else {
+			d := font.Drawer{Face: f}
+			w = d.MeasureString(line).Ceil()
+			fontWidthCache.Add(k, w)
+		}
+
+		if w > maxw {
+			maxw = w
+		}
+
+		if newline >= 0 {
+			str = str[newline+1:]
+		} else {
+			break
+		}
 	}
-	d := font.Drawer{Face: f}
-	r := d.MeasureString(string).Ceil()
-	fontWidthCache.Add(k, r)
-	return r
+	return maxw
 }
 
 func unify(a rect.Rect, b rect.Rect) (clip rect.Rect) {

@@ -54,6 +54,17 @@ type Window struct {
 	began         bool
 	rowCtor       rowConstructor
 	menuItemWidth int
+	lastLayoutCnt int
+	adjust        map[int]map[int]*adjustCol
+}
+
+type FittingWidthFn func(width int)
+
+type adjustCol struct {
+	id    int
+	font  font.Face
+	width int
+	first bool
 }
 
 type treeNode struct {
@@ -63,6 +74,7 @@ type treeNode struct {
 }
 
 type panel struct {
+	Cnt            int
 	Flags          WindowFlags
 	Bounds         rect.Rect
 	Offset         *image.Point
@@ -89,19 +101,21 @@ type menuState struct {
 }
 
 type rowLayout struct {
-	Type       int
-	Index      int
-	Height     int
-	Columns    int
-	Ratio      []float64
-	WidthArr   []int
-	ItemWidth  int
-	ItemRatio  float64
-	ItemHeight int
-	ItemOffset int
-	Filled     float64
-	Item       rect.Rect
-	TreeDepth  int
+	Type         int
+	Index        int
+	Index2       int
+	CalcMaxWidth bool
+	Height       int
+	Columns      int
+	Ratio        []float64
+	WidthArr     []int
+	ItemWidth    int
+	ItemRatio    float64
+	ItemHeight   int
+	ItemOffset   int
+	Filled       float64
+	Item         rect.Rect
+	TreeDepth    int
 
 	DynamicFreeX, DynamicFreeY, DynamicFreeW, DynamicFreeH float64
 }
@@ -258,6 +272,8 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	layout.Height = layout.Bounds.H
 	layout.MaxX = 0
 	layout.Row.Index = 0
+	layout.Row.Index2 = 0
+	layout.Row.CalcMaxWidth = false
 	layout.Row.Columns = 0
 	layout.Row.Height = 0
 	layout.Row.Ratio = nil
@@ -266,6 +282,13 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	layout.Row.TreeDepth = 0
 	layout.Flags = win.flags
 	layout.ReservedHeight = 0
+	win.lastLayoutCnt = 0
+
+	for _, cols := range win.adjust {
+		for _, col := range cols {
+			col.first = false
+		}
+	}
 
 	/* calculate window header */
 	if win.flags&windowMinimized != 0 {
@@ -768,22 +791,22 @@ func (win *Window) MenubarEnd() {
 	win.cmds.PushScissor(layout.Clip)
 }
 
-func (win *Window) widget() (valid bool, bounds rect.Rect) {
+func (win *Window) widget() (valid bool, bounds rect.Rect, calcFittingWidth FittingWidthFn) {
 	/* allocate space  and check if the widget needs to be updated and drawn */
-	panelAllocSpace(&bounds, win)
+	calcFittingWidth = panelAllocSpace(&bounds, win)
 
 	if !win.layout.Clip.Intersect(&bounds) {
-		return false, bounds
+		return false, bounds, calcFittingWidth
 	}
 
-	return true, bounds
+	return true, bounds, calcFittingWidth
 }
 
 func (win *Window) widgetFitting(item_padding image.Point) (valid bool, bounds rect.Rect) {
 	/* update the bounds to stand without padding  */
 	style := win.style()
 	layout := win.layout
-	valid, bounds = win.widget()
+	valid, bounds, _ = win.widget()
 	if layout.Row.Index == 1 {
 		bounds.W += style.Padding.X
 		bounds.X -= style.Padding.X
@@ -799,7 +822,7 @@ func (win *Window) widgetFitting(item_padding image.Point) (valid bool, bounds r
 	return valid, bounds
 }
 
-func panelAllocSpace(bounds *rect.Rect, win *Window) {
+func panelAllocSpace(bounds *rect.Rect, win *Window) FittingWidthFn {
 	if win.usingSub {
 		panic(UsingSubErr)
 	}
@@ -815,16 +838,26 @@ func panelAllocSpace(bounds *rect.Rect, win *Window) {
 	win.LastWidgetBounds = *bounds
 
 	layout.Row.Index++
+
+	if win.layout.Row.CalcMaxWidth {
+		col := win.adjust[win.layout.Cnt][win.layout.Row.Index2-1]
+		return func(width int) {
+			if width > col.width {
+				col.width = width
+			}
+		}
+	}
+	return nil
 }
 
 func panelAllocRow(win *Window) {
 	layout := win.layout
 	spacing := win.style().Spacing
 	row_height := layout.Row.Height - spacing.Y
-	panelLayout(win.ctx, win, row_height, layout.Row.Columns)
+	panelLayout(win.ctx, win, row_height, layout.Row.Columns, 0)
 }
 
-func panelLayout(ctx *context, win *Window, height int, cols int) {
+func panelLayout(ctx *context, win *Window, height int, cols int, cnt int) {
 	/* prefetch some configuration data */
 	layout := win.layout
 
@@ -840,7 +873,10 @@ func panelLayout(ctx *context, win *Window, height int, cols int) {
 	}
 
 	/* update the current row and set the current row layout */
+	layout.Cnt = cnt
 	layout.Row.Index = 0
+	layout.Row.Index2 = 0
+	layout.Row.CalcMaxWidth = false
 
 	layout.AtY += layout.Row.Height
 	layout.Row.Columns = cols
@@ -973,7 +1009,7 @@ func (ctx *context) scale(x int) int {
 
 func rowLayoutCtr(win *Window, height int, cols int, width int) {
 	/* update the current row and set the current row layout */
-	panelLayout(win.ctx, win, height, cols)
+	panelLayout(win.ctx, win, height, cols, 0)
 	win.layout.Row.Type = layoutDynamicFixed
 
 	win.layout.Row.ItemWidth = width
@@ -1026,7 +1062,7 @@ func (ctr *rowConstructor) Dynamic(cols int) {
 // to the size of the window.
 func (ctr *rowConstructor) Ratio(ratio ...float64) {
 	layout := ctr.win.layout
-	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(ratio))
+	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(ratio), 0)
 
 	/* calculate width of undefined widget ratios */
 	r := 0.0
@@ -1056,7 +1092,7 @@ func (ctr *rowConstructor) Ratio(ratio ...float64) {
 // Starts new row with a fixed number of columns with the specfieid widths.
 // If no widths are specified the row will never autowrap
 // and the width of the next widget can be specified using
-// LayoutSetWidth/LayoutSetWidthScaled.
+// LayoutSetWidth/LayoutSetWidthScaled/LayoutFitWidth.
 func (ctr *rowConstructor) Static(width ...int) {
 	for i := range width {
 		width[i] = ctr.win.ctx.scale(width[i])
@@ -1100,7 +1136,19 @@ func (win *Window) staticZeros(width []int) {
 // Like Static but with scaled sizes.
 func (ctr *rowConstructor) StaticScaled(width ...int) {
 	layout := ctr.win.layout
-	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(width))
+
+	cnt := 0
+
+	if len(width) == 0 {
+		if len(layout.Row.WidthArr) == 0 {
+			cnt = layout.Cnt
+		} else {
+			cnt = ctr.win.lastLayoutCnt + 1
+			ctr.win.lastLayoutCnt = cnt
+		}
+	}
+
+	panelLayout(ctr.win.ctx, ctr.win, ctr.height, len(width), cnt)
 
 	ctr.win.staticZeros(width)
 
@@ -1127,6 +1175,8 @@ func (win *Window) LayoutResetStaticScaled(width ...int) {
 	}
 	win.staticZeros(width)
 	layout.Row.Index = 0
+	layout.Row.Index2 = 0
+	layout.Row.CalcMaxWidth = false
 	layout.Row.Columns = len(width)
 	layout.Row.WidthArr = width
 	layout.Row.ItemWidth = 0
@@ -1140,7 +1190,7 @@ func (win *Window) LayoutResetStaticScaled(width ...int) {
 // by callling LayoutSpacePush/LayoutSpacePushScaled.
 func (ctr *rowConstructor) SpaceBegin(widget_count int) (bounds rect.Rect) {
 	layout := ctr.win.layout
-	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count)
+	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count, 0)
 	layout.Row.Type = layoutStaticFree
 
 	layout.Row.Ratio = nil
@@ -1164,7 +1214,7 @@ func (ctr *rowConstructor) SpaceBegin(widget_count int) (bounds rect.Rect) {
 // by callling LayoutSpacePushRatio.
 func (ctr *rowConstructor) SpaceBeginRatio(widget_count int) {
 	layout := ctr.win.layout
-	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count)
+	panelLayout(ctr.win.ctx, ctr.win, ctr.height, widget_count, 0)
 	layout.Row.Type = layoutDynamicFree
 
 	layout.Row.Ratio = nil
@@ -1174,20 +1224,68 @@ func (ctr *rowConstructor) SpaceBeginRatio(widget_count int) {
 	layout.Row.Filled = 0
 }
 
+// LayoutSetWidth adds a new column with the specified width to a static
+// layout.
 func (win *Window) LayoutSetWidth(width int) {
 	layout := win.layout
 	if layout.Row.Type != layoutStatic || len(layout.Row.WidthArr) > 0 {
 		panic(WrongLayoutErr)
 	}
+	layout.Row.Index2++
+	layout.Row.CalcMaxWidth = false
 	layout.Row.ItemWidth = win.ctx.scale(width)
 }
 
+// LayoutSetWidthScaled adds a new column width the specified scaled width
+// to a static layout.
 func (win *Window) LayoutSetWidthScaled(width int) {
 	layout := win.layout
 	if layout.Row.Type != layoutStatic || len(layout.Row.WidthArr) > 0 {
 		panic(WrongLayoutErr)
 	}
+	layout.Row.Index2++
+	layout.Row.CalcMaxWidth = false
 	layout.Row.ItemWidth = width
+}
+
+// LayoutFitWidth adds a new column to a static layout.
+// The width of the column will be large enough to fit the largest widget
+// exactly. The largest widget will only be calculated once per id, if the
+// dataset changes the id should change.
+func (win *Window) LayoutFitWidth(id int, minwidth int) {
+	layout := win.layout
+	if layout.Row.Type != layoutStatic || len(layout.Row.WidthArr) > 0 {
+		panic(WrongLayoutErr)
+	}
+	if win.adjust == nil {
+		win.adjust = make(map[int]map[int]*adjustCol)
+	}
+	adjust, ok := win.adjust[layout.Cnt]
+	if !ok {
+		win.adjust[layout.Cnt] = make(map[int]*adjustCol)
+		win.adjust[layout.Cnt][layout.Row.Index2] = &adjustCol{id: id, width: minwidth, first: true}
+		win.ctx.trashFrame = true
+		win.LayoutSetWidth(minwidth)
+		layout.Row.CalcMaxWidth = true
+		return
+	}
+	col, ok := adjust[layout.Row.Index2]
+	if !ok || col.id != id || col.font != win.ctx.Style.Font {
+		if !ok {
+			col = &adjustCol{id: id, width: minwidth}
+			win.adjust[layout.Cnt][layout.Row.Index2] = col
+		}
+		col.id = id
+		col.font = win.ctx.Style.Font
+		col.width = minwidth
+		col.first = true
+		win.ctx.trashFrame = true
+		win.LayoutSetWidthScaled(minwidth)
+		layout.Row.CalcMaxWidth = true
+		return
+	}
+	win.LayoutSetWidthScaled(col.width)
+	layout.Row.CalcMaxWidth = col.first
 }
 
 var WrongLayoutErr = errors.New("Command not available with current layout")
@@ -1229,6 +1327,7 @@ func (win *Window) layoutPeek(bounds *rect.Rect) {
 		layout.AtY += layout.Row.Height
 		layout.Row.ItemOffset = 0
 		layout.Row.Index = 0
+		layout.Row.Index2 = 0
 	}
 
 	layoutWidgetSpace(bounds, win.ctx, win, false)
@@ -1304,7 +1403,7 @@ func (win *Window) TreePushNamed(type_ TreeType, name, title string, initial_ope
 
 	if type_ == TreeTab {
 		/* calculate header bounds and draw background */
-		panelLayout(win.ctx, win, FontHeight(style.Font)+2*style.Tab.Padding.Y, 1)
+		panelLayout(win.ctx, win, FontHeight(style.Font)+2*style.Tab.Padding.Y, 1, 0)
 		win.layout.Row.Type = layoutDynamicFixed
 		win.layout.Row.ItemWidth = 0
 		win.layout.Row.ItemRatio = 0.0
@@ -1313,7 +1412,7 @@ func (win *Window) TreePushNamed(type_ TreeType, name, title string, initial_ope
 		win.layout.Row.Filled = 0
 	}
 
-	widget_state, header := win.widget()
+	widget_state, header, _ := win.widget()
 
 	/* find or create tab persistent state (open/closed) */
 
@@ -1426,8 +1525,11 @@ func (win *Window) LabelColored(str string, alignment label.Align, color color.R
 	var text textWidget
 
 	style := &win.ctx.Style
-	panelAllocSpace(&bounds, win)
+	fitting := panelAllocSpace(&bounds, win)
 	item_padding := style.Text.Padding
+	if fitting != nil {
+		fitting(2*item_padding.X + FontWidth(win.ctx.Style.Font, str))
+	}
 
 	text.Padding.X = item_padding.X
 	text.Padding.Y = item_padding.Y
@@ -1468,10 +1570,11 @@ func (win *Window) LabelWrap(str string) {
 
 // Image draws an image.
 func (win *Window) Image(img *image.RGBA) {
-	var bounds rect.Rect
-	var s bool
-
-	if s, bounds = win.widget(); !s {
+	s, bounds, fitting := win.widget()
+	if fitting != nil {
+		fitting(img.Bounds().Dx())
+	}
+	if !s {
 		return
 	}
 	win.widgets.Add(nstyle.WidgetStateInactive, bounds)
@@ -1502,7 +1605,7 @@ func (win *Window) CustomState() nstyle.WidgetStates {
 func (win *Window) Custom(state nstyle.WidgetStates) (bounds rect.Rect, out *command.Buffer) {
 	var s bool
 
-	if s, bounds = win.widget(); !s {
+	if s, bounds, _ = win.widget(); !s {
 		return
 	}
 	prevstate := win.widgets.PrevState(bounds)
@@ -1539,6 +1642,37 @@ func buttonBehaviorDo(state *nstyle.WidgetStates, r rect.Rect, i *Input, repeat 
 	}
 
 	return ret
+}
+
+func symbolWidth(sym label.SymbolType, font font.Face) int {
+	switch sym {
+	case label.SymbolX:
+		return FontWidth(font, "x")
+	case label.SymbolUnderscore:
+		return FontWidth(font, "_")
+	case label.SymbolPlus:
+		return FontWidth(font, "+")
+	case label.SymbolMinus:
+		return FontWidth(font, "-")
+	default:
+		return FontWidth(font, "M")
+	}
+}
+
+func buttonWidth(lbl label.Label, style *nstyle.Button, font font.Face) int {
+	w := 2*style.Padding.X + 2*style.TouchPadding.X + 2*style.Border
+	switch lbl.Kind {
+	case label.TextLabel:
+		w += FontWidth(font, lbl.Text)
+	case label.SymbolLabel:
+		w += symbolWidth(lbl.Symbol, font)
+	case label.ImageLabel:
+		w += lbl.Img.Bounds().Dx() + 2*style.ImagePadding.X
+	case label.SymbolTextLabel:
+		w += FontWidth(font, lbl.Text) + symbolWidth(lbl.Symbol, font) + 2*style.Padding.X
+	case label.ImageTextLabel:
+	}
+	return w
 }
 
 func doButton(win *Window, lbl label.Label, r rect.Rect, style *nstyle.Button, in *Input, repeat bool) bool {
@@ -1643,8 +1777,10 @@ func doButton(win *Window, lbl label.Label, r rect.Rect, style *nstyle.Button, i
 // Button adds a button
 func (win *Window) Button(lbl label.Label, repeat bool) bool {
 	style := &win.ctx.Style
-	state, bounds := win.widget()
-
+	state, bounds, fitting := win.widget()
+	if fitting != nil {
+		buttonWidth(lbl, &style.Button, style.Font)
+	}
 	if !state {
 		return false
 	}
@@ -1659,6 +1795,10 @@ func (win *Window) ButtonText(text string) bool {
 ///////////////////////////////////////////////////////////////////////////////////
 // SELECTABLE
 ///////////////////////////////////////////////////////////////////////////////////
+
+func selectableWidth(str string, style *nstyle.Selectable, font font.Face) int {
+	return 2*style.Padding.X + 2*style.TouchPadding.X + FontWidth(font, str)
+}
 
 func doSelectable(win *Window, bounds rect.Rect, str string, align label.Align, value *bool, style *nstyle.Selectable, in *Input) bool {
 	if str == "" {
@@ -1690,7 +1830,10 @@ func doSelectable(win *Window, bounds rect.Rect, str string, align label.Align, 
 // Returns true when the label is clicked.
 func (win *Window) SelectableLabel(str string, align label.Align, value *bool) bool {
 	style := &win.ctx.Style
-	state, bounds := win.widget()
+	state, bounds, fitting := win.widget()
+	if fitting != nil {
+		fitting(selectableWidth(str, &style.Selectable, style.Font))
+	}
 	if !state {
 		return false
 	}
@@ -1966,6 +2109,18 @@ func toggleBehavior(in *Input, b rect.Rect, state *nstyle.WidgetStates, active b
 	return active
 }
 
+func toggleWidth(str string, type_ toggleType, style *nstyle.Toggle, font font.Face) int {
+	w := 2*style.Padding.X + 2*style.TouchPadding.X + FontWidth(font, str)
+	sw := FontHeight(font) + style.Padding.X
+	w += sw
+	if type_ == toggleOption {
+		w += sw / 4
+	} else {
+		w += sw / 6
+	}
+	return w
+}
+
 func doToggle(win *Window, r rect.Rect, active bool, str string, type_ toggleType, style *nstyle.Toggle, in *Input, font font.Face) bool {
 	var bounds rect.Rect
 	var select_ rect.Rect
@@ -2025,7 +2180,10 @@ func doToggle(win *Window, r rect.Rect, active bool, str string, type_ toggleTyp
 // You are responsible for ensuring that only one radio button is selected at once.
 func (win *Window) OptionText(text string, is_active bool) bool {
 	style := &win.ctx.Style
-	state, bounds := win.widget()
+	state, bounds, fitting := win.widget()
+	if fitting != nil {
+		fitting(toggleWidth(text, toggleOption, &style.Option, style.Font))
+	}
 	if !state {
 		return false
 	}
@@ -2038,7 +2196,10 @@ func (win *Window) OptionText(text string, is_active bool) bool {
 // the checkbox value.
 // Returns true when value changes.
 func (win *Window) CheckboxText(text string, active *bool) bool {
-	state, bounds := win.widget()
+	state, bounds, fitting := win.widget()
+	if fitting != nil {
+		fitting(toggleWidth(text, toggleCheck, &win.ctx.Style.Checkbox, win.ctx.Style.Font))
+	}
 	if !state {
 		return false
 	}
@@ -2142,7 +2303,7 @@ func doSlider(win *Window, bounds rect.Rect, minval float64, val float64, maxval
 // Returns true when the slider's value is changed.
 func (win *Window) SliderFloat(min_value float64, value *float64, max_value float64, value_step float64) bool {
 	style := &win.ctx.Style
-	state, bounds := win.widget()
+	state, bounds, _ := win.widget()
 	if !state {
 		return false
 	}
@@ -2219,7 +2380,7 @@ func doProgress(win *Window, bounds rect.Rect, value int, maxval int, modifiable
 // Returns true when the progress bar values is modified.
 func (win *Window) Progress(cur *int, maxval int, is_modifiable bool) bool {
 	style := &win.ctx.Style
-	state, bounds := win.widget()
+	state, bounds, _ := win.widget()
 	if !state {
 		return false
 	}
@@ -2290,6 +2451,17 @@ const (
 	doPropertyDrag
 	doPropertySet
 )
+
+func digits(n int) int {
+	if n <= 0 {
+		n = 1
+	}
+	return int(math.Log2(float64(n)) + 1)
+}
+
+func propertyWidth(max int, style *nstyle.Property, font font.Face) int {
+	return 2*FontHeight(font)/2 + digits(max)*FontWidth(font, "0") + 4*style.Padding.X + 2*style.Border
+}
 
 func (win *Window) doProperty(property rect.Rect, name string, text string, filter FilterFunc, in *Input) (ret doPropertyRet, delta int, ed *TextEditor) {
 	ret = doPropertyStay
@@ -2399,7 +2571,10 @@ func (win *Window) doProperty(property rect.Rect, name string, text string, filt
 // or by clicking and dragging over the label.
 // Returns true when the property's value is changed
 func (win *Window) PropertyFloat(name string, min float64, val *float64, max, step, inc_per_pixel float64, prec int) (changed bool) {
-	s, bounds := win.widget()
+	s, bounds, fitting := win.widget()
+	if fitting != nil {
+		fitting(propertyWidth(int(max+1), &win.ctx.Style.Property, win.ctx.Style.Font))
+	}
 	if !s {
 		return
 	}
@@ -2425,7 +2600,10 @@ func (win *Window) PropertyFloat(name string, min float64, val *float64, max, st
 
 // Same as PropertyFloat but with integer values.
 func (win *Window) PropertyInt(name string, min int, val *int, max, step, inc_per_pixel int) (changed bool) {
-	s, bounds := win.widget()
+	s, bounds, fitting := win.widget()
+	if fitting != nil {
+		fitting(propertyWidth(max, &win.ctx.Style.Property, win.ctx.Style.Font))
+	}
 	if !s {
 		return
 	}
@@ -2630,7 +2808,7 @@ func (win *Window) Tooltip(text string) {
 
 // Adds a drop-down list to win.
 func (win *Window) Combo(lbl label.Label, height int, updateFn UpdateFn) *Window {
-	s, header := win.widget()
+	s, header, _ := win.widget()
 	if !s {
 		return nil
 	}
@@ -2709,7 +2887,10 @@ func (win *Window) ComboSimple(items []string, selected int, item_height int) in
 // Adds a menu to win with a text label.
 // If width == 0 the width will be automatically adjusted to fit the largest MenuItem
 func (win *Window) Menu(lbl label.Label, width int, updateFn UpdateFn) *Window {
-	state, header := win.widget()
+	state, header, fitting := win.widget()
+	if fitting != nil {
+		fitting(buttonWidth(lbl, &win.ctx.Style.MenuButton, win.ctx.Style.Font))
+	}
 	if !state {
 		return nil
 	}
@@ -2775,7 +2956,7 @@ func (win *Window) GroupBegin(title string, flags WindowFlags) *Window {
 
 	sw.cmds.Clip = win.cmds.Clip
 
-	state, bounds := win.widget()
+	state, bounds, _ := win.widget()
 	if !state {
 		return nil
 	}

@@ -1628,7 +1628,7 @@ func (edit *TextEditor) Edit(win *Window) EditEvents {
 	var bounds rect.Rect
 
 	style := &edit.win.ctx.Style
-	widget_state, bounds := edit.win.widget()
+	widget_state, bounds, _ := edit.win.widget()
 	if !widget_state {
 		return 0
 	}
