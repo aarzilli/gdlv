@@ -98,7 +98,6 @@ var listingPanel struct {
 	framePC             uint64
 	pinnedLoc           *api.Location
 	stale               bool
-	lineWidth           int
 	id                  int
 
 	stepIntoInfo stepIntoInfo
@@ -115,16 +114,6 @@ var curFrame int
 
 var silenced bool
 var scrollbackEditor, commandLineEditor nucular.TextEditor
-
-func prompt(thread int, gid, frame int) string {
-	if thread < 0 {
-		return ""
-	}
-	if gid < 0 {
-		return fmt.Sprintf("thread %d:%d", thread, frame)
-	}
-	return fmt.Sprintf("goroutine %d:%d", gid, frame)
-}
 
 func guiUpdate(w *nucular.Window) {
 	mu.Lock()
@@ -181,8 +170,10 @@ func currentPrompt() string {
 	} else {
 		if curThread < 0 {
 			return "dlv>"
+		} else if curGid < 0 {
+			return fmt.Sprintf("thread %d:%d>", curThread, curFrame)
 		} else {
-			return prompt(curThread, curGid, curFrame) + ">"
+			return fmt.Sprintf("goroutine %d:%d>", curGid, curFrame)
 		}
 	}
 }
@@ -531,8 +522,6 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		fi, _ := fh.Stat()
 		lastModExe := client.LastModified()
 		listingPanel.stale = fi.ModTime().After(lastModExe)
-
-		listingPanel.lineWidth = 0
 
 		buf := bufio.NewScanner(fh)
 		lineno := 0

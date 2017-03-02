@@ -64,6 +64,10 @@ func (l *asyncLoad) showRequest(container *nucular.Window, flags nucular.WindowF
 			container.Label("Running...", "LT")
 			return nil
 		}
+		if curThread < 0 {
+			container.Label("Process exited", "LT")
+			return nil
+		}
 
 		l.loading = true
 		go load(l)
@@ -796,38 +800,25 @@ func updateListingPanel(container *nucular.Window) {
 
 	scrollbary := listp.Scrollbar.Y
 
-	nextLineWidth := listingPanel.lineWidth
-	curLineWidth := listingPanel.lineWidth
-	if curLineWidth != 0 {
-		curLineWidth += 2 * style.Selectable.Padding.X
-	}
-
 	for _, line := range listingPanel.listing {
 		above, below := listp.Invisible()
 
-		if !(above || below) {
-			if width := nucular.FontWidth(style.Font, line.text); width > nextLineWidth {
-				nextLineWidth = width
-			}
-		}
-
-		listp.Row(lineheight).StaticScaled(starw, arroww, idxw, curLineWidth)
-
-		rowbounds := listp.WidgetBounds()
-		ww := rowbounds.W + listp.LayoutAvailableWidth()
-		rowbounds.W = starw + arroww + idxw + listingPanel.lineWidth + 2*style.Selectable.Padding.X
-		if ww > rowbounds.W {
-			rowbounds.W = ww
-		}
+		listp.Row(lineheight).Static()
 
 		centerline := line.pc || (listingPanel.pinnedLoc != nil && line.lineno == listingPanel.pinnedLoc.Line)
 
 		if centerline {
+			rowbounds := listp.WidgetBounds()
+			rowbounds.X = listp.Bounds.X
+			rowbounds.W = listp.Bounds.W
+
 			cmds := listp.Commands()
 			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
 		}
 
+		listp.LayoutSetWidth(starw)
 		breakpointIcon(listp, line.bp != nil, "CC", style)
+		bpbounds := listp.LastWidgetBounds
 
 		if centerline && listingPanel.recenterListing {
 			listingPanel.recenterListing = false
@@ -841,6 +832,7 @@ func updateListingPanel(container *nucular.Window) {
 
 		isCurrentLine := line.pc && curFrame == 0
 
+		listp.LayoutSetWidth(arroww)
 		if isCurrentLine {
 			iconFace, style.Font = style.Font, iconFace
 			listp.LabelColored(arrowIconChar, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
@@ -848,12 +840,18 @@ func updateListingPanel(container *nucular.Window) {
 		} else {
 			listp.Spacing(1)
 		}
+
+		listp.LayoutFitWidth(listingPanel.id, 1)
 		listp.Label(line.idx, "LC")
+		listp.LayoutFitWidth(listingPanel.id, 100)
 		listp.Label(line.text, "LC")
 		textbounds := listp.LastWidgetBounds
 
 		if !running {
-			if w := listp.ContextualOpen(0, image.Point{}, rowbounds, nil); w != nil {
+			ctxtbounds := bpbounds
+			ctxtbounds.W = (textbounds.X + textbounds.W) - ctxtbounds.X
+
+			if w := listp.ContextualOpen(0, image.Point{}, ctxtbounds, nil); w != nil {
 				w.Row(20).Dynamic(1)
 				if line.bp != nil {
 					if w.MenuItem(label.TA("Edit breakpoint", "LC")) {
@@ -880,11 +878,6 @@ func updateListingPanel(container *nucular.Window) {
 				}
 			}
 		}
-	}
-
-	if nextLineWidth != listingPanel.lineWidth {
-		listingPanel.lineWidth = nextLineWidth
-		wnd.Changed()
 	}
 
 	if scrollbary != listp.Scrollbar.Y {
@@ -933,13 +926,13 @@ func updateDisassemblyPanel(container *nucular.Window) {
 			listp.Label(fmt.Sprintf("%s:%d: %s", instr.Loc.File, instr.Loc.Line, text), "LC")
 			lastfile, lastlineno = instr.Loc.File, instr.Loc.Line
 		}
-		//listp.Row(lineheight).StaticScaled(starw, arroww, addrw, 0)
 		listp.Row(lineheight).Static()
 
 		listp.LayoutSetWidthScaled(starw)
 
 		if instr.AtPC || instr.Loc.PC == listingPanel.framePC {
 			rowbounds := listp.WidgetBounds()
+			rowbounds.X = listp.Bounds.X
 			rowbounds.W = listp.Bounds.W
 			cmds := listp.Commands()
 			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
