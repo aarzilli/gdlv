@@ -99,6 +99,7 @@ var listingPanel struct {
 	pinnedLoc           *api.Location
 	stale               bool
 	lineWidth           int
+	id                  int
 
 	stepIntoInfo stepIntoInfo
 }
@@ -381,6 +382,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 
 	mu.Lock()
 	defer mu.Unlock()
+	listingPanel.id++
 	listingPanel.listing = listingPanel.listing[:0]
 	listingPanel.text = nil
 	listingPanel.recenterListing, listingPanel.recenterDisassembly = true, true

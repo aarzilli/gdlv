@@ -100,6 +100,7 @@ var goroutinesPanel = struct {
 	goroutineLocation int
 	goroutines        []wrappedGoroutine
 	onlyStopped       bool
+	id                int
 }{
 	goroutineLocation: 1,
 	goroutines:        make([]wrappedGoroutine, 0, 10),
@@ -109,6 +110,7 @@ var stackPanel = struct {
 	asyncLoad asyncLoad
 	stack     []api.Stackframe
 	depth     int
+	id        int
 }{
 	depth: 20,
 }
@@ -116,6 +118,7 @@ var stackPanel = struct {
 var threadsPanel = struct {
 	asyncLoad asyncLoad
 	threads   []*api.Thread
+	id        int
 }{}
 
 var regsPanel = struct {
@@ -130,6 +133,7 @@ var breakpointsPanel = struct {
 	asyncLoad   asyncLoad
 	selected    int
 	breakpoints []*api.Breakpoint
+	id          int
 }{}
 
 type stringSlicePanel struct {
@@ -138,6 +142,7 @@ type stringSlicePanel struct {
 	slice        []string
 	selected     int
 	interaction  func(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int)
+	id           int
 }
 
 var funcsPanel = stringSlicePanel{name: "functions", selected: -1, interaction: funcInteraction}
@@ -180,6 +185,7 @@ func loadGoroutines(p *asyncLoad) {
 	sort.Sort(goroutinesByID(gs))
 
 	goroutinesPanel.goroutines = goroutinesPanel.goroutines[:0]
+	goroutinesPanel.id++
 
 	for _, g := range gs {
 		atbp := false
@@ -197,7 +203,7 @@ func loadGoroutines(p *asyncLoad) {
 }
 
 func updateGoroutines(container *nucular.Window) {
-	w := goroutinesPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "goroutines", loadGoroutines)
+	w := goroutinesPanel.asyncLoad.showRequest(container, 0, "goroutines", loadGoroutines)
 	if w == nil {
 		return
 	}
@@ -212,7 +218,6 @@ func updateGoroutines(container *nucular.Window) {
 	w.CheckboxText("Only stopped at breakpoint", &goroutinesPanel.onlyStopped)
 	w.MenubarEnd()
 
-	pad := style.Selectable.Padding.X * 2
 	d := 1
 	if len(goroutines) > 0 {
 		d = digits(goroutines[len(goroutines)-1].ID)
@@ -227,21 +232,27 @@ func updateGoroutines(container *nucular.Window) {
 
 	dthread := digits(maxthreadid)
 
-	zerow := nucular.FontWidth(style.Font, "0")
-
-	w.Row(40).StaticScaled(starWidth+style.Text.Padding.X*2, zerow*d+pad, zerow*dthread+pad, 0)
 	for _, g := range goroutines {
+		w.Row(40).Static()
 		if goroutinesPanel.onlyStopped && !g.atBreakpoint {
 			continue
 		}
 		selected := curGid == g.ID
+
+		w.LayoutSetWidthScaled(starWidth + style.Text.Padding.X*2)
 		breakpointIcon(w, g.atBreakpoint, "CT", style)
+
+		w.LayoutFitWidth(goroutinesPanel.id, 1)
 		w.SelectableLabel(fmt.Sprintf("%*d", d, g.ID), "LT", &selected)
+
+		w.LayoutFitWidth(goroutinesPanel.id, 1)
 		if g.ThreadID != 0 {
 			w.SelectableLabel(fmt.Sprintf("%*d", dthread, g.ThreadID), "LT", &selected)
 		} else {
 			w.SelectableLabel(" ", "LT", &selected)
 		}
+
+		w.LayoutFitWidth(goroutinesPanel.id, 100)
 		switch goroutineLocations[goroutinesPanel.goroutineLocation] {
 		case currentGoroutineLocation:
 			w.SelectableLabel(formatLocation2(g.CurrentLoc), "LT", &selected)
@@ -250,6 +261,7 @@ func updateGoroutines(container *nucular.Window) {
 		case goStatementLocation:
 			w.SelectableLabel(formatLocation2(g.GoStatementLoc), "LT", &selected)
 		}
+
 		if selected && curGid != g.ID && !running {
 			go func(gid int) {
 				state, err := client.SwitchGoroutine(gid)
@@ -271,16 +283,16 @@ func updateGoroutines(container *nucular.Window) {
 func loadStacktrace(p *asyncLoad) {
 	var err error
 	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, nil)
+	stackPanel.id++
 	p.done(err)
 }
 
 func updateStacktrace(container *nucular.Window) {
-	w := stackPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "stack", loadStacktrace)
+	w := stackPanel.asyncLoad.showRequest(container, 0, "stack", loadStacktrace)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
-	style := container.Master().Style()
 
 	w.MenubarBegin()
 	w.Row(20).Static(120)
@@ -301,16 +313,17 @@ func updateStacktrace(container *nucular.Window) {
 		}
 	}
 
-	pad := style.Selectable.Padding.X * 2
 	didx := digits(len(stack))
 	d := hexdigits(maxpc)
 
-	w.Row(40).StaticScaled(nucular.FontWidth(style.Font, "0")*didx+pad, nucular.FontWidth(style.Font, fmt.Sprintf("%#0*x", d, 0))+pad, 0)
-
 	for i, frame := range stack {
+		w.Row(40).Static()
 		selected := curFrame == i
+		w.LayoutFitWidth(stackPanel.id, 1)
 		w.SelectableLabel(fmt.Sprintf("%*d", didx, i), "LT", &selected)
+		w.LayoutFitWidth(stackPanel.id, 1)
 		w.SelectableLabel(fmt.Sprintf("%#0*x", d, frame.PC), "LT", &selected)
+		w.LayoutFitWidth(stackPanel.id, 100)
 		w.SelectableLabel(formatLocation2(frame.Location), "LT", &selected)
 		if selected && curFrame != i && !running {
 			curFrame = i
@@ -335,31 +348,35 @@ func loadThreads(p *asyncLoad) {
 	if err == nil {
 		sort.Sort(threadsByID(threadsPanel.threads))
 	}
+	threadsPanel.id++
 	p.done(err)
 }
 
 func updateThreads(container *nucular.Window) {
-	w := threadsPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "threads", loadThreads)
+	w := threadsPanel.asyncLoad.showRequest(container, 0, "threads", loadThreads)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
-	style := w.Master().Style()
 
 	threads := threadsPanel.threads
 
-	pad := style.Selectable.Padding.X * 2
 	d := 1
 	if len(threads) > 0 {
 		d = digits(threads[len(threads)-1].ID)
 	}
-	w.Row(40).StaticScaled(zeroWidth*d+pad, 0)
 
 	for _, thread := range threads {
 		selected := curThread == thread.ID
+		w.Row(40).Static()
+
+		w.LayoutFitWidth(threadsPanel.id, 1)
 		w.SelectableLabel(fmt.Sprintf("%*d", d, thread.ID), "LT", &selected)
+
+		w.LayoutFitWidth(threadsPanel.id, 1)
 		loc := api.Location{thread.PC, thread.File, thread.Line, thread.Function}
 		w.SelectableLabel(formatLocation2(loc), "LT", &selected)
+
 		if selected && curThread != thread.ID && !running {
 			go func(tid int) {
 				state, err := client.SwitchThread(tid)
@@ -428,21 +445,19 @@ func loadBreakpoints(p *asyncLoad) {
 	if err == nil {
 		sort.Sort(breakpointsByID(breakpointsPanel.breakpoints))
 	}
+	breakpointsPanel.id++
 	p.done(err)
 }
 
 func updateBreakpoints(container *nucular.Window) {
-	w := breakpointsPanel.asyncLoad.showRequest(container, nucular.WindowNoHScrollbar, "breakpoints", loadBreakpoints)
+	w := breakpointsPanel.asyncLoad.showRequest(container, 0, "breakpoints", loadBreakpoints)
 	if w == nil {
 		return
 	}
 	defer w.GroupEnd()
 
-	style := w.Master().Style()
-
 	breakpoints := breakpointsPanel.breakpoints
 
-	pad := style.Selectable.Padding.X * 2
 	d := 1
 	if len(breakpoints) > 0 {
 		d = digits(breakpoints[len(breakpoints)-1].ID)
@@ -451,14 +466,19 @@ func updateBreakpoints(container *nucular.Window) {
 		d = 3
 	}
 
-	w.Row(40).StaticScaled(zeroWidth*d+pad, 0)
 	for _, breakpoint := range breakpoints {
 		oldselectedId := breakpointsPanel.selected
 		selected := breakpointsPanel.selected == breakpoint.ID
+		w.Row(40).Static()
+
+		w.LayoutFitWidth(breakpointsPanel.id, 10)
 		w.SelectableLabel(fmt.Sprintf("%*d", d, breakpoint.ID), "LT", &selected)
 		bounds := w.LastWidgetBounds
 		bounds.W = w.Bounds.W
+
+		w.LayoutFitWidth(breakpointsPanel.id, 100)
 		w.SelectableLabel(fmt.Sprintf("%s in %s\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
+
 		if !running {
 			if selected {
 				breakpointsPanel.selected = breakpoint.ID
@@ -653,12 +673,13 @@ func (p *stringSlicePanel) update(container *nucular.Window) {
 
 	filter := string(p.filterEditor.Buffer)
 
-	w.Row(20).Dynamic(1)
 	for i, value := range p.slice {
 		if strings.Index(value, filter) < 0 {
 			continue
 		}
+		w.Row(20).Static()
 		selected := i == p.selected
+		w.LayoutFitWidth(p.id, 100)
 		clicked := w.SelectableLabel(value, "LC", &selected)
 		if selected {
 			p.selected = i
@@ -880,7 +901,7 @@ func listingSetBreakpoint(file string, line int) {
 func updateDisassemblyPanel(container *nucular.Window) {
 	const lineheight = 14
 
-	listp := container.GroupBegin("disassembly", nucular.WindowNoHScrollbar)
+	listp := container.GroupBegin("disassembly", 0)
 	if listp == nil {
 		return
 	}
@@ -890,12 +911,6 @@ func updateDisassemblyPanel(container *nucular.Window) {
 
 	arroww := arrowWidth + style.Text.Padding.X*2
 	starw := starWidth + style.Text.Padding.X*2
-
-	var maxaddr uint64 = 0
-	if len(listingPanel.text) > 0 {
-		maxaddr = listingPanel.text[len(listingPanel.text)-1].Loc.PC
-	}
-	addrw := nucular.FontWidth(style.Font, fmt.Sprintf("%#x", maxaddr)) + style.Text.Padding.X*2
 
 	lastfile, lastlineno := "", 0
 
@@ -908,16 +923,20 @@ func updateDisassemblyPanel(container *nucular.Window) {
 
 	for _, instr := range listingPanel.text {
 		if instr.Loc.File != lastfile || instr.Loc.Line != lastlineno {
-			listp.Row(lineheight).Dynamic(1)
-			listp.Row(lineheight).Dynamic(1)
+			listp.Row(lineheight).Static()
+			listp.Row(lineheight).Static()
 			text := ""
 			if instr.Loc.File == listingPanel.file && instr.Loc.Line-1 < len(listingPanel.listing) {
 				text = strings.TrimSpace(listingPanel.listing[instr.Loc.Line-1].text)
 			}
+			listp.LayoutFitWidth(listingPanel.id, 1)
 			listp.Label(fmt.Sprintf("%s:%d: %s", instr.Loc.File, instr.Loc.Line, text), "LC")
 			lastfile, lastlineno = instr.Loc.File, instr.Loc.Line
 		}
-		listp.Row(lineheight).StaticScaled(starw, arroww, addrw, 0)
+		//listp.Row(lineheight).StaticScaled(starw, arroww, addrw, 0)
+		listp.Row(lineheight).Static()
+
+		listp.LayoutSetWidthScaled(starw)
 
 		if instr.AtPC || instr.Loc.PC == listingPanel.framePC {
 			rowbounds := listp.WidgetBounds()
@@ -938,6 +957,8 @@ func updateDisassemblyPanel(container *nucular.Window) {
 
 		breakpointIcon(listp, instr.Breakpoint, "CC", style)
 
+		listp.LayoutSetWidth(arroww)
+
 		if instr.AtPC {
 			iconFace, style.Font = style.Font, iconFace
 			listp.LabelColored(arrowIconChar, "CC", color.RGBA{0xff, 0xff, 0x00, 0xff})
@@ -946,7 +967,9 @@ func updateDisassemblyPanel(container *nucular.Window) {
 			listp.Label(" ", "LC")
 		}
 
-		listp.Label(fmt.Sprintf("%#x", instr.Loc.PC), "LC")
+		listp.LayoutFitWidth(listingPanel.id, 10)
+		listp.Label(fmt.Sprintf("%x", instr.Loc.PC), "LC")
+		listp.LayoutFitWidth(listingPanel.id, 100)
 		listp.Label(instr.Text, "LC")
 	}
 

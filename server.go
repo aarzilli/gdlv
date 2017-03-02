@@ -245,6 +245,10 @@ func (descr *ServerDescr) connectTo() {
 		fmt.Fprintf(&scrollbackOut, "Could not list types: %v\n", err)
 	}
 
+	funcsPanel.id++
+	typesPanel.id++
+	sourcesPanel.id++
+
 	completeLocationSetup()
 
 	fmt.Fprintf(&scrollbackOut, "done\n")
