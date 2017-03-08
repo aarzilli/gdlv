@@ -988,11 +988,11 @@ var intFormatter = map[numberMode]func(v string) string{
 		n, _ := strconv.ParseInt(v, 0, 64)
 		return fmt.Sprintf("%d", n)
 	},
-	octMode: func(v string) string {
+	hexMode: func(v string) string {
 		n, _ := strconv.ParseInt(v, 0, 64)
 		return fmt.Sprintf("%#x", n)
 	},
-	hexMode: func(v string) string {
+	octMode: func(v string) string {
 		n, _ := strconv.ParseInt(v, 0, 64)
 		return fmt.Sprintf("%#o", n)
 	},
