@@ -95,10 +95,14 @@ func parseArguments() (descr ServerDescr) {
 		args := make([]string, 0, len(os.Args[2:])+3)
 		args = append(args, "--headless", "exec", descr.exe, "--")
 		for _, arg := range os.Args[2:] {
-			if len(arg) > 0 && arg[0] == '-' {
-				arg = "-test." + arg[1:]
+			switch arg {
+			case "-bench", "-benchtime", "-count", "-cover", "-covermode", "-coverpkg", "-cpu", "-parallel", "-run", "-short", "-timeout", "-v":
+				fallthrough
+			case "-benchmem", "-blockprofile", "-blockprofilerate", "-coverprofile", "-cpuprofile", "-memprofile", "-memprofilerate", "-mutexprofile", "-mutexprofilefraction", "-outputdir", "-trace":
+				args = append(args, "-test."+arg[1:])
+			default:
+				args = append(args, arg)
 			}
-			args = append(args, arg)
 		}
 		finish(true, args...)
 	default:
