@@ -352,9 +352,6 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
 
 	failstate := func(pos string, err error) {
-		curThread = -1
-		curGid = -1
-		curFrame = 0
 		fmt.Fprintf(&scrollbackOut, "Error refreshing state %s: %v\n", pos, err)
 	}
 
@@ -363,6 +360,9 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		state, err = client.GetState()
 		if err != nil {
 			mu.Lock()
+			curThread = -1
+			curGid = -1
+			curFrame = 0
 			failstate("GetState()", err)
 			mu.Unlock()
 			return
@@ -436,6 +436,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		case refreshToSameFrame:
 			frames, err := client.Stacktrace(curGid, curFrame+1, nil)
 			if err != nil {
+				curFrame = 0
 				failstate("Stacktrace()", err)
 				return
 			}
