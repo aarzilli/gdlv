@@ -23,7 +23,11 @@ import (
 	"golang.org/x/mobile/gl"
 )
 
+// TODO: change this to true, after manual testing on Win32.
 const useLifecycler = false
+
+// TODO: change this to true, after manual testing on Win32.
+const handleSizeEventsAtChannelReceive = false
 
 func main(f func(screen.Screen)) error {
 	return win32.Main(func() { f(theScreen) })
@@ -170,6 +174,7 @@ func paintEvent(hwnd syscall.Handle, e paint.Event) {
 		return
 	}
 
+	// TODO: the paint.Event should have External: true.
 	w.Send(paint.Event{})
 }
 
@@ -187,11 +192,17 @@ func sizeEvent(hwnd syscall.Handle, e size.Event) {
 		go drawLoop(w)
 	}
 
-	w.szMu.Lock()
-	w.sz = e
-	w.szMu.Unlock()
+	if !handleSizeEventsAtChannelReceive {
+		w.szMu.Lock()
+		w.sz = e
+		w.szMu.Unlock()
+	}
 
 	w.Send(e)
+
+	if handleSizeEventsAtChannelReceive {
+		return
+	}
 
 	// Screen is dirty, generate a paint event.
 	//

@@ -622,7 +622,7 @@ func main() {
 
 	BackendServer = parseArguments()
 
-	wnd = nucular.NewMasterWindow(guiUpdate, nucular.WindowNoScrollbar)
+	wnd = nucular.NewMasterWindow(nucular.WindowNoScrollbar, "Gdlv", guiUpdate)
 	setupStyle()
 
 	rootPanel, _ = parsePanelDescr(conf.Layouts["default"].Layout, nil)

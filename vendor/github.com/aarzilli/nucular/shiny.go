@@ -56,6 +56,7 @@ type MasterWindow interface {
 }
 
 type masterWindow struct {
+	Title  string
 	screen screen.Screen
 	wnd    screen.Window
 	wndb   screen.Buffer
@@ -77,11 +78,12 @@ type masterWindow struct {
 }
 
 // Creates new master window
-func NewMasterWindow(updatefn UpdateFn, flags WindowFlags) MasterWindow {
+func NewMasterWindow(flags WindowFlags, title string, updatefn UpdateFn) MasterWindow {
 	ctx := &context{}
 	ctx.Input.Mouse.valid = true
 	wnd := &masterWindow{ctx: ctx}
 	wnd.layout.Flags = flags
+	wnd.Title = title
 
 	clipboardMu.Lock()
 	if !clipboardStarted {
@@ -111,7 +113,7 @@ func (mw *masterWindow) main(s screen.Screen) {
 	var err error
 	mw.screen = s
 	width, height := int(640*mw.ctx.Style.Scaling), int(480*mw.ctx.Style.Scaling)
-	mw.wnd, err = s.NewWindow(&screen.NewWindowOptions{width, height})
+	mw.wnd, err = s.NewWindow(&screen.NewWindowOptions{width, height, mw.Title})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not create window: %v", err)
 		return

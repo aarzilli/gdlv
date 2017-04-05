@@ -1,10 +1,9 @@
-// Copyright 2014 The Go Authors.  All rights reserved.
+// Copyright 2016 The Go Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build !gccgo
-
 #include "textflag.h"
 
-TEXT ·use(SB),NOSPLIT,$0
+// fixFloat is unnecessary for windows/386
+TEXT ·fixFloat(SB),NOSPLIT,$0-16
 	RET

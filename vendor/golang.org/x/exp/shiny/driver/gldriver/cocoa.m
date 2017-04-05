@@ -241,7 +241,7 @@ uint64 threadID() {
 }
 @end
 
-uintptr_t doNewWindow(int width, int height) {
+uintptr_t doNewWindow(int width, int height, char* title) {
 	NSScreen *screen = [NSScreen mainScreen];
 	double w = (double)width / [screen backingScaleFactor];
 	double h = (double)height / [screen backingScaleFactor];
@@ -254,7 +254,7 @@ uintptr_t doNewWindow(int width, int height) {
 		[NSApp setMainMenu:menuBar];
 
 		id menu = [NSMenu new];
-		NSString* name = [[NSProcessInfo processInfo] processName];
+		NSString* name = [[NSString alloc] initWithUTF8String:title];
 
 		id hideMenuItem = [[NSMenuItem alloc] initWithTitle:@"Hide"
 			action:@selector(hide:) keyEquivalent:@"h"];

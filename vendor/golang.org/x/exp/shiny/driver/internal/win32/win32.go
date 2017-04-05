@@ -66,24 +66,15 @@ func newWindow(opts *screen.NewWindowOptions) (syscall.Handle, error) {
 	if err != nil {
 		return 0, err
 	}
-	title, err := syscall.UTF16PtrFromString("Shiny Window")
+	title, err := syscall.UTF16PtrFromString(opts.GetTitle())
 	if err != nil {
 		return 0, err
-	}
-	w, h := _CW_USEDEFAULT, _CW_USEDEFAULT
-	if opts != nil {
-		if opts.Width > 0 {
-			w = opts.Width
-		}
-		if opts.Height > 0 {
-			h = opts.Height
-		}
 	}
 	hwnd, err := _CreateWindowEx(0,
 		wcname, title,
 		_WS_OVERLAPPEDWINDOW,
 		_CW_USEDEFAULT, _CW_USEDEFAULT,
-		int32(w), int32(h),
+		_CW_USEDEFAULT, _CW_USEDEFAULT,
 		0, 0, hThisInstance, 0)
 	if err != nil {
 		return 0, err
@@ -92,6 +83,25 @@ func newWindow(opts *screen.NewWindowOptions) (syscall.Handle, error) {
 	// TODO(andlabs): call UpdateWindow()
 
 	return hwnd, nil
+}
+
+// ResizeClientRect makes hwnd client rectangle opts.Width by opts.Height in size.
+func ResizeClientRect(hwnd syscall.Handle, opts *screen.NewWindowOptions) error {
+	if opts == nil || opts.Width <= 0 || opts.Height <= 0 {
+		return nil
+	}
+	var cr, wr _RECT
+	err := _GetClientRect(hwnd, &cr)
+	if err != nil {
+		return err
+	}
+	err = _GetWindowRect(hwnd, &wr)
+	if err != nil {
+		return err
+	}
+	w := (wr.Right - wr.Left) - (cr.Right - int32(opts.Width))
+	h := (wr.Bottom - wr.Top) - (cr.Bottom - int32(opts.Height))
+	return _MoveWindow(hwnd, wr.Left, wr.Top, w, h, false)
 }
 
 // Show shows a newly created window.

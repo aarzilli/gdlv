@@ -11,6 +11,7 @@ package gldriver
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 char *eglGetErrorStr();
 void startDriver();
@@ -18,7 +19,7 @@ void processEvents();
 void makeCurrent(uintptr_t ctx);
 void swapBuffers(uintptr_t ctx);
 void doCloseWindow(uintptr_t id);
-uintptr_t doNewWindow(int width, int height);
+uintptr_t doNewWindow(int width, int height, char* title, int title_len);
 uintptr_t doShowWindow(uintptr_t id);
 uintptr_t surfaceCreate();
 */
@@ -27,6 +28,7 @@ import (
 	"errors"
 	"runtime"
 	"time"
+	"unsafe"
 
 	"golang.org/x/exp/shiny/driver/internal/x11key"
 	"golang.org/x/exp/shiny/screen"
@@ -40,6 +42,8 @@ import (
 
 const useLifecycler = true
 
+const handleSizeEventsAtChannelReceive = true
+
 var theKeysyms x11key.KeysymTable
 
 func init() {
@@ -50,10 +54,15 @@ func init() {
 
 func newWindow(opts *screen.NewWindowOptions) (uintptr, error) {
 	width, height := optsSize(opts)
+
+	title := opts.GetTitle()
+	ctitle := C.CString(title)
+	defer C.free(unsafe.Pointer(ctitle))
+
 	retc := make(chan uintptr)
 	uic <- uiClosure{
 		f: func() uintptr {
-			return uintptr(C.doNewWindow(C.int(width), C.int(height)))
+			return uintptr(C.doNewWindow(C.int(width), C.int(height), ctitle, C.int(len(title))))
 		},
 		retc: retc,
 	}
@@ -267,15 +276,6 @@ func onConfigure(id uintptr, x, y, width, height, displayWidth, displayWidthMM i
 		return
 	}
 
-	// TODO: should this really be done on the receiving end of the w.Events()
-	// channel, in the same goroutine as other GL calls in the app's 'business
-	// logic'?
-	go func() {
-		w.glctxMu.Lock()
-		w.glctx.Viewport(0, 0, int(width), int(height))
-		w.glctxMu.Unlock()
-	}()
-
 	w.lifecycler.SetVisible(x+width > 0 && y+height > 0)
 	w.lifecycler.SendEvent(w, w.glctx)
 
@@ -284,19 +284,13 @@ func onConfigure(id uintptr, x, y, width, height, displayWidth, displayWidthMM i
 		ptPerInch = 72
 	)
 	pixelsPerMM := float32(displayWidth) / float32(displayWidthMM)
-	sz := size.Event{
+	w.Send(size.Event{
 		WidthPx:     int(width),
 		HeightPx:    int(height),
 		WidthPt:     geom.Pt(width),
 		HeightPt:    geom.Pt(height),
 		PixelsPerPt: pixelsPerMM * mmPerInch / ptPerInch,
-	}
-
-	w.szMu.Lock()
-	w.sz = sz
-	w.szMu.Unlock()
-
-	w.Send(sz)
+	})
 }
 
 //export onDeleteWindow

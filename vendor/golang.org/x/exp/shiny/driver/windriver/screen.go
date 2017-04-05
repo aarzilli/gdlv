@@ -74,6 +74,11 @@ func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, er
 	s.windows[w.hwnd] = w
 	s.mu.Unlock()
 
+	err = win32.ResizeClientRect(w.hwnd, opts)
+	if err != nil {
+		return nil, err
+	}
+
 	win32.Show(w.hwnd)
 	return w, nil
 }

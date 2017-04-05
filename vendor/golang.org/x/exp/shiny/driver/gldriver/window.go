@@ -53,9 +53,32 @@ type windowImpl struct {
 	glctxMu sync.Mutex
 	glctx   gl.Context
 	worker  gl.Worker
+	// backBufferBound is whether the default Framebuffer, with ID 0, also
+	// known as the back buffer or the window's Framebuffer, is bound and its
+	// viewport is known to equal the window size. It can become false when we
+	// bind to a texture's Framebuffer or when the window size changes.
+	backBufferBound bool
 
+	// szMu protects only sz. If you need to hold both glctxMu and szMu, the
+	// lock ordering is to lock glctxMu first (and unlock it last).
 	szMu sync.Mutex
 	sz   size.Event
+}
+
+// NextEvent implements the screen.EventDeque interface.
+func (w *windowImpl) NextEvent() interface{} {
+	e := w.Deque.NextEvent()
+	if handleSizeEventsAtChannelReceive {
+		if sz, ok := e.(size.Event); ok {
+			w.glctxMu.Lock()
+			w.backBufferBound = false
+			w.szMu.Lock()
+			w.sz = sz
+			w.szMu.Unlock()
+			w.glctxMu.Unlock()
+		}
+	}
+	return e
 }
 
 func (w *windowImpl) Release() {
@@ -121,46 +144,64 @@ func useOp(glctx gl.Context, op draw.Op) {
 	}
 }
 
+func (w *windowImpl) bindBackBuffer() {
+	w.szMu.Lock()
+	sz := w.sz
+	w.szMu.Unlock()
+
+	w.backBufferBound = true
+	w.glctx.BindFramebuffer(gl.FRAMEBUFFER, gl.Framebuffer{Value: 0})
+	w.glctx.Viewport(0, 0, sz.WidthPx, sz.HeightPx)
+}
+
 func (w *windowImpl) fill(mvp f64.Aff3, src color.Color, op draw.Op) {
 	w.glctxMu.Lock()
 	defer w.glctxMu.Unlock()
 
-	useOp(w.glctx, op)
-	if !w.glctx.IsProgram(w.s.fill.program) {
-		p, err := compileProgram(w.glctx, fillVertexSrc, fillFragmentSrc)
+	if !w.backBufferBound {
+		w.bindBackBuffer()
+	}
+
+	doFill(w.s, w.glctx, mvp, src, op)
+}
+
+func doFill(s *screenImpl, glctx gl.Context, mvp f64.Aff3, src color.Color, op draw.Op) {
+	useOp(glctx, op)
+	if !glctx.IsProgram(s.fill.program) {
+		p, err := compileProgram(glctx, fillVertexSrc, fillFragmentSrc)
 		if err != nil {
 			// TODO: initialize this somewhere else we can better handle the error.
 			panic(err.Error())
 		}
-		w.s.fill.program = p
-		w.s.fill.pos = w.glctx.GetAttribLocation(p, "pos")
-		w.s.fill.mvp = w.glctx.GetUniformLocation(p, "mvp")
-		w.s.fill.color = w.glctx.GetUniformLocation(p, "color")
-		w.s.fill.quad = w.glctx.CreateBuffer()
+		s.fill.program = p
+		s.fill.pos = glctx.GetAttribLocation(p, "pos")
+		s.fill.mvp = glctx.GetUniformLocation(p, "mvp")
+		s.fill.color = glctx.GetUniformLocation(p, "color")
+		s.fill.quad = glctx.CreateBuffer()
 
-		w.glctx.BindBuffer(gl.ARRAY_BUFFER, w.s.fill.quad)
-		w.glctx.BufferData(gl.ARRAY_BUFFER, quadCoords, gl.STATIC_DRAW)
+		glctx.BindBuffer(gl.ARRAY_BUFFER, s.fill.quad)
+		glctx.BufferData(gl.ARRAY_BUFFER, quadCoords, gl.STATIC_DRAW)
 	}
-	w.glctx.UseProgram(w.s.fill.program)
+	glctx.UseProgram(s.fill.program)
 
-	writeAff3(w.glctx, w.s.fill.mvp, mvp)
+	writeAff3(glctx, s.fill.mvp, mvp)
 
 	r, g, b, a := src.RGBA()
-	w.glctx.Uniform4f(
-		w.s.fill.color,
+	glctx.Uniform4f(
+		s.fill.color,
 		float32(r)/65535,
 		float32(g)/65535,
 		float32(b)/65535,
 		float32(a)/65535,
 	)
 
-	w.glctx.BindBuffer(gl.ARRAY_BUFFER, w.s.fill.quad)
-	w.glctx.EnableVertexAttribArray(w.s.fill.pos)
-	w.glctx.VertexAttribPointer(w.s.fill.pos, 2, gl.FLOAT, false, 0, 0)
+	glctx.BindBuffer(gl.ARRAY_BUFFER, s.fill.quad)
+	glctx.EnableVertexAttribArray(s.fill.pos)
+	glctx.VertexAttribPointer(s.fill.pos, 2, gl.FLOAT, false, 0, 0)
 
-	w.glctx.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+	glctx.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
 
-	w.glctx.DisableVertexAttribArray(w.s.fill.pos)
+	glctx.DisableVertexAttribArray(s.fill.pos)
 }
 
 func (w *windowImpl) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
@@ -199,6 +240,10 @@ func (w *windowImpl) Draw(src2dst f64.Aff3, src screen.Texture, sr image.Rectang
 
 	w.glctxMu.Lock()
 	defer w.glctxMu.Unlock()
+
+	if !w.backBufferBound {
+		w.bindBackBuffer()
+	}
 
 	useOp(w.glctx, op)
 	w.glctx.UseProgram(w.s.texture.program)
@@ -279,26 +324,30 @@ func (w *windowImpl) Scale(dr image.Rectangle, src screen.Texture, sr image.Rect
 	drawer.Scale(w, dr, src, sr, op, opts)
 }
 
-// mvp returns the Model View Projection matrix that maps the quadCoords unit
-// square, (0, 0) to (1, 1), to a quad QV, such that QV in vertex shader space
-// corresponds to the quad QP in pixel space, where QP is defined by three of
-// its four corners - the arguments to this function. The three corners are
-// nominally the top-left, top-right and bottom-left, but there is no
-// constraint that e.g. tlx < trx.
-//
-// In pixel space, the window ranges from (0, 0) to (sz.WidthPx, sz.HeightPx).
-// The Y-axis points downwards.
-//
-// In vertex shader space, the window ranges from (-1, +1) to (+1, -1), which
-// is a 2-unit by 2-unit square. The Y-axis points upwards.
 func (w *windowImpl) mvp(tlx, tly, trx, try, blx, bly float64) f64.Aff3 {
 	w.szMu.Lock()
 	sz := w.sz
 	w.szMu.Unlock()
 
+	return calcMVP(sz.WidthPx, sz.HeightPx, tlx, tly, trx, try, blx, bly)
+}
+
+// calcMVP returns the Model View Projection matrix that maps the quadCoords
+// unit square, (0, 0) to (1, 1), to a quad QV, such that QV in vertex shader
+// space corresponds to the quad QP in pixel space, where QP is defined by
+// three of its four corners - the arguments to this function. The three
+// corners are nominally the top-left, top-right and bottom-left, but there is
+// no constraint that e.g. tlx < trx.
+//
+// In pixel space, the window ranges from (0, 0) to (widthPx, heightPx). The
+// Y-axis points downwards.
+//
+// In vertex shader space, the window ranges from (-1, +1) to (+1, -1), which
+// is a 2-unit by 2-unit square. The Y-axis points upwards.
+func calcMVP(widthPx, heightPx int, tlx, tly, trx, try, blx, bly float64) f64.Aff3 {
 	// Convert from pixel coords to vertex shader coords.
-	invHalfWidth := +2 / float64(sz.WidthPx)
-	invHalfHeight := -2 / float64(sz.HeightPx)
+	invHalfWidth := +2 / float64(widthPx)
+	invHalfHeight := -2 / float64(heightPx)
 	tlx = tlx*invHalfWidth - 1
 	tly = tly*invHalfHeight + 1
 	trx = trx*invHalfWidth - 1

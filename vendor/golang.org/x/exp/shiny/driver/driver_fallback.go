@@ -5,6 +5,7 @@
 // +build !darwin
 // +build !linux android
 // +build !windows
+// +build !dragonfly
 
 package driver
 

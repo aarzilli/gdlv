@@ -17,6 +17,7 @@ import (
 type textureImpl struct {
 	w    *windowImpl
 	id   gl.Texture
+	fb   gl.Framebuffer
 	size image.Point
 }
 
@@ -27,6 +28,10 @@ func (t *textureImpl) Release() {
 	t.w.glctxMu.Lock()
 	defer t.w.glctxMu.Unlock()
 
+	if t.fb.Value != 0 {
+		t.w.glctx.DeleteFramebuffer(t.fb)
+		t.fb = gl.Framebuffer{}
+	}
 	t.w.glctx.DeleteTexture(t.id)
 	t.id = gl.Texture{}
 }
@@ -71,10 +76,39 @@ func (t *textureImpl) Upload(dp image.Point, src screen.Buffer, sr image.Rectang
 }
 
 func (t *textureImpl) Fill(dr image.Rectangle, src color.Color, op draw.Op) {
+	minX := float64(dr.Min.X)
+	minY := float64(dr.Min.Y)
+	maxX := float64(dr.Max.X)
+	maxY := float64(dr.Max.Y)
+	mvp := calcMVP(
+		t.size.X, t.size.Y,
+		minX, minY,
+		maxX, minY,
+		minX, maxY,
+	)
+
+	glctx := t.w.glctx
+
 	t.w.glctxMu.Lock()
 	defer t.w.glctxMu.Unlock()
 
-	// TODO.
+	create := t.fb.Value == 0
+	if create {
+		t.fb = glctx.CreateFramebuffer()
+	}
+	glctx.BindFramebuffer(gl.FRAMEBUFFER, t.fb)
+	if create {
+		glctx.FramebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, t.id, 0)
+	}
+
+	glctx.Viewport(0, 0, t.size.X, t.size.Y)
+	doFill(t.w.s, t.w.glctx, mvp, src, op)
+
+	// We can't restore the GL state (i.e. bind the back buffer, also known as
+	// gl.Framebuffer{Value: 0}) right away, since we don't necessarily know
+	// the right viewport size yet. It is valid to call textureImpl.Fill before
+	// we've gotten our first size.Event. We bind it lazily instead.
+	t.w.backBufferBound = false
 }
 
 var quadCoords = f32Bytes(binary.LittleEndian,

@@ -33,6 +33,8 @@ type screenImpl struct {
 	xsi     *xproto.ScreenInfo
 	keysyms x11key.KeysymTable
 
+	atomNETWMName      xproto.Atom
+	atomUTF8String     xproto.Atom
 	atomWMDeleteWindow xproto.Atom
 	atomWMProtocols    xproto.Atom
 	atomWMTakeFocus    xproto.Atom
@@ -421,6 +423,10 @@ func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, er
 		},
 	)
 	s.setProperty(xw, s.atomWMProtocols, s.atomWMDeleteWindow, s.atomWMTakeFocus)
+
+	title := []byte(opts.GetTitle())
+	xproto.ChangeProperty(s.xc, xproto.PropModeReplace, xw, s.atomNETWMName, s.atomUTF8String, 8, uint32(len(title)), title)
+
 	xproto.CreateGC(s.xc, xg, xproto.Drawable(xw), 0, nil)
 	render.CreatePicture(s.xc, xp, xproto.Drawable(xw), pictformat, 0, nil)
 	xproto.MapWindow(s.xc, xw)
@@ -429,6 +435,14 @@ func (s *screenImpl) NewWindow(opts *screen.NewWindowOptions) (screen.Window, er
 }
 
 func (s *screenImpl) initAtoms() (err error) {
+	s.atomNETWMName, err = s.internAtom("_NET_WM_NAME")
+	if err != nil {
+		return err
+	}
+	s.atomUTF8String, err = s.internAtom("UTF8_STRING")
+	if err != nil {
+		return err
+	}
 	s.atomWMDeleteWindow, err = s.internAtom("WM_DELETE_WINDOW")
 	if err != nil {
 		return err

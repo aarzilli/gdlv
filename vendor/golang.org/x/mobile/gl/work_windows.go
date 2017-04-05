@@ -5,6 +5,7 @@
 package gl
 
 import (
+	"runtime"
 	"syscall"
 	"unsafe"
 )
@@ -22,6 +23,10 @@ type context struct {
 }
 
 func (ctx *context) WorkAvailable() <-chan struct{} { return ctx.workAvailable }
+
+type context3 struct {
+	*context
+}
 
 func NewContext() (Context, Worker) {
 	if err := findDLLs(); err != nil {
@@ -104,7 +109,9 @@ func (ctx *context) cStringPtr(str string) (uintptr, func()) {
 func fixFloat(x0, x1, x2, x3 uintptr)
 
 func (ctx *context) doWork(c call) (ret uintptr) {
-	fixFloat(c.args.a0, c.args.a1, c.args.a2, c.args.a3)
+	if runtime.GOARCH == "amd64" {
+		fixFloat(c.args.a0, c.args.a1, c.args.a2, c.args.a3)
+	}
 
 	switch c.args.fn {
 	case glfnActiveTexture:
@@ -400,9 +407,12 @@ func (ctx *context) doWork(c call) (ret uintptr) {
 //
 // LibEGL is not used directly by the gl package, but is needed by any
 // driver hoping to use OpenGL ES.
+//
+// LibD3DCompiler is needed by libglesv2.dll for compiling shaders.
 var (
-	LibGLESv2 = syscall.NewLazyDLL("libglesv2.dll")
-	LibEGL    = syscall.NewLazyDLL("libegl.dll")
+	LibGLESv2      = syscall.NewLazyDLL("libglesv2.dll")
+	LibEGL         = syscall.NewLazyDLL("libegl.dll")
+	LibD3DCompiler = syscall.NewLazyDLL("d3dcompiler_47.dll")
 )
 
 var (

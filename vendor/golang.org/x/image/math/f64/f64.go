@@ -3,7 +3,7 @@
 // license that can be found in the LICENSE file.
 
 // Package f64 implements float64 vector and matrix types.
-package f64
+package f64 // import "golang.org/x/image/math/f64"
 
 // Vec2 is a 2-element vector.
 type Vec2 [2]float64

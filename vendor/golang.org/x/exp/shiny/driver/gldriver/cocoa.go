@@ -16,12 +16,13 @@ package gldriver
 #import <Cocoa/Cocoa.h>
 #include <pthread.h>
 #include <stdint.h>
+#include <stdlib.h>
 
 void startDriver();
 void stopDriver();
 void makeCurrentContext(uintptr_t ctx);
 void flushContext(uintptr_t ctx);
-uintptr_t doNewWindow(int width, int height);
+uintptr_t doNewWindow(int width, int height, char* title);
 void doShowWindow(uintptr_t id);
 void doCloseWindow(uintptr_t id);
 uint64_t threadID();
@@ -33,6 +34,7 @@ import (
 	"fmt"
 	"log"
 	"runtime"
+	"unsafe"
 
 	"golang.org/x/exp/shiny/driver/internal/lifecycler"
 	"golang.org/x/exp/shiny/screen"
@@ -45,6 +47,9 @@ import (
 )
 
 const useLifecycler = true
+
+// TODO: change this to true, after manual testing on OS X.
+const handleSizeEventsAtChannelReceive = false
 
 var initThreadID C.uint64_t
 
@@ -62,7 +67,11 @@ func init() {
 
 func newWindow(opts *screen.NewWindowOptions) (uintptr, error) {
 	width, height := optsSize(opts)
-	return uintptr(C.doNewWindow(C.int(width), C.int(height))), nil
+
+	title := C.CString(opts.GetTitle())
+	defer C.free(unsafe.Pointer(title))
+
+	return uintptr(C.doNewWindow(C.int(width), C.int(height), title)), nil
 }
 
 func initWindow(w *windowImpl) {
@@ -187,9 +196,11 @@ func setGeom(id uintptr, ppp float32, widthPx, heightPx int) {
 		PixelsPerPt: ppp,
 	}
 
-	w.szMu.Lock()
-	w.sz = sz
-	w.szMu.Unlock()
+	if !handleSizeEventsAtChannelReceive {
+		w.szMu.Lock()
+		w.sz = sz
+		w.szMu.Unlock()
+	}
 
 	w.Send(sz)
 }

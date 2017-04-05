@@ -47,12 +47,14 @@ var (
 	procDestroyWindow     = moduser32.NewProc("DestroyWindow")
 	procDispatchMessageW  = moduser32.NewProc("DispatchMessageW")
 	procGetClientRect     = moduser32.NewProc("GetClientRect")
+	procGetWindowRect     = moduser32.NewProc("GetWindowRect")
 	procGetKeyboardLayout = moduser32.NewProc("GetKeyboardLayout")
 	procGetKeyboardState  = moduser32.NewProc("GetKeyboardState")
 	procGetKeyState       = moduser32.NewProc("GetKeyState")
 	procGetMessageW       = moduser32.NewProc("GetMessageW")
 	procLoadCursorW       = moduser32.NewProc("LoadCursorW")
 	procLoadIconW         = moduser32.NewProc("LoadIconW")
+	procMoveWindow        = moduser32.NewProc("MoveWindow")
 	procPostMessageW      = moduser32.NewProc("PostMessageW")
 	procPostQuitMessage   = moduser32.NewProc("PostQuitMessage")
 	procRegisterClassW    = moduser32.NewProc("RegisterClassW")
@@ -142,6 +144,18 @@ func _GetClientRect(hwnd syscall.Handle, rect *_RECT) (err error) {
 	return
 }
 
+func _GetWindowRect(hwnd syscall.Handle, rect *_RECT) (err error) {
+	r1, _, e1 := syscall.Syscall(procGetWindowRect.Addr(), 2, uintptr(hwnd), uintptr(unsafe.Pointer(rect)), 0)
+	if r1 == 0 {
+		if e1 != 0 {
+			err = errnoErr(e1)
+		} else {
+			err = syscall.EINVAL
+		}
+	}
+	return
+}
+
 func _GetKeyboardLayout(threadID uint32) (locale syscall.Handle) {
 	r0, _, _ := syscall.Syscall(procGetKeyboardLayout.Addr(), 1, uintptr(threadID), 0, 0)
 	locale = syscall.Handle(r0)
@@ -196,6 +210,24 @@ func _LoadIcon(hInstance syscall.Handle, iconName uintptr) (icon syscall.Handle,
 	r0, _, e1 := syscall.Syscall(procLoadIconW.Addr(), 2, uintptr(hInstance), uintptr(iconName), 0)
 	icon = syscall.Handle(r0)
 	if icon == 0 {
+		if e1 != 0 {
+			err = errnoErr(e1)
+		} else {
+			err = syscall.EINVAL
+		}
+	}
+	return
+}
+
+func _MoveWindow(hwnd syscall.Handle, x int32, y int32, w int32, h int32, repaint bool) (err error) {
+	var _p0 uint32
+	if repaint {
+		_p0 = 1
+	} else {
+		_p0 = 0
+	}
+	r1, _, e1 := syscall.Syscall6(procMoveWindow.Addr(), 6, uintptr(hwnd), uintptr(x), uintptr(y), uintptr(w), uintptr(h), uintptr(_p0))
+	if r1 == 0 {
 		if e1 != 0 {
 			err = errnoErr(e1)
 		} else {
