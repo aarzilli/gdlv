@@ -1,8 +1,10 @@
-Gdlv is a graphical frontend to [Delve](https://github.com/derekparker/delve). Gdlv has been tested on Linux only at this moment but it should be easily ported to Windows and OS X.
+Gdlv is a graphical frontend to [Delve](https://github.com/derekparker/delve) for Linux, Windows and macOS.
 
 [Demo video here](https://aarzilli.github.io/gdlv/doc/screencast.webm).
 
 ![Screenshot](https://raw.githubusercontent.com/aarzilli/gdlv/master/doc/screen.png)
+
+![Gdlv on macOS](https://raw.githubusercontent.com/aarzilli/gdlv/master/doc/sierra-screen.png)
 
 # Setup
 
