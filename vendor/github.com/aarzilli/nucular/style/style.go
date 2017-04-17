@@ -261,7 +261,6 @@ type Edit struct {
 	SelectedTextHover  color.RGBA
 	Border             int
 	Rounding           uint16
-	CursorSize         int
 	ScrollbarSize      image.Point
 	Padding            image.Point
 	RowPadding         int
@@ -645,7 +644,6 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	edit.RowPadding = 2
 	edit.Padding = image.Point{4, 4}
 	edit.ScrollbarSize = image.Point{4, 4}
-	edit.CursorSize = 4
 	edit.Border = 1
 	edit.Rounding = 0
 
@@ -709,7 +707,6 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	edit.SelectedTextNormal = table[ColorEdit]
 	edit.SelectedTextHover = table[ColorEdit]
 	edit.Padding = image.Point{0, 0}
-	edit.CursorSize = 8
 	edit.Border = 0
 	edit.Rounding = 0
 
@@ -1132,7 +1129,6 @@ func (style *Style) Scale(scaling float64) {
 		scale(&edit.RowPadding)
 		scalept(&edit.Padding)
 		scalept(&edit.ScrollbarSize)
-		scale(&edit.CursorSize)
 		scale(&edit.Border)
 		scaleu(&edit.Rounding)
 	}

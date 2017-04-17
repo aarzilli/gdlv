@@ -1410,7 +1410,7 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 		if ed.Flags&EditNoHorizontalScroll == 0 {
 			/* horizontal scroll */
 			scroll_increment := area.W / 2
-			if (cursor_pos.X < ed.Scrollbar.X) || ((ed.Scrollbar.X+area.W)-cursor_pos.X < style.CursorSize) {
+			if (cursor_pos.X < ed.Scrollbar.X) || ((ed.Scrollbar.X+area.W)-cursor_pos.X < FontWidth(font, "i")) {
 				ed.Scrollbar.X = max(0, cursor_pos.X-scroll_increment)
 			}
 		} else {
@@ -1497,7 +1497,7 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 		}
 	}
 
-	area.W -= style.CursorSize
+	area.W -= FontWidth(font, "i")
 	clip := unify(old_clip, area)
 	out.PushScissor(clip)
 	/* draw text */
@@ -1547,7 +1547,7 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 			cursor_pos := d.CursorPos
 			/* draw cursor at end of line */
 			var cursor rect.Rect
-			cursor.W = style.CursorSize
+			cursor.W = FontWidth(font, "i")
 			cursor.H = row_height
 			cursor.X = area.X + cursor_pos.X - edit.Scrollbar.X
 			cursor.Y = area.Y + cursor_pos.Y + row_height/2.0 - cursor.H/2.0
@@ -1561,9 +1561,12 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 		d.CursorPos = pos.Sub(startPos)
 		if edit.Active {
 			if edit.Cursor < len(edit.Buffer) {
-				pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor:edit.Cursor+1], edit.Cursor, row_height, font, cursor_color, cursor_text_color, true)
-				if edit.Buffer[edit.Cursor] == '\n' {
+				switch edit.Buffer[edit.Cursor] {
+				case '\n', '\t':
+					pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor:edit.Cursor+1], edit.Cursor, row_height, font, background_color, text_color, true)
 					drawEolCursor()
+				default:
+					pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor:edit.Cursor+1], edit.Cursor, row_height, font, cursor_color, cursor_text_color, true)
 				}
 				pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[edit.Cursor+1:], edit.Cursor+1, row_height, font, background_color, text_color, false)
 			} else {

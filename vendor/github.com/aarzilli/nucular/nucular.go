@@ -2500,7 +2500,7 @@ func (win *Window) doProperty(property rect.Rect, name string, text string, filt
 		ed.Buffer = []rune(text)
 	}
 
-	size = FontWidth(font, string(ed.Buffer)) + style.Edit.CursorSize
+	size = FontWidth(font, string(ed.Buffer)) + FontWidth(font, "i")
 
 	/* edit */
 	var edit rect.Rect
