@@ -200,6 +200,9 @@ func updateCommandPanel(container *nucular.Window) {
 
 	if running {
 		commandLineEditor.Flags |= nucular.EditReadOnly
+		if !commandLineEditor.Active {
+			w.Master().ActivateEditor(&commandLineEditor)
+		}
 	} else {
 		commandLineEditor.Flags &= ^nucular.EditReadOnly
 	}
