@@ -890,7 +890,7 @@ func confirmQuit(w *nucular.Window) {
 }
 
 func parseCommand(cmdstr string) (string, string) {
-	vals := strings.SplitN(cmdstr, " ", 2)
+	vals := strings.SplitN(strings.TrimSpace(cmdstr), " ", 2)
 	if len(vals) == 1 {
 		return vals[0], ""
 	}
