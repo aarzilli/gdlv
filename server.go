@@ -63,10 +63,14 @@ func parseArguments() (descr ServerDescr) {
 		descr.connectString = os.Args[2]
 		return
 	case "attach":
-		if len(os.Args) != 3 {
+		switch len(os.Args) {
+		case 3:
+			finish(false, "--headless", "attach", os.Args[2])
+		case 4:
+			finish(false, "--headless", "attach", os.Args[2], os.Args[3])
+		default:
 			usage()
 		}
-		finish(false, "--headless", "attach", os.Args[2])
 	case "debug":
 		debugname()
 		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe}
