@@ -852,7 +852,9 @@ func executeCommand(cmdstr string) {
 			if client != nil && client.AttachedToExistingProcess() {
 				wnd.PopupOpen("Confirm Quit", dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, confirmQuit)
 			} else {
-				client.Detach(true)
+				if client != nil {
+					client.Detach(true)
+				}
 				wnd.Close()
 			}
 		}
