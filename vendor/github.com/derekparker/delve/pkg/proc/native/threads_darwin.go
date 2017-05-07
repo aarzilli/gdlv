@@ -1,4 +1,4 @@
-package proc
+package native
 
 // #include "threads_darwin.h"
 // #include "proc_darwin.h"
@@ -8,6 +8,8 @@ import (
 	"unsafe"
 
 	sys "golang.org/x/sys/unix"
+
+	"github.com/derekparker/delve/pkg/proc"
 )
 
 // WaitStatus is a synonym for the platform-specific WaitStatus
@@ -81,18 +83,19 @@ func (t *Thread) resume() error {
 	return nil
 }
 
-func (t *Thread) blocked() bool {
+func (t *Thread) Blocked() bool {
 	// TODO(dp) cache the func pc to remove this lookup
-	pc, err := t.PC()
+	regs, err := t.Registers(false)
 	if err != nil {
 		return false
 	}
-	fn := t.dbp.goSymTable.PCToFunc(pc)
+	pc := regs.PC()
+	fn := t.BinInfo().PCToFunc(pc)
 	if fn == nil {
 		return false
 	}
 	switch fn.Name {
-	case "runtime.kevent", "runtime.mach_semaphore_wait", "runtime.usleep":
+	case "runtime.kevent", "runtime.mach_semaphore_wait", "runtime.usleep", "runtime.mach_semaphore_timedwait":
 		return true
 	default:
 		return false
@@ -103,7 +106,10 @@ func (t *Thread) stopped() bool {
 	return C.thread_blocked(t.os.threadAct) > C.int(0)
 }
 
-func (t *Thread) writeMemory(addr uintptr, data []byte) (int, error) {
+func (t *Thread) WriteMemory(addr uintptr, data []byte) (int, error) {
+	if t.dbp.exited {
+		return 0, proc.ProcessExitedError{Pid: t.dbp.pid}
+	}
 	if len(data) == 0 {
 		return 0, nil
 	}
@@ -118,20 +124,22 @@ func (t *Thread) writeMemory(addr uintptr, data []byte) (int, error) {
 	return len(data), nil
 }
 
-func (t *Thread) readMemory(addr uintptr, size int) ([]byte, error) {
-	if size == 0 {
-		return nil, nil
+func (t *Thread) ReadMemory(buf []byte, addr uintptr) (int, error) {
+	if t.dbp.exited {
+		return 0, proc.ProcessExitedError{Pid: t.dbp.pid}
+	}
+	if len(buf) == 0 {
+		return 0, nil
 	}
 	var (
-		buf    = make([]byte, size)
 		vmData = unsafe.Pointer(&buf[0])
 		vmAddr = C.mach_vm_address_t(addr)
-		length = C.mach_msg_type_number_t(size)
+		length = C.mach_msg_type_number_t(len(buf))
 	)
 
 	ret := C.read_memory(t.dbp.os.task, vmAddr, vmData, length)
 	if ret < 0 {
-		return nil, fmt.Errorf("could not read memory")
+		return 0, fmt.Errorf("could not read memory")
 	}
-	return buf, nil
+	return len(buf), nil
 }

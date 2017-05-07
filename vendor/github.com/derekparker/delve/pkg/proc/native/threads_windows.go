@@ -1,9 +1,12 @@
-package proc
+package native
 
 import (
+	"errors"
 	"syscall"
 
 	sys "golang.org/x/sys/windows"
+
+	"github.com/derekparker/delve/pkg/proc"
 )
 
 // WaitStatus is a synonym for the platform-specific WaitStatus
@@ -57,7 +60,7 @@ func (t *Thread) singleStep() error {
 		}
 		if tid == 0 {
 			t.dbp.postExit()
-			return ProcessExitedError{Pid: t.dbp.pid, Status: exitCode}
+			return proc.ProcessExitedError{Pid: t.dbp.pid, Status: exitCode}
 		}
 
 		if t.dbp.os.breakThread == t.ID {
@@ -103,14 +106,15 @@ func (t *Thread) resume() error {
 	return err
 }
 
-func (t *Thread) blocked() bool {
+func (t *Thread) Blocked() bool {
 	// TODO: Probably incorrect - what are the runtime functions that
 	// indicate blocking on Windows?
-	pc, err := t.PC()
+	regs, err := t.Registers(false)
 	if err != nil {
 		return false
 	}
-	fn := t.dbp.goSymTable.PCToFunc(pc)
+	pc := regs.PC()
+	fn := t.BinInfo().PCToFunc(pc)
 	if fn == nil {
 		return false
 	}
@@ -128,7 +132,10 @@ func (t *Thread) stopped() bool {
 	return true
 }
 
-func (t *Thread) writeMemory(addr uintptr, data []byte) (int, error) {
+func (t *Thread) WriteMemory(addr uintptr, data []byte) (int, error) {
+	if t.dbp.exited {
+		return 0, proc.ProcessExitedError{Pid: t.dbp.pid}
+	}
 	var count uintptr
 	err := _WriteProcessMemory(t.dbp.os.hProcess, addr, &data[0], uintptr(len(data)), &count)
 	if err != nil {
@@ -137,15 +144,19 @@ func (t *Thread) writeMemory(addr uintptr, data []byte) (int, error) {
 	return int(count), nil
 }
 
-func (t *Thread) readMemory(addr uintptr, size int) ([]byte, error) {
-	if size == 0 {
-		return nil, nil
+var ErrShortRead = errors.New("short read")
+
+func (t *Thread) ReadMemory(buf []byte, addr uintptr) (int, error) {
+	if t.dbp.exited {
+		return 0, proc.ProcessExitedError{Pid: t.dbp.pid}
+	}
+	if len(buf) == 0 {
+		return 0, nil
 	}
 	var count uintptr
-	buf := make([]byte, size)
-	err := _ReadProcessMemory(t.dbp.os.hProcess, addr, &buf[0], uintptr(size), &count)
-	if err != nil {
-		return nil, err
+	err := _ReadProcessMemory(t.dbp.os.hProcess, addr, &buf[0], uintptr(len(buf)), &count)
+	if err == nil && count != uintptr(len(buf)) {
+		err = ErrShortRead
 	}
-	return buf[:count], nil
+	return int(count), err
 }

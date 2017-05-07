@@ -4,7 +4,7 @@ import (
 	"debug/gosym"
 	"encoding/binary"
 
-	"rsc.io/x86/x86asm"
+	"golang.org/x/arch/x86/x86asm"
 )
 
 var maxInstructionLength uint64 = 15
@@ -63,7 +63,7 @@ func (inst *AsmInstruction) IsCall() bool {
 	return inst.Inst.Op == x86asm.CALL || inst.Inst.Op == x86asm.LCALL
 }
 
-func (thread *Thread) resolveCallArg(inst *ArchInst, currentGoroutine bool, regs Registers) *Location {
+func resolveCallArg(inst *ArchInst, currentGoroutine bool, regs Registers, mem MemoryReadWriter, bininfo *BinaryInfo) *Location {
 	if inst.Op != x86asm.CALL && inst.Op != x86asm.LCALL {
 		return nil
 	}
@@ -89,10 +89,6 @@ func (thread *Thread) resolveCallArg(inst *ArchInst, currentGoroutine bool, regs
 		if arg.Segment != 0 {
 			return nil
 		}
-		regs, err := thread.Registers(false)
-		if err != nil {
-			return nil
-		}
 		base, err1 := regs.Get(int(arg.Base))
 		index, err2 := regs.Get(int(arg.Index))
 		if err1 != nil || err2 != nil {
@@ -100,7 +96,8 @@ func (thread *Thread) resolveCallArg(inst *ArchInst, currentGoroutine bool, regs
 		}
 		addr := uintptr(int64(base) + int64(index*uint64(arg.Scale)) + arg.Disp)
 		//TODO: should this always be 64 bits instead of inst.MemBytes?
-		pcbytes, err := thread.readMemory(addr, inst.MemBytes)
+		pcbytes := make([]byte, inst.MemBytes)
+		_, err := mem.ReadMemory(pcbytes, addr)
 		if err != nil {
 			return nil
 		}
@@ -109,7 +106,7 @@ func (thread *Thread) resolveCallArg(inst *ArchInst, currentGoroutine bool, regs
 		return nil
 	}
 
-	file, line, fn := thread.dbp.PCToLine(pc)
+	file, line, fn := bininfo.PCToLine(pc)
 	if fn == nil {
 		return nil
 	}
@@ -145,8 +142,11 @@ func init() {
 
 // FirstPCAfterPrologue returns the address of the first instruction after the prologue for function fn
 // If sameline is set FirstPCAfterPrologue will always return an address associated with the same line as fn.Entry
-func (dbp *Process) FirstPCAfterPrologue(fn *gosym.Func, sameline bool) (uint64, error) {
-	text, err := dbp.CurrentThread().Disassemble(fn.Entry, fn.End, false)
+func FirstPCAfterPrologue(p Process, fn *gosym.Func, sameline bool) (uint64, error) {
+	var mem MemoryReadWriter = p.CurrentThread()
+	breakpoints := p.Breakpoints()
+	bi := p.BinInfo()
+	text, err := disassemble(mem, nil, breakpoints, bi, fn.Entry, fn.End)
 	if err != nil {
 		return fn.Entry, err
 	}

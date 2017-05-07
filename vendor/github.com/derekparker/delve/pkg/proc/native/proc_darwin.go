@@ -1,4 +1,4 @@
-package proc
+package native
 
 // #include "proc_darwin.h"
 // #include "threads_darwin.h"
@@ -6,7 +6,6 @@ package proc
 // #include <stdlib.h>
 import "C"
 import (
-	"debug/gosym"
 	"errors"
 	"fmt"
 	"os"
@@ -15,11 +14,9 @@ import (
 	"sync"
 	"unsafe"
 
-	"golang.org/x/debug/macho"
-
-	"github.com/derekparker/delve/pkg/dwarf/frame"
-	"github.com/derekparker/delve/pkg/dwarf/line"
 	sys "golang.org/x/sys/unix"
+
+	"github.com/derekparker/delve/pkg/proc"
 )
 
 // OSProcessDetails holds Darwin specific information.
@@ -41,7 +38,7 @@ type OSProcessDetails struct {
 func Launch(cmd []string, wd string) (*Process, error) {
 	// check that the argument to Launch is an executable file
 	if fi, staterr := os.Stat(cmd[0]); staterr == nil && (fi.Mode()&0111) == 0 {
-		return nil, NotExecutableErr
+		return nil, proc.NotExecutableErr
 	}
 	argv0Go, err := filepath.Abs(cmd[0])
 	if err != nil {
@@ -78,6 +75,7 @@ func Launch(cmd []string, wd string) (*Process, error) {
 		return nil, fmt.Errorf("could not fork/exec")
 	}
 	dbp.pid = pid
+	dbp.childProcess = true
 	for i := range argvSlice {
 		C.free(unsafe.Pointer(argvSlice[i]))
 	}
@@ -259,99 +257,11 @@ func (dbp *Process) addThread(port int, attach bool) (*Thread, error) {
 	return thread, nil
 }
 
-func (dbp *Process) parseDebugFrame(exe *macho.File, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	debugFrameSec := exe.Section("__debug_frame")
-	debugInfoSec := exe.Section("__debug_info")
-
-	if debugFrameSec != nil && debugInfoSec != nil {
-		debugFrame, err := exe.Section("__debug_frame").Data()
-		if err != nil {
-			fmt.Println("could not get __debug_frame section", err)
-			os.Exit(1)
-		}
-		dat, err := debugInfoSec.Data()
-		if err != nil {
-			fmt.Println("could not get .debug_info section", err)
-			os.Exit(1)
-		}
-		dbp.frameEntries = frame.Parse(debugFrame, frame.DwarfEndian(dat))
-	} else {
-		fmt.Println("could not find __debug_frame section in binary")
-		os.Exit(1)
-	}
-}
-
-func (dbp *Process) obtainGoSymbols(exe *macho.File, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	var (
-		symdat  []byte
-		pclndat []byte
-		err     error
-	)
-
-	if sec := exe.Section("__gosymtab"); sec != nil {
-		symdat, err = sec.Data()
-		if err != nil {
-			fmt.Println("could not get .gosymtab section", err)
-			os.Exit(1)
-		}
-	}
-
-	if sec := exe.Section("__gopclntab"); sec != nil {
-		pclndat, err = sec.Data()
-		if err != nil {
-			fmt.Println("could not get .gopclntab section", err)
-			os.Exit(1)
-		}
-	}
-
-	pcln := gosym.NewLineTable(pclndat, exe.Section("__text").Addr)
-	tab, err := gosym.NewTable(symdat, pcln)
-	if err != nil {
-		fmt.Println("could not get initialize line table", err)
-		os.Exit(1)
-	}
-
-	dbp.goSymTable = tab
-}
-
-func (dbp *Process) parseDebugLineInfo(exe *macho.File, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	if sec := exe.Section("__debug_line"); sec != nil {
-		debugLine, err := exe.Section("__debug_line").Data()
-		if err != nil {
-			fmt.Println("could not get __debug_line section", err)
-			os.Exit(1)
-		}
-		dbp.lineInfo = line.Parse(debugLine)
-	} else {
-		fmt.Println("could not find __debug_line section in binary")
-		os.Exit(1)
-	}
-}
-
-var UnsupportedArchErr = errors.New("unsupported architecture - only darwin/amd64 is supported")
-
-func (dbp *Process) findExecutable(path string) (*macho.File, string, error) {
+func findExecutable(path string, pid int) string {
 	if path == "" {
-		path = C.GoString(C.find_executable(C.int(dbp.pid)))
+		path = C.GoString(C.find_executable(C.int(pid)))
 	}
-	exe, err := macho.Open(path)
-	if err != nil {
-		return nil, path, err
-	}
-	if exe.Cpu != macho.CpuAmd64 {
-		return nil, path, UnsupportedArchErr
-	}
-	dbp.dwarf, err = exe.DWARF()
-	if err != nil {
-		return nil, path, err
-	}
-	return exe, path, nil
+	return path
 }
 
 func (dbp *Process) trapWait(pid int) (*Thread, error) {
@@ -378,7 +288,7 @@ func (dbp *Process) trapWait(pid int) (*Thread, error) {
 				return nil, err
 			}
 			dbp.postExit()
-			return nil, ProcessExitedError{Pid: dbp.pid, Status: status.ExitStatus()}
+			return nil, proc.ProcessExitedError{Pid: dbp.pid, Status: status.ExitStatus()}
 
 		case C.MACH_RCV_INTERRUPTED:
 			if !dbp.halt {
@@ -486,7 +396,7 @@ func (dbp *Process) exitGuard(err error) error {
 	_, status, werr := dbp.wait(dbp.pid, sys.WNOHANG)
 	if werr == nil && status.Exited() {
 		dbp.postExit()
-		return ProcessExitedError{Pid: dbp.pid, Status: status.ExitStatus()}
+		return proc.ProcessExitedError{Pid: dbp.pid, Status: status.ExitStatus()}
 	}
 	return err
 }
@@ -508,4 +418,8 @@ func (dbp *Process) resume() error {
 		}
 	}
 	return nil
+}
+
+func (dbp *Process) detach(kill bool) error {
+	return PtraceDetach(dbp.pid, 0)
 }

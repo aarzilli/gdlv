@@ -67,7 +67,10 @@ func (scope *EvalScope) evalAST(t ast.Expr) (*Variable, error) {
 		// try to interpret the selector as a package variable
 		if maybePkg, ok := node.X.(*ast.Ident); ok {
 			if maybePkg.Name == "runtime" && node.Sel.Name == "curg" {
-				return scope.Thread.getGVariable()
+				if scope.Gvar == nil {
+					return nilVariable, nil
+				}
+				return scope.Gvar.clone(), nil
 			} else if v, err := scope.packageVarAddr(maybePkg.Name + "." + node.Sel.Name); err == nil {
 				return v, nil
 			}
@@ -105,7 +108,7 @@ func (scope *EvalScope) evalAST(t ast.Expr) (*Variable, error) {
 		return scope.evalBinary(node)
 
 	case *ast.BasicLit:
-		return newConstant(constant.MakeFromLiteral(node.Value, node.Kind, 0), scope.Thread), nil
+		return newConstant(constant.MakeFromLiteral(node.Value, node.Kind, 0), scope.Mem), nil
 
 	default:
 		return nil, fmt.Errorf("expression %T not implemented", t)
@@ -141,7 +144,7 @@ func (scope *EvalScope) evalTypeCast(node *ast.CallExpr) (*Variable, error) {
 		fnnode = p.X
 	}
 
-	styp, err := scope.Thread.dbp.findTypeExpr(fnnode)
+	styp, err := scope.BinInfo.findTypeExpr(fnnode)
 	if err != nil {
 		return nil, err
 	}
@@ -149,7 +152,7 @@ func (scope *EvalScope) evalTypeCast(node *ast.CallExpr) (*Variable, error) {
 
 	converr := fmt.Errorf("can not convert %q to %s", exprToString(node.Args[0]), typ.String())
 
-	v := newVariable("", 0, styp, scope.Thread.dbp, scope.Thread)
+	v := newVariable("", 0, styp, scope.BinInfo, scope.Mem)
 	v.loaded = true
 
 	switch ttyp := typ.(type) {
@@ -435,7 +438,7 @@ func realBuiltin(args []*Variable, nodeargs []ast.Expr) (*Variable, error) {
 func (scope *EvalScope) evalIdent(node *ast.Ident) (*Variable, error) {
 	switch node.Name {
 	case "true", "false":
-		return newConstant(constant.MakeBool(node.Name == "true"), scope.Thread), nil
+		return newConstant(constant.MakeBool(node.Name == "true"), scope.Mem), nil
 	case "nil":
 		return nilVariable, nil
 	}
@@ -454,7 +457,7 @@ func (scope *EvalScope) evalIdent(node *ast.Ident) (*Variable, error) {
 		return v, nil
 	}
 	// if it's not a local variable then it could be a package variable w/o explicit package name
-	_, _, fn := scope.Thread.dbp.PCToLine(scope.PC)
+	_, _, fn := scope.BinInfo.PCToLine(scope.PC)
 	if fn != nil {
 		if v, err = scope.packageVarAddr(fn.PackageName() + "." + node.Name); err == nil {
 			v.Name = node.Name
@@ -492,7 +495,7 @@ func (scope *EvalScope) evalTypeAssert(node *ast.TypeAssertExpr) (*Variable, err
 	if xv.Children[0].Addr == 0 {
 		return nil, fmt.Errorf("interface conversion: %s is nil, not %s", xv.DwarfType.String(), exprToString(node.Type))
 	}
-	typ, err := scope.Thread.dbp.findTypeExpr(node.Type)
+	typ, err := scope.BinInfo.findTypeExpr(node.Type)
 	if err != nil {
 		return nil, err
 	}
@@ -637,7 +640,7 @@ func (scope *EvalScope) evalAddrOf(node *ast.UnaryExpr) (*Variable, error) {
 	xev.OnlyAddr = true
 
 	typename := "*" + xev.DwarfType.Common().Name
-	rv := scope.newVariable("", 0, &dwarf.PtrType{CommonType: dwarf.CommonType{ByteSize: int64(scope.Thread.dbp.arch.PtrSize()), Name: typename}, Type: xev.DwarfType})
+	rv := scope.newVariable("", 0, &dwarf.PtrType{CommonType: dwarf.CommonType{ByteSize: int64(scope.BinInfo.Arch.PtrSize()), Name: typename}, Type: xev.DwarfType})
 	rv.Children = []Variable{*xev}
 	rv.loaded = true
 
@@ -847,6 +850,9 @@ func (scope *EvalScope) evalBinary(node *ast.BinaryExpr) (*Variable, error) {
 
 		r := xv.newVariable("", 0, typ)
 		r.Value = rc
+		if r.Kind == reflect.String {
+			r.Len = xv.Len + yv.Len
+		}
 		return r, nil
 	}
 }

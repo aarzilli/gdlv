@@ -1,9 +1,12 @@
-package proc
+package native
 
 import (
 	"fmt"
-	"rsc.io/x86/x86asm"
 	"unsafe"
+
+	"golang.org/x/arch/x86/x86asm"
+
+	"github.com/derekparker/delve/pkg/proc"
 )
 
 // Regs represents CPU registers on an AMD64 processor.
@@ -33,7 +36,7 @@ type Regs struct {
 	fltSave *_XMM_SAVE_AREA32
 }
 
-func (r *Regs) Slice() []Register {
+func (r *Regs) Slice() []proc.Register {
 	var regs = []struct {
 		k string
 		v uint64
@@ -65,31 +68,31 @@ func (r *Regs) Slice() []Register {
 	if r.fltSave != nil {
 		outlen += 6 + 8 + 2 + 16
 	}
-	out := make([]Register, 0, outlen)
+	out := make([]proc.Register, 0, outlen)
 	for _, reg := range regs {
 		if reg.k == "Eflags" {
-			out = append(out, Register{reg.k, eflagsDescription.Describe(reg.v, 64)})
+			out = proc.AppendEflagReg(out, reg.k, reg.v)
 		} else {
-			out = appendQwordReg(out, reg.k, reg.v)
+			out = proc.AppendQwordReg(out, reg.k, reg.v)
 		}
 	}
 	if r.fltSave != nil {
-		out = appendWordReg(out, "CW", r.fltSave.ControlWord)
-		out = appendWordReg(out, "SW", r.fltSave.StatusWord)
-		out = appendWordReg(out, "TW", uint16(r.fltSave.TagWord))
-		out = appendWordReg(out, "FOP", r.fltSave.ErrorOpcode)
-		out = appendQwordReg(out, "FIP", uint64(r.fltSave.ErrorSelector)<<32|uint64(r.fltSave.ErrorOffset))
-		out = appendQwordReg(out, "FDP", uint64(r.fltSave.DataSelector)<<32|uint64(r.fltSave.DataOffset))
+		out = proc.AppendWordReg(out, "CW", r.fltSave.ControlWord)
+		out = proc.AppendWordReg(out, "SW", r.fltSave.StatusWord)
+		out = proc.AppendWordReg(out, "TW", uint16(r.fltSave.TagWord))
+		out = proc.AppendWordReg(out, "FOP", r.fltSave.ErrorOpcode)
+		out = proc.AppendQwordReg(out, "FIP", uint64(r.fltSave.ErrorSelector)<<32|uint64(r.fltSave.ErrorOffset))
+		out = proc.AppendQwordReg(out, "FDP", uint64(r.fltSave.DataSelector)<<32|uint64(r.fltSave.DataOffset))
 
 		for i := range r.fltSave.FloatRegisters {
-			out = appendX87Reg(out, i, uint16(r.fltSave.FloatRegisters[i].High), r.fltSave.FloatRegisters[i].Low)
+			out = proc.AppendX87Reg(out, i, uint16(r.fltSave.FloatRegisters[i].High), r.fltSave.FloatRegisters[i].Low)
 		}
 
-		out = appendFlagReg(out, "MXCSR", uint64(r.fltSave.MxCsr), mxcsrDescription, 32)
-		out = appendDwordReg(out, "MXCSR_MASK", r.fltSave.MxCsr_Mask)
+		out = proc.AppendMxcsrReg(out, "MXCSR", uint64(r.fltSave.MxCsr))
+		out = proc.AppendDwordReg(out, "MXCSR_MASK", r.fltSave.MxCsr_Mask)
 
 		for i := 0; i < len(r.fltSave.XmmRegisters); i += 16 {
-			out = appendSSEReg(out, fmt.Sprintf("XMM%d", i/16), r.fltSave.XmmRegisters[i:i+16])
+			out = proc.AppendSSEReg(out, fmt.Sprintf("XMM%d", i/16), r.fltSave.XmmRegisters[i:i+16])
 		}
 	}
 	return out
@@ -123,8 +126,13 @@ func (r *Regs) TLS() uint64 {
 	return r.tls
 }
 
+func (r *Regs) GAddr() (uint64, bool) {
+	return 0, false
+}
+
 // SetPC sets the RIP register to the value specified by `pc`.
-func (r *Regs) SetPC(thread *Thread, pc uint64) error {
+func (r *Regs) SetPC(t proc.Thread, pc uint64) error {
+	thread := t.(*Thread)
 	context := newCONTEXT()
 	context.ContextFlags = _CONTEXT_ALL
 
@@ -159,7 +167,7 @@ func (r *Regs) Get(n int) (uint64, error) {
 	case x86asm.AH:
 		return (r.rax >> 8) & mask8, nil
 	case x86asm.CH:
-		return (r.rax >> 8) & mask8, nil
+		return (r.rcx >> 8) & mask8, nil
 	case x86asm.DH:
 		return (r.rdx >> 8) & mask8, nil
 	case x86asm.BH:
@@ -292,10 +300,10 @@ func (r *Regs) Get(n int) (uint64, error) {
 		return r.r15, nil
 	}
 
-	return 0, UnknownRegisterError
+	return 0, proc.UnknownRegisterError
 }
 
-func registers(thread *Thread, floatingPoint bool) (Registers, error) {
+func registers(thread *Thread, floatingPoint bool) (proc.Registers, error) {
 	context := newCONTEXT()
 
 	context.ContextFlags = _CONTEXT_ALL
@@ -342,7 +350,7 @@ func registers(thread *Thread, floatingPoint bool) (Registers, error) {
 	return regs, nil
 }
 
-func (thread *Thread) saveRegisters() (Registers, error) {
+func (thread *Thread) saveRegisters() (proc.Registers, error) {
 	return nil, fmt.Errorf("not implemented: saveRegisters")
 }
 

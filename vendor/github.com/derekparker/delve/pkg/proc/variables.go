@@ -50,8 +50,8 @@ type Variable struct {
 	DwarfType dwarf.Type
 	RealType  dwarf.Type
 	Kind      reflect.Kind
-	mem       memoryReadWriter
-	dbp       *Process
+	mem       MemoryReadWriter
+	bi        *BinaryInfo
 
 	Value        constant.Value
 	FloatSpecial FloatSpecial
@@ -129,18 +129,19 @@ type G struct {
 	CurrentLoc Location
 
 	// Thread that this goroutine is currently allocated to
-	thread *Thread
+	Thread Thread
 
 	variable *Variable
-	dbp      *Process
 }
 
 // EvalScope is the scope for variable evaluation. Contains the thread,
 // current location (PC), and canonical frame address.
 type EvalScope struct {
-	Thread *Thread
-	PC     uint64
-	CFA    int64
+	PC      uint64           // Current instruction of the evaluation frame
+	CFA     int64            // Stack address of the evaluation frame
+	Mem     MemoryReadWriter // Target's memory
+	Gvar    *Variable
+	BinInfo *BinaryInfo
 }
 
 // IsNilErr is returned when a variable is nil.
@@ -153,24 +154,24 @@ func (err *IsNilErr) Error() string {
 }
 
 func (scope *EvalScope) newVariable(name string, addr uintptr, dwarfType dwarf.Type) *Variable {
-	return newVariable(name, addr, dwarfType, scope.Thread.dbp, scope.Thread)
+	return newVariable(name, addr, dwarfType, scope.BinInfo, scope.Mem)
 }
 
-func (t *Thread) newVariable(name string, addr uintptr, dwarfType dwarf.Type) *Variable {
-	return newVariable(name, addr, dwarfType, t.dbp, t)
+func newVariableFromThread(t Thread, name string, addr uintptr, dwarfType dwarf.Type) *Variable {
+	return newVariable(name, addr, dwarfType, t.BinInfo(), t)
 }
 
 func (v *Variable) newVariable(name string, addr uintptr, dwarfType dwarf.Type) *Variable {
-	return newVariable(name, addr, dwarfType, v.dbp, v.mem)
+	return newVariable(name, addr, dwarfType, v.bi, v.mem)
 }
 
-func newVariable(name string, addr uintptr, dwarfType dwarf.Type, dbp *Process, mem memoryReadWriter) *Variable {
+func newVariable(name string, addr uintptr, dwarfType dwarf.Type, bi *BinaryInfo, mem MemoryReadWriter) *Variable {
 	v := &Variable{
 		Name:      name,
 		Addr:      addr,
 		DwarfType: dwarfType,
 		mem:       mem,
-		dbp:       dbp,
+		bi:        bi,
 	}
 
 	v.RealType = resolveTypedef(v.DwarfType)
@@ -190,7 +191,7 @@ func newVariable(name string, addr uintptr, dwarfType dwarf.Type, dbp *Process, 
 		v.stride = 1
 		v.fieldType = &dwarf.UintType{BasicType: dwarf.BasicType{CommonType: dwarf.CommonType{ByteSize: 1, Name: "byte"}, BitSize: 8, BitOffset: 0}}
 		if v.Addr != 0 {
-			v.Base, v.Len, v.Unreadable = readStringInfo(v.mem, v.dbp.arch, v.Addr)
+			v.Base, v.Len, v.Unreadable = readStringInfo(v.mem, v.bi.Arch, v.Addr)
 		}
 	case *dwarf.SliceType:
 		v.Kind = reflect.Slice
@@ -255,7 +256,7 @@ func resolveTypedef(typ dwarf.Type) dwarf.Type {
 	}
 }
 
-func newConstant(val constant.Value, mem memoryReadWriter) *Variable {
+func newConstant(val constant.Value, mem MemoryReadWriter) *Variable {
 	v := &Variable{Value: val, mem: mem, loaded: true}
 	switch val.Kind() {
 	case constant.Int:
@@ -321,33 +322,23 @@ func (v *Variable) toField(field *dwarf.StructField) (*Variable, error) {
 // DwarfReader returns the DwarfReader containing the
 // Dwarf information for the target process.
 func (scope *EvalScope) DwarfReader() *reader.Reader {
-	return scope.Thread.dbp.DwarfReader()
+	return scope.BinInfo.DwarfReader()
 }
 
 // Type returns the Dwarf type entry at `offset`.
 func (scope *EvalScope) Type(offset dwarf.Offset) (dwarf.Type, error) {
-	return scope.Thread.dbp.dwarf.Type(offset)
+	return scope.BinInfo.dwarf.Type(offset)
 }
 
 // PtrSize returns the size of a pointer.
 func (scope *EvalScope) PtrSize() int {
-	return scope.Thread.dbp.arch.PtrSize()
+	return scope.BinInfo.Arch.PtrSize()
 }
 
 // ChanRecvBlocked returns whether the goroutine is blocked on
 // a channel read operation.
 func (g *G) ChanRecvBlocked() bool {
-	return (g.thread == nil) && (g.WaitReason == chanRecv)
-}
-
-// chanRecvReturnAddr returns the address of the return from a channel read.
-func (g *G) chanRecvReturnAddr(dbp *Process) (uint64, error) {
-	locs, err := g.Stacktrace(4)
-	if err != nil {
-		return 0, err
-	}
-	topLoc := locs[len(locs)-1]
-	return topLoc.Current.PC, nil
+	return (g.Thread == nil) && (g.WaitReason == chanRecv)
 }
 
 // NoGError returned when a G could not be found
@@ -362,12 +353,12 @@ func (ng NoGError) Error() string {
 
 func (gvar *Variable) parseG() (*G, error) {
 	mem := gvar.mem
-	dbp := gvar.dbp
 	gaddr := uint64(gvar.Addr)
 	_, deref := gvar.RealType.(*dwarf.PtrType)
 
 	if deref {
-		gaddrbytes, err := mem.readMemory(uintptr(gaddr), dbp.arch.PtrSize())
+		gaddrbytes := make([]byte, gvar.bi.Arch.PtrSize())
+		_, err := mem.ReadMemory(gaddrbytes, uintptr(gaddr))
 		if err != nil {
 			return nil, fmt.Errorf("error derefing *G %s", err)
 		}
@@ -375,8 +366,8 @@ func (gvar *Variable) parseG() (*G, error) {
 	}
 	if gaddr == 0 {
 		id := 0
-		if thread, ok := mem.(*Thread); ok {
-			id = thread.ID
+		if thread, ok := mem.(Thread); ok {
+			id = thread.ThreadID()
 		}
 		return nil, NoGError{tid: id}
 	}
@@ -396,10 +387,16 @@ func (gvar *Variable) parseG() (*G, error) {
 	id, _ := constant.Int64Val(gvar.fieldVariable("goid").Value)
 	gopc, _ := constant.Int64Val(gvar.fieldVariable("gopc").Value)
 	waitReason := constant.StringVal(gvar.fieldVariable("waitreason").Value)
+
 	stkbarVar, _ := gvar.structMember("stkbar")
-	stkbarPos, _ := constant.Int64Val(gvar.fieldVariable("stkbarPos").Value)
+	stkbarVarPosFld := gvar.fieldVariable("stkbarPos")
+	var stkbarPos int64
+	if stkbarVarPosFld != nil { // stack barriers were removed in Go 1.9
+		stkbarPos, _ = constant.Int64Val(stkbarVarPosFld.Value)
+	}
+
 	status, _ := constant.Int64Val(gvar.fieldVariable("atomicstatus").Value)
-	f, l, fn := gvar.dbp.goSymTable.PCToLine(uint64(pc))
+	f, l, fn := gvar.bi.PCToLine(uint64(pc))
 	g := &G{
 		ID:         int(id),
 		GoPC:       uint64(gopc),
@@ -411,7 +408,6 @@ func (gvar *Variable) parseG() (*G, error) {
 		variable:   gvar,
 		stkbarVar:  stkbarVar,
 		stkbarPos:  int(stkbarPos),
-		dbp:        gvar.dbp,
 	}
 	return g, nil
 }
@@ -492,12 +488,15 @@ func (g *G) UserCurrent() Location {
 // Go returns the location of the 'go' statement
 // that spawned this goroutine.
 func (g *G) Go() Location {
-	f, l, fn := g.dbp.goSymTable.PCToLine(g.GoPC)
+	f, l, fn := g.variable.bi.goSymTable.PCToLine(g.GoPC)
 	return Location{PC: g.GoPC, File: f, Line: l, Fn: fn}
 }
 
 // Returns the list of saved return addresses used by stack barriers
 func (g *G) stkbar() ([]savedLR, error) {
+	if g.stkbarVar == nil { // stack barriers were removed in Go 1.9
+		return nil, nil
+	}
 	g.stkbarVar.loadValue(LoadConfig{false, 1, 0, int(g.stkbarVar.Len), 3})
 	if g.stkbarVar.Unreadable != nil {
 		return nil, fmt.Errorf("unreadable stkbar: %v\n", g.stkbarVar.Unreadable)
@@ -577,7 +576,7 @@ func (scope *EvalScope) extractVariableFromEntry(entry *dwarf.Entry, cfg LoadCon
 
 func (scope *EvalScope) extractVarInfo(varName string) (*Variable, error) {
 	reader := scope.DwarfReader()
-	off, err := scope.Thread.dbp.findFunctionDebugInfo(scope.PC)
+	off, err := scope.BinInfo.findFunctionDebugInfo(scope.PC)
 	if err != nil {
 		return nil, err
 	}
@@ -646,19 +645,6 @@ func (scope *EvalScope) PackageVariables(cfg LoadConfig) ([]*Variable, error) {
 	return vars, nil
 }
 
-// EvalPackageVariable will evaluate the package level variable
-// specified by 'name'.
-func (dbp *Process) EvalPackageVariable(name string, cfg LoadConfig) (*Variable, error) {
-	scope := &EvalScope{Thread: dbp.currentThread, PC: 0, CFA: 0}
-
-	v, err := scope.packageVarAddr(name)
-	if err != nil {
-		return nil, err
-	}
-	v.loadValue(cfg)
-	return v, nil
-}
-
 func (scope *EvalScope) packageVarAddr(name string) (*Variable, error) {
 	reader := scope.DwarfReader()
 	for entry, err := reader.NextPackageVariable(); entry != nil; entry, err = reader.NextPackageVariable() {
@@ -671,7 +657,7 @@ func (scope *EvalScope) packageVarAddr(name string) (*Variable, error) {
 			continue
 		}
 
-		if n == name {
+		if n == name || strings.HasSuffix(n, "/"+name) {
 			return scope.extractVarInfoFromEntry(entry, reader)
 		}
 	}
@@ -878,7 +864,8 @@ func (v *Variable) loadValueInternal(recurseLevel int, cfg LoadConfig) {
 		v.Value = constant.MakeUint64(val)
 
 	case reflect.Bool:
-		val, err := v.mem.readMemory(v.Addr, 1)
+		val := make([]byte, 1)
+		_, err := v.mem.ReadMemory(val, v.Addr)
 		v.Unreadable = err
 		if err == nil {
 			v.Value = constant.MakeBool(val[0] != 0)
@@ -931,14 +918,15 @@ func (v *Variable) setValue(y *Variable) error {
 	return err
 }
 
-func readStringInfo(mem memoryReadWriter, arch Arch, addr uintptr) (uintptr, int64, error) {
+func readStringInfo(mem MemoryReadWriter, arch Arch, addr uintptr) (uintptr, int64, error) {
 	// string data structure is always two ptrs in size. Addr, followed by len
 	// http://research.swtch.com/godata
 
 	mem = cacheMemory(mem, addr, arch.PtrSize()*2)
 
 	// read len
-	val, err := mem.readMemory(addr+uintptr(arch.PtrSize()), arch.PtrSize())
+	val := make([]byte, arch.PtrSize())
+	_, err := mem.ReadMemory(val, addr+uintptr(arch.PtrSize()))
 	if err != nil {
 		return 0, 0, fmt.Errorf("could not read string len %s", err)
 	}
@@ -948,7 +936,7 @@ func readStringInfo(mem memoryReadWriter, arch Arch, addr uintptr) (uintptr, int
 	}
 
 	// read addr
-	val, err = mem.readMemory(addr, arch.PtrSize())
+	_, err = mem.ReadMemory(val, addr)
 	if err != nil {
 		return 0, 0, fmt.Errorf("could not read string pointer %s", err)
 	}
@@ -960,13 +948,14 @@ func readStringInfo(mem memoryReadWriter, arch Arch, addr uintptr) (uintptr, int
 	return addr, strlen, nil
 }
 
-func readStringValue(mem memoryReadWriter, addr uintptr, strlen int64, cfg LoadConfig) (string, error) {
+func readStringValue(mem MemoryReadWriter, addr uintptr, strlen int64, cfg LoadConfig) (string, error) {
 	count := strlen
 	if count > int64(cfg.MaxStringLen) {
 		count = int64(cfg.MaxStringLen)
 	}
 
-	val, err := mem.readMemory(addr, int(count))
+	val := make([]byte, int(count))
+	_, err := mem.ReadMemory(val, addr)
 	if err != nil {
 		return "", fmt.Errorf("could not read string at %#v due to %s", addr, err)
 	}
@@ -1091,10 +1080,11 @@ func (v *Variable) writeComplex(real, imag float64, size int64) error {
 	return imagaddr.writeFloatRaw(imag, int64(size/2))
 }
 
-func readIntRaw(mem memoryReadWriter, addr uintptr, size int64) (int64, error) {
+func readIntRaw(mem MemoryReadWriter, addr uintptr, size int64) (int64, error) {
 	var n int64
 
-	val, err := mem.readMemory(addr, int(size))
+	val := make([]byte, int(size))
+	_, err := mem.ReadMemory(val, addr)
 	if err != nil {
 		return 0, err
 	}
@@ -1127,14 +1117,15 @@ func (v *Variable) writeUint(value uint64, size int64) error {
 		binary.LittleEndian.PutUint64(val, uint64(value))
 	}
 
-	_, err := v.mem.writeMemory(v.Addr, val)
+	_, err := v.mem.WriteMemory(v.Addr, val)
 	return err
 }
 
-func readUintRaw(mem memoryReadWriter, addr uintptr, size int64) (uint64, error) {
+func readUintRaw(mem MemoryReadWriter, addr uintptr, size int64) (uint64, error) {
 	var n uint64
 
-	val, err := mem.readMemory(addr, int(size))
+	val := make([]byte, int(size))
+	_, err := mem.ReadMemory(val, addr)
 	if err != nil {
 		return 0, err
 	}
@@ -1154,7 +1145,8 @@ func readUintRaw(mem memoryReadWriter, addr uintptr, size int64) (uint64, error)
 }
 
 func (v *Variable) readFloatRaw(size int64) (float64, error) {
-	val, err := v.mem.readMemory(v.Addr, int(size))
+	val := make([]byte, int(size))
+	_, err := v.mem.ReadMemory(val, v.Addr)
 	if err != nil {
 		return 0.0, err
 	}
@@ -1186,19 +1178,20 @@ func (v *Variable) writeFloatRaw(f float64, size int64) error {
 		binary.Write(buf, binary.LittleEndian, n)
 	}
 
-	_, err := v.mem.writeMemory(v.Addr, buf.Bytes())
+	_, err := v.mem.WriteMemory(v.Addr, buf.Bytes())
 	return err
 }
 
 func (v *Variable) writeBool(value bool) error {
 	val := []byte{0}
 	val[0] = *(*byte)(unsafe.Pointer(&value))
-	_, err := v.mem.writeMemory(v.Addr, val)
+	_, err := v.mem.WriteMemory(v.Addr, val)
 	return err
 }
 
 func (v *Variable) readFunctionPtr() {
-	val, err := v.mem.readMemory(v.Addr, v.dbp.arch.PtrSize())
+	val := make([]byte, v.bi.Arch.PtrSize())
+	_, err := v.mem.ReadMemory(val, v.Addr)
 	if err != nil {
 		v.Unreadable = err
 		return
@@ -1212,14 +1205,14 @@ func (v *Variable) readFunctionPtr() {
 		return
 	}
 
-	val, err = v.mem.readMemory(fnaddr, v.dbp.arch.PtrSize())
+	_, err = v.mem.ReadMemory(val, fnaddr)
 	if err != nil {
 		v.Unreadable = err
 		return
 	}
 
 	v.Base = uintptr(binary.LittleEndian.Uint64(val))
-	fn := v.dbp.goSymTable.PCToFunc(uint64(v.Base))
+	fn := v.bi.goSymTable.PCToFunc(uint64(v.Base))
 	if fn == nil {
 		v.Unreadable = fmt.Errorf("could not find function for %#v", v.Base)
 		return
@@ -1594,7 +1587,7 @@ func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig
 			return
 		}
 
-		typ, err = v.dbp.findType(typename)
+		typ, err = v.bi.findType(typename)
 		if err != nil {
 			v.Unreadable = fmt.Errorf("interface type %q not found for %#x: %v", typename, data.Addr, err)
 			return
@@ -1618,7 +1611,7 @@ func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig
 			return
 		}
 
-		typ, err = v.dbp.findTypeExpr(t)
+		typ, err = v.bi.findTypeExpr(t)
 		if err != nil {
 			v.Unreadable = fmt.Errorf("interface type %q not found for %#x: %v", typename, data.Addr, err)
 			return
@@ -1628,7 +1621,7 @@ func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig
 	if kind&kindDirectIface == 0 {
 		realtyp := resolveTypedef(typ)
 		if _, isptr := realtyp.(*dwarf.PtrType); !isptr {
-			typ = v.dbp.pointerTo(typ)
+			typ = pointerTo(typ, v.bi.Arch)
 		}
 	}
 
@@ -1646,7 +1639,7 @@ func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig
 // Fetches all variables of a specific type in the current function scope
 func (scope *EvalScope) variablesByTag(tag dwarf.Tag, cfg LoadConfig) ([]*Variable, error) {
 	reader := scope.DwarfReader()
-	off, err := scope.Thread.dbp.findFunctionDebugInfo(scope.PC)
+	off, err := scope.BinInfo.findFunctionDebugInfo(scope.PC)
 	if err != nil {
 		return nil, err
 	}

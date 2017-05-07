@@ -1,7 +1,5 @@
 package proc
 
-import "runtime"
-
 // Arch defines an interface for representing a
 // CPU architecture.
 type Arch interface {
@@ -10,6 +8,7 @@ type Arch interface {
 	BreakpointInstruction() []byte
 	BreakpointSize() int
 	GStructOffset() uint64
+	DerefTLS() bool
 }
 
 // AMD64 represents the AMD64 CPU architecture.
@@ -19,11 +18,12 @@ type AMD64 struct {
 	breakInstructionLen     int
 	gStructOffset           uint64
 	hardwareBreakpointUsage []bool
+	goos                    string
 }
 
 // AMD64Arch returns an initialized AMD64
 // struct.
-func AMD64Arch() *AMD64 {
+func AMD64Arch(goos string) *AMD64 {
 	var breakInstr = []byte{0xCC}
 
 	return &AMD64{
@@ -31,6 +31,7 @@ func AMD64Arch() *AMD64 {
 		breakInstruction:        breakInstr,
 		breakInstructionLen:     len(breakInstr),
 		hardwareBreakpointUsage: make([]bool, 4),
+		goos: goos,
 	}
 }
 
@@ -38,12 +39,12 @@ func AMD64Arch() *AMD64 {
 // arch struct. The offset is dependent on the Go compiler Version
 // and whether or not the target program was externally linked.
 func (a *AMD64) SetGStructOffset(ver GoVersion, isextld bool) {
-	switch runtime.GOOS {
+	switch a.goos {
 	case "darwin":
 		a.gStructOffset = 0x8a0
 	case "linux":
 		a.gStructOffset = 0xfffffffffffffff0
-		if isextld || ver.AfterOrEqual(GoVersion{1, 5, -1, 2, 0}) || ver.IsDevel() {
+		if isextld || ver.AfterOrEqual(GoVersion{1, 5, -1, 2, 0, ""}) || ver.IsDevel() {
 			a.gStructOffset += 8
 		}
 	case "windows":
@@ -76,4 +77,10 @@ func (a *AMD64) BreakpointSize() int {
 // struct in thread local storage.
 func (a *AMD64) GStructOffset() uint64 {
 	return a.gStructOffset
+}
+
+// If DerefTLS returns true the value of regs.TLS()+GStructOffset() is a
+// pointer to the G struct
+func (a *AMD64) DerefTLS() bool {
+	return a.goos == "windows"
 }

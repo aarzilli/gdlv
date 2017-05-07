@@ -47,7 +47,7 @@ func ConvertBreakpoint(bp *proc.Breakpoint) *Breakpoint {
 
 // ConvertThread converts a proc.Thread into an
 // api thread.
-func ConvertThread(th *proc.Thread) *Thread {
+func ConvertThread(th proc.Thread) *Thread {
 	var (
 		function *Function
 		file     string
@@ -66,16 +66,16 @@ func ConvertThread(th *proc.Thread) *Thread {
 
 	var bp *Breakpoint
 
-	if th.CurrentBreakpoint != nil && th.BreakpointConditionMet {
-		bp = ConvertBreakpoint(th.CurrentBreakpoint)
+	if b, active, _ := th.Breakpoint(); active {
+		bp = ConvertBreakpoint(b)
 	}
 
-	if g, _ := th.GetG(); g != nil {
+	if g, _ := proc.GetG(th); g != nil {
 		gid = g.ID
 	}
 
 	return &Thread{
-		ID:          th.ID,
+		ID:          th.ThreadID(),
 		PC:          pc,
 		File:        file,
 		Line:        line,
@@ -201,10 +201,10 @@ func ConvertFunction(fn *gosym.Func) *Function {
 
 // ConvertGoroutine converts from proc.G to api.Goroutine.
 func ConvertGoroutine(g *proc.G) *Goroutine {
-	th := g.Thread()
+	th := g.Thread
 	tid := 0
 	if th != nil {
-		tid = th.ID
+		tid = th.ThreadID()
 	}
 	return &Goroutine{
 		ID:             g.ID,
@@ -273,4 +273,8 @@ func ConvertRegisters(in []proc.Register) (out []Register) {
 		out[i] = Register{in[i].Name, in[i].Value}
 	}
 	return
+}
+
+func ConvertCheckpoint(in proc.Checkpoint) (out Checkpoint) {
+	return Checkpoint{ID: in.ID, When: in.When, Where: in.Where}
 }
