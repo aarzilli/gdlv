@@ -17,6 +17,8 @@ then install gdlv:
 go get -u github.com/aarzilli/gdlv
 ```
 
+Use Ctrl+plus and Ctrl+minus to change font size.
+
 # News
 
 ## 2017-05-07
