@@ -19,6 +19,9 @@ go get -u github.com/aarzilli/gdlv
 
 # News
 
+## 2017-05-07
+* Added core command
+
 ## 2017-03-01
 * Horizontal scrollbars for all panels
 

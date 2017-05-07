@@ -608,7 +608,15 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "usage:\n\tgdlv connect <address>\n\tgdlv debug <program's arguments...>\n\tgdlv run <program file> <program's arguments...>\n\tgdlv exec <executable> <program's arguments...>\n\tgdlv test <testflags...>\n\tgdlv attach <pid> [path to executable]\n")
+	fmt.Fprintf(os.Stderr, `usage:
+	gdlv connect <address>
+	gdlv debug <program's arguments...>
+	gdlv run <program file> <program's arguments...>
+	gdlv exec <executable> <program's arguments...>
+	gdlv test <testflags...>
+	gdlv attach <pid> [path to executable]
+	gdlv core <executable> <core file>
+`)
 	os.Exit(1)
 }
 

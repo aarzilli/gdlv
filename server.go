@@ -61,7 +61,7 @@ func parseArguments() (descr ServerDescr) {
 		if len(os.Args) != 3 {
 		}
 		descr.connectString = os.Args[2]
-		return
+
 	case "attach":
 		switch len(os.Args) {
 		case 3:
@@ -71,6 +71,7 @@ func parseArguments() (descr ServerDescr) {
 		default:
 			usage()
 		}
+
 	case "debug":
 		debugname()
 		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe}
@@ -78,6 +79,7 @@ func parseArguments() (descr ServerDescr) {
 		args = append(args, "--headless", "exec", descr.exe, "--")
 		args = append(args, os.Args[2:]...)
 		finish(true, args...)
+
 	case "run":
 		debugname()
 		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe, os.Args[2]}
@@ -85,6 +87,7 @@ func parseArguments() (descr ServerDescr) {
 		args = append(args, "--headless", "exec", descr.exe, "--")
 		args = append(args, os.Args[3:]...)
 		finish(true, args...)
+
 	case "exec":
 		if len(os.Args) < 3 {
 			usage()
@@ -93,6 +96,7 @@ func parseArguments() (descr ServerDescr) {
 		args = append(args, "--headless", "exec", os.Args[2], "--")
 		args = append(args, os.Args[3:]...)
 		finish(true, args...)
+
 	case "test":
 		debugname()
 		descr.buildcmd = []string{"test", "-gcflags", "-N -l", "-c", "-o", descr.exe}
@@ -109,6 +113,14 @@ func parseArguments() (descr ServerDescr) {
 			}
 		}
 		finish(true, args...)
+
+	case "core":
+		if len(os.Args) < 4 {
+			usage()
+		}
+		args := []string{"--headless", "core", os.Args[2], os.Args[3]}
+		finish(true, args...)
+
 	default:
 		usage()
 	}
