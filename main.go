@@ -397,6 +397,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		// nothing to clear
 	case clearBreakpoint:
 		breakpointsPanel.asyncLoad.clear()
+		checkpointsPanel.asyncLoad.clear()
 	case clearFrameSwitch:
 		localsPanel.asyncLoad.clear()
 		listingPanel.pinnedLoc = nil
@@ -413,6 +414,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		threadsPanel.asyncLoad.clear()
 		globalsPanel.asyncLoad.clear()
 		breakpointsPanel.asyncLoad.clear()
+		checkpointsPanel.asyncLoad.clear()
 		listingPanel.pinnedLoc = nil
 
 		bpcount := 0
@@ -608,7 +610,7 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `usage:
+	fmt.Fprintf(os.Stderr, `Usage:
 	gdlv connect <address>
 	gdlv debug <program's arguments...>
 	gdlv run <program file> <program's arguments...>
@@ -616,6 +618,13 @@ func usage() {
 	gdlv test <testflags...>
 	gdlv attach <pid> [path to executable]
 	gdlv core <executable> <core file>
+	gdlv reply <trace directory>
+	
+All commands except "core" and "reply" can be prefixed with the name of a backend, for example:
+
+	gdlv rr:run <program file> <program's arguments...>
+	
+Executes "gdlv run" using mozilla rr has a backend.
 `)
 	os.Exit(1)
 }

@@ -86,6 +86,10 @@ See also: "help on", "help cond" and "help clear"`},
 			clear <breakpoint name or id>`},
 		{aliases: []string{"restart", "r"}, cmdFn: restart, helpMsg: "Restart process."},
 		{aliases: []string{"continue", "c"}, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
+		{aliases: []string{"rewind", "rw"}, cmdFn: rewind, helpMsg: "Run backwards until breakpoint or program termination."},
+		{aliases: []string{"checkpoint", "check"}, cmdFn: checkpoint, helpMsg: `Creates a checkpoint at the current position.
+	
+	checkpoint [where]`},
 		{aliases: []string{"step", "s"}, cmdFn: step, helpMsg: `Single step through program.
 		
 		step [-list|name]
@@ -297,6 +301,20 @@ func restart(out io.Writer, args string) error {
 
 func cont(out io.Writer, args string) error {
 	stateChan := client.Continue()
+	var state *api.DebuggerState
+	for state = range stateChan {
+		if state.Err != nil {
+			refreshState(refreshToFrameZero, clearStop, state)
+			return state.Err
+		}
+		printcontext(out, state)
+	}
+	refreshState(refreshToFrameZero, clearStop, state)
+	return nil
+}
+
+func rewind(out io.Writer, args string) error {
+	stateChan := client.Rewind()
 	var state *api.DebuggerState
 	for state = range stateChan {
 		if state.Err != nil {
@@ -527,6 +545,33 @@ func (ere ExitRequestError) Error() string {
 
 func exitCommand(out io.Writer, args string) error {
 	return ExitRequestError{}
+}
+
+func checkpoint(out io.Writer, args string) error {
+	if args == "" {
+		state, err := client.GetState()
+		if err != nil {
+			return err
+		}
+		var loc api.Location = api.Location{PC: state.CurrentThread.PC, File: state.CurrentThread.File, Line: state.CurrentThread.Line, Function: state.CurrentThread.Function}
+		if state.SelectedGoroutine != nil {
+			loc = state.SelectedGoroutine.CurrentLoc
+		}
+		fname := "???"
+		if loc.Function != nil {
+			fname = loc.Function.Name
+		}
+		args = fmt.Sprintf("%s() %s:%d (%#x)", fname, loc.File, loc.Line, loc.PC)
+	}
+
+	cpid, err := client.Checkpoint(args)
+	if err != nil {
+		return err
+	}
+
+	fmt.Fprintf(out, "Checkpoint c%d created.\n", cpid)
+	refreshState(refreshToSameFrame, clearBreakpoint, nil)
+	return nil
 }
 
 func layoutCommand(out io.Writer, args string) error {

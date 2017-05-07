@@ -23,6 +23,8 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 ## 2017-05-07
 * Added core command
+* Support for multiple backends
+* Added "replay" startup command, "checkpoint" command and "Checkpoints" view.
 
 ## 2017-03-01
 * Horizontal scrollbars for all panels

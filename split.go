@@ -38,6 +38,7 @@ const (
 	infoSources     = "Sources"
 	infoFuncs       = "Functions"
 	infoTypes       = "Types"
+	infoCheckpoints = "Checkpoints"
 )
 
 var infoNameToFunc = map[string]func(w *nucular.Window){
@@ -54,10 +55,11 @@ var infoNameToFunc = map[string]func(w *nucular.Window){
 	infoSources:     sourcesPanel.update,
 	infoFuncs:       funcsPanel.update,
 	infoTypes:       typesPanel.update,
+	infoCheckpoints: updateCheckpoints,
 }
 
 var infoModes = []string{
-	infoCommand, infoListing, infoDisassembly, infoGoroutines, infoStacktrace, infoLocals, infoGlobal, infoBps, infoThreads, infoRegisters, infoSources, infoFuncs, infoTypes,
+	infoCommand, infoListing, infoDisassembly, infoGoroutines, infoStacktrace, infoLocals, infoGlobal, infoBps, infoThreads, infoRegisters, infoSources, infoFuncs, infoTypes, infoCheckpoints,
 }
 
 var codeToInfoMode = map[byte]string{
@@ -74,6 +76,7 @@ var codeToInfoMode = map[byte]string{
 	'f': infoFuncs,
 	't': infoTypes,
 	'T': infoThreads,
+	'k': infoCheckpoints,
 }
 
 var infoModeToCode = map[string]byte{}

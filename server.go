@@ -56,7 +56,16 @@ func parseArguments() (descr ServerDescr) {
 		usage()
 	}
 
-	switch os.Args[1] {
+	cmd := os.Args[1]
+
+	const defaultBackend = "--backend=default"
+	backend := defaultBackend
+	if colon := strings.Index(cmd, ":"); colon >= 0 {
+		backend = "--backend=" + cmd[:colon]
+		cmd = cmd[colon+1:]
+	}
+
+	switch cmd {
 	case "connect":
 		if len(os.Args) != 3 {
 		}
@@ -65,9 +74,9 @@ func parseArguments() (descr ServerDescr) {
 	case "attach":
 		switch len(os.Args) {
 		case 3:
-			finish(false, "--headless", "attach", os.Args[2])
+			finish(false, backend, "--headless", "attach", os.Args[2])
 		case 4:
-			finish(false, "--headless", "attach", os.Args[2], os.Args[3])
+			finish(false, backend, "--headless", "attach", os.Args[2], os.Args[3])
 		default:
 			usage()
 		}
@@ -75,16 +84,16 @@ func parseArguments() (descr ServerDescr) {
 	case "debug":
 		debugname()
 		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe}
-		args := make([]string, 0, len(os.Args[2:])+3)
-		args = append(args, "--headless", "exec", descr.exe, "--")
+		args := make([]string, 0, len(os.Args[2:])+4)
+		args = append(args, backend, "--headless", "exec", descr.exe, "--")
 		args = append(args, os.Args[2:]...)
 		finish(true, args...)
 
 	case "run":
 		debugname()
 		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe, os.Args[2]}
-		args := make([]string, 0, len(os.Args[3:])+3)
-		args = append(args, "--headless", "exec", descr.exe, "--")
+		args := make([]string, 0, len(os.Args[3:])+4)
+		args = append(args, backend, "--headless", "exec", descr.exe, "--")
 		args = append(args, os.Args[3:]...)
 		finish(true, args...)
 
@@ -92,16 +101,16 @@ func parseArguments() (descr ServerDescr) {
 		if len(os.Args) < 3 {
 			usage()
 		}
-		args := make([]string, 0, len(os.Args[3:])+4)
-		args = append(args, "--headless", "exec", os.Args[2], "--")
+		args := make([]string, 0, len(os.Args[3:])+5)
+		args = append(args, backend, "--headless", "exec", os.Args[2], "--")
 		args = append(args, os.Args[3:]...)
 		finish(true, args...)
 
 	case "test":
 		debugname()
 		descr.buildcmd = []string{"test", "-gcflags", "-N -l", "-c", "-o", descr.exe}
-		args := make([]string, 0, len(os.Args[2:])+3)
-		args = append(args, "--headless", "exec", descr.exe, "--")
+		args := make([]string, 0, len(os.Args[2:])+4)
+		args = append(args, backend, "--headless", "exec", descr.exe, "--")
 		for _, arg := range os.Args[2:] {
 			switch arg {
 			case "-bench", "-benchtime", "-count", "-cover", "-covermode", "-coverpkg", "-cpu", "-parallel", "-run", "-short", "-timeout", "-v":
@@ -115,11 +124,22 @@ func parseArguments() (descr ServerDescr) {
 		finish(true, args...)
 
 	case "core":
+		if backend != defaultBackend {
+			usage()
+		}
 		if len(os.Args) < 4 {
 			usage()
 		}
-		args := []string{"--headless", "core", os.Args[2], os.Args[3]}
-		finish(true, args...)
+		finish(true, "--headless", "core", os.Args[2], os.Args[3])
+
+	case "replay":
+		if backend != defaultBackend {
+			usage()
+		}
+		if len(os.Args) < 3 {
+			usage()
+		}
+		finish(true, "--headless", "replay", os.Args[2])
 
 	default:
 		usage()

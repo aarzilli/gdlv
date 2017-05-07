@@ -153,6 +153,13 @@ var funcsPanel = stringSlicePanel{name: "functions", selected: -1, interaction: 
 var typesPanel = stringSlicePanel{name: "types", selected: -1, interaction: sliceInteraction}
 var sourcesPanel = stringSlicePanel{name: "sources", selected: -1, interaction: sourceInteraction}
 
+var checkpointsPanel = struct {
+	asyncLoad   asyncLoad
+	selected    int
+	checkpoints []api.Checkpoint
+	id          int
+}{}
+
 func spacefilter(ch rune) bool {
 	return ch != ' ' && ch != '\t'
 }
@@ -435,12 +442,8 @@ func updateRegs(container *nucular.Window) {
 
 type breakpointsByID []*api.Breakpoint
 
-func (bps breakpointsByID) Len() int { return len(bps) }
-func (bps breakpointsByID) Swap(i, j int) {
-	temp := bps[i]
-	bps[i] = bps[j]
-	bps[j] = temp
-}
+func (bps breakpointsByID) Len() int           { return len(bps) }
+func (bps breakpointsByID) Swap(i, j int)      { bps[i], bps[j] = bps[j], bps[i] }
 func (bps breakpointsByID) Less(i, j int) bool { return bps[i].ID < bps[j].ID }
 
 func loadBreakpoints(p *asyncLoad) {
@@ -544,6 +547,27 @@ func execClearBreakpoint(id int) {
 		fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint %d: %v\n", id, err)
 	}
 	removeFrozenBreakpoint(bp)
+	refreshState(refreshToSameFrame, clearBreakpoint, nil)
+	wnd.Changed()
+}
+
+func execRestartCheckpoint(id int) {
+	scrollbackOut := editorWriter{&scrollbackEditor, true}
+	_, err := client.RestartFrom(fmt.Sprintf("c%d", id))
+	if err != nil {
+		fmt.Fprintf(&scrollbackOut, "Could not restart from checkpoint c%d: %v\n", id, err)
+		return
+	}
+	fmt.Fprintf(&scrollbackOut, "Process restarted from c%d\n", id)
+	refreshState(refreshToFrameZero, clearStop, nil)
+}
+
+func execClearCheckpoint(id int) {
+	scrollbackOut := editorWriter{&scrollbackEditor, true}
+	err := client.ClearCheckpoint(id)
+	if err != nil {
+		fmt.Fprintf(&scrollbackOut, "Could not clear checkpoint c%d: %v\n", id, err)
+	}
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	wnd.Changed()
 }
@@ -657,6 +681,69 @@ func (bped *breakpointEditor) amendBreakpoint() {
 		fmt.Fprintf(&scrollbackOut, "Could not amend breakpoint: %v\n", err)
 	}
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
+}
+
+type checkpointsByID []api.Checkpoint
+
+func (cps checkpointsByID) Len() int           { return len(cps) }
+func (cps checkpointsByID) Less(i, j int) bool { return cps[i].ID < cps[i].ID }
+func (cps checkpointsByID) Swap(i, j int)      { cps[i], cps[j] = cps[j], cps[i] }
+
+func loadCheckpoints(p *asyncLoad) {
+	var err error
+	checkpointsPanel.checkpoints, err = client.ListCheckpoints()
+	if err == nil {
+		sort.Sort(checkpointsByID(checkpointsPanel.checkpoints))
+	}
+	checkpointsPanel.id++
+	p.done(err)
+}
+
+func updateCheckpoints(container *nucular.Window) {
+	w := checkpointsPanel.asyncLoad.showRequest(container, 0, "checkpoints", loadCheckpoints)
+	if w == nil {
+		return
+	}
+	defer w.GroupEnd()
+
+	checkpoints := checkpointsPanel.checkpoints
+
+	for _, checkpoint := range checkpoints {
+		selected := checkpointsPanel.selected == checkpoint.ID
+		w.Row(40).Static()
+
+		w.LayoutFitWidth(checkpointsPanel.id, 10)
+		w.SelectableLabel(fmt.Sprintf("c%d", checkpoint.ID), "LT", &selected)
+		bounds := w.LastWidgetBounds
+		bounds.W = w.Bounds.W
+
+		w.LayoutFitWidth(checkpointsPanel.id, 10)
+		w.SelectableLabel(checkpoint.When, "LT", &selected)
+
+		w.LayoutFitWidth(checkpointsPanel.id, 10)
+		w.SelectableLabel(checkpoint.Where, "LT", &selected)
+
+		if running {
+			continue
+		}
+
+		if selected {
+			checkpointsPanel.selected = checkpoint.ID
+		}
+
+		if w := w.ContextualOpen(0, image.Point{}, bounds, nil); w != nil {
+			checkpointsPanel.selected = checkpoint.ID
+			w.Row(20).Dynamic(1)
+
+			if w.MenuItem(label.TA("Clear checkpoint", "LC")) {
+				go execClearCheckpoint(checkpointsPanel.selected)
+			}
+
+			if w.MenuItem(label.TA("Restart from checkpoint", "LC")) {
+				go execRestartCheckpoint(checkpointsPanel.selected)
+			}
+		}
+	}
 }
 
 func (p *stringSlicePanel) update(container *nucular.Window) {
