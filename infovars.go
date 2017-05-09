@@ -357,15 +357,18 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			cblbl("%s ?", name)
 		} else if v.Type == "" || v.Children[0].Addr == 0 {
 			cblbl("%s = nil", name)
-		} else if v.Children[0].OnlyAddr && v.Children[0].Addr != 0 {
-			cblbl("%s = (%s)(%#x)", name, v.Type, v.Children[0].Addr)
 		} else {
 			if !w.TreeIsOpen(varname) {
 				name += " = " + v.SinglelineString()
 			}
 			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-				showExprMenu(w, exprMenu, v, name)
-				showVariable(w, depth+1, addr, -1, "", &v.Children[0])
+				if v.Children[0].OnlyAddr {
+					loadMoreStruct(&v.Children[0])
+					w.Label("Loading...", "LC")
+				} else {
+					showExprMenu(w, exprMenu, v, name)
+					showVariable(w, depth+1, addr, -1, "", &v.Children[0])
+				}
 				w.TreePop()
 			} else {
 				showExprMenu(w, exprMenu, v, name)
