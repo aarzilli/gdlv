@@ -273,6 +273,12 @@ func clear(out io.Writer, args string) error {
 }
 
 func restart(out io.Writer, args string) error {
+	if client.Recorded() {
+		_, err := client.RestartFrom(args)
+		refreshState(refreshToFrameZero, clearStop, nil)
+		return err
+	}
+
 	dorestart := BackendServer.serverProcess != nil
 	BackendServer.Rebuild()
 	if !dorestart || !BackendServer.buildok {
