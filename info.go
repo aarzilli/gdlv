@@ -867,6 +867,10 @@ func breakpointIcon(w *nucular.Window, atbp bool, align label.Align, style *nsty
 }
 
 func updateListingPanel(container *nucular.Window) {
+	if len(listingPanel.listing) == 0 {
+		updateDisassemblyPanel(container)
+	}
+
 	const lineheight = 14
 
 	listp := container.GroupBegin("listing", 0)
