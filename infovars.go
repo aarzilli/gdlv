@@ -19,11 +19,38 @@ import (
 	"github.com/derekparker/delve/service/api"
 )
 
+type Variable struct {
+	*api.Variable
+	Value    string
+	Children []*Variable
+}
+
+func wrapApiVariable(v *api.Variable) *Variable {
+	r := &Variable{Variable: v}
+	r.Value = v.Value
+	if f := varFormat[v.Addr]; f != nil {
+		r.Value = f(r.Value)
+	} else if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) {
+		n, _ := strconv.Atoi(v.Value)
+		r.Value = fmt.Sprintf("%s %q", v.Value, n)
+	}
+	r.Children = wrapApiVariables(v.Children)
+	return r
+}
+
+func wrapApiVariables(vs []api.Variable) []*Variable {
+	r := make([]*Variable, len(vs))
+	for i := range vs {
+		r[i] = wrapApiVariable(&vs[i])
+	}
+	return r
+}
+
 var globalsPanel = struct {
 	asyncLoad    asyncLoad
 	filterEditor nucular.TextEditor
 	showAddr     bool
-	globals      []api.Variable
+	globals      []*Variable
 }{
 	filterEditor: nucular.TextEditor{Filter: spacefilter},
 }
@@ -32,13 +59,13 @@ var localsPanel = struct {
 	asyncLoad    asyncLoad
 	filterEditor nucular.TextEditor
 	showAddr     bool
-	args         []api.Variable
-	locals       []api.Variable
+	args         []*Variable
+	locals       []*Variable
 
 	expressions []string
 	selected    int
 	ed          nucular.TextEditor
-	v           []*api.Variable
+	v           []*Variable
 }{
 	filterEditor: nucular.TextEditor{Filter: spacefilter},
 	selected:     -1,
@@ -46,9 +73,8 @@ var localsPanel = struct {
 }
 
 func loadGlobals(p *asyncLoad) {
-	var err error
-	globalsPanel.globals, err = client.ListPackageVariables("", LongLoadConfig)
-	preformatVariables(globalsPanel.globals)
+	globals, err := client.ListPackageVariables("", LongLoadConfig)
+	globalsPanel.globals = wrapApiVariables(globals)
 	sort.Sort(variablesByName(globalsPanel.globals))
 	p.done(err)
 }
@@ -72,12 +98,12 @@ func updateGlobals(container *nucular.Window) {
 
 	for i := range globals {
 		if strings.Index(globals[i].Name, filter) >= 0 {
-			showVariable(w, 0, globalsPanel.showAddr, -1, globals[i].Name, &globals[i])
+			showVariable(w, 0, globalsPanel.showAddr, -1, globals[i].Name, globals[i])
 		}
 	}
 }
 
-type variablesByName []api.Variable
+type variablesByName []*Variable
 
 func (vars variablesByName) Len() int { return len(vars) }
 func (vars variablesByName) Swap(i, j int) {
@@ -88,12 +114,11 @@ func (vars variablesByName) Swap(i, j int) {
 func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].Name }
 
 func loadLocals(p *asyncLoad) {
-	var errloc, errarg error
-	localsPanel.args, errloc = client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
-	preformatVariables(localsPanel.args)
+	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
+	localsPanel.args = wrapApiVariables(args)
 	sort.Sort(variablesByName(localsPanel.args))
-	localsPanel.locals, errarg = client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
-	preformatVariables(localsPanel.locals)
+	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
+	localsPanel.locals = wrapApiVariables(locals)
 	sort.Sort(variablesByName(localsPanel.locals))
 	for i := range localsPanel.expressions {
 		loadOneExpr(i)
@@ -101,7 +126,7 @@ func loadLocals(p *asyncLoad) {
 
 	m := map[string]int{}
 
-	changename := func(v *api.Variable) {
+	changename := func(v *Variable) {
 		if n, ok := m[v.Name]; ok {
 			n++
 			m[v.Name] = n
@@ -112,10 +137,10 @@ func loadLocals(p *asyncLoad) {
 	}
 
 	for i := range localsPanel.args {
-		changename(&localsPanel.args[i])
+		changename(localsPanel.args[i])
 	}
 	for i := range localsPanel.locals {
-		changename(&localsPanel.locals[i])
+		changename(localsPanel.locals[i])
 	}
 
 	for _, err := range []error{errarg, errloc} {
@@ -151,7 +176,7 @@ func updateLocals(container *nucular.Window) {
 
 	for i := range args {
 		if strings.Index(args[i].Name, filter) >= 0 {
-			showVariable(w, 0, localsPanel.showAddr, -1, args[i].Name, &args[i])
+			showVariable(w, 0, localsPanel.showAddr, -1, args[i].Name, args[i])
 		}
 	}
 
@@ -162,7 +187,7 @@ func updateLocals(container *nucular.Window) {
 
 	for i := range locals {
 		if strings.Index(locals[i].Name, filter) >= 0 {
-			showVariable(w, 0, localsPanel.showAddr, -1, locals[i].Name, &locals[i])
+			showVariable(w, 0, localsPanel.showAddr, -1, locals[i].Name, locals[i])
 		}
 	}
 
@@ -193,12 +218,11 @@ func updateLocals(container *nucular.Window) {
 }
 
 func loadOneExpr(i int) {
-	var err error
-	localsPanel.v[i], err = client.EvalVariable(api.EvalScope{curGid, curFrame}, localsPanel.expressions[i], LongLoadConfig)
+	v, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, localsPanel.expressions[i], LongLoadConfig)
 	if err != nil {
-		localsPanel.v[i] = &api.Variable{Name: localsPanel.expressions[i], Unreadable: err.Error()}
-		preformatVariable(localsPanel.v[i])
+		v = &api.Variable{Name: localsPanel.expressions[i], Unreadable: err.Error()}
 	}
+	localsPanel.v[i] = wrapApiVariable(v)
 }
 
 func exprsEditor(isnew bool, w *nucular.Window) {
@@ -246,7 +270,7 @@ func addExpression(newexpr string) {
 	}(i)
 }
 
-func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *api.Variable, clipb string) {
+func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb string) {
 	if running {
 		return
 	}
@@ -293,7 +317,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *api.Variable, cli
 	}
 }
 
-func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *api.Variable) {
+func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *Variable) {
 	varname := name
 	const minInlineKeyValueLen = 20
 	if v.Type != "" {
@@ -373,11 +397,11 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			}
 			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 				if v.Children[0].OnlyAddr {
-					loadMoreStruct(&v.Children[0])
+					loadMoreStruct(v.Children[0])
 					w.Label("Loading...", "LC")
 				} else {
 					showExprMenu(w, exprMenu, v, name)
-					showVariable(w, depth+1, addr, -1, "", &v.Children[0])
+					showVariable(w, depth+1, addr, -1, "", v.Children[0])
 				}
 				w.TreePop()
 			} else {
@@ -434,13 +458,13 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 				showExprMenu(w, exprMenu, v, name)
 				if v.Children[0].Kind == reflect.Ptr {
 					if len(v.Children[0].Children) > 0 {
-						showVariable(w, depth+1, addr, -1, "data", &v.Children[0].Children[0])
+						showVariable(w, depth+1, addr, -1, "data", v.Children[0].Children[0])
 					} else {
 						loadMoreStruct(v)
 						w.Label("Loading...", "LC")
 					}
 				} else {
-					showVariable(w, depth+1, addr, -1, "data", &v.Children[0])
+					showVariable(w, depth+1, addr, -1, "data", v.Children[0])
 				}
 				w.TreePop()
 			} else {
@@ -454,7 +478,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 			showExprMenu(w, exprMenu, v, name)
 			for i := 0; i < len(v.Children); i += 2 {
-				key, value := &v.Children[i], &v.Children[i+1]
+				key, value := v.Children[i], v.Children[i+1]
 				if len(key.Children) == 0 && len(key.Value) < minInlineKeyValueLen {
 					var keyname string
 					if key.Kind == reflect.String {
@@ -487,18 +511,9 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 	case reflect.Complex64, reflect.Complex128:
 		cblbl("%s = (%s + %si)", name, v.Children[0].Value, v.Children[1].Value)
 	case reflect.Float32, reflect.Float64:
-		val := v.Value
-		if idx := strings.Index(val, " "); idx >= 0 {
-			val = val[:idx]
-		}
-		cblbl("%s = %s", name, val)
+		cblbl("%s = %s", name, v.Value)
 	default:
 		if v.Value != "" {
-			if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) && strings.Index(v.Value, " ") < 0 {
-				n, _ := strconv.Atoi(v.Value)
-				v.Value = fmt.Sprintf("%s %q", v.Value, n)
-			}
-
 			cblbl("%s = %s", name, v.Value)
 		} else {
 			cblbl("%s = (unknown %s)", name, v.Kind)
@@ -506,9 +521,9 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 	}
 }
 
-func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *api.Variable) {
+func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *Variable) {
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d]", i), &v.Children[i])
+		showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d]", i), v.Children[i])
 	}
 	if len(v.Children) != int(v.Len) {
 		w.Row(varRowHeight).Static(moreBtnWidth)
@@ -518,16 +533,16 @@ func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *api.Va
 	}
 }
 
-func showStructContents(w *nucular.Window, depth int, addr bool, v *api.Variable) {
+func showStructContents(w *nucular.Window, depth int, addr bool, v *Variable) {
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, -1, v.Children[i].Name, &v.Children[i])
+		showVariable(w, depth+1, addr, -1, v.Children[i].Name, v.Children[i])
 	}
 }
 
 var additionalLoadMu sync.Mutex
 var additionalLoadRunning bool
 
-func loadMoreMap(v *api.Variable) {
+func loadMoreMap(v *Variable) {
 	additionalLoadMu.Lock()
 	defer additionalLoadMu.Unlock()
 
@@ -536,14 +551,13 @@ func loadMoreMap(v *api.Variable) {
 		go func() {
 			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", v.Type, v.Addr, len(v.Children)/2)
 			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
-			preformatVariable(lv)
 			if err != nil {
 				out := editorWriter{&scrollbackEditor, true}
 				fmt.Fprintf(&out, "Error loading array contents %s: %v\n", expr, err)
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children) / 2)
 			} else {
-				v.Children = append(v.Children, lv.Children...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children)...)
 			}
 			wnd.Changed()
 			additionalLoadMu.Lock()
@@ -553,7 +567,7 @@ func loadMoreMap(v *api.Variable) {
 	}
 }
 
-func loadMoreArrayOrSlice(v *api.Variable) {
+func loadMoreArrayOrSlice(v *Variable) {
 	additionalLoadMu.Lock()
 	defer additionalLoadMu.Unlock()
 	if !additionalLoadRunning {
@@ -561,14 +575,13 @@ func loadMoreArrayOrSlice(v *api.Variable) {
 		go func() {
 			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", v.Type, v.Addr, len(v.Children))
 			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
-			preformatVariable(lv)
 			if err != nil {
 				out := editorWriter{&scrollbackEditor, true}
 				fmt.Fprintf(&out, "Error loading array contents %s: %v\n", expr, err)
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children))
 			} else {
-				v.Children = append(v.Children, lv.Children...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children)...)
 			}
 			additionalLoadMu.Lock()
 			additionalLoadRunning = false
@@ -578,19 +591,18 @@ func loadMoreArrayOrSlice(v *api.Variable) {
 	}
 }
 
-func loadMoreStruct(v *api.Variable) {
+func loadMoreStruct(v *Variable) {
 	additionalLoadMu.Lock()
 	defer additionalLoadMu.Unlock()
 	if !additionalLoadRunning {
 		additionalLoadRunning = true
 		go func() {
 			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, fmt.Sprintf("*(*%q)(%#x)", v.Type, v.Addr), LongLoadConfig)
-			preformatVariable(lv)
 			if err != nil {
 				v.Unreadable = err.Error()
 			} else {
 				lv.Name = v.Name
-				*v = *lv
+				*v = *wrapApiVariable(lv)
 			}
 			wnd.Changed()
 			additionalLoadMu.Lock()
@@ -600,9 +612,9 @@ func loadMoreStruct(v *api.Variable) {
 	}
 }
 
-type openDetailsWindowFn func(nucular.MasterWindow, *api.Variable)
+type openDetailsWindowFn func(nucular.MasterWindow, *Variable)
 
-func detailsAvailable(v *api.Variable) openDetailsWindowFn {
+func detailsAvailable(v *Variable) openDetailsWindowFn {
 	if v == nil {
 		return nil
 	}
@@ -618,21 +630,6 @@ func detailsAvailable(v *api.Variable) openDetailsWindowFn {
 }
 
 var varFormat = map[uintptr]func(string) string{}
-
-func preformatVariables(vs []api.Variable) {
-	for i := range vs {
-		preformatVariable(&vs[i])
-	}
-}
-
-func preformatVariable(v *api.Variable) {
-	if f := varFormat[v.Addr]; f != nil {
-		v.Value = f(v.Value)
-	}
-	for i := range v.Children {
-		preformatVariable(&v.Children[i])
-	}
-}
 
 type stringViewerMode int
 
@@ -651,14 +648,14 @@ const (
 )
 
 type stringViewer struct {
-	v          *api.Variable
+	v          *Variable
 	mode       stringViewerMode
 	numberMode numberMode
 	ed         nucular.TextEditor
 	mu         sync.Mutex
 }
 
-func newStringViewer(mw nucular.MasterWindow, v *api.Variable) {
+func newStringViewer(mw nucular.MasterWindow, v *Variable) {
 	sv := &stringViewer{v: v}
 	switch v.Type {
 	case "string":
@@ -746,14 +743,6 @@ func (sv *stringViewer) len() int {
 	}
 }
 
-func intValue(s string) (int, error) {
-	idx := strings.Index(s, " ")
-	if idx > 0 {
-		s = s[:idx]
-	}
-	return strconv.Atoi(s)
-}
-
 func (sv *stringViewer) setupView() {
 	var bytes []byte
 	var runes []rune
@@ -771,7 +760,7 @@ func (sv *stringViewer) setupView() {
 	case "[]uint8":
 		bytes = make([]byte, len(sv.v.Children))
 		for i := range sv.v.Children {
-			n, _ := intValue(sv.v.Children[i].Value)
+			n, _ := strconv.Atoi(sv.v.Children[i].Variable.Value)
 			bytes[i] = byte(n)
 		}
 		switch sv.mode {
@@ -785,7 +774,7 @@ func (sv *stringViewer) setupView() {
 	case "[]int32":
 		runes = make([]rune, len(sv.v.Children))
 		for i := range sv.v.Children {
-			n, _ := intValue(sv.v.Children[i].Value)
+			n, _ := strconv.Atoi(sv.v.Children[i].Variable.Value)
 			runes[i] = rune(n)
 		}
 		switch sv.mode {
@@ -887,7 +876,6 @@ func (sv *stringViewer) loadMore() {
 		go func() {
 			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", sv.v.RealType, sv.v.Addr, sv.len())
 			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
-			preformatVariable(lv)
 			if err != nil {
 				out := editorWriter{&scrollbackEditor, true}
 				fmt.Fprintf(&out, "Error loading string contents %s: %v\n", expr, err)
@@ -896,7 +884,7 @@ func (sv *stringViewer) loadMore() {
 				case reflect.String:
 					sv.v.Value += lv.Value
 				case reflect.Array, reflect.Slice:
-					sv.v.Children = append(sv.v.Children, lv.Children...)
+					sv.v.Children = append(sv.v.Children, wrapApiVariables(lv.Children)...)
 				}
 			}
 			additionalLoadMu.Lock()
@@ -911,14 +899,14 @@ func (sv *stringViewer) loadMore() {
 }
 
 type intArrayViewer struct {
-	v          *api.Variable
+	v          *Variable
 	displayLen int
 	mode       numberMode
 	ed         nucular.TextEditor
 	mu         sync.Mutex
 }
 
-func newIntArrayViewer(mw nucular.MasterWindow, v *api.Variable) {
+func newIntArrayViewer(mw nucular.MasterWindow, v *Variable) {
 	av := &intArrayViewer{v: v}
 	av.mode = decMode
 	av.ed.Flags = nucular.EditReadOnly | nucular.EditMultiline | nucular.EditSelectable | nucular.EditClipboard
@@ -972,7 +960,7 @@ func (av *intArrayViewer) setupView() {
 	array := make([]int64, len(av.v.Children))
 	max := int64(0)
 	for i := range av.v.Children {
-		array[i], _ = strconv.ParseInt(av.v.Children[i].Value, 10, 64)
+		array[i], _ = strconv.ParseInt(av.v.Children[i].Variable.Value, 10, 64)
 		x := array[i]
 		if x < 0 {
 			x = -x
@@ -991,7 +979,7 @@ func (av *intArrayViewer) setupView() {
 }
 
 type intViewer struct {
-	v    *api.Variable
+	v    *Variable
 	mode numberMode
 	ed   nucular.TextEditor
 }
@@ -1011,7 +999,7 @@ var intFormatter = map[numberMode]func(v string) string{
 	},
 }
 
-func newIntViewer(mw nucular.MasterWindow, v *api.Variable) {
+func newIntViewer(mw nucular.MasterWindow, v *Variable) {
 	iv := &intViewer{v: v}
 	switch {
 	case strings.HasPrefix(v.Value, "0x"):
