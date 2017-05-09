@@ -148,18 +148,19 @@ func parseArguments() (descr ServerDescr) {
 	return
 }
 
+const apiServerPrefix = "API server listening at: "
+
 func parseListenString(listenstr string) string {
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
 
-	const prefix = "API server listening at: "
-	if !strings.HasPrefix(listenstr, prefix) {
+	if !strings.HasPrefix(listenstr, apiServerPrefix) {
 		mu.Lock()
 		fmt.Fprintf(&scrollbackOut, "Could not parse connection string: %q\n", listenstr)
 		mu.Unlock()
 		return ""
 	}
 
-	return listenstr[len(prefix):]
+	return listenstr[len(apiServerPrefix):]
 }
 
 func (s *ServerDescr) Start() {
@@ -171,40 +172,49 @@ func (s *ServerDescr) Start() {
 	s.Rebuild()
 }
 
-func (descr *ServerDescr) stdoutProcess() {
+func (descr *ServerDescr) stdoutProcess(lenient bool) {
 	var scrollbackOut = editorWriter{&scrollbackEditor, true}
 
 	bucket := 0
 	t0 := time.Now()
 	first := true
 	scan := bufio.NewScanner(descr.stdout)
+
+	copyToScrollback := func() {
+		mu.Lock()
+		if silenced {
+			mu.Unlock()
+			return
+		}
+		mu.Unlock()
+		now := time.Now()
+		if now.Sub(t0) > 500*time.Millisecond {
+			t0 = now
+			bucket = 0
+		}
+		bucket += len(scan.Text())
+		if bucket > scrollbackLowMark {
+			mu.Lock()
+			silenced = true
+			mu.Unlock()
+			fmt.Fprintf(&scrollbackOut, "too much output in 500ms (%d), output silenced\n", bucket)
+			bucket = 0
+			return
+		}
+		fmt.Fprintln(&scrollbackOut, scan.Text())
+	}
+
 	for scan.Scan() {
 		if first {
-			descr.connectString = parseListenString(scan.Text())
-			descr.connectTo()
-			first = false
+			if !lenient || strings.HasPrefix(scan.Text(), apiServerPrefix) {
+				descr.connectString = parseListenString(scan.Text())
+				descr.connectTo()
+				first = false
+			} else {
+				copyToScrollback()
+			}
 		} else {
-			mu.Lock()
-			if silenced {
-				mu.Unlock()
-				continue
-			}
-			mu.Unlock()
-			now := time.Now()
-			if now.Sub(t0) > 500*time.Millisecond {
-				t0 = now
-				bucket = 0
-			}
-			bucket += len(scan.Text())
-			if bucket > scrollbackLowMark {
-				mu.Lock()
-				silenced = true
-				mu.Unlock()
-				fmt.Fprintf(&scrollbackOut, "too much output in 500ms (%d), output silenced\n", bucket)
-				bucket = 0
-				continue
-			}
-			fmt.Fprintln(&scrollbackOut, scan.Text())
+			copyToScrollback()
 		}
 	}
 	if err := scan.Err(); err != nil {
@@ -239,6 +249,12 @@ func (descr *ServerDescr) Rebuild() {
 		io.WriteString(sw, s)
 	}
 	if descr.serverProcess == nil && descr.buildok {
+		lenient := false
+		for _, arg := range descr.dlvargs {
+			if arg == "--backend=rr" {
+				lenient = true
+			}
+		}
 		cmd := exec.Command("dlv", descr.dlvargs...)
 		descr.stdout, _ = cmd.StdoutPipe()
 		descr.stderr, _ = cmd.StderrPipe()
@@ -247,7 +263,7 @@ func (descr *ServerDescr) Rebuild() {
 			io.WriteString(sw, fmt.Sprintf("Could not start delve: %v\n", err))
 		}
 		descr.serverProcess = cmd.Process
-		go descr.stdoutProcess()
+		go descr.stdoutProcess(lenient)
 		go descr.stderrProcess()
 	}
 }
