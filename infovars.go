@@ -19,9 +19,19 @@ import (
 	"github.com/derekparker/delve/service/api"
 )
 
+type numberMode int
+
+const (
+	decMode numberMode = iota
+	hexMode
+	octMode
+)
+
 type Variable struct {
 	*api.Variable
 	Value    string
+	IntMode  numberMode
+	FloatFmt string
 	Children []*Variable
 }
 
@@ -29,7 +39,7 @@ func wrapApiVariable(v *api.Variable) *Variable {
 	r := &Variable{Variable: v}
 	r.Value = v.Value
 	if f := varFormat[v.Addr]; f != nil {
-		r.Value = f(r.Value)
+		f(r)
 	} else if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) {
 		n, _ := strconv.Atoi(v.Value)
 		r.Value = fmt.Sprintf("%s %q", v.Value, n)
@@ -285,6 +295,10 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 		}
 	}
 
+	if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
+		clipboard.Set(clipb)
+	}
+
 	if v.Kind == reflect.Func {
 		if w.MenuItem(label.TA("Go to definition", "LC")) {
 			locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, v.Value)
@@ -295,8 +309,47 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 		}
 	}
 
-	if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
-		clipboard.Set(clipb)
+	switch v.Type {
+	case "int", "int8", "int16", "int32":
+		mode := v.IntMode
+		oldmode := mode
+		if w.OptionText("Hexadecimal", mode == hexMode) {
+			mode = hexMode
+		}
+		if w.OptionText("Octal", mode == octMode) {
+			mode = octMode
+		}
+		if w.OptionText("Decimal", mode == decMode) {
+			mode = decMode
+		}
+		if mode != oldmode {
+			f := intFormatter[mode]
+			varFormat[v.Addr] = f
+			f(v)
+		}
+
+	case "uint", "uint8", "uint16", "uint32", "uint64", "uintptr":
+		mode := v.IntMode
+		oldmode := mode
+		if w.OptionText("Hexadecimal", mode == hexMode) {
+			mode = hexMode
+		}
+		if w.OptionText("Octal", mode == octMode) {
+			mode = octMode
+		}
+		if w.OptionText("Decimal", mode == decMode) {
+			mode = decMode
+		}
+		if mode != oldmode {
+			f := uintFormatter[mode]
+			varFormat[v.Addr] = f
+			f(v)
+		}
+
+	case "float32", "float64":
+		if w.MenuItem(label.TA("Format...", "LC")) {
+			newFloatViewer(w, v)
+		}
 	}
 
 	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
@@ -623,13 +676,13 @@ func detailsAvailable(v *Variable) openDetailsWindowFn {
 		return newStringViewer
 	case "[]int", "[]int8", "[]int16", "[]int64", "[]uint", "[]uint16", "[]uint32", "[]uint64":
 		return newIntArrayViewer
-	case "int", "int8", "int16", "int32", "uint", "uint8", "uint16", "uint32", "uint64":
-		return newIntViewer
 	}
 	return nil
 }
 
-var varFormat = map[uintptr]func(string) string{}
+type formatterFn func(*Variable)
+
+var varFormat = map[uintptr]formatterFn{}
 
 type stringViewerMode int
 
@@ -637,14 +690,6 @@ const (
 	viewString stringViewerMode = iota
 	viewByteArray
 	viewRuneArray
-)
-
-type numberMode int
-
-const (
-	hexMode = iota
-	decMode = iota
-	octMode = iota
 )
 
 type stringViewer struct {
@@ -978,73 +1023,83 @@ func (av *intArrayViewer) setupView() {
 	av.ed.Buffer = []rune(formatArray(array, av.mode != decMode, av.mode, false, size, 10))
 }
 
-type intViewer struct {
-	v    *Variable
-	mode numberMode
-	ed   nucular.TextEditor
+type floatViewer struct {
+	v  *Variable
+	ed nucular.TextEditor
 }
 
-var intFormatter = map[numberMode]func(v string) string{
-	decMode: func(v string) string {
-		n, _ := strconv.ParseInt(v, 0, 64)
-		return fmt.Sprintf("%d", n)
-	},
-	hexMode: func(v string) string {
-		n, _ := strconv.ParseInt(v, 0, 64)
-		return fmt.Sprintf("%#x", n)
-	},
-	octMode: func(v string) string {
-		n, _ := strconv.ParseInt(v, 0, 64)
-		return fmt.Sprintf("%#o", n)
-	},
+func newFloatViewer(w *nucular.Window, v *Variable) {
+	vw := &floatViewer{v: v}
+	vw.ed.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditSigEnter
+	vw.ed.Buffer = []rune(v.FloatFmt)
+	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Name), nucular.WindowDynamic|nucular.WindowNoScrollbar, rect.Rect{20, 100, 480, 500}, true, vw.Update)
 }
 
-func newIntViewer(mw nucular.MasterWindow, v *Variable) {
-	iv := &intViewer{v: v}
-	switch {
-	case strings.HasPrefix(v.Value, "0x"):
-		iv.mode = hexMode
-	case strings.HasPrefix(v.Value, "0") && v.Value != "0":
-		iv.mode = octMode
-	default:
-		iv.mode = decMode
+func (vw *floatViewer) Update(w *nucular.Window) {
+	w.Row(30).Static(100, 0)
+	w.Label("Value:", "LC")
+	w.Label(vw.v.Value, "LC")
+	w.Label("Format:", "LC")
+	if ev := vw.ed.Edit(w); ev&nucular.EditCommitted != 0 {
+		w.Close()
 	}
-	iv.ed.Flags = nucular.EditReadOnly | nucular.EditSelectable | nucular.EditClipboard
-	iv.setupView()
-	mw.PopupOpen("Viewing array: "+v.Name, dynamicPopupFlags, rect.Rect{100, 100, 500, 400}, true, iv.Update)
-}
-
-func (iv *intViewer) Update(w *nucular.Window) {
-	w.Row(20).Static(100, 120, 120, 120)
-	w.Label("View as:", "LC")
-	mode := iv.mode
-	if w.OptionText("Decimal", mode == decMode) {
-		mode = decMode
+	if newfmt := string(vw.ed.Buffer); newfmt != vw.v.FloatFmt {
+		vw.v.FloatFmt = newfmt
+		f := floatFormatter(vw.v.FloatFmt)
+		varFormat[vw.v.Addr] = f
+		f(vw.v)
 	}
-	if w.OptionText("Hexadecimal", mode == hexMode) {
-		mode = hexMode
-	}
-	if w.OptionText("Octal", mode == octMode) {
-		mode = octMode
-	}
-	if mode != iv.mode {
-		iv.mode = mode
-		iv.setupView()
-	}
-
-	w.Row(30).Dynamic(1)
-	iv.ed.Edit(w)
-	w.Row(20).Static(0, 100)
+	w.Row(30).Static(0, 100)
 	w.Spacing(1)
-	if w.ButtonText("OK") {
-		iv.v.Value = string(iv.ed.Buffer)
-		varFormat[iv.v.Addr] = intFormatter[iv.mode]
+	if w.ButtonText("Done") {
 		w.Close()
 	}
 }
 
-func (iv *intViewer) setupView() {
-	iv.ed.Buffer = []rune(intFormatter[iv.mode](iv.v.Value))
+var intFormatter = map[numberMode]formatterFn{
+	decMode: func(v *Variable) {
+		v.IntMode = decMode
+		v.Value = v.Variable.Value
+	},
+	hexMode: func(v *Variable) {
+		v.IntMode = hexMode
+		n, _ := strconv.ParseInt(v.Variable.Value, 10, 64)
+		v.Value = fmt.Sprintf("%#x", n)
+	},
+	octMode: func(v *Variable) {
+		v.IntMode = octMode
+		n, _ := strconv.ParseInt(v.Variable.Value, 10, 64)
+		v.Value = fmt.Sprintf("%#o", n)
+	},
+}
+
+var uintFormatter = map[numberMode]formatterFn{
+	decMode: func(v *Variable) {
+		v.IntMode = decMode
+		v.Value = v.Variable.Value
+	},
+	hexMode: func(v *Variable) {
+		v.IntMode = hexMode
+		n, _ := strconv.ParseUint(v.Variable.Value, 10, 64)
+		v.Value = fmt.Sprintf("%#x", n)
+	},
+	octMode: func(v *Variable) {
+		v.IntMode = octMode
+		n, _ := strconv.ParseUint(v.Variable.Value, 10, 64)
+		v.Value = fmt.Sprintf("%#o", n)
+	},
+}
+
+func floatFormatter(format string) formatterFn {
+	return func(v *Variable) {
+		v.FloatFmt = format
+		if format == "" {
+			v.Value = v.Variable.Value
+			return
+		}
+		f, _ := strconv.ParseFloat(v.Variable.Value, 64)
+		v.Value = fmt.Sprintf(format, f)
+	}
 }
 
 func formatLocation2(loc api.Location) string {
