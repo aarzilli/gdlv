@@ -29,6 +29,7 @@ const (
 
 type Variable struct {
 	*api.Variable
+	Width    int
 	Value    string
 	IntMode  numberMode
 	FloatFmt string
@@ -397,13 +398,39 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		}
 	}
 
+	const maxWidth = 4096
+
+	hdrsetwidth := func() {
+		if v.Width == 0 {
+			style := w.Master().Style()
+			v.Width = nucular.FontWidth(style.Font, name+" = "+v.SinglelineString()) + nucular.FontHeight(style.Font) + style.Tab.Padding.X*3 + style.GroupWindow.Padding.X*2 + style.Tab.NodeButton.Padding.X*2 + style.Tab.NodeButton.Border*2
+			if v.Width > maxWidth {
+				v.Width = maxWidth
+			}
+		}
+		w.LayoutSetWidthScaled(v.Width)
+	}
+
 	cblbl := func(fmtstr string, args ...interface{}) {
 		s := fmt.Sprintf(fmtstr, args...)
+		if v.Width == 0 {
+			style := w.Master().Style()
+			v.Width = nucular.FontWidth(style.Font, s) + style.Text.Padding.X*2
+			if v.Width > maxWidth {
+				v.Width = maxWidth
+			}
+		}
+		w.LayoutSetWidthScaled(v.Width)
 		w.Label(s, "LC")
 		showExprMenu(w, exprMenu, v, s)
 	}
 
-	w.Row(varRowHeight).StaticScaled(84 * zeroWidth)
+	dynlbl := func(s string) {
+		w.Row(varRowHeight).Dynamic(1)
+		w.Label(s, "LC")
+	}
+
+	w.Row(varRowHeight).Static()
 	if v.Unreadable != "" {
 		cblbl("%s = (unreadable %s)", name, v.Unreadable)
 		return
@@ -416,24 +443,26 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 
 	switch v.Kind {
 	case reflect.Slice:
+		hdrsetwidth()
 		if !w.TreeIsOpen(varname) {
 			name += " = " + v.SinglelineString()
 		}
 		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 			showExprMenu(w, exprMenu, v, name)
-			w.Label(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap), "LC")
+			dynlbl(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap))
 			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
 		} else {
 			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Array:
+		hdrsetwidth()
 		if !w.TreeIsOpen(varname) {
 			name += " = " + v.SinglelineString()
 		}
 		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 			showExprMenu(w, exprMenu, v, name)
-			w.Label(fmt.Sprintf("len: %d", v.Len), "LC")
+			dynlbl(fmt.Sprintf("len: %d", v.Len))
 			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
 		} else {
@@ -445,13 +474,14 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		} else if v.Type == "" || v.Children[0].Addr == 0 {
 			cblbl("%s = nil", name)
 		} else {
+			hdrsetwidth()
 			if !w.TreeIsOpen(varname) {
 				name += " = " + v.SinglelineString()
 			}
 			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
 				if v.Children[0].OnlyAddr {
 					loadMoreStruct(v.Children[0])
-					w.Label("Loading...", "LC")
+					dynlbl("Loading...")
 				} else {
 					showExprMenu(w, exprMenu, v, name)
 					showVariable(w, depth+1, addr, -1, "", v.Children[0])
@@ -473,6 +503,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		if len(v.Children) == 0 {
 			cblbl("%s = nil", name)
 		} else {
+			hdrsetwidth()
 			if !w.TreeIsOpen(varname) {
 				name += " = " + v.SinglelineString()
 			}
@@ -485,6 +516,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			}
 		}
 	case reflect.Struct:
+		hdrsetwidth()
 		if !w.TreeIsOpen(varname) {
 			name += " = " + v.SinglelineString()
 		}
@@ -492,7 +524,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			showExprMenu(w, exprMenu, v, name)
 			if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
 				loadMoreStruct(v)
-				w.Label("Loading...", "LC")
+				dynlbl("Loading...")
 			} else {
 				showStructContents(w, depth, addr, v)
 			}
@@ -504,6 +536,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		if v.Children[0].Kind == reflect.Invalid {
 			cblbl("%s = nil", name)
 		} else {
+			hdrsetwidth()
 			if !w.TreeIsOpen(varname) {
 				name += " = " + v.SinglelineString()
 			}
@@ -514,7 +547,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 						showVariable(w, depth+1, addr, -1, "data", v.Children[0].Children[0])
 					} else {
 						loadMoreStruct(v)
-						w.Label("Loading...", "LC")
+						dynlbl("Loading...")
 					}
 				} else {
 					showVariable(w, depth+1, addr, -1, "data", v.Children[0])
@@ -525,6 +558,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			}
 		}
 	case reflect.Map:
+		hdrsetwidth()
 		if !w.TreeIsOpen(varname) {
 			name += " = " + v.SinglelineString()
 		}
@@ -927,6 +961,7 @@ func (sv *stringViewer) loadMore() {
 			} else {
 				switch sv.v.Kind {
 				case reflect.String:
+					sv.v.Width = 0
 					sv.v.Value += lv.Value
 				case reflect.Array, reflect.Slice:
 					sv.v.Children = append(sv.v.Children, wrapApiVariables(lv.Children)...)
