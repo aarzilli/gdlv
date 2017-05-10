@@ -4,6 +4,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"runtime"
 	"time"
 	"unicode"
 
@@ -215,8 +216,8 @@ const (
 	EditFocusFollowsMouse
 
 	EditSimple = EditAlwaysInsertMode
-	EditField  = EditAlwaysInsertMode | EditSelectable
-	EditBox    = EditAlwaysInsertMode | EditSelectable | EditMultiline
+	EditField  = EditSelectable | EditClipboard | EditSigEnter
+	EditBox    = EditSelectable | EditMultiline | EditClipboard
 )
 
 type EditEvents int
@@ -1308,6 +1309,11 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 		cut := false
 		paste := false
 
+		clipboardModifier := key.ModControl
+		if runtime.GOOS == "darwin" {
+			clipboardModifier = key.ModMeta
+		}
+
 		for _, e := range inp.Keyboard.Keys {
 			switch e.Code {
 			case key.CodeReturnEnter:
@@ -1324,17 +1330,17 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 				}
 
 			case key.CodeX:
-				if e.Modifiers&key.ModControl != 0 {
+				if e.Modifiers&clipboardModifier != 0 {
 					cut = true
 				}
 
 			case key.CodeC:
-				if e.Modifiers&key.ModControl != 0 {
+				if e.Modifiers&clipboardModifier != 0 {
 					copy = true
 				}
 
 			case key.CodeV:
-				if e.Modifiers&key.ModControl != 0 {
+				if e.Modifiers&clipboardModifier != 0 {
 					paste = true
 				}
 
