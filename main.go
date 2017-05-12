@@ -416,6 +416,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		breakpointsPanel.asyncLoad.clear()
 		checkpointsPanel.asyncLoad.clear()
 		listingPanel.pinnedLoc = nil
+		silenced = false
 
 		bpcount := 0
 		for _, th := range state.Threads {
