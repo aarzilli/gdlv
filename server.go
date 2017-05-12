@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -38,8 +39,16 @@ type ServerDescr struct {
 var BackendServer ServerDescr
 
 func parseArguments() (descr ServerDescr) {
-	debugname := func() {
-		fh, err := ioutil.TempFile(os.TempDir(), "gdlv-debug")
+	debugname := func(p string) {
+		p = filepath.Base(p)
+		if i := strings.LastIndex(p, "."); i >= 0 {
+			p = p[:i]
+		}
+		template := "gdlv-debug"
+		if p != "" {
+			template = fmt.Sprintf("%s-gdlv-debug", p)
+		}
+		fh, err := ioutil.TempFile(os.TempDir(), template)
 		if err != nil {
 			descr.exe = fmt.Sprintf("%s/gdlv-debug", os.TempDir())
 		}
@@ -68,6 +77,7 @@ func parseArguments() (descr ServerDescr) {
 	switch cmd {
 	case "connect":
 		if len(os.Args) != 3 {
+			usage()
 		}
 		descr.connectString = os.Args[2]
 
@@ -82,7 +92,8 @@ func parseArguments() (descr ServerDescr) {
 		}
 
 	case "debug":
-		debugname()
+		dir, _ := os.Getwd()
+		debugname(dir)
 		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe}
 		args := make([]string, 0, len(os.Args[2:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
@@ -90,7 +101,7 @@ func parseArguments() (descr ServerDescr) {
 		finish(true, args...)
 
 	case "run":
-		debugname()
+		debugname(os.Args[2])
 		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe, os.Args[2]}
 		args := make([]string, 0, len(os.Args[3:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
@@ -107,7 +118,8 @@ func parseArguments() (descr ServerDescr) {
 		finish(true, args...)
 
 	case "test":
-		debugname()
+		dir, _ := os.Getwd()
+		debugname(dir)
 		descr.buildcmd = []string{"test", "-gcflags", "-N -l", "-c", "-o", descr.exe}
 		args := make([]string, 0, len(os.Args[2:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
