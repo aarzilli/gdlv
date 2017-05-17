@@ -568,12 +568,18 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 				key, value := v.Children[i], v.Children[i+1]
 				if len(key.Children) == 0 && len(key.Value) < minInlineKeyValueLen {
 					var keyname string
-					if key.Kind == reflect.String {
+					switch key.Kind {
+					case reflect.String:
 						keyname = fmt.Sprintf("[%q]", key.Value)
-					} else {
+					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Complex64, reflect.Complex128, reflect.Float32, reflect.Float64:
 						keyname = fmt.Sprintf("[%s]", key.Value)
 					}
-					showVariable(w, depth+1, addr, -1, keyname, value)
+					if keyname != "" {
+						showVariable(w, depth+1, addr, -1, keyname, value)
+					} else {
+						showVariable(w, depth+1, addr, -1, "key", key)
+						showVariable(w, depth+1, addr, -1, "value", value)
+					}
 				} else {
 					showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d key]", i/2), key)
 					showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d value]", i/2), value)
