@@ -311,7 +311,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 	}
 
 	switch v.Type {
-	case "int", "int8", "int16", "int32":
+	case "int", "int8", "int16", "int32", "int64":
 		mode := v.IntMode
 		oldmode := mode
 		if w.OptionText("Hexadecimal", mode == hexMode) {
