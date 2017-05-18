@@ -55,7 +55,7 @@ func setupStyle() {
 	}
 	wnd.SetStyle(nstyle.FromTheme(theme, conf.Scaling))
 	style := wnd.Style()
-	style.Tab.Indent = style.Tab.Padding.X + style.Tab.Spacing.X + nucular.FontHeight(style.Font)
+	style.Tab.Indent = style.Tab.Padding.X + style.Tab.Spacing.X + nucular.FontHeight(style.Font) + style.GroupWindow.Spacing.X
 	style.Selectable.Normal.Data.Color = style.NormalWindow.Background
 	style.GroupWindow.Padding.Y = 0
 	style.GroupWindow.FooterPadding.Y = 0

@@ -420,6 +420,8 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 				v.Width = maxWidth
 			}
 		}
+		w.LayoutSetWidthScaled(w.Master().Style().Tab.Indent)
+		w.Spacing(1)
 		w.LayoutSetWidthScaled(v.Width)
 		w.Label(s, "LC")
 		showExprMenu(w, exprMenu, v, s)
