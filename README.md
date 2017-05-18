@@ -21,6 +21,9 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2017-05-18
+* Better formatting for maps and integer variables.
+
 ## 2017-05-07
 * Added core command
 * Support for multiple backends
