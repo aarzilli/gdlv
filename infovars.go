@@ -310,8 +310,8 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 		}
 	}
 
-	switch v.Type {
-	case "int", "int8", "int16", "int32", "int64":
+	switch v.Kind {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		mode := v.IntMode
 		oldmode := mode
 		if w.OptionText("Hexadecimal", mode == hexMode) {
@@ -327,9 +327,10 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 			f := intFormatter[mode]
 			varFormat[v.Addr] = f
 			f(v)
+			v.Width = 0
 		}
 
-	case "uint", "uint8", "uint16", "uint32", "uint64", "uintptr":
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		mode := v.IntMode
 		oldmode := mode
 		if w.OptionText("Hexadecimal", mode == hexMode) {
@@ -345,9 +346,10 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 			f := uintFormatter[mode]
 			varFormat[v.Addr] = f
 			f(v)
+			v.Width = 0
 		}
 
-	case "float32", "float64":
+	case reflect.Float32, reflect.Float64:
 		if w.MenuItem(label.TA("Format...", "LC")) {
 			newFloatViewer(w, v)
 		}
@@ -1091,6 +1093,7 @@ func (vw *floatViewer) Update(w *nucular.Window) {
 		f := floatFormatter(vw.v.FloatFmt)
 		varFormat[vw.v.Addr] = f
 		f(vw.v)
+		vw.v.Width = 0
 	}
 	w.Row(30).Static(0, 100)
 	w.Spacing(1)
