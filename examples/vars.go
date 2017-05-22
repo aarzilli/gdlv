@@ -21,4 +21,14 @@ func main() {
 	runtime.Breakpoint()
 
 	fmt.Println(longstr, longbytearr, longrunearr, x, y, nx, ux, longintarr, f)
+
+	for i := 0; i < 3; i++ {
+		a := []int{1, 2, 3}
+		for i := 0; i < 3; i++ {
+			a := []int{a[0] + 1, a[0] + 2, a[0] + 3}
+			for i := 0; i < 3; i++ {
+				fmt.Printf("%d %v\n", i, a)
+			}
+		}
+	}
 }

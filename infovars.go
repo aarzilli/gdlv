@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"image"
+	"image/color"
 	"math"
 	"reflect"
 	"sort"
@@ -33,6 +34,7 @@ type Variable struct {
 	Value    string
 	IntMode  numberMode
 	FloatFmt string
+	Dim      bool
 	Children []*Variable
 }
 
@@ -127,31 +129,22 @@ func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].
 func loadLocals(p *asyncLoad) {
 	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
 	localsPanel.args = wrapApiVariables(args)
-	sort.Sort(variablesByName(localsPanel.args))
+	sort.Stable(variablesByName(localsPanel.args))
 	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
 	localsPanel.locals = wrapApiVariables(locals)
-	sort.Sort(variablesByName(localsPanel.locals))
+	sort.Stable(variablesByName(localsPanel.locals))
+
+	m := map[string]*Variable{}
+
+	for _, v := range localsPanel.locals {
+		if vprev, ok := m[v.Name]; ok {
+			vprev.Dim = true
+		}
+		m[v.Name] = v
+	}
+
 	for i := range localsPanel.expressions {
 		loadOneExpr(i)
-	}
-
-	m := map[string]int{}
-
-	changename := func(v *Variable) {
-		if n, ok := m[v.Name]; ok {
-			n++
-			m[v.Name] = n
-			v.Name = fmt.Sprintf("%s(%d)", v.Name, n)
-		} else {
-			m[v.Name] = 0
-		}
-	}
-
-	for i := range localsPanel.args {
-		changename(localsPanel.args[i])
-	}
-	for i := range localsPanel.locals {
-		changename(localsPanel.locals[i])
 	}
 
 	for _, err := range []error{errarg, errloc} {
@@ -400,11 +393,25 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		}
 	}
 
+	style := w.Master().Style()
+
+	if v.Dim {
+		savedStyle := *style
+		defer func() {
+			*style = savedStyle
+		}()
+		const darken = 0.75
+		for _, p := range []*color.RGBA{&style.Text.Color, &style.Tab.NodeButton.TextNormal, &style.Tab.NodeButton.TextHover, &style.Tab.NodeButton.TextActive, &style.Tab.Text} {
+			p.R = uint8(float64(p.R) * darken)
+			p.G = uint8(float64(p.G) * darken)
+			p.B = uint8(float64(p.B) * darken)
+		}
+	}
+
 	const maxWidth = 4096
 
 	hdrsetwidth := func() {
 		if v.Width == 0 {
-			style := w.Master().Style()
 			v.Width = nucular.FontWidth(style.Font, name+" = "+v.SinglelineString()) + nucular.FontHeight(style.Font) + style.Tab.Padding.X*3 + style.GroupWindow.Padding.X*2 + style.Tab.NodeButton.Padding.X*2 + style.Tab.NodeButton.Border*2
 			if v.Width > maxWidth {
 				v.Width = maxWidth
@@ -416,7 +423,6 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 	cblbl := func(fmtstr string, args ...interface{}) {
 		s := fmt.Sprintf(fmtstr, args...)
 		if v.Width == 0 {
-			style := w.Master().Style()
 			v.Width = nucular.FontWidth(style.Font, s) + style.Text.Padding.X*2
 			if v.Width > maxWidth {
 				v.Width = maxWidth
