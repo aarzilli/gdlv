@@ -14,6 +14,7 @@ type Configuration struct {
 	StopOnNextBreakpoint bool
 	DisassemblyFlavour   int
 	Layouts              map[string]LayoutDescr
+	CustomFormatters     map[string]*CustomFormatter
 }
 
 type LayoutDescr struct {
@@ -54,6 +55,9 @@ func loadConfiguration() {
 	}
 	defer fh.Close()
 	json.NewDecoder(fh).Decode(&conf)
+	if conf.CustomFormatters == nil {
+		conf.CustomFormatters = make(map[string]*CustomFormatter)
+	}
 }
 
 func saveConfiguration() {

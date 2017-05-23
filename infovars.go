@@ -1,11 +1,9 @@
 package main
 
 import (
-	"bytes"
 	"fmt"
 	"image"
 	"image/color"
-	"math"
 	"reflect"
 	"sort"
 	"strconv"
@@ -15,7 +13,6 @@ import (
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/label"
-	"github.com/aarzilli/nucular/rect"
 
 	"github.com/derekparker/delve/service/api"
 )
@@ -35,6 +32,7 @@ type Variable struct {
 	IntMode  numberMode
 	FloatFmt string
 	Dim      bool
+	Varname  string
 	Children []*Variable
 }
 
@@ -46,6 +44,8 @@ func wrapApiVariable(v *api.Variable) *Variable {
 	} else if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) {
 		n, _ := strconv.Atoi(v.Value)
 		r.Value = fmt.Sprintf("%s %q", v.Value, n)
+	} else if f := conf.CustomFormatters[v.Type]; f != nil {
+		f.Format(r)
 	}
 	r.Children = wrapApiVariables(v.Children)
 	return r
@@ -135,9 +135,12 @@ func loadLocals(p *asyncLoad) {
 	sort.Stable(variablesByName(localsPanel.locals))
 
 	m := map[string]*Variable{}
+	dupcnt := 0
 
 	for _, v := range localsPanel.locals {
 		if vprev, ok := m[v.Name]; ok {
+			vprev.Varname = fmt.Sprintf("%s.%d", v.Name, dupcnt)
+			dupcnt++
 			vprev.Dim = true
 		}
 		m[v.Name] = v
@@ -348,6 +351,25 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 		}
 	}
 
+	switch v.Type {
+	case "bool", "int", "int8", "int16", "int32", "int64", "byte", "rune":
+	case "uintptr", "uint", "uint8", "uint16", "uint32", "uint64":
+	case "float32", "float64", "complex64", "complex128":
+	case "string":
+	default:
+		if conf.CustomFormatters[v.Type] != nil {
+			if w.MenuItem(label.TA("Remove custom formatter", "LC")) {
+				delete(conf.CustomFormatters, v.Type)
+				saveConfiguration()
+				go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
+			}
+		} else {
+			if w.MenuItem(label.TA("Custom format for type...", "LC")) {
+				viewCustomFormatterMaker(w, v)
+			}
+		}
+	}
+
 	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
 		if w.MenuItem(label.TA("Edit", "LC")) {
 			localsPanel.selected = exprMenuIdx
@@ -367,7 +389,10 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 }
 
 func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *Variable) {
-	varname := name
+	varname := v.Varname
+	if varname == "" {
+		varname = name
+	}
 	const minInlineKeyValueLen = 20
 	if v.Type != "" {
 		if addr {
@@ -410,14 +435,27 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 
 	const maxWidth = 4096
 
-	hdrsetwidth := func() {
+	hdrCollapsedName := func() string {
+		if v.Value != "" {
+			return name + " = " + v.Value
+		}
+		return name + " = " + v.SinglelineString()
+	}
+
+	hdr := func() bool {
 		if v.Width == 0 {
-			v.Width = nucular.FontWidth(style.Font, name+" = "+v.SinglelineString()) + nucular.FontHeight(style.Font) + style.Tab.Padding.X*3 + style.GroupWindow.Padding.X*2 + style.Tab.NodeButton.Padding.X*2 + style.Tab.NodeButton.Border*2
+			v.Width = nucular.FontWidth(style.Font, hdrCollapsedName()) + nucular.FontHeight(style.Font) + style.Tab.Padding.X*3 + style.GroupWindow.Padding.X*2 + style.Tab.NodeButton.Padding.X*2 + style.Tab.NodeButton.Border*2
 			if v.Width > maxWidth {
 				v.Width = maxWidth
 			}
 		}
 		w.LayoutSetWidthScaled(v.Width)
+		if !w.TreeIsOpen(varname) {
+			name = hdrCollapsedName()
+		}
+		r := w.TreePushNamed(nucular.TreeNode, varname, name, false)
+		showExprMenu(w, exprMenu, v, name)
+		return r
 	}
 
 	cblbl := func(fmtstr string, args ...interface{}) {
@@ -453,30 +491,16 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 
 	switch v.Kind {
 	case reflect.Slice:
-		hdrsetwidth()
-		if !w.TreeIsOpen(varname) {
-			name += " = " + v.SinglelineString()
-		}
-		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-			showExprMenu(w, exprMenu, v, name)
+		if hdr() {
 			dynlbl(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap))
 			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
-		} else {
-			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Array:
-		hdrsetwidth()
-		if !w.TreeIsOpen(varname) {
-			name += " = " + v.SinglelineString()
-		}
-		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-			showExprMenu(w, exprMenu, v, name)
+		if hdr() {
 			dynlbl(fmt.Sprintf("len: %d", v.Len))
 			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
-		} else {
-			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Ptr:
 		if len(v.Children) == 0 {
@@ -484,21 +508,14 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		} else if v.Type == "" || v.Children[0].Addr == 0 {
 			cblbl("%s = nil", name)
 		} else {
-			hdrsetwidth()
-			if !w.TreeIsOpen(varname) {
-				name += " = " + v.SinglelineString()
-			}
-			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
+			if hdr() {
 				if v.Children[0].OnlyAddr {
 					loadMoreStruct(v.Children[0])
 					dynlbl("Loading...")
 				} else {
-					showExprMenu(w, exprMenu, v, name)
 					showVariable(w, depth+1, addr, -1, "", v.Children[0])
 				}
 				w.TreePop()
-			} else {
-				showExprMenu(w, exprMenu, v, name)
 			}
 		}
 	case reflect.UnsafePointer:
@@ -513,25 +530,13 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		if len(v.Children) == 0 {
 			cblbl("%s = nil", name)
 		} else {
-			hdrsetwidth()
-			if !w.TreeIsOpen(varname) {
-				name += " = " + v.SinglelineString()
-			}
-			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-				showExprMenu(w, exprMenu, v, name)
+			if hdr() {
 				showStructContents(w, depth, addr, v)
 				w.TreePop()
-			} else {
-				showExprMenu(w, exprMenu, v, name)
 			}
 		}
 	case reflect.Struct:
-		hdrsetwidth()
-		if !w.TreeIsOpen(varname) {
-			name += " = " + v.SinglelineString()
-		}
-		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-			showExprMenu(w, exprMenu, v, name)
+		if hdr() {
 			if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
 				loadMoreStruct(v)
 				dynlbl("Loading...")
@@ -539,19 +544,12 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 				showStructContents(w, depth, addr, v)
 			}
 			w.TreePop()
-		} else {
-			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Interface:
 		if v.Children[0].Kind == reflect.Invalid {
 			cblbl("%s = nil", name)
 		} else {
-			hdrsetwidth()
-			if !w.TreeIsOpen(varname) {
-				name += " = " + v.SinglelineString()
-			}
-			if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-				showExprMenu(w, exprMenu, v, name)
+			if hdr() {
 				if v.Children[0].Kind == reflect.Ptr {
 					if len(v.Children[0].Children) > 0 {
 						showVariable(w, depth+1, addr, -1, "data", v.Children[0].Children[0])
@@ -563,17 +561,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 					showVariable(w, depth+1, addr, -1, "data", v.Children[0])
 				}
 				w.TreePop()
-			} else {
-				showExprMenu(w, exprMenu, v, name)
 			}
 		}
 	case reflect.Map:
-		hdrsetwidth()
-		if !w.TreeIsOpen(varname) {
-			name += " = " + v.SinglelineString()
-		}
-		if w.TreePushNamed(nucular.TreeNode, varname, name, false) {
-			showExprMenu(w, exprMenu, v, name)
+		if hdr() {
 			for i := 0; i < len(v.Children); i += 2 {
 				key, value := v.Children[i], v.Children[i+1]
 				if len(key.Children) == 0 && len(key.Value) < minInlineKeyValueLen {
@@ -602,8 +593,6 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 				}
 			}
 			w.TreePop()
-		} else {
-			showExprMenu(w, exprMenu, v, name)
 		}
 	case reflect.Func:
 		if v.Value == "" {
@@ -728,436 +717,4 @@ func detailsAvailable(v *Variable) openDetailsWindowFn {
 		return newIntArrayViewer
 	}
 	return nil
-}
-
-type formatterFn func(*Variable)
-
-var varFormat = map[uintptr]formatterFn{}
-
-type stringViewerMode int
-
-const (
-	viewString stringViewerMode = iota
-	viewByteArray
-	viewRuneArray
-)
-
-type stringViewer struct {
-	v          *Variable
-	mode       stringViewerMode
-	numberMode numberMode
-	ed         nucular.TextEditor
-	mu         sync.Mutex
-}
-
-func newStringViewer(mw nucular.MasterWindow, v *Variable) {
-	sv := &stringViewer{v: v}
-	switch v.Type {
-	case "string":
-		sv.mode = viewString
-	case "[]uint8":
-		sv.mode = viewByteArray
-	case "[]int32":
-		sv.mode = viewRuneArray
-	}
-	sv.ed.Flags = nucular.EditReadOnly | nucular.EditMultiline | nucular.EditSelectable | nucular.EditClipboard
-	sv.setupView()
-	mw.PopupOpen("Viewing string: "+v.Name, popupFlags|nucular.WindowScalable, rect.Rect{100, 100, 550, 400}, true, sv.Update)
-}
-
-func (sv *stringViewer) Update(w *nucular.Window) {
-	sv.mu.Lock()
-	defer sv.mu.Unlock()
-	w.Row(20).Dynamic(1)
-	w.Label(sv.v.Name, "LC")
-
-	w.Row(20).Static(100, 80, 80, 80)
-	w.Label("View as:", "LC")
-	newmode := sv.mode
-	if w.OptionText("string", newmode == viewString) {
-		newmode = viewString
-	}
-	if w.OptionText("[]byte", newmode == viewByteArray) {
-		newmode = viewByteArray
-	}
-	if w.OptionText("[]rune", newmode == viewRuneArray) {
-		newmode = viewRuneArray
-	}
-	if newmode != sv.mode {
-		sv.mode = newmode
-		sv.setupView()
-	}
-
-	switch sv.mode {
-	case viewString:
-		// nothing to choose
-	case viewByteArray, viewRuneArray:
-		numberMode := sv.numberMode
-		w.Row(20).Static(120, 120, 120)
-		if w.OptionText("Decimal", numberMode == decMode) {
-			numberMode = decMode
-		}
-		if w.OptionText("Hexadecimal", numberMode == hexMode) {
-			numberMode = hexMode
-		}
-		if w.OptionText("Octal", numberMode == octMode) {
-			numberMode = octMode
-		}
-		if numberMode != sv.numberMode {
-			sv.numberMode = numberMode
-			sv.setupView()
-		}
-	}
-
-	w.Row(0).Dynamic(1)
-	sv.ed.Edit(w)
-
-	w.Row(20).Static(0, 100, 100)
-	l := int64(sv.len())
-	w.Label(fmt.Sprintf("Loaded %d/%d", l, sv.v.Len), "LC")
-	if sv.v.Len != l {
-		if w.ButtonText("Load more") {
-			sv.loadMore()
-		}
-	} else {
-		w.Spacing(1)
-	}
-	if w.ButtonText("OK") {
-		w.Close()
-	}
-}
-
-func (sv *stringViewer) len() int {
-	switch sv.v.Kind {
-	case reflect.String:
-		return len(sv.v.Value)
-	case reflect.Array, reflect.Slice:
-		return len(sv.v.Children)
-	default:
-		return 0
-	}
-}
-
-func (sv *stringViewer) setupView() {
-	var bytes []byte
-	var runes []rune
-
-	switch sv.v.Type {
-	case "string":
-		switch sv.mode {
-		case viewString:
-			sv.ed.Buffer = []rune(sv.v.Value)
-		case viewByteArray:
-			bytes = []byte(sv.v.Value)
-		case viewRuneArray:
-			runes = []rune(sv.v.Value)
-		}
-	case "[]uint8":
-		bytes = make([]byte, len(sv.v.Children))
-		for i := range sv.v.Children {
-			n, _ := strconv.Atoi(sv.v.Children[i].Variable.Value)
-			bytes[i] = byte(n)
-		}
-		switch sv.mode {
-		case viewString:
-			sv.ed.Buffer = []rune(string(bytes))
-		case viewByteArray:
-			// nothing to do
-		case viewRuneArray:
-			runes = []rune(string(bytes))
-		}
-	case "[]int32":
-		runes = make([]rune, len(sv.v.Children))
-		for i := range sv.v.Children {
-			n, _ := strconv.Atoi(sv.v.Children[i].Variable.Value)
-			runes[i] = rune(n)
-		}
-		switch sv.mode {
-		case viewString:
-			sv.ed.Buffer = runes
-		case viewByteArray:
-			bytes = []byte(string(runes))
-		case viewRuneArray:
-			// nothing to do
-		}
-	}
-
-	switch sv.mode {
-	case viewString:
-		// nothing more to do
-	case viewByteArray:
-		array := make([]int64, len(bytes))
-		for i := range bytes {
-			array[i] = int64(bytes[i])
-		}
-		sv.ed.Buffer = []rune(formatArray(array, true, sv.numberMode, true, 1, 16))
-	case viewRuneArray:
-		array := make([]int64, len(runes))
-		for i := range runes {
-			array[i] = int64(runes[i])
-		}
-		sv.ed.Buffer = []rune(formatArray(array, sv.numberMode != decMode, sv.numberMode, false, 2, 10))
-	}
-}
-
-func formatArray(array []int64, hexaddr bool, mode numberMode, canonical bool, size, stride int) string {
-	var fmtstr, emptyfield string
-	switch mode {
-	case decMode:
-		fmtstr = fmt.Sprintf("%%%dd ", size*3)
-		emptyfield = fmt.Sprintf("%*s", size*3+1, "")
-	case hexMode:
-		fmtstr = fmt.Sprintf("%%0%dx ", size*2)
-		emptyfield = fmt.Sprintf("%*s", size*2+1, "")
-	case octMode:
-		fmtstr = fmt.Sprintf("%%0%do ", size*3)
-		emptyfield = fmt.Sprintf("%*s", size*3+1, "")
-	}
-
-	var addrfmtstr string
-	if hexaddr {
-		d := hexdigits(uint64(len(array)))
-		if d < 2 {
-			d = 2
-		}
-		addrfmtstr = fmt.Sprintf("%%0%dx  ", d)
-	} else {
-		addrfmtstr = fmt.Sprintf("[%%%dd]  ", digits(len(array)))
-	}
-
-	var buf bytes.Buffer
-	i := 0
-	for i < len(array) {
-		fmt.Fprintf(&buf, addrfmtstr, i)
-		start := i
-		for c := 0; c < stride; i, c = i+1, c+1 {
-			if stride%8 == 0 && c%8 == 0 && c != 0 && c != stride-1 {
-				fmt.Fprintf(&buf, " ")
-			}
-			if i < len(array) {
-				fmt.Fprintf(&buf, fmtstr, array[i])
-			} else {
-				fmt.Fprintf(&buf, emptyfield)
-			}
-		}
-
-		if canonical {
-			fmt.Fprintf(&buf, " |")
-			for j := start; j < i; j++ {
-				if j < len(array) {
-					if array[j] >= 0x20 && array[j] <= 0x7e {
-						fmt.Fprintf(&buf, "%c", byte(array[j]))
-					} else {
-						fmt.Fprintf(&buf, ".")
-					}
-				} else {
-					fmt.Fprintf(&buf, " ")
-				}
-			}
-			fmt.Fprintf(&buf, "|\n")
-		} else {
-			fmt.Fprintf(&buf, "\n")
-		}
-	}
-
-	return buf.String()
-}
-
-func (sv *stringViewer) loadMore() {
-	additionalLoadMu.Lock()
-	defer additionalLoadMu.Unlock()
-	if !additionalLoadRunning {
-		additionalLoadRunning = true
-		go func() {
-			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", sv.v.RealType, sv.v.Addr, sv.len())
-			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
-			if err != nil {
-				out := editorWriter{&scrollbackEditor, true}
-				fmt.Fprintf(&out, "Error loading string contents %s: %v\n", expr, err)
-			} else {
-				switch sv.v.Kind {
-				case reflect.String:
-					sv.v.Width = 0
-					sv.v.Value += lv.Value
-				case reflect.Array, reflect.Slice:
-					sv.v.Children = append(sv.v.Children, wrapApiVariables(lv.Children)...)
-				}
-			}
-			additionalLoadMu.Lock()
-			additionalLoadRunning = false
-			additionalLoadMu.Unlock()
-			sv.mu.Lock()
-			sv.setupView()
-			sv.mu.Unlock()
-			wnd.Changed()
-		}()
-	}
-}
-
-type intArrayViewer struct {
-	v          *Variable
-	displayLen int
-	mode       numberMode
-	ed         nucular.TextEditor
-	mu         sync.Mutex
-}
-
-func newIntArrayViewer(mw nucular.MasterWindow, v *Variable) {
-	av := &intArrayViewer{v: v}
-	av.mode = decMode
-	av.ed.Flags = nucular.EditReadOnly | nucular.EditMultiline | nucular.EditSelectable | nucular.EditClipboard
-	av.setupView()
-	mw.PopupOpen("Viewing array: "+v.Name, popupFlags|nucular.WindowScalable, rect.Rect{100, 100, 550, 400}, true, av.Update)
-}
-
-func (av *intArrayViewer) Update(w *nucular.Window) {
-	av.mu.Lock()
-	defer av.mu.Unlock()
-
-	if av.displayLen != len(av.v.Children) {
-		av.setupView()
-	}
-
-	w.Row(20).Static(100, 120, 120, 120)
-	w.Label("View as:", "LC")
-	mode := av.mode
-	if w.OptionText("Decimal", mode == decMode) {
-		mode = decMode
-	}
-	if w.OptionText("Hexadecimal", mode == hexMode) {
-		mode = hexMode
-	}
-	if w.OptionText("Octal", mode == octMode) {
-		mode = octMode
-	}
-	if mode != av.mode {
-		av.mode = mode
-		av.setupView()
-	}
-
-	w.Row(0).Dynamic(1)
-	av.ed.Edit(w)
-
-	w.Row(20).Static(0, 100, 100)
-	w.Label(fmt.Sprintf("Loaded %d/%d", len(av.v.Children), av.v.Len), "LC")
-	if av.v.Len != int64(len(av.v.Children)) {
-		if w.ButtonText("Load more") {
-			loadMoreArrayOrSlice(av.v)
-		}
-	} else {
-		w.Spacing(1)
-	}
-	if w.ButtonText("OK") {
-		w.Close()
-	}
-}
-
-func (av *intArrayViewer) setupView() {
-	array := make([]int64, len(av.v.Children))
-	max := int64(0)
-	for i := range av.v.Children {
-		array[i], _ = strconv.ParseInt(av.v.Children[i].Variable.Value, 10, 64)
-		x := array[i]
-		if x < 0 {
-			x = -x
-		}
-		if x > max {
-			max = x
-		}
-	}
-
-	if max < 1 {
-		max = 1
-	}
-
-	size := int(math.Ceil((math.Log(float64(max)) / math.Log(2)) / 8))
-	av.ed.Buffer = []rune(formatArray(array, av.mode != decMode, av.mode, false, size, 10))
-}
-
-type floatViewer struct {
-	v  *Variable
-	ed nucular.TextEditor
-}
-
-func newFloatViewer(w *nucular.Window, v *Variable) {
-	vw := &floatViewer{v: v}
-	vw.ed.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditSigEnter
-	vw.ed.Buffer = []rune(v.FloatFmt)
-	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Name), nucular.WindowDynamic|nucular.WindowNoScrollbar, rect.Rect{20, 100, 480, 500}, true, vw.Update)
-}
-
-func (vw *floatViewer) Update(w *nucular.Window) {
-	w.Row(30).Static(100, 0)
-	w.Label("Value:", "LC")
-	w.Label(vw.v.Value, "LC")
-	w.Label("Format:", "LC")
-	if ev := vw.ed.Edit(w); ev&nucular.EditCommitted != 0 {
-		w.Close()
-	}
-	if newfmt := string(vw.ed.Buffer); newfmt != vw.v.FloatFmt {
-		vw.v.FloatFmt = newfmt
-		f := floatFormatter(vw.v.FloatFmt)
-		varFormat[vw.v.Addr] = f
-		f(vw.v)
-		vw.v.Width = 0
-	}
-	w.Row(30).Static(0, 100)
-	w.Spacing(1)
-	if w.ButtonText("Done") {
-		w.Close()
-	}
-}
-
-var intFormatter = map[numberMode]formatterFn{
-	decMode: func(v *Variable) {
-		v.IntMode = decMode
-		v.Value = v.Variable.Value
-	},
-	hexMode: func(v *Variable) {
-		v.IntMode = hexMode
-		n, _ := strconv.ParseInt(v.Variable.Value, 10, 64)
-		v.Value = fmt.Sprintf("%#x", n)
-	},
-	octMode: func(v *Variable) {
-		v.IntMode = octMode
-		n, _ := strconv.ParseInt(v.Variable.Value, 10, 64)
-		v.Value = fmt.Sprintf("%#o", n)
-	},
-}
-
-var uintFormatter = map[numberMode]formatterFn{
-	decMode: func(v *Variable) {
-		v.IntMode = decMode
-		v.Value = v.Variable.Value
-	},
-	hexMode: func(v *Variable) {
-		v.IntMode = hexMode
-		n, _ := strconv.ParseUint(v.Variable.Value, 10, 64)
-		v.Value = fmt.Sprintf("%#x", n)
-	},
-	octMode: func(v *Variable) {
-		v.IntMode = octMode
-		n, _ := strconv.ParseUint(v.Variable.Value, 10, 64)
-		v.Value = fmt.Sprintf("%#o", n)
-	},
-}
-
-func floatFormatter(format string) formatterFn {
-	return func(v *Variable) {
-		v.FloatFmt = format
-		if format == "" {
-			v.Value = v.Variable.Value
-			return
-		}
-		f, _ := strconv.ParseFloat(v.Variable.Value, 64)
-		v.Value = fmt.Sprintf(format, f)
-	}
-}
-
-func formatLocation2(loc api.Location) string {
-	name := "(nil)"
-	if loc.Function != nil {
-		name = loc.Function.Name
-	}
-	return fmt.Sprintf("%s\nat %s:%d", name, ShortenFilePath(loc.File), loc.Line)
 }

@@ -7,6 +7,10 @@ import (
 
 type Int int
 
+type Point struct {
+	X, Y int
+}
+
 func main() {
 	longstr := "very long string 0123456789a0123456789b0123456789c0123456789d0123456789e0123456789f0123456789g012345678h90123456789i0123456789j0123456789"
 	longbytearr := []byte(longstr)
@@ -17,10 +21,12 @@ func main() {
 	var nx int = -4
 	var ux uint = 18
 	var f float64 = 30000000000000000
+	var pointarr = []Point{{1, 1}, {2, 3}, {4, 4}, {1, 5}}
+	var p = Point{1, 2}
 
 	runtime.Breakpoint()
 
-	fmt.Println(longstr, longbytearr, longrunearr, x, y, nx, ux, longintarr, f)
+	fmt.Println(longstr, longbytearr, longrunearr, x, y, nx, ux, longintarr, f, pointarr, p)
 
 	for i := 0; i < 3; i++ {
 		a := []int{1, 2, 3}
