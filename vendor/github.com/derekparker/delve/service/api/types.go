@@ -176,6 +176,9 @@ type Variable struct {
 	// The other length cap applied to this field is related to maximum recursion depth, when the maximum recursion depth is reached this field is left empty, contrary to the previous one this cap also applies to structs (otherwise structs will always have all their member fields returned)
 	Children []Variable `json:"children"`
 
+	// Shadowed is true if this variable is shadowed by another variable
+	Shadowed bool
+
 	// Unreadable addresses will have this field set
 	Unreadable string `json:"unreadable"`
 }

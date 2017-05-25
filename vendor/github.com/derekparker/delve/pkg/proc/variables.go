@@ -2,6 +2,7 @@ package proc
 
 import (
 	"bytes"
+	"debug/dwarf"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -10,12 +11,13 @@ import (
 	"go/token"
 	"math"
 	"reflect"
+	"sort"
 	"strings"
 	"unsafe"
 
+	"github.com/derekparker/delve/pkg/dwarf/godwarf"
 	"github.com/derekparker/delve/pkg/dwarf/op"
 	"github.com/derekparker/delve/pkg/dwarf/reader"
-	"golang.org/x/debug/dwarf"
 )
 
 const (
@@ -47,8 +49,8 @@ type Variable struct {
 	Addr      uintptr
 	OnlyAddr  bool
 	Name      string
-	DwarfType dwarf.Type
-	RealType  dwarf.Type
+	DwarfType godwarf.Type
+	RealType  godwarf.Type
 	Kind      reflect.Kind
 	mem       MemoryReadWriter
 	bi        *BinaryInfo
@@ -65,12 +67,14 @@ type Variable struct {
 	// address of the function entry point for function variables (0 for nil function pointers)
 	Base      uintptr
 	stride    int64
-	fieldType dwarf.Type
+	fieldType godwarf.Type
 
 	// number of elements to skip when loading a map
 	mapSkip int
 
 	Children []Variable
+
+	Shadowed bool // Shadowed is true if the variable is shadowed by another definition
 
 	loaded     bool
 	Unreadable error
@@ -124,6 +128,7 @@ type G struct {
 	Status     uint64
 	stkbarVar  *Variable // stkbar field of g struct
 	stkbarPos  int       // stkbarPos field of g struct
+	stackhi    uint64    // value of stack.hi
 
 	// Information on goroutine location
 	CurrentLoc Location
@@ -142,6 +147,7 @@ type EvalScope struct {
 	Mem     MemoryReadWriter // Target's memory
 	Gvar    *Variable
 	BinInfo *BinaryInfo
+	StackHi uint64
 }
 
 // IsNilErr is returned when a variable is nil.
@@ -153,19 +159,19 @@ func (err *IsNilErr) Error() string {
 	return fmt.Sprintf("%s is nil", err.name)
 }
 
-func (scope *EvalScope) newVariable(name string, addr uintptr, dwarfType dwarf.Type) *Variable {
+func (scope *EvalScope) newVariable(name string, addr uintptr, dwarfType godwarf.Type) *Variable {
 	return newVariable(name, addr, dwarfType, scope.BinInfo, scope.Mem)
 }
 
-func newVariableFromThread(t Thread, name string, addr uintptr, dwarfType dwarf.Type) *Variable {
+func newVariableFromThread(t Thread, name string, addr uintptr, dwarfType godwarf.Type) *Variable {
 	return newVariable(name, addr, dwarfType, t.BinInfo(), t)
 }
 
-func (v *Variable) newVariable(name string, addr uintptr, dwarfType dwarf.Type) *Variable {
+func (v *Variable) newVariable(name string, addr uintptr, dwarfType godwarf.Type) *Variable {
 	return newVariable(name, addr, dwarfType, v.bi, v.mem)
 }
 
-func newVariable(name string, addr uintptr, dwarfType dwarf.Type, bi *BinaryInfo, mem MemoryReadWriter) *Variable {
+func newVariable(name string, addr uintptr, dwarfType godwarf.Type, bi *BinaryInfo, mem MemoryReadWriter) *Variable {
 	v := &Variable{
 		Name:      name,
 		Addr:      addr,
@@ -177,32 +183,32 @@ func newVariable(name string, addr uintptr, dwarfType dwarf.Type, bi *BinaryInfo
 	v.RealType = resolveTypedef(v.DwarfType)
 
 	switch t := v.RealType.(type) {
-	case *dwarf.PtrType:
+	case *godwarf.PtrType:
 		v.Kind = reflect.Ptr
-		if _, isvoid := t.Type.(*dwarf.VoidType); isvoid {
+		if _, isvoid := t.Type.(*godwarf.VoidType); isvoid {
 			v.Kind = reflect.UnsafePointer
 		}
-	case *dwarf.ChanType:
+	case *godwarf.ChanType:
 		v.Kind = reflect.Chan
-	case *dwarf.MapType:
+	case *godwarf.MapType:
 		v.Kind = reflect.Map
-	case *dwarf.StringType:
+	case *godwarf.StringType:
 		v.Kind = reflect.String
 		v.stride = 1
-		v.fieldType = &dwarf.UintType{BasicType: dwarf.BasicType{CommonType: dwarf.CommonType{ByteSize: 1, Name: "byte"}, BitSize: 8, BitOffset: 0}}
+		v.fieldType = &godwarf.UintType{BasicType: godwarf.BasicType{CommonType: godwarf.CommonType{ByteSize: 1, Name: "byte"}, BitSize: 8, BitOffset: 0}}
 		if v.Addr != 0 {
 			v.Base, v.Len, v.Unreadable = readStringInfo(v.mem, v.bi.Arch, v.Addr)
 		}
-	case *dwarf.SliceType:
+	case *godwarf.SliceType:
 		v.Kind = reflect.Slice
 		if v.Addr != 0 {
 			v.loadSliceInfo(t)
 		}
-	case *dwarf.InterfaceType:
+	case *godwarf.InterfaceType:
 		v.Kind = reflect.Interface
-	case *dwarf.StructType:
+	case *godwarf.StructType:
 		v.Kind = reflect.Struct
-	case *dwarf.ArrayType:
+	case *godwarf.ArrayType:
 		v.Kind = reflect.Array
 		v.Base = v.Addr
 		v.Len = t.Count
@@ -213,31 +219,31 @@ func newVariable(name string, addr uintptr, dwarfType dwarf.Type, bi *BinaryInfo
 		if t.Count > 0 {
 			v.stride = t.ByteSize / t.Count
 		}
-	case *dwarf.ComplexType:
+	case *godwarf.ComplexType:
 		switch t.ByteSize {
 		case 8:
 			v.Kind = reflect.Complex64
 		case 16:
 			v.Kind = reflect.Complex128
 		}
-	case *dwarf.IntType:
+	case *godwarf.IntType:
 		v.Kind = reflect.Int
-	case *dwarf.UintType:
+	case *godwarf.UintType:
 		v.Kind = reflect.Uint
-	case *dwarf.FloatType:
+	case *godwarf.FloatType:
 		switch t.ByteSize {
 		case 4:
 			v.Kind = reflect.Float32
 		case 8:
 			v.Kind = reflect.Float64
 		}
-	case *dwarf.BoolType:
+	case *godwarf.BoolType:
 		v.Kind = reflect.Bool
-	case *dwarf.FuncType:
+	case *godwarf.FuncType:
 		v.Kind = reflect.Func
-	case *dwarf.VoidType:
+	case *godwarf.VoidType:
 		v.Kind = reflect.Invalid
-	case *dwarf.UnspecifiedType:
+	case *godwarf.UnspecifiedType:
 		v.Kind = reflect.Invalid
 	default:
 		v.Unreadable = fmt.Errorf("Unknown type: %T", t)
@@ -246,9 +252,9 @@ func newVariable(name string, addr uintptr, dwarfType dwarf.Type, bi *BinaryInfo
 	return v
 }
 
-func resolveTypedef(typ dwarf.Type) dwarf.Type {
+func resolveTypedef(typ godwarf.Type) godwarf.Type {
 	for {
-		if tt, ok := typ.(*dwarf.TypedefType); ok {
+		if tt, ok := typ.(*godwarf.TypedefType); ok {
 			typ = tt.Type
 		} else {
 			return typ
@@ -299,7 +305,7 @@ func (v *Variable) TypeString() string {
 	return v.Kind.String()
 }
 
-func (v *Variable) toField(field *dwarf.StructField) (*Variable, error) {
+func (v *Variable) toField(field *godwarf.StructField) (*Variable, error) {
 	if v.Unreadable != nil {
 		return v.clone(), nil
 	}
@@ -326,8 +332,8 @@ func (scope *EvalScope) DwarfReader() *reader.Reader {
 }
 
 // Type returns the Dwarf type entry at `offset`.
-func (scope *EvalScope) Type(offset dwarf.Offset) (dwarf.Type, error) {
-	return scope.BinInfo.dwarf.Type(offset)
+func (scope *EvalScope) Type(offset dwarf.Offset) (godwarf.Type, error) {
+	return godwarf.ReadType(scope.BinInfo.dwarf, offset, scope.BinInfo.typeCache)
 }
 
 // PtrSize returns the size of a pointer.
@@ -354,7 +360,7 @@ func (ng NoGError) Error() string {
 func (gvar *Variable) parseG() (*G, error) {
 	mem := gvar.mem
 	gaddr := uint64(gvar.Addr)
-	_, deref := gvar.RealType.(*dwarf.PtrType)
+	_, deref := gvar.RealType.(*godwarf.PtrType)
 
 	if deref {
 		gaddrbytes := make([]byte, gvar.bi.Arch.PtrSize())
@@ -372,12 +378,12 @@ func (gvar *Variable) parseG() (*G, error) {
 		return nil, NoGError{tid: id}
 	}
 	for {
-		if _, isptr := gvar.RealType.(*dwarf.PtrType); !isptr {
+		if _, isptr := gvar.RealType.(*godwarf.PtrType); !isptr {
 			break
 		}
 		gvar = gvar.maybeDereference()
 	}
-	gvar.loadValue(LoadConfig{false, 1, 64, 0, -1})
+	gvar.loadValue(LoadConfig{false, 2, 64, 0, -1})
 	if gvar.Unreadable != nil {
 		return nil, gvar.Unreadable
 	}
@@ -386,7 +392,16 @@ func (gvar *Variable) parseG() (*G, error) {
 	sp, _ := constant.Int64Val(schedVar.fieldVariable("sp").Value)
 	id, _ := constant.Int64Val(gvar.fieldVariable("goid").Value)
 	gopc, _ := constant.Int64Val(gvar.fieldVariable("gopc").Value)
-	waitReason := constant.StringVal(gvar.fieldVariable("waitreason").Value)
+	waitReason := ""
+	if wrvar := gvar.fieldVariable("waitreason"); wrvar.Value != nil {
+		waitReason = constant.StringVal(wrvar.Value)
+	}
+	var stackhi uint64
+	if stackVar := gvar.fieldVariable("stack"); stackVar != nil {
+		if stackhiVar := stackVar.fieldVariable("hi"); stackhiVar != nil {
+			stackhi, _ = constant.Uint64Val(stackhiVar.Value)
+		}
+	}
 
 	stkbarVar, _ := gvar.structMember("stkbar")
 	stkbarVarPosFld := gvar.fieldVariable("stkbarPos")
@@ -408,6 +423,7 @@ func (gvar *Variable) parseG() (*G, error) {
 		variable:   gvar,
 		stkbarVar:  stkbarVar,
 		stkbarPos:  int(stkbarPos),
+		stackhi:    stackhi,
 	}
 	return g, nil
 }
@@ -566,8 +582,7 @@ func (scope *EvalScope) SetVariable(name, value string) error {
 }
 
 func (scope *EvalScope) extractVariableFromEntry(entry *dwarf.Entry, cfg LoadConfig) (*Variable, error) {
-	rdr := scope.DwarfReader()
-	v, err := scope.extractVarInfoFromEntry(entry, rdr)
+	v, err := scope.extractVarInfoFromEntry(entry)
 	if err != nil {
 		return nil, err
 	}
@@ -575,32 +590,35 @@ func (scope *EvalScope) extractVariableFromEntry(entry *dwarf.Entry, cfg LoadCon
 }
 
 func (scope *EvalScope) extractVarInfo(varName string) (*Variable, error) {
-	reader := scope.DwarfReader()
 	off, err := scope.BinInfo.findFunctionDebugInfo(scope.PC)
 	if err != nil {
 		return nil, err
 	}
-	reader.Seek(off)
-	reader.Next()
 
-	for entry, err := reader.NextScopeVariable(); entry != nil; entry, err = reader.NextScopeVariable() {
-		if err != nil {
-			return nil, err
-		}
-		if entry.Tag == 0 {
-			break
-		}
+	varReader := reader.Variables(scope.BinInfo.dwarf, off, scope.PC, true)
+	var varDepth int = -1
+	var varEntry *dwarf.Entry = nil
 
-		n, ok := entry.Val(dwarf.AttrName).(string)
-		if !ok {
-			continue
-		}
+	for varReader.Next() {
+		entry := varReader.Entry()
+		if n, ok := entry.Val(dwarf.AttrName).(string); ok && n == varName {
+			if depth := varReader.Depth(); varDepth < depth {
+				varEntry = entry
+				varDepth = depth
+			}
 
-		if n == varName {
-			return scope.extractVarInfoFromEntry(entry, reader)
 		}
 	}
-	return nil, fmt.Errorf("could not find symbol value for %s", varName)
+
+	if err := varReader.Err(); err != nil {
+		return nil, err
+	}
+
+	if varEntry == nil {
+		return nil, fmt.Errorf("could not find symbol value for %s", varName)
+	}
+
+	return scope.extractVarInfoFromEntry(varEntry)
 }
 
 // LocalVariables returns all local variables from the current function scope.
@@ -658,7 +676,7 @@ func (scope *EvalScope) packageVarAddr(name string) (*Variable, error) {
 		}
 
 		if n == name || strings.HasSuffix(n, "/"+name) {
-			return scope.extractVarInfoFromEntry(entry, reader)
+			return scope.extractVarInfoFromEntry(entry)
 		}
 	}
 	return nil, fmt.Errorf("could not find symbol value for %s", name)
@@ -675,7 +693,7 @@ func (v *Variable) structMember(memberName string) (*Variable, error) {
 	}
 
 	switch t := structVar.RealType.(type) {
-	case *dwarf.StructType:
+	case *godwarf.StructType:
 		for _, field := range t.Field {
 			if field.Name != memberName {
 				continue
@@ -686,7 +704,8 @@ func (v *Variable) structMember(memberName string) (*Variable, error) {
 		// not a regular struct member
 		for _, field := range t.Field {
 			isEmbeddedStructMember :=
-				(field.Type.Common().Name == field.Name) ||
+				field.Embedded ||
+					(field.Type.Common().Name == field.Name) ||
 					(len(field.Name) > 1 &&
 						field.Name[0] == '*' &&
 						field.Type.Common().Name[1:] == field.Name[1:])
@@ -724,7 +743,7 @@ func (v *Variable) structMember(memberName string) (*Variable, error) {
 
 // Extracts the name and type of a variable from a dwarf entry
 // then executes the instructions given in the  DW_AT_location attribute to grab the variable's address
-func (scope *EvalScope) extractVarInfoFromEntry(entry *dwarf.Entry, rdr *reader.Reader) (*Variable, error) {
+func (scope *EvalScope) extractVarInfoFromEntry(entry *dwarf.Entry) (*Variable, error) {
 	if entry == nil {
 		return nil, fmt.Errorf("invalid entry")
 	}
@@ -768,7 +787,7 @@ func (v *Variable) maybeDereference() *Variable {
 	}
 
 	switch t := v.RealType.(type) {
-	case *dwarf.PtrType:
+	case *godwarf.PtrType:
 		ptrval, err := readUintRaw(v.mem, uintptr(v.Addr), t.ByteSize)
 		r := v.newVariable("", uintptr(ptrval), t.Type)
 		if err != nil {
@@ -810,7 +829,7 @@ func (v *Variable) loadValueInternal(recurseLevel int, cfg LoadConfig) {
 
 	case reflect.Chan:
 		sv := v.clone()
-		sv.RealType = resolveTypedef(&(sv.RealType.(*dwarf.ChanType).TypedefType))
+		sv.RealType = resolveTypedef(&(sv.RealType.(*godwarf.ChanType).TypedefType))
 		sv = sv.maybeDereference()
 		sv.loadValueInternal(0, loadFullValue)
 		v.Children = sv.Children
@@ -820,6 +839,9 @@ func (v *Variable) loadValueInternal(recurseLevel int, cfg LoadConfig) {
 	case reflect.Map:
 		if recurseLevel <= cfg.MaxVariableRecurse {
 			v.loadMap(recurseLevel, cfg)
+		} else {
+			// loads length so that the client knows that the map isn't empty
+			v.mapIterator()
 		}
 
 	case reflect.String:
@@ -832,7 +854,7 @@ func (v *Variable) loadValueInternal(recurseLevel int, cfg LoadConfig) {
 
 	case reflect.Struct:
 		v.mem = cacheMemory(v.mem, v.Addr, int(v.RealType.Size()))
-		t := v.RealType.(*dwarf.StructType)
+		t := v.RealType.(*godwarf.StructType)
 		v.Len = int64(len(t.Field))
 		// Recursively call extractValue to grab
 		// the value of all the members of the struct.
@@ -853,14 +875,14 @@ func (v *Variable) loadValueInternal(recurseLevel int, cfg LoadConfig) {
 		v.loadInterface(recurseLevel, true, cfg)
 
 	case reflect.Complex64, reflect.Complex128:
-		v.readComplex(v.RealType.(*dwarf.ComplexType).ByteSize)
+		v.readComplex(v.RealType.(*godwarf.ComplexType).ByteSize)
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		var val int64
-		val, v.Unreadable = readIntRaw(v.mem, v.Addr, v.RealType.(*dwarf.IntType).ByteSize)
+		val, v.Unreadable = readIntRaw(v.mem, v.Addr, v.RealType.(*godwarf.IntType).ByteSize)
 		v.Value = constant.MakeInt64(val)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		var val uint64
-		val, v.Unreadable = readUintRaw(v.mem, v.Addr, v.RealType.(*dwarf.UintType).ByteSize)
+		val, v.Unreadable = readUintRaw(v.mem, v.Addr, v.RealType.(*godwarf.UintType).ByteSize)
 		v.Value = constant.MakeUint64(val)
 
 	case reflect.Bool:
@@ -872,7 +894,7 @@ func (v *Variable) loadValueInternal(recurseLevel int, cfg LoadConfig) {
 		}
 	case reflect.Float32, reflect.Float64:
 		var val float64
-		val, v.Unreadable = v.readFloatRaw(v.RealType.(*dwarf.FloatType).ByteSize)
+		val, v.Unreadable = v.readFloatRaw(v.RealType.(*godwarf.FloatType).ByteSize)
 		v.Value = constant.MakeFloat64(val)
 		switch {
 		case math.IsInf(val, +1):
@@ -908,7 +930,7 @@ func (v *Variable) setValue(y *Variable) error {
 		imag, _ := constant.Float64Val(constant.Imag(y.Value))
 		err = v.writeComplex(real, imag, v.RealType.Size())
 	default:
-		if t, isptr := v.RealType.(*dwarf.PtrType); isptr {
+		if t, isptr := v.RealType.(*godwarf.PtrType); isptr {
 			err = v.writeUint(uint64(y.Children[0].Addr), int64(t.ByteSize))
 		} else {
 			return fmt.Errorf("can not set variables of type %s (not implemented)", v.Kind.String())
@@ -965,7 +987,7 @@ func readStringValue(mem MemoryReadWriter, addr uintptr, strlen int64, cfg LoadC
 	return retstr, nil
 }
 
-func (v *Variable) loadSliceInfo(t *dwarf.SliceType) {
+func (v *Variable) loadSliceInfo(t *godwarf.SliceType) {
 	v.mem = cacheMemory(v.mem, v.Addr, int(t.Size()))
 
 	var err error
@@ -977,7 +999,7 @@ func (v *Variable) loadSliceInfo(t *dwarf.SliceType) {
 			if err == nil {
 				v.Base = uintptr(base)
 				// Dereference array type to get value type
-				ptrType, ok := f.Type.(*dwarf.PtrType)
+				ptrType, ok := f.Type.(*godwarf.PtrType)
 				if !ok {
 					v.Unreadable = fmt.Errorf("Invalid type %s in slice array", f.Type)
 					return
@@ -1006,7 +1028,7 @@ func (v *Variable) loadSliceInfo(t *dwarf.SliceType) {
 	}
 
 	v.stride = v.fieldType.Size()
-	if t, ok := v.fieldType.(*dwarf.PtrType); ok {
+	if t, ok := v.fieldType.(*godwarf.PtrType); ok {
 		v.stride = t.ByteSize
 	}
 
@@ -1061,7 +1083,7 @@ func (v *Variable) readComplex(size int64) {
 		return
 	}
 
-	ftyp := &dwarf.FloatType{BasicType: dwarf.BasicType{CommonType: dwarf.CommonType{ByteSize: fs, Name: fmt.Sprintf("float%d", fs)}, BitSize: fs * 8, BitOffset: 0}}
+	ftyp := &godwarf.FloatType{BasicType: godwarf.BasicType{CommonType: godwarf.CommonType{ByteSize: fs, Name: fmt.Sprintf("float%d", fs)}, BitSize: fs * 8, BitOffset: 0}}
 
 	realvar := v.newVariable("real", v.Addr, ftyp)
 	imagvar := v.newVariable("imaginary", v.Addr+uintptr(fs), ftyp)
@@ -1241,7 +1263,12 @@ func (v *Variable) loadMap(recurseLevel int, cfg LoadConfig) {
 			break
 		}
 		key := it.key()
-		val := it.value()
+		var val *Variable
+		if it.values.fieldType.Size() > 0 {
+			val = it.value()
+		} else {
+			val = v.newVariable("", it.values.Addr, it.values.fieldType)
+		}
 		key.loadValueInternal(recurseLevel+1, cfg)
 		val.loadValueInternal(recurseLevel+1, cfg)
 		if key.Unreadable != nil || val.Unreadable != nil {
@@ -1276,11 +1303,11 @@ type mapIterator struct {
 // Code derived from go/src/runtime/hashmap.go
 func (v *Variable) mapIterator() *mapIterator {
 	sv := v.clone()
-	sv.RealType = resolveTypedef(&(sv.RealType.(*dwarf.MapType).TypedefType))
+	sv.RealType = resolveTypedef(&(sv.RealType.(*godwarf.MapType).TypedefType))
 	sv = sv.maybeDereference()
 	v.Base = sv.Addr
 
-	maptype, ok := sv.RealType.(*dwarf.StructType)
+	maptype, ok := sv.RealType.(*godwarf.StructType)
 	if !ok {
 		v.Unreadable = fmt.Errorf("wrong real type for map")
 		return nil
@@ -1387,7 +1414,7 @@ func (it *mapIterator) nextBucket() bool {
 	it.values = nil
 	it.overflow = nil
 
-	for _, f := range it.b.DwarfType.(*dwarf.StructType).Field {
+	for _, f := range it.b.DwarfType.(*godwarf.StructType).Field {
 		field, err := it.b.toField(f)
 		if err != nil {
 			it.v.Unreadable = err
@@ -1421,7 +1448,14 @@ func (it *mapIterator) nextBucket() bool {
 		return false
 	}
 
-	if it.tophashes.Len != it.keys.Len || it.tophashes.Len != it.values.Len {
+	if it.tophashes.Len != it.keys.Len {
+		it.v.Unreadable = mapBucketContentsInconsistentLenErr
+		return false
+	}
+
+	if it.values.fieldType.Size() > 0 && it.tophashes.Len != it.values.Len {
+		// if the type of the value is zero-sized (i.e. struct{}) then the values
+		// array's length is zero.
 		it.v.Unreadable = mapBucketContentsInconsistentLenErr
 		return false
 	}
@@ -1470,7 +1504,7 @@ func mapEvacuated(b *Variable) bool {
 	if b.Addr == 0 {
 		return true
 	}
-	for _, f := range b.DwarfType.(*dwarf.StructType).Field {
+	for _, f := range b.DwarfType.(*godwarf.StructType).Field {
 		if f.Name != "tophash" {
 			continue
 		}
@@ -1487,7 +1521,7 @@ func mapEvacuated(b *Variable) bool {
 
 func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig) {
 	var _type, typestring, data *Variable
-	var typ dwarf.Type
+	var typ godwarf.Type
 	var err error
 	isnil := false
 
@@ -1520,7 +1554,7 @@ func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig
 
 	v.mem = cacheMemory(v.mem, v.Addr, int(v.RealType.Size()))
 
-	ityp := resolveTypedef(&v.RealType.(*dwarf.InterfaceType).TypedefType).(*dwarf.StructType)
+	ityp := resolveTypedef(&v.RealType.(*godwarf.InterfaceType).TypedefType).(*godwarf.StructType)
 
 	for _, f := range ityp.Field {
 		switch f.Name {
@@ -1620,7 +1654,7 @@ func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig
 
 	if kind&kindDirectIface == 0 {
 		realtyp := resolveTypedef(typ)
-		if _, isptr := realtyp.(*dwarf.PtrType); !isptr {
+		if _, isptr := realtyp.(*godwarf.PtrType); !isptr {
 			typ = pointerTo(typ, v.bi.Arch)
 		}
 	}
@@ -1636,37 +1670,66 @@ func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig
 	return
 }
 
+type variablesByDepth struct {
+	vars   []*Variable
+	depths []int
+}
+
+func (v *variablesByDepth) Len() int { return len(v.vars) }
+
+func (v *variablesByDepth) Less(i int, j int) bool { return v.depths[i] < v.depths[j] }
+
+func (v *variablesByDepth) Swap(i int, j int) {
+	v.depths[i], v.depths[j] = v.depths[j], v.depths[i]
+	v.vars[i], v.vars[j] = v.vars[j], v.vars[i]
+}
+
 // Fetches all variables of a specific type in the current function scope
 func (scope *EvalScope) variablesByTag(tag dwarf.Tag, cfg LoadConfig) ([]*Variable, error) {
-	reader := scope.DwarfReader()
 	off, err := scope.BinInfo.findFunctionDebugInfo(scope.PC)
 	if err != nil {
 		return nil, err
 	}
-	reader.Seek(off)
-	reader.Next()
 
 	var vars []*Variable
-	for entry, err := reader.NextScopeVariable(); entry != nil; entry, err = reader.NextScopeVariable() {
+	var depths []int
+	varReader := reader.Variables(scope.BinInfo.dwarf, off, scope.PC, tag == dwarf.TagVariable)
+	hasScopes := false
+	for varReader.Next() {
+		entry := varReader.Entry()
+		if entry.Tag != tag {
+			continue
+		}
+		val, err := scope.extractVariableFromEntry(entry, cfg)
 		if err != nil {
-			return nil, err
+			// skip variables that we can't parse yet
+			continue
 		}
-		if entry.Tag == 0 {
-			break
-		}
-
-		if entry.Tag == tag {
-			val, err := scope.extractVariableFromEntry(entry, cfg)
-			if err != nil {
-				// skip variables that we can't parse yet
-				continue
-			}
-
-			vars = append(vars, val)
+		vars = append(vars, val)
+		depth := varReader.Depth()
+		depths = append(depths, depth)
+		if depth > 1 {
+			hasScopes = true
 		}
 	}
+
+	if err := varReader.Err(); err != nil {
+		return nil, err
+	}
+
 	if len(vars) <= 0 {
 		return vars, nil
+	}
+
+	if hasScopes {
+		sort.Stable(&variablesByDepth{vars, depths})
+		lvn := map[string]*Variable{} // lvn[n] is the last variable we saw named n
+		for _, v := range vars {
+			if otherv := lvn[v.Name]; otherv != nil {
+				otherv.Shadowed = true
+			}
+			lvn[v.Name] = v
+		}
 	}
 
 	// prefetch the whole chunk of memory relative to these variables

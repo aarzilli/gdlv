@@ -8,7 +8,7 @@ import (
 	"io"
 	"os"
 
-	"golang.org/x/debug/elf"
+	"debug/elf"
 
 	"golang.org/x/arch/x86/x86asm"
 

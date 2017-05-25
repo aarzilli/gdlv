@@ -1,9 +1,11 @@
 package proc
 
+import "github.com/derekparker/delve/pkg/goversion"
+
 // Arch defines an interface for representing a
 // CPU architecture.
 type Arch interface {
-	SetGStructOffset(ver GoVersion, iscgo bool)
+	SetGStructOffset(ver goversion.GoVersion, iscgo bool)
 	PtrSize() int
 	BreakpointInstruction() []byte
 	BreakpointSize() int
@@ -38,13 +40,13 @@ func AMD64Arch(goos string) *AMD64 {
 // SetGStructOffset sets the offset of the G struct on the AMD64
 // arch struct. The offset is dependent on the Go compiler Version
 // and whether or not the target program was externally linked.
-func (a *AMD64) SetGStructOffset(ver GoVersion, isextld bool) {
+func (a *AMD64) SetGStructOffset(ver goversion.GoVersion, isextld bool) {
 	switch a.goos {
 	case "darwin":
 		a.gStructOffset = 0x8a0
 	case "linux":
 		a.gStructOffset = 0xfffffffffffffff0
-		if isextld || ver.AfterOrEqual(GoVersion{1, 5, -1, 2, 0, ""}) || ver.IsDevel() {
+		if isextld || ver.AfterOrEqual(goversion.GoVersion{1, 5, -1, 2, 0, ""}) || ver.IsDevel() {
 			a.gStructOffset += 8
 		}
 	case "windows":
