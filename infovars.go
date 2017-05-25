@@ -31,7 +31,6 @@ type Variable struct {
 	Value    string
 	IntMode  numberMode
 	FloatFmt string
-	Dim      bool
 	Varname  string
 	Children []*Variable
 }
@@ -129,22 +128,8 @@ func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].
 func loadLocals(p *asyncLoad) {
 	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
 	localsPanel.args = wrapApiVariables(args)
-	sort.Stable(variablesByName(localsPanel.args))
 	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
 	localsPanel.locals = wrapApiVariables(locals)
-	sort.Stable(variablesByName(localsPanel.locals))
-
-	m := map[string]*Variable{}
-	dupcnt := 0
-
-	for _, v := range localsPanel.locals {
-		if vprev, ok := m[v.Name]; ok {
-			vprev.Varname = fmt.Sprintf("%s.%d", v.Name, dupcnt)
-			dupcnt++
-			vprev.Dim = true
-		}
-		m[v.Name] = v
-	}
 
 	for i := range localsPanel.expressions {
 		loadOneExpr(i)
@@ -420,7 +405,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 
 	style := w.Master().Style()
 
-	if v.Dim {
+	if v.Shadowed {
 		savedStyle := *style
 		defer func() {
 			*style = savedStyle
