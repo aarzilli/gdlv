@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"strings"
 	"sync"
@@ -660,6 +661,11 @@ Executes "gdlv run" using mozilla rr has a backend.
 }
 
 func main() {
+	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" {
+		fmt.Fprintf(os.Stderr, "DISPLAY not set\n")
+		os.Exit(1)
+	}
+
 	loadConfiguration()
 
 	if profileEnabled {
