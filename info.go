@@ -873,11 +873,10 @@ func updateListingPanel(container *nucular.Window) {
 
 	const lineheight = 14
 
-	listp := container.GroupBegin("listing", 0)
+	gl, listp := nucular.GroupListStart(container, len(listingPanel.listing), "listing", 0)
 	if listp == nil {
 		return
 	}
-	defer listp.GroupEnd()
 
 	style := container.Master().Style()
 
@@ -889,13 +888,13 @@ func updateListingPanel(container *nucular.Window) {
 		idxw += nucular.FontWidth(style.Font, listingPanel.listing[len(listingPanel.listing)-1].idx)
 	}
 
-	scrollbary := listp.Scrollbar.Y
+	if !listingPanel.recenterListing {
+		gl.SkipToVisible(lineheight)
+	}
 
-	for _, line := range listingPanel.listing {
-		above, below := listp.Invisible()
-
+	for gl.Next() {
 		listp.Row(lineheight).Static()
-
+		line := listingPanel.listing[gl.Index()]
 		centerline := line.pc || (listingPanel.pinnedLoc != nil && line.lineno == listingPanel.pinnedLoc.Line)
 
 		if centerline {
@@ -910,16 +909,6 @@ func updateListingPanel(container *nucular.Window) {
 		listp.LayoutSetWidth(starw)
 		breakpointIcon(listp, line.bp != nil, "CC", style)
 		bpbounds := listp.LastWidgetBounds
-
-		if centerline && listingPanel.recenterListing {
-			listingPanel.recenterListing = false
-			if above || below {
-				scrollbary = listp.At().Y - listp.Bounds.H/2
-				if scrollbary < 0 {
-					scrollbary = 0
-				}
-			}
-		}
 
 		isCurrentLine := line.pc && curFrame == 0
 
@@ -937,6 +926,11 @@ func updateListingPanel(container *nucular.Window) {
 		listp.LayoutFitWidth(listingPanel.id, 100)
 		listp.Label(line.text, "LC")
 		textbounds := listp.LastWidgetBounds
+
+		if centerline && listingPanel.recenterListing {
+			listingPanel.recenterListing = false
+			gl.Center()
+		}
 
 		if !running {
 			ctxtbounds := bpbounds
@@ -970,11 +964,6 @@ func updateListingPanel(container *nucular.Window) {
 			}
 		}
 	}
-
-	if scrollbary != listp.Scrollbar.Y {
-		listp.Scrollbar.Y = scrollbary
-		wnd.Changed()
-	}
 }
 
 func listingSetBreakpoint(file string, line int) {
@@ -985,11 +974,10 @@ func listingSetBreakpoint(file string, line int) {
 func updateDisassemblyPanel(container *nucular.Window) {
 	const lineheight = 14
 
-	listp := container.GroupBegin("disassembly", 0)
+	gl, listp := nucular.GroupListStart(container, len(listingPanel.text), "disassembly", 0)
 	if listp == nil {
 		return
 	}
-	defer listp.GroupEnd()
 
 	style := container.Master().Style()
 
@@ -1003,9 +991,12 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		listp.Label(fmt.Sprintf("TEXT %s(SB) %s", listingPanel.text[0].Loc.Function.Name, listingPanel.text[0].Loc.File), "LC")
 	}
 
-	scrollbary := listp.Scrollbar.Y
+	if !listingPanel.recenterDisassembly {
+		gl.SkipToVisible(lineheight)
+	}
 
-	for _, instr := range listingPanel.text {
+	for gl.Next() {
+		instr := listingPanel.text[gl.Index()]
 		if instr.Loc.File != lastfile || instr.Loc.Line != lastlineno {
 			listp.Row(lineheight).Static()
 			listp.Row(lineheight).Static()
@@ -1021,22 +1012,14 @@ func updateDisassemblyPanel(container *nucular.Window) {
 
 		listp.LayoutSetWidthScaled(starw)
 
-		if instr.AtPC || instr.Loc.PC == listingPanel.framePC {
+		centerline := instr.AtPC || instr.Loc.PC == listingPanel.framePC
+
+		if centerline {
 			rowbounds := listp.WidgetBounds()
 			rowbounds.X = listp.Bounds.X
 			rowbounds.W = listp.Bounds.W
 			cmds := listp.Commands()
 			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
-
-			if listingPanel.recenterDisassembly {
-				listingPanel.recenterDisassembly = false
-				if above, below := listp.Invisible(); above || below {
-					scrollbary = listp.At().Y - listp.Bounds.H/2
-					if scrollbary < 0 {
-						scrollbary = 0
-					}
-				}
-			}
 		}
 
 		breakpointIcon(listp, instr.Breakpoint, "CC", style)
@@ -1055,10 +1038,10 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		listp.Label(fmt.Sprintf("%x", instr.Loc.PC), "LC")
 		listp.LayoutFitWidth(listingPanel.id, 100)
 		listp.Label(instr.Text, "LC")
-	}
 
-	if scrollbary != listp.Scrollbar.Y {
-		listp.Scrollbar.Y = scrollbary
-		wnd.Changed()
+		if listingPanel.recenterDisassembly && centerline {
+			listingPanel.recenterDisassembly = false
+			gl.Center()
+		}
 	}
 }
