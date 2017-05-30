@@ -128,8 +128,7 @@ func drawWindow(dc syscall.Handle, src2dst f64.Aff3, src interface{}, sr image.R
 		}()
 	} else if src2dst[0] == 1 && src2dst[4] == 1 {
 		// copy bitmap
-		dp := image.Point{int(src2dst[2]), int(src2dst[5])}
-		dr = sr.Add(dp.Sub(sr.Min))
+		dr = sr.Add(image.Point{int(src2dst[2]), int(src2dst[5])})
 	} else {
 		// scale bitmap
 		dstXMin := float64(sr.Min.X)*src2dst[0] + src2dst[2]

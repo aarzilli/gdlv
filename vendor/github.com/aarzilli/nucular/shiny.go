@@ -8,6 +8,7 @@ import (
 	"image/draw"
 	"io"
 	"os"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -137,6 +138,11 @@ func (mw *masterWindow) main(s screen.Screen) {
 func (w *masterWindow) handleEventLocked(ei interface{}) bool {
 	switch e := ei.(type) {
 	case paint.Event:
+		if runtime.GOOS == "darwin" {
+			// on darwin we must respond to a paint.Event by reuploading the buffer or
+			// the appplication will freeze.
+			w.prevCmds = w.prevCmds[:0]
+		}
 		w.updateLocked()
 
 	case lifecycle.Event:
