@@ -273,7 +273,7 @@ func clear(out io.Writer, args string) error {
 }
 
 func restart(out io.Writer, args string) error {
-	if client.Recorded() {
+	if client != nil && client.Recorded() {
 		_, err := client.RestartFrom(args)
 		refreshState(refreshToFrameZero, clearStop, nil)
 		return err

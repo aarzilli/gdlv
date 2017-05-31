@@ -37,6 +37,7 @@ type ServerDescr struct {
 	connectionFailed bool
 }
 
+var RemoveExecutable bool = true
 var BackendServer ServerDescr
 
 func parseArguments() (descr ServerDescr) {
@@ -76,6 +77,9 @@ func parseArguments() (descr ServerDescr) {
 	const defaultBackend = "--backend=default"
 	backend := defaultBackend
 	if colon := strings.Index(cmd, ":"); colon >= 0 {
+		if cmd[:colon] == "rr" {
+			RemoveExecutable = false
+		}
 		backend = "--backend=" + cmd[:colon]
 		cmd = cmd[colon+1:]
 	}
@@ -373,7 +377,7 @@ func (descr *ServerDescr) Close() {
 	if descr.serverProcess != nil {
 		descr.serverProcess.Signal(os.Interrupt)
 	}
-	if descr.exe != "" {
+	if descr.exe != "" && RemoveExecutable {
 		os.Remove(descr.exe)
 	}
 }
