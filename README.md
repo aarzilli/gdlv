@@ -21,6 +21,10 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2017-06-04
+* Custom formatters for user defined types.
+* Better executable building for go1.9
+
 ## 2017-05-18
 * Better formatting for maps and integer variables.
 
