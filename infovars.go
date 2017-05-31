@@ -129,6 +129,14 @@ func loadLocals(p *asyncLoad) {
 	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
 	localsPanel.args = wrapApiVariables(args)
 	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
+	for i := range locals {
+		v := &locals[i]
+		if v.Kind == reflect.Ptr && len(v.Name) > 1 && v.Name[0] == '&' && len(v.Children) > 0 {
+			name := v.Name[1:]
+			locals[i] = v.Children[0]
+			locals[i].Name = name
+		}
+	}
 	localsPanel.locals = wrapApiVariables(locals)
 
 	for i := range localsPanel.expressions {
