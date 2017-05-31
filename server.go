@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/derekparker/delve/pkg/goversion"
 	"github.com/derekparker/delve/service/api"
 	"github.com/derekparker/delve/service/rpc2"
 )
@@ -67,6 +68,11 @@ func parseArguments() (descr ServerDescr) {
 
 	cmd := os.Args[1]
 
+	useFlagA := false
+	if ver, _ := goversion.Installed(); ver.Major < 0 || ver.AfterOrEqual(goversion.GoVersion{1, 9, -1, 0, 0, ""}) {
+		useFlagA = true
+	}
+
 	const defaultBackend = "--backend=default"
 	backend := defaultBackend
 	if colon := strings.Index(cmd, ":"); colon >= 0 {
@@ -95,6 +101,9 @@ func parseArguments() (descr ServerDescr) {
 		dir, _ := os.Getwd()
 		debugname(dir)
 		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe}
+		if useFlagA {
+			descr.buildcmd = append(descr.buildcmd, "-a")
+		}
 		args := make([]string, 0, len(os.Args[2:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
 		args = append(args, os.Args[2:]...)
@@ -102,7 +111,11 @@ func parseArguments() (descr ServerDescr) {
 
 	case "run":
 		debugname(os.Args[2])
-		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe, os.Args[2]}
+		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe}
+		if useFlagA {
+			descr.buildcmd = append(descr.buildcmd, "-a")
+		}
+		descr.buildcmd = append(descr.buildcmd, os.Args[2])
 		args := make([]string, 0, len(os.Args[3:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
 		args = append(args, os.Args[3:]...)
@@ -120,7 +133,11 @@ func parseArguments() (descr ServerDescr) {
 	case "test":
 		dir, _ := os.Getwd()
 		debugname(dir)
-		descr.buildcmd = []string{"test", "-gcflags", "-N -l", "-c", "-o", descr.exe}
+		descr.buildcmd = []string{"test", "-gcflags", "-N -l", "-c"}
+		if useFlagA {
+			descr.buildcmd = append(descr.buildcmd, "-a")
+		}
+		descr.buildcmd = append(descr.buildcmd, "-o", descr.exe)
 		args := make([]string, 0, len(os.Args[2:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
 		for _, arg := range os.Args[2:] {
