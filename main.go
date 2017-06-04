@@ -270,7 +270,7 @@ func canExecuteCmd(client service.Client, cmd string) bool {
 	if client != nil {
 		return true
 	}
-	return cmd == "q" || cmd == "quit" || cmd == "restart"
+	return cmd == "q" || cmd == "quit" || cmd == "r" || cmd == "restart"
 }
 
 func digits(n int) int {
