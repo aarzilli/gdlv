@@ -207,7 +207,7 @@ func updateLocals(container *nucular.Window) {
 				w.Row(varRowHeight).Dynamic(1)
 				w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i]), "LC")
 			} else {
-				showVariable(w, 0, false, i, localsPanel.v[i].Name, localsPanel.v[i])
+				showVariable(w, 0, localsPanel.showAddr, i, localsPanel.v[i].Name, localsPanel.v[i])
 			}
 		}
 	}
@@ -438,6 +438,9 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 	hdr := func() bool {
 		if v.Width == 0 {
 			v.Width = nucular.FontWidth(style.Font, hdrCollapsedName()) + nucular.FontHeight(style.Font) + style.Tab.Padding.X*3 + style.GroupWindow.Padding.X*2 + style.Tab.NodeButton.Padding.X*2 + style.Tab.NodeButton.Border*2
+			if !addr {
+				v.Width += nucular.FontWidth(style.Font, fmt.Sprintf("%#x ", v.Addr))
+			}
 			if v.Width > maxWidth {
 				v.Width = maxWidth
 			}
@@ -455,6 +458,9 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		s := fmt.Sprintf(fmtstr, args...)
 		if v.Width == 0 {
 			v.Width = nucular.FontWidth(style.Font, s) + style.Text.Padding.X*2
+			if !addr {
+				v.Width += nucular.FontWidth(style.Font, fmt.Sprintf("%#x ", v.Addr))
+			}
 			if v.Width > maxWidth {
 				v.Width = maxWidth
 			}
