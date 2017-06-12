@@ -108,22 +108,23 @@ type Text struct {
 }
 
 type Button struct {
-	Normal         Item
-	Hover          Item
-	Active         Item
-	BorderColor    color.RGBA
-	TextBackground color.RGBA
-	TextNormal     color.RGBA
-	TextHover      color.RGBA
-	TextActive     color.RGBA
-	Border         int
-	Rounding       uint16
-	Padding        image.Point
-	ImagePadding   image.Point
-	TouchPadding   image.Point
-	DrawBegin      func(*command.Buffer)
-	Draw           CustomButtonDrawing
-	DrawEnd        func(*command.Buffer)
+	Normal            Item
+	Hover             Item
+	Active            Item
+	BorderColor       color.RGBA
+	TextBackground    color.RGBA
+	TextNormal        color.RGBA
+	TextHover         color.RGBA
+	TextActive        color.RGBA
+	Border            int
+	Rounding          uint16
+	Padding           image.Point
+	ImagePadding      image.Point
+	TouchPadding      image.Point
+	DrawBegin         func(*command.Buffer)
+	Draw              CustomButtonDrawing
+	DrawEnd           func(*command.Buffer)
+	SymbolBorderWidth int
 }
 
 type CustomButtonDrawing struct {
@@ -420,6 +421,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.ImagePadding = image.Point{0.0, 0.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 1
+	button.SymbolBorderWidth = 1
 	button.Rounding = 4
 	button.DrawBegin = nil
 	button.DrawEnd = nil
@@ -439,6 +441,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.Padding = image.Point{4.0, 4.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0
+	button.SymbolBorderWidth = 1
 	button.Rounding = 0
 	button.DrawBegin = nil
 	button.DrawEnd = nil
@@ -458,6 +461,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.Padding = image.Point{4.0, 4.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0
+	button.SymbolBorderWidth = 1
 	button.Rounding = 1
 	button.DrawBegin = nil
 	button.DrawEnd = nil
@@ -682,6 +686,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.Padding = image.Point{0.0, 0.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
+	button.SymbolBorderWidth = 1
 	button.Rounding = 0.0
 	button.DrawBegin = nil
 	button.DrawEnd = nil
@@ -744,6 +749,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.Padding = image.Point{2.0, 2.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
+	button.SymbolBorderWidth = 1
 	button.Rounding = 0.0
 	button.DrawBegin = nil
 	button.DrawEnd = nil
@@ -776,6 +782,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.Padding = image.Point{2.0, 2.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
+	button.SymbolBorderWidth = 2
 	button.Rounding = 0.0
 	button.DrawBegin = nil
 	button.DrawEnd = nil
@@ -795,6 +802,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.Padding = image.Point{2.0, 2.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
+	button.SymbolBorderWidth = 2
 	button.Rounding = 0.0
 	button.DrawBegin = nil
 	button.DrawEnd = nil
@@ -831,6 +839,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.Padding = image.Point{0.0, 0.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
+	button.SymbolBorderWidth = 1
 	button.Rounding = 0.0
 	button.DrawBegin = nil
 	button.DrawEnd = nil
@@ -850,6 +859,7 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.Padding = image.Point{0.0, 0.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
+	button.SymbolBorderWidth = 1
 	button.Rounding = 0.0
 	button.DrawBegin = nil
 	button.DrawEnd = nil
@@ -1084,6 +1094,7 @@ func (style *Style) Scale(scaling float64) {
 		scalept(&button.ImagePadding)
 		scalept(&button.TouchPadding)
 		scale(&button.Border)
+		scale(&button.SymbolBorderWidth)
 		scaleu(&button.Rounding)
 	}
 

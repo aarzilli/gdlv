@@ -14,7 +14,7 @@ import (
 
 func drawSymbol(out *command.Buffer, type_ label.SymbolType, content rect.Rect, background color.RGBA, foreground color.RGBA, border_width int, font font.Face) {
 	triangleSymbol := func(heading Heading) {
-		points := triangleFromDirection(content, 0, 0, heading)
+		points := triangleFromDirection(content, border_width, border_width, heading)
 		out.FillTriangle(points[0], points[1], points[2], foreground)
 	}
 	switch type_ {
@@ -331,7 +331,7 @@ func drawSymbolButton(win *Window, bounds rect.Rect, content rect.Rect, state ns
 	} else {
 		sym = style.TextNormal
 	}
-	drawSymbol(out, symbol, content, bg, sym, 1, font)
+	drawSymbol(out, symbol, content, bg, sym, style.SymbolBorderWidth, font)
 	return
 }
 

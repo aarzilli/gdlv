@@ -19,46 +19,46 @@
 			"revision": "e13605d223ac0bca1fc3948d9782db9545c331e8"
 		},
 		{
-			"checksumSHA1": "soYfBN0FDJmGnRW+PewXIQoZkHg=",
+			"checksumSHA1": "lilZIhirtnE2fu11bWM9Xo18q5k=",
 			"path": "github.com/aarzilli/nucular",
-			"revision": "a82c8233eb4b53c9b438c0f62cbeb29ac4128fc7",
-			"revisionTime": "2017-05-30T13:21:08Z"
+			"revision": "bcd937bf61932dac4d4abfc06b64d78846a14e74",
+			"revisionTime": "2017-06-12T19:40:06Z"
 		},
 		{
 			"checksumSHA1": "zF1XMVtzm4anTw0i8NFZM5YE5UI=",
 			"path": "github.com/aarzilli/nucular/clipboard",
-			"revision": "a82c8233eb4b53c9b438c0f62cbeb29ac4128fc7",
-			"revisionTime": "2017-05-30T13:21:08Z"
+			"revision": "bcd937bf61932dac4d4abfc06b64d78846a14e74",
+			"revisionTime": "2017-06-12T19:40:06Z"
 		},
 		{
 			"checksumSHA1": "Ap5VBJOhmg06hl9vH4X9bMQw5QU=",
 			"path": "github.com/aarzilli/nucular/command",
-			"revision": "a82c8233eb4b53c9b438c0f62cbeb29ac4128fc7",
-			"revisionTime": "2017-05-30T13:21:08Z"
+			"revision": "bcd937bf61932dac4d4abfc06b64d78846a14e74",
+			"revisionTime": "2017-06-12T19:40:06Z"
 		},
 		{
 			"checksumSHA1": "47lBVDBqAFbchBI+NCLCgVOvyEs=",
 			"path": "github.com/aarzilli/nucular/internal/assets",
-			"revision": "a82c8233eb4b53c9b438c0f62cbeb29ac4128fc7",
-			"revisionTime": "2017-05-30T13:21:08Z"
+			"revision": "bcd937bf61932dac4d4abfc06b64d78846a14e74",
+			"revisionTime": "2017-06-12T19:40:06Z"
 		},
 		{
 			"checksumSHA1": "svGZnpPShuy1pTCje04fmt6/Qf8=",
 			"path": "github.com/aarzilli/nucular/label",
-			"revision": "a82c8233eb4b53c9b438c0f62cbeb29ac4128fc7",
-			"revisionTime": "2017-05-30T13:21:08Z"
+			"revision": "bcd937bf61932dac4d4abfc06b64d78846a14e74",
+			"revisionTime": "2017-06-12T19:40:06Z"
 		},
 		{
 			"checksumSHA1": "mFSGcXcbDshN9tYLLSqRM6QHlzY=",
 			"path": "github.com/aarzilli/nucular/rect",
-			"revision": "a82c8233eb4b53c9b438c0f62cbeb29ac4128fc7",
-			"revisionTime": "2017-05-30T13:21:08Z"
+			"revision": "bcd937bf61932dac4d4abfc06b64d78846a14e74",
+			"revisionTime": "2017-06-12T19:40:06Z"
 		},
 		{
-			"checksumSHA1": "0c17IJU5gqdysnes6t5tVajiT/M=",
+			"checksumSHA1": "kSRNcnG6eilX0DBckVhtlW3vqQA=",
 			"path": "github.com/aarzilli/nucular/style",
-			"revision": "a82c8233eb4b53c9b438c0f62cbeb29ac4128fc7",
-			"revisionTime": "2017-05-30T13:21:08Z"
+			"revision": "bcd937bf61932dac4d4abfc06b64d78846a14e74",
+			"revisionTime": "2017-06-12T19:40:06Z"
 		},
 		{
 			"path": "github.com/derekparker/delve/dwarf/frame",
