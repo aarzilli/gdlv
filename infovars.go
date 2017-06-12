@@ -153,8 +153,9 @@ func loadLocals(p *asyncLoad) {
 }
 
 const (
-	varRowHeight = 20
-	moreBtnWidth = 70
+	varRowHeight    = 20
+	varEditorHeight = 25
+	moreBtnWidth    = 70
 )
 
 func updateLocals(container *nucular.Window) {
@@ -227,13 +228,13 @@ func loadOneExpr(i int) {
 
 func exprsEditor(isnew bool, w *nucular.Window) {
 	if isnew {
-		w.Row(varRowHeight).Static(50, 0)
+		w.Row(varEditorHeight).Static(50, 0)
 		w.Label("New: ", "LC")
 		if w.Input().Mouse.HoveringRect(w.LastWidgetBounds) {
 			w.Tooltip("Evaluate new expression")
 		}
 	} else {
-		w.Row(varRowHeight).Dynamic(1)
+		w.Row(varEditorHeight).Dynamic(1)
 	}
 	active := localsPanel.ed.Edit(w)
 	if active&nucular.EditCommitted == 0 {
