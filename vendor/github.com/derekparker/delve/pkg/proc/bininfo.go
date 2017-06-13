@@ -237,7 +237,7 @@ func (bi *BinaryInfo) LoadBinaryInfoPE(path string, wg *sync.WaitGroup) error {
 	if peFile.Machine != pe.IMAGE_FILE_MACHINE_AMD64 {
 		return UnsupportedWindowsArchErr
 	}
-	bi.dwarf, err = peFile.DWARF()
+	bi.dwarf, err = dwarfFromPE(peFile)
 	if err != nil {
 		return err
 	}
@@ -261,6 +261,33 @@ func openExecutablePathPE(path string) (*pe.File, io.Closer, error) {
 		return nil, nil, err
 	}
 	return peFile, f, nil
+}
+
+// Adapted from src/debug/pe/file.go: pe.(*File).DWARF()
+func dwarfFromPE(f *pe.File) (*dwarf.Data, error) {
+	// There are many other DWARF sections, but these
+	// are the ones the debug/dwarf package uses.
+	// Don't bother loading others.
+	var names = [...]string{"abbrev", "info", "line", "str"}
+	var dat [len(names)][]byte
+	for i, name := range names {
+		name = ".debug_" + name
+		s := f.Section(name)
+		if s == nil {
+			continue
+		}
+		b, err := s.Data()
+		if err != nil && uint32(len(b)) < s.Size {
+			return nil, err
+		}
+		if 0 < s.VirtualSize && s.VirtualSize < s.Size {
+			b = b[:s.VirtualSize]
+		}
+		dat[i] = b
+	}
+
+	abbrev, info, line, str := dat[0], dat[1], dat[2], dat[3]
+	return dwarf.New(abbrev, nil, nil, info, line, nil, nil, str)
 }
 
 func (bi *BinaryInfo) parseDebugFramePE(exe *pe.File, wg *sync.WaitGroup) {

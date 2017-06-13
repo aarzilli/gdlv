@@ -37,7 +37,9 @@ type Process struct {
 	breakpointIDCounter         int
 	internalBreakpointIDCounter int
 	firstStart                  bool
+	haltMu                      sync.Mutex
 	halt                        bool
+	resumeChan                  chan<- struct{}
 	exited                      bool
 	ptraceChan                  chan func()
 	ptraceDoneChan              chan interface{}
@@ -88,11 +90,6 @@ func (dbp *Process) Detach(kill bool) (err error) {
 		dbp.bi.Close()
 		return nil
 	}
-	if dbp.Running() {
-		if err = dbp.Halt(); err != nil {
-			return
-		}
-	}
 	if !kill {
 		// Clean up any breakpoints we've set.
 		for _, bp := range dbp.breakpoints {
@@ -123,15 +120,8 @@ func (dbp *Process) Exited() bool {
 	return dbp.exited
 }
 
-// Running returns whether the debugged
-// process is currently executing.
-func (dbp *Process) Running() bool {
-	for _, th := range dbp.threads {
-		if th.running {
-			return true
-		}
-	}
-	return false
+func (dbp *Process) ResumeNotify(ch chan<- struct{}) {
+	dbp.resumeChan = ch
 }
 
 func (dbp *Process) Pid() int {
@@ -187,6 +177,8 @@ func (dbp *Process) RequestManualStop() error {
 	if dbp.exited {
 		return &proc.ProcessExitedError{}
 	}
+	dbp.haltMu.Lock()
+	defer dbp.haltMu.Unlock()
 	dbp.halt = true
 	return dbp.requestManualStop()
 }
@@ -198,7 +190,7 @@ func (dbp *Process) SetBreakpoint(addr uint64, kind proc.BreakpointKind, cond as
 	tid := dbp.currentThread.ID
 
 	if bp, ok := dbp.FindBreakpoint(addr); ok {
-		return nil, proc.BreakpointExistsError{bp.File, bp.Line, bp.Addr}
+		return bp, proc.BreakpointExistsError{bp.File, bp.Line, bp.Addr}
 	}
 
 	f, l, fn := dbp.bi.PCToLine(uint64(addr))
@@ -270,6 +262,11 @@ func (dbp *Process) ContinueOnce() (proc.Thread, error) {
 	dbp.allGCache = nil
 	for _, th := range dbp.threads {
 		th.clearBreakpointState()
+	}
+
+	if dbp.resumeChan != nil {
+		close(dbp.resumeChan)
+		dbp.resumeChan = nil
 	}
 
 	trapthread, err := dbp.trapWait(-1)

@@ -120,6 +120,7 @@ func ConvertVar(v *proc.Variable) *Variable {
 		Kind:     v.Kind,
 		Len:      v.Len,
 		Cap:      v.Cap,
+		Flags:    VariableFlags(v.Flags),
 	}
 
 	r.Type = prettyTypeName(v.DwarfType)
@@ -128,8 +129,6 @@ func ConvertVar(v *proc.Variable) *Variable {
 	if v.Unreadable != nil {
 		r.Unreadable = v.Unreadable.Error()
 	}
-
-	r.Shadowed = v.Shadowed
 
 	if v.Value != nil {
 		switch v.Kind {

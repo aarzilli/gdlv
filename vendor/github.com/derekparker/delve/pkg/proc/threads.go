@@ -5,12 +5,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/derekparker/delve/pkg/dwarf/godwarf"
 	"go/ast"
 	"go/token"
 	"path/filepath"
 	"reflect"
 	"strings"
+
+	"github.com/derekparker/delve/pkg/dwarf/godwarf"
 )
 
 // Thread represents a thread.

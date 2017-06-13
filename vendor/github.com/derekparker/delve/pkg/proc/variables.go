@@ -41,6 +41,16 @@ const (
 	FloatIsNegInf
 )
 
+type VariableFlags uint16
+
+const (
+	// VariableEscaped is set for local variables that escaped to the heap
+	VariableEscaped VariableFlags = (1 << iota)
+	// VariableShadowed is set for local variables that are shadowed by a
+	// variable with the same name in another scope
+	VariableShadowed
+)
+
 // Variable represents a variable. It contains the address, name,
 // type and other information parsed from both the Dwarf information
 // and the memory of the debugged process.
@@ -61,6 +71,8 @@ type Variable struct {
 	Len int64
 	Cap int64
 
+	Flags VariableFlags
+
 	// Base address of arrays, Base address of the backing array for slices (0 for nil slices)
 	// Base address of the backing byte array for strings
 	// address of the struct backing chan and map variables
@@ -73,8 +85,6 @@ type Variable struct {
 	mapSkip int
 
 	Children []Variable
-
-	Shadowed bool // Shadowed is true if the variable is shadowed by another definition
 
 	loaded     bool
 	Unreadable error
@@ -95,14 +105,6 @@ type LoadConfig struct {
 
 var loadSingleValue = LoadConfig{false, 0, 64, 0, 0}
 var loadFullValue = LoadConfig{true, 1, 64, 64, -1}
-
-// M represents a runtime M (OS thread) structure.
-type M struct {
-	procid   int     // Thread ID or port.
-	spinning uint8   // Busy looping.
-	blocked  uint8   // Waiting on futex / semaphore.
-	curg     uintptr // Current G running on this thread.
-}
 
 // G status, from: src/runtime/runtime2.go
 const (
@@ -1726,7 +1728,7 @@ func (scope *EvalScope) variablesByTag(tag dwarf.Tag, cfg LoadConfig) ([]*Variab
 		lvn := map[string]*Variable{} // lvn[n] is the last variable we saw named n
 		for _, v := range vars {
 			if otherv := lvn[v.Name]; otherv != nil {
-				otherv.Shadowed = true
+				otherv.Flags |= VariableShadowed
 			}
 			lvn[v.Name] = v
 		}
@@ -1762,7 +1764,13 @@ func (scope *EvalScope) variablesByTag(tag dwarf.Tag, cfg LoadConfig) ([]*Variab
 		}
 	}
 
-	for _, v := range vars {
+	for i, v := range vars {
+		if name := v.Name; len(name) > 1 && name[0] == '&' {
+			v = v.maybeDereference()
+			v.Name = name[1:]
+			v.Flags |= VariableEscaped
+			vars[i] = v
+		}
 		v.loadValue(cfg)
 	}
 

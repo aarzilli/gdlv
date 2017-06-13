@@ -414,7 +414,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 
 	style := w.Master().Style()
 
-	if v.Shadowed {
+	if v.Flags&api.VariableShadowed != 0 {
 		savedStyle := *style
 		defer func() {
 			*style = savedStyle

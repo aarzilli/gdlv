@@ -118,8 +118,9 @@ type Location struct {
 
 type Stackframe struct {
 	Location
-	Locals    []Variable
-	Arguments []Variable
+	Locals      []Variable
+	Arguments   []Variable
+	FrameOffset int64
 }
 
 func (frame *Stackframe) Var(name string) *Variable {
@@ -145,6 +146,13 @@ type Function struct {
 	GoType uint64 `json:"goType"`
 }
 
+type VariableFlags uint16
+
+const (
+	VariableEscaped  = VariableFlags(proc.VariableEscaped)
+	VariableShadowed = VariableFlags(proc.VariableShadowed)
+)
+
 // Variable describes a variable.
 type Variable struct {
 	// Name of the variable or struct member
@@ -157,6 +165,8 @@ type Variable struct {
 	Type string `json:"type"`
 	// Type of the variable after resolving any typedefs
 	RealType string `json:"realType"`
+
+	Flags VariableFlags `json:"flags"`
 
 	Kind reflect.Kind `json:"kind"`
 
@@ -175,9 +185,6 @@ type Variable struct {
 	// This field's length is capped at proc.maxArrayValues for slices and arrays and 2*proc.maxArrayValues for maps, in the circumnstances where the cap takes effect len(Children) != Len
 	// The other length cap applied to this field is related to maximum recursion depth, when the maximum recursion depth is reached this field is left empty, contrary to the previous one this cap also applies to structs (otherwise structs will always have all their member fields returned)
 	Children []Variable `json:"children"`
-
-	// Shadowed is true if this variable is shadowed by another variable
-	Shadowed bool
 
 	// Unreadable addresses will have this field set
 	Unreadable string `json:"unreadable"`

@@ -380,7 +380,13 @@ func (loc *NormalLocationSpec) Find(d *Debugger, scope *proc.EvalScope, locStr s
 		return []api.Location{{PC: addr}}, nil
 
 	case 0:
-		return nil, fmt.Errorf("Location \"%s\" not found", locStr)
+		addrSpec := &AddrLocationSpec{locStr}
+		locs, err := addrSpec.Find(d, scope, locStr)
+		if err != nil {
+			return nil, fmt.Errorf("Location \"%s\" not found", locStr)
+		} else {
+			return locs, nil
+		}
 	default:
 		return nil, AmbiguousLocationError{Location: locStr, CandidatesString: candidates}
 	}

@@ -6,6 +6,11 @@ import (
 
 // Process represents the target of the debugger. This
 // target could be a system process, core file, etc.
+//
+// Implementations of Process are not required to be thread safe and users
+// of Process should not assume they are.
+// There is one exception to this rule: it is safe to call RequestManualStop
+// concurrently with ContinueOnce.
 type Process interface {
 	Info
 	ProcessManipulation
@@ -52,8 +57,10 @@ type Checkpoint struct {
 // Info is an interface that provides general information on the target.
 type Info interface {
 	Pid() int
+	// ResumeNotify specifies a channel that will be closed the next time
+	// ContinueOnce finishes resuming the target.
+	ResumeNotify(chan<- struct{})
 	Exited() bool
-	Running() bool
 	BinInfo() *BinaryInfo
 
 	ThreadInfo
@@ -91,10 +98,4 @@ type BreakpointManipulation interface {
 	SetBreakpoint(addr uint64, kind BreakpointKind, cond ast.Expr) (*Breakpoint, error)
 	ClearBreakpoint(addr uint64) (*Breakpoint, error)
 	ClearInternalBreakpoints() error
-}
-
-// VariableEval is an interface for dealing with eval scopes.
-type VariableEval interface {
-	FrameToScope(Stackframe) *EvalScope
-	ConvertEvalScope(gid, frame int) (*EvalScope, error)
 }
