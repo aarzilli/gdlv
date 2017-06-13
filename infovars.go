@@ -34,13 +34,15 @@ type Variable struct {
 	Varname  string
 
 	DisplayName, DisplayNameAddr string
+	Expression                   string
 
 	Children []*Variable
 }
 
-func wrapApiVariable(v *api.Variable, name string) *Variable {
+func wrapApiVariable(v *api.Variable, name, expr string) *Variable {
 	r := &Variable{Variable: v}
 	r.Value = v.Value
+	r.Expression = expr
 	if f := varFormat[v.Addr]; f != nil {
 		f(r)
 	} else if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) {
@@ -62,7 +64,7 @@ func wrapApiVariable(v *api.Variable, name string) *Variable {
 
 	r.DisplayNameAddr = fmt.Sprintf("%#x %s", v.Addr, r.DisplayName)
 
-	r.Children = wrapApiVariables(v.Children, v.Kind, 0)
+	r.Children = wrapApiVariables(v.Children, v.Kind, 0, r.Expression)
 
 	if v.Kind == reflect.Interface {
 		if len(r.Children) > 0 && r.Children[0].Kind == reflect.Ptr {
@@ -75,7 +77,7 @@ func wrapApiVariable(v *api.Variable, name string) *Variable {
 	return r
 }
 
-func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int) []*Variable {
+func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr string) []*Variable {
 	r := make([]*Variable, 0, len(vs))
 
 	const minInlineKeyValueLen = 20
@@ -93,29 +95,50 @@ func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int) []*Variab
 					keyname = fmt.Sprintf("[%s]", key.Value)
 				}
 				if keyname != "" {
-					r = append(r, wrapApiVariable(value, keyname))
+					r = append(r, wrapApiVariable(value, keyname, ""))
 					r = append(r, nil)
 					ok = true
 				}
 			}
 
 			if !ok {
-				r = append(r, wrapApiVariable(key, fmt.Sprintf("[%d key]", start+i/2)))
-				r = append(r, wrapApiVariable(value, fmt.Sprintf("[%d value]", start+i/2)))
+				r = append(r, wrapApiVariable(key, fmt.Sprintf("[%d key]", start+i/2), ""))
+				r = append(r, wrapApiVariable(value, fmt.Sprintf("[%d value]", start+i/2), ""))
 			}
 		}
 		return r
 	}
 
 	for i := range vs {
+		var childName, childExpr string
 		switch kind {
 		case reflect.Interface:
-			r = append(r, wrapApiVariable(&vs[i], "data"))
+			childName = "data"
+			childExpr = ""
 		case reflect.Slice, reflect.Array:
-			r = append(r, wrapApiVariable(&vs[i], fmt.Sprintf("[%d]", start+i)))
+			childName = fmt.Sprintf("[%d]", start+i)
+			if expr != "" {
+				childExpr = fmt.Sprintf("%s[%d]", expr, start+i)
+			}
+		case reflect.Ptr:
+			childName = vs[i].Name
+			if expr != "" {
+				childExpr = fmt.Sprintf("(*(%s))", expr)
+			}
+		case reflect.Struct, reflect.Chan:
+			childName = vs[i].Name
+			if expr != "" {
+				childExpr = fmt.Sprintf("%s.%s", expr, vs[i].Name)
+			}
+		case 0:
+			childName = vs[i].Name
+			childExpr = vs[i].Name
+
 		default:
-			r = append(r, wrapApiVariable(&vs[i], vs[i].Name))
+			childName = vs[i].Name
+			childExpr = ""
 		}
+		r = append(r, wrapApiVariable(&vs[i], childName, childExpr))
 	}
 	return r
 }
@@ -148,7 +171,7 @@ var localsPanel = struct {
 
 func loadGlobals(p *asyncLoad) {
 	globals, err := client.ListPackageVariables("", LongLoadConfig)
-	globalsPanel.globals = wrapApiVariables(globals, 0, 0)
+	globalsPanel.globals = wrapApiVariables(globals, 0, 0, "")
 	sort.Sort(variablesByName(globalsPanel.globals))
 	p.done(err)
 }
@@ -189,7 +212,7 @@ func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].
 
 func loadLocals(p *asyncLoad) {
 	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
-	localsPanel.args = wrapApiVariables(args, 0, 0)
+	localsPanel.args = wrapApiVariables(args, 0, 0, "")
 	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
 	for i := range locals {
 		v := &locals[i]
@@ -199,7 +222,7 @@ func loadLocals(p *asyncLoad) {
 			locals[i].Name = name
 		}
 	}
-	localsPanel.locals = wrapApiVariables(locals, 0, 0)
+	localsPanel.locals = wrapApiVariables(locals, 0, 0, "")
 
 	for i := range localsPanel.expressions {
 		loadOneExpr(i)
@@ -281,7 +304,7 @@ func loadOneExpr(i int) {
 	if err != nil {
 		v = &api.Variable{Name: localsPanel.expressions[i], Unreadable: err.Error()}
 	}
-	localsPanel.v[i] = wrapApiVariable(v, v.Name)
+	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name)
 }
 
 func exprsEditor(isnew bool, w *nucular.Window) {
@@ -346,6 +369,17 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 
 	if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
 		clipboard.Set(clipb)
+	}
+
+	if w.MenuItem(label.TA("Copy address to clipboard", "LC")) {
+		clipboard.Set(fmt.Sprintf("%#x", v.Addr))
+	}
+
+	if v.Expression != "" {
+		if w.MenuItem(label.TA("Add as expression", "LC")) {
+			addExpression(v.Expression)
+
+		}
 	}
 
 	if v.Kind == reflect.Func {
@@ -691,7 +725,7 @@ func loadMoreMap(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children) / 2)
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children, reflect.Map, len(v.Children))...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children, reflect.Map, len(v.Children), v.Expression)...)
 			}
 			wnd.Changed()
 			additionalLoadMu.Lock()
@@ -715,7 +749,7 @@ func loadMoreArrayOrSlice(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children))
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children, v.Kind, len(v.Children))...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children, v.Kind, len(v.Children), v.Expression)...)
 			}
 			additionalLoadMu.Lock()
 			additionalLoadRunning = false
@@ -738,7 +772,7 @@ func loadMoreStruct(v *Variable) {
 				dn := v.DisplayName
 				dna := v.DisplayNameAddr
 				lv.Name = v.Name
-				*v = *wrapApiVariable(lv, lv.Name)
+				*v = *wrapApiVariable(lv, lv.Name, v.Expression)
 				v.DisplayName = dn
 				v.DisplayNameAddr = dna
 			}
