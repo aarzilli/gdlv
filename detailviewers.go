@@ -269,7 +269,7 @@ func (sv *stringViewer) loadMore() {
 					sv.v.Width = 0
 					sv.v.Value += lv.Value
 				case reflect.Array, reflect.Slice:
-					sv.v.Children = append(sv.v.Children, wrapApiVariables(lv.Children)...)
+					sv.v.Children = append(sv.v.Children, wrapApiVariables(lv.Children, sv.v.Kind, len(sv.v.Children))...)
 				}
 			}
 			additionalLoadMu.Lock()

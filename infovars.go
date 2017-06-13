@@ -32,10 +32,13 @@ type Variable struct {
 	IntMode  numberMode
 	FloatFmt string
 	Varname  string
+
+	DisplayName, DisplayNameAddr string
+
 	Children []*Variable
 }
 
-func wrapApiVariable(v *api.Variable) *Variable {
+func wrapApiVariable(v *api.Variable, name string) *Variable {
 	r := &Variable{Variable: v}
 	r.Value = v.Value
 	if f := varFormat[v.Addr]; f != nil {
@@ -46,14 +49,73 @@ func wrapApiVariable(v *api.Variable) *Variable {
 	} else if f := conf.CustomFormatters[v.Type]; f != nil {
 		f.Format(r)
 	}
-	r.Children = wrapApiVariables(v.Children)
+
+	if v.Type != "" {
+		if name != "" {
+			r.DisplayName = fmt.Sprintf("%s %s", name, v.Type)
+		} else {
+			r.DisplayName = v.Type
+		}
+	} else {
+		r.DisplayName = name
+	}
+
+	r.DisplayNameAddr = fmt.Sprintf("%#x %s", v.Addr, r.DisplayName)
+
+	r.Children = wrapApiVariables(v.Children, v.Kind, 0)
+
+	if v.Kind == reflect.Interface {
+		if len(r.Children) > 0 && r.Children[0].Kind == reflect.Ptr {
+			if len(r.Children[0].Children) > 0 {
+				r.Children[0].Children[0].DisplayName = r.Children[0].DisplayName
+				r.Children[0].Children[0].DisplayNameAddr = r.Children[0].DisplayNameAddr
+			}
+		}
+	}
 	return r
 }
 
-func wrapApiVariables(vs []api.Variable) []*Variable {
-	r := make([]*Variable, len(vs))
+func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int) []*Variable {
+	r := make([]*Variable, 0, len(vs))
+
+	const minInlineKeyValueLen = 20
+
+	if kind == reflect.Map {
+		for i := 0; i < len(vs); i += 2 {
+			ok := false
+			key, value := &vs[i], &vs[i+1]
+			if len(key.Children) == 0 && len(key.Value) < minInlineKeyValueLen {
+				var keyname string
+				switch key.Kind {
+				case reflect.String:
+					keyname = fmt.Sprintf("[%q]", key.Value)
+				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Complex64, reflect.Complex128, reflect.Float32, reflect.Float64:
+					keyname = fmt.Sprintf("[%s]", key.Value)
+				}
+				if keyname != "" {
+					r = append(r, wrapApiVariable(value, keyname))
+					r = append(r, nil)
+					ok = true
+				}
+			}
+
+			if !ok {
+				r = append(r, wrapApiVariable(key, fmt.Sprintf("[%d key]", start+i/2)))
+				r = append(r, wrapApiVariable(value, fmt.Sprintf("[%d value]", start+i/2)))
+			}
+		}
+		return r
+	}
+
 	for i := range vs {
-		r[i] = wrapApiVariable(&vs[i])
+		switch kind {
+		case reflect.Interface:
+			r = append(r, wrapApiVariable(&vs[i], "data"))
+		case reflect.Slice, reflect.Array:
+			r = append(r, wrapApiVariable(&vs[i], fmt.Sprintf("[%d]", start+i)))
+		default:
+			r = append(r, wrapApiVariable(&vs[i], vs[i].Name))
+		}
 	}
 	return r
 }
@@ -86,7 +148,7 @@ var localsPanel = struct {
 
 func loadGlobals(p *asyncLoad) {
 	globals, err := client.ListPackageVariables("", LongLoadConfig)
-	globalsPanel.globals = wrapApiVariables(globals)
+	globalsPanel.globals = wrapApiVariables(globals, 0, 0)
 	sort.Sort(variablesByName(globalsPanel.globals))
 	p.done(err)
 }
@@ -110,7 +172,7 @@ func updateGlobals(container *nucular.Window) {
 
 	for i := range globals {
 		if strings.Index(globals[i].Name, filter) >= 0 {
-			showVariable(w, 0, globalsPanel.showAddr, -1, globals[i].Name, globals[i])
+			showVariable(w, 0, globalsPanel.showAddr, -1, globals[i])
 		}
 	}
 }
@@ -127,7 +189,7 @@ func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].
 
 func loadLocals(p *asyncLoad) {
 	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
-	localsPanel.args = wrapApiVariables(args)
+	localsPanel.args = wrapApiVariables(args, 0, 0)
 	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
 	for i := range locals {
 		v := &locals[i]
@@ -137,7 +199,7 @@ func loadLocals(p *asyncLoad) {
 			locals[i].Name = name
 		}
 	}
-	localsPanel.locals = wrapApiVariables(locals)
+	localsPanel.locals = wrapApiVariables(locals, 0, 0)
 
 	for i := range localsPanel.expressions {
 		loadOneExpr(i)
@@ -177,7 +239,7 @@ func updateLocals(container *nucular.Window) {
 
 	for i := range args {
 		if strings.Index(args[i].Name, filter) >= 0 {
-			showVariable(w, 0, localsPanel.showAddr, -1, args[i].Name, args[i])
+			showVariable(w, 0, localsPanel.showAddr, -1, args[i])
 		}
 	}
 
@@ -188,7 +250,7 @@ func updateLocals(container *nucular.Window) {
 
 	for i := range locals {
 		if strings.Index(locals[i].Name, filter) >= 0 {
-			showVariable(w, 0, localsPanel.showAddr, -1, locals[i].Name, locals[i])
+			showVariable(w, 0, localsPanel.showAddr, -1, locals[i])
 		}
 	}
 
@@ -208,7 +270,7 @@ func updateLocals(container *nucular.Window) {
 				w.Row(varRowHeight).Dynamic(1)
 				w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i]), "LC")
 			} else {
-				showVariable(w, 0, localsPanel.showAddr, i, localsPanel.v[i].Name, localsPanel.v[i])
+				showVariable(w, 0, localsPanel.showAddr, i, localsPanel.v[i])
 			}
 		}
 	}
@@ -223,7 +285,7 @@ func loadOneExpr(i int) {
 	if err != nil {
 		v = &api.Variable{Name: localsPanel.expressions[i], Unreadable: err.Error()}
 	}
-	localsPanel.v[i] = wrapApiVariable(v)
+	localsPanel.v[i] = wrapApiVariable(v, v.Name)
 }
 
 func exprsEditor(isnew bool, w *nucular.Window) {
@@ -382,34 +444,14 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 	}
 }
 
-func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name string, v *Variable) {
+func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Variable) {
+	name := v.DisplayName
+	if addr {
+		name = v.DisplayNameAddr
+	}
 	varname := v.Varname
 	if varname == "" {
 		varname = name
-	}
-	const minInlineKeyValueLen = 20
-	if v.Type != "" {
-		if addr {
-			if name != "" {
-				name = fmt.Sprintf("%#x %s %s", v.Addr, name, v.Type)
-			} else {
-				name = fmt.Sprintf("%#x %s", v.Addr, v.Type)
-			}
-		} else {
-			if name != "" {
-				name = fmt.Sprintf("%s %s", name, v.Type)
-			} else {
-				name = v.Type
-			}
-		}
-	} else {
-		if addr {
-			if name != "" {
-				name = fmt.Sprintf("%#x %s", v.Addr, name)
-			} else {
-				name = fmt.Sprintf("%#x", v.Addr)
-			}
-		}
 	}
 
 	style := w.Master().Style()
@@ -433,7 +475,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 		if v.Value != "" {
 			return name + " = " + v.Value
 		}
-		return name + " = " + v.SinglelineString()
+		return name + " = " + v.SinglelineStringNoType()
 	}
 
 	hdr := func() bool {
@@ -513,7 +555,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 					loadMoreStruct(v.Children[0])
 					dynlbl("Loading...")
 				} else {
-					showVariable(w, depth+1, addr, -1, "", v.Children[0])
+					showVariable(w, depth+1, addr, -1, v.Children[0])
 				}
 				w.TreePop()
 			}
@@ -550,40 +592,15 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 			cblbl("%s = nil", name)
 		} else {
 			if hdr() {
-				if v.Children[0].Kind == reflect.Ptr {
-					if len(v.Children[0].Children) > 0 {
-						showVariable(w, depth+1, addr, -1, "data", v.Children[0].Children[0])
-					} else {
-						loadMoreStruct(v)
-						dynlbl("Loading...")
-					}
-				} else {
-					showVariable(w, depth+1, addr, -1, "data", v.Children[0])
-				}
+				showInterfaceContents(w, depth, addr, v)
 				w.TreePop()
 			}
 		}
 	case reflect.Map:
 		if hdr() {
-			for i := 0; i < len(v.Children); i += 2 {
-				key, value := v.Children[i], v.Children[i+1]
-				if len(key.Children) == 0 && len(key.Value) < minInlineKeyValueLen {
-					var keyname string
-					switch key.Kind {
-					case reflect.String:
-						keyname = fmt.Sprintf("[%q]", key.Value)
-					case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr, reflect.Complex64, reflect.Complex128, reflect.Float32, reflect.Float64:
-						keyname = fmt.Sprintf("[%s]", key.Value)
-					}
-					if keyname != "" {
-						showVariable(w, depth+1, addr, -1, keyname, value)
-					} else {
-						showVariable(w, depth+1, addr, -1, "key", key)
-						showVariable(w, depth+1, addr, -1, "value", value)
-					}
-				} else {
-					showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d key]", i/2), key)
-					showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d value]", i/2), value)
+			for i := range v.Children {
+				if v.Children[i] != nil {
+					showVariable(w, depth+1, addr, -1, v.Children[i])
 				}
 			}
 			if len(v.Children)/2 != int(v.Len) {
@@ -615,7 +632,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, name st
 
 func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *Variable) {
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, -1, fmt.Sprintf("[%d]", i), v.Children[i])
+		showVariable(w, depth+1, addr, -1, v.Children[i])
 	}
 	if len(v.Children) != int(v.Len) {
 		w.Row(varRowHeight).Static(moreBtnWidth)
@@ -627,7 +644,36 @@ func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *Variab
 
 func showStructContents(w *nucular.Window, depth int, addr bool, v *Variable) {
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, -1, v.Children[i].Name, v.Children[i])
+		showVariable(w, depth+1, addr, -1, v.Children[i])
+	}
+}
+
+func showInterfaceContents(w *nucular.Window, depth int, addr bool, v *Variable) {
+	if len(v.Children) <= 0 {
+		return
+	}
+	data := v.Children[0]
+	if data.Kind == reflect.Ptr {
+		if len(data.Children) <= 0 {
+			loadMoreStruct(v)
+			w.Row(varRowHeight).Dynamic(1)
+			w.Label("Loading...", "LC")
+			return
+		}
+		data = data.Children[0]
+	}
+
+	switch data.Kind {
+	case reflect.Struct:
+		w.Row(varRowHeight).Dynamic(1)
+		w.Label("concrete type: "+v.Children[0].Type, "LC")
+		showStructContents(w, depth, addr, data)
+	case reflect.Array, reflect.Slice:
+		w.Row(varRowHeight).Dynamic(1)
+		w.Label("concrete type: "+v.Children[0].Type, "LC")
+		showArrayOrSliceContents(w, depth, addr, data)
+	default:
+		showVariable(w, depth+1, addr, -1, data)
 	}
 }
 
@@ -649,7 +695,7 @@ func loadMoreMap(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children) / 2)
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children)...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children, reflect.Map, len(v.Children))...)
 			}
 			wnd.Changed()
 			additionalLoadMu.Lock()
@@ -673,7 +719,7 @@ func loadMoreArrayOrSlice(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children))
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children)...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children, v.Kind, len(v.Children))...)
 			}
 			additionalLoadMu.Lock()
 			additionalLoadRunning = false
@@ -693,8 +739,12 @@ func loadMoreStruct(v *Variable) {
 			if err != nil {
 				v.Unreadable = err.Error()
 			} else {
+				dn := v.DisplayName
+				dna := v.DisplayNameAddr
 				lv.Name = v.Name
-				*v = *wrapApiVariable(lv)
+				*v = *wrapApiVariable(lv, lv.Name)
+				v.DisplayName = dn
+				v.DisplayNameAddr = dna
 			}
 			wnd.Changed()
 			additionalLoadMu.Lock()
