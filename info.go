@@ -957,7 +957,7 @@ func updateListingPanel(container *nucular.Window) {
 					colno++
 					if listingPanel.stepIntoInfo.Config(listingPanel.file, line.lineno, colno) {
 						if w.MenuItem(label.TA(listingPanel.stepIntoInfo.Msg, "LC")) {
-							go stepInto(&editorWriter{&scrollbackEditor, true}, listingPanel.stepIntoInfo.Call, curGid)
+							go stepInto(&editorWriter{&scrollbackEditor, true}, listingPanel.stepIntoInfo.Call)
 						}
 					}
 				}

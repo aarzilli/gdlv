@@ -357,19 +357,19 @@ func continueUntilCompleteNext(out io.Writer, state *api.DebuggerState, op strin
 }
 
 func step(out io.Writer, args string) error {
-	getsics := func() ([]stepIntoCall, int, uint64, error) {
+	getsics := func() ([]stepIntoCall, uint64, error) {
 		state, err := client.GetState()
 		if err != nil {
-			return nil, -1, 0, err
+			return nil, 0, err
 		}
-		if state.SelectedGoroutine == nil {
-			return nil, -1, 0, errors.New("no selected goroutine")
+		if curGid < 0 {
+			return nil, 0, errors.New("no selected goroutine")
 		}
 		loc := currentLocation(state)
 		if loc == nil {
-			return nil, -1, 0, errors.New("could not find current location")
+			return nil, 0, errors.New("could not find current location")
 		}
-		return stepIntoList(*loc), state.SelectedGoroutine.ID, state.CurrentThread.PC, nil
+		return stepIntoList(*loc), state.CurrentThread.PC, nil
 	}
 
 	switch args {
@@ -382,7 +382,7 @@ func step(out io.Writer, args string) error {
 		return continueUntilCompleteNext(out, state, "step")
 
 	case "-list":
-		sics, _, pc, err := getsics()
+		sics, pc, err := getsics()
 		if err != nil {
 			return err
 		}
@@ -392,13 +392,13 @@ func step(out io.Writer, args string) error {
 			}
 		}
 	default:
-		sics, gid, _, err := getsics()
+		sics, _, err := getsics()
 		if err != nil {
 			return err
 		}
 		for _, sic := range sics {
 			if sic.Name == args {
-				return stepInto(out, sic, gid)
+				return stepInto(out, sic)
 			}
 		}
 		return fmt.Errorf("could not find call %s", args)
@@ -406,8 +406,15 @@ func step(out io.Writer, args string) error {
 	return nil
 }
 
-func stepInto(out io.Writer, sic stepIntoCall, gid int) error {
-	bp, err := client.CreateBreakpoint(&api.Breakpoint{Addr: sic.Inst.Loc.PC, Cond: fmt.Sprintf("runtime.curg.goid == %d", gid)})
+func stepInto(out io.Writer, sic stepIntoCall) error {
+	stack, err := client.Stacktrace(curGid, 1, nil)
+	if err != nil {
+		return err
+	}
+	if len(stack) < 1 {
+		return errors.New("could not stacktrace")
+	}
+	bp, err := client.CreateBreakpoint(&api.Breakpoint{Addr: sic.Inst.Loc.PC, Cond: fmt.Sprintf("(runtime.curg.goid == %d) && (runtime.frameoff == %d)", curGid, stack[0].FrameOffset)})
 	if err != nil {
 		return err
 	}
