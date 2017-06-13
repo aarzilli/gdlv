@@ -333,7 +333,7 @@ func updateStacktrace(container *nucular.Window) {
 		w.LayoutFitWidth(stackPanel.id, 1)
 		w.SelectableLabel(fmt.Sprintf("%*d", didx, i), "LT", &selected)
 		w.LayoutFitWidth(stackPanel.id, 1)
-		w.SelectableLabel(fmt.Sprintf("%#0*x", d, frame.PC), "LT", &selected)
+		w.SelectableLabel(fmt.Sprintf("%#0*x\n%+d", d, frame.PC, frame.FrameOffset), "LT", &selected)
 		w.LayoutFitWidth(stackPanel.id, 100)
 		w.SelectableLabel(formatLocation2(frame.Location), "LT", &selected)
 		if selected && curFrame != i && !running {
