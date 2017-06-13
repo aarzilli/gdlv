@@ -97,7 +97,7 @@ See also: "help on", "help cond" and "help clear"`},
 Specify a name to step into one specific function call. Use the -list option for all the function calls on the current line. To step into a specific function call you can also right click on a function call (on the current line) and select "Step into"`},
 		{aliases: []string{"step-instruction", "si"}, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
 		{aliases: []string{"next", "n"}, cmdFn: next, helpMsg: "Step over to next source line."},
-		{aliases: []string{"stepout"}, cmdFn: stepout, helpMsg: "Step out of the current function."},
+		{aliases: []string{"stepout", "o"}, cmdFn: stepout, helpMsg: "Step out of the current function."},
 		{aliases: []string{"cancelnext"}, cmdFn: cancelnext, helpMsg: "Cancels the next operation currently in progress."},
 		{aliases: []string{"interrupt"}, cmdFn: interrupt, helpMsg: "interrupts execution."},
 		{aliases: []string{"print", "p"}, complete: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
