@@ -237,26 +237,22 @@ func updateLocals(container *nucular.Window) {
 
 	args, locals := localsPanel.args, localsPanel.locals
 
-	for i := range args {
-		if strings.Index(args[i].Name, filter) >= 0 {
-			showVariable(w, 0, localsPanel.showAddr, -1, args[i])
+	if w.TreePush(nucular.TreeTab, "Arguments", true) {
+		for i := range args {
+			if strings.Index(args[i].Name, filter) >= 0 {
+				showVariable(w, 0, localsPanel.showAddr, -1, args[i])
+			}
 		}
+		w.TreePop()
 	}
 
-	if len(args) > 0 {
-		w.Row(varRowHeight / 2).Dynamic(1)
-		w.Spacing(1)
-	}
-
-	for i := range locals {
-		if strings.Index(locals[i].Name, filter) >= 0 {
-			showVariable(w, 0, localsPanel.showAddr, -1, locals[i])
+	if w.TreePush(nucular.TreeTab, "Locals", true) {
+		for i := range locals {
+			if strings.Index(locals[i].Name, filter) >= 0 {
+				showVariable(w, 0, localsPanel.showAddr, -1, locals[i])
+			}
 		}
-	}
-
-	if len(locals) > 0 {
-		w.Row(varRowHeight / 2).Dynamic(1)
-		w.Spacing(1)
+		w.TreePop()
 	}
 
 	editorShown := false
