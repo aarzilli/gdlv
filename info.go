@@ -484,7 +484,7 @@ func updateBreakpoints(container *nucular.Window) {
 		bounds.W = w.Bounds.W
 
 		w.LayoutFitWidth(breakpointsPanel.id, 100)
-		w.SelectableLabel(fmt.Sprintf("%s in %s\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
+		w.SelectableLabel(fmt.Sprintf("%s in %s (hit count: %d)\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.TotalHitCount, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
 
 		if !running {
 			if selected {
