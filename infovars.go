@@ -299,11 +299,85 @@ func updateLocals(container *nucular.Window) {
 	}
 }
 
+func isPinned(expr string) bool {
+	return expr[0] == '['
+}
+
+// parseFramePin parses a frame pin expression:
+// [g 12 f -543] expr
+// pins expr to goroutine 12 and frame -543
+func parseFramePin(expr string) (pin bool, gid, frameOffset int, varExpr string) {
+	if !isPinned(expr) {
+		return false, 0, 0, expr
+	}
+	close := strings.Index(expr, "]")
+	if close < 0 {
+		return false, 0, 0, expr
+	}
+	pinexpr := strings.TrimSpace(expr[1:close])
+	varExpr = strings.TrimSpace(expr[close+1:])
+
+	if pinexpr[0] != 'g' {
+		return false, 0, 0, expr
+	}
+	gidexpr := pinexpr[1:]
+	fpos := strings.Index(gidexpr, "f")
+	if fpos < 0 {
+		return false, 0, 0, expr
+	}
+	pinexpr = gidexpr[fpos:]
+	gidexpr = strings.TrimSpace(gidexpr[:fpos])
+	var err error
+	gid, err = strconv.Atoi(gidexpr)
+	if err != nil {
+		return false, 0, 0, expr
+	}
+
+	if pinexpr[0] != 'f' {
+		return false, 0, 0, expr
+	}
+	pinexpr = strings.TrimSpace(pinexpr[1:])
+	frameOffset, err = strconv.Atoi(pinexpr)
+	if err != nil {
+		return false, 0, 0, expr
+	}
+	pin = true
+	return
+}
+
+func findFrameOffset(gid, frameOffset int) (frame int) {
+	frames, err := client.Stacktrace(gid, 100, nil)
+	if err != nil {
+		return -1
+	}
+
+	for i := range frames {
+		if frames[i].FrameOffset == int64(frameOffset) {
+			return i
+		}
+	}
+	return -1
+}
+
 func loadOneExpr(i int) {
-	v, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, localsPanel.expressions[i], LongLoadConfig)
+	pin, gid, frameOffset, expr := parseFramePin(localsPanel.expressions[i])
+	var frame int
+	if !pin {
+		gid = curGid
+		frame = curFrame
+	} else {
+		frame = findFrameOffset(gid, frameOffset)
+		if frame < 0 {
+			localsPanel.v[i] = wrapApiVariable(&api.Variable{Unreadable: "could not find frame"}, "", "")
+			return
+		}
+	}
+
+	v, err := client.EvalVariable(api.EvalScope{gid, frame}, expr, LongLoadConfig)
 	if err != nil {
 		v = &api.Variable{Name: localsPanel.expressions[i], Unreadable: err.Error()}
 	}
+	v.Name = localsPanel.expressions[i]
 	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name)
 }
 
@@ -457,6 +531,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 	}
 
 	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
+		pinned := isPinned(localsPanel.expressions[exprMenuIdx])
 		if w.MenuItem(label.TA("Edit", "LC")) {
 			localsPanel.selected = exprMenuIdx
 			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected])
@@ -470,6 +545,18 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 			}
 			localsPanel.expressions = localsPanel.expressions[:len(localsPanel.expressions)-1]
 			localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
+		}
+		if w.CheckboxText("Pin to frame", &pinned) {
+			if pinned && curFrame < len(stackPanel.stack) {
+				localsPanel.expressions[exprMenuIdx] = fmt.Sprintf("[g %d f %d] %s", curGid, stackPanel.stack[curFrame].FrameOffset, localsPanel.expressions[exprMenuIdx])
+			} else {
+				_, _, _, localsPanel.expressions[exprMenuIdx] = parseFramePin(localsPanel.expressions[exprMenuIdx])
+			}
+			go func(i int) {
+				additionalLoadMu.Lock()
+				defer additionalLoadMu.Unlock()
+				loadOneExpr(i)
+			}(exprMenuIdx)
 		}
 	}
 }

@@ -21,6 +21,9 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## TO BE DEFINED
+* Pinning of expressions to specific execution frames.
+
 ## 2017-06-04
 * Custom formatters for user defined types.
 * Better executable building for go1.9
