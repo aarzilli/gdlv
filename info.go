@@ -29,6 +29,7 @@ type asyncLoad struct {
 	loaded  bool
 	loading bool
 	err     error
+	load    func(*asyncLoad)
 }
 
 func (l *asyncLoad) clear() {
@@ -46,7 +47,19 @@ func (l *asyncLoad) done(err error) {
 	wnd.Changed()
 }
 
-func (l *asyncLoad) showRequest(container *nucular.Window, flags nucular.WindowFlags, name string, load func(*asyncLoad)) *nucular.Window {
+func (l *asyncLoad) startLoad() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	if l.loading || l.loaded {
+		return
+	}
+
+	l.loading = true
+	go l.load(l)
+}
+
+func (l *asyncLoad) showRequest(container *nucular.Window, flags nucular.WindowFlags, name string) *nucular.Window {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
@@ -70,7 +83,7 @@ func (l *asyncLoad) showRequest(container *nucular.Window, flags nucular.WindowF
 		}
 
 		l.loading = true
-		go load(l)
+		go l.load(l)
 		return nil
 	}
 
@@ -160,6 +173,17 @@ var checkpointsPanel = struct {
 	id          int
 }{}
 
+func init() {
+	goroutinesPanel.asyncLoad.load = loadGoroutines
+	stackPanel.asyncLoad.load = loadStacktrace
+	threadsPanel.asyncLoad.load = loadThreads
+	regsPanel.asyncLoad.load = loadRegs
+	breakpointsPanel.asyncLoad.load = loadBreakpoints
+	checkpointsPanel.asyncLoad.load = loadCheckpoints
+	globalsPanel.asyncLoad.load = loadGlobals
+	localsPanel.asyncLoad.load = loadLocals
+}
+
 func spacefilter(ch rune) bool {
 	return ch != ' ' && ch != '\t'
 }
@@ -214,7 +238,7 @@ func loadGoroutines(p *asyncLoad) {
 }
 
 func updateGoroutines(container *nucular.Window) {
-	w := goroutinesPanel.asyncLoad.showRequest(container, 0, "goroutines", loadGoroutines)
+	w := goroutinesPanel.asyncLoad.showRequest(container, 0, "goroutines")
 	if w == nil {
 		return
 	}
@@ -299,7 +323,7 @@ func loadStacktrace(p *asyncLoad) {
 }
 
 func updateStacktrace(container *nucular.Window) {
-	w := stackPanel.asyncLoad.showRequest(container, 0, "stack", loadStacktrace)
+	w := stackPanel.asyncLoad.showRequest(container, 0, "stack")
 	if w == nil {
 		return
 	}
@@ -364,7 +388,7 @@ func loadThreads(p *asyncLoad) {
 }
 
 func updateThreads(container *nucular.Window) {
-	w := threadsPanel.asyncLoad.showRequest(container, 0, "threads", loadThreads)
+	w := threadsPanel.asyncLoad.showRequest(container, 0, "threads")
 	if w == nil {
 		return
 	}
@@ -423,7 +447,7 @@ func loadRegs(p *asyncLoad) {
 }
 
 func updateRegs(container *nucular.Window) {
-	w := regsPanel.asyncLoad.showRequest(container, 0, "registers", loadRegs)
+	w := regsPanel.asyncLoad.showRequest(container, 0, "registers")
 	if w == nil {
 		return
 	}
@@ -457,7 +481,7 @@ func loadBreakpoints(p *asyncLoad) {
 }
 
 func updateBreakpoints(container *nucular.Window) {
-	w := breakpointsPanel.asyncLoad.showRequest(container, 0, "breakpoints", loadBreakpoints)
+	w := breakpointsPanel.asyncLoad.showRequest(container, 0, "breakpoints")
 	if w == nil {
 		return
 	}
@@ -700,7 +724,7 @@ func loadCheckpoints(p *asyncLoad) {
 }
 
 func updateCheckpoints(container *nucular.Window) {
-	w := checkpointsPanel.asyncLoad.showRequest(container, 0, "checkpoints", loadCheckpoints)
+	w := checkpointsPanel.asyncLoad.showRequest(container, 0, "checkpoints")
 	if w == nil {
 		return
 	}

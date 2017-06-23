@@ -177,7 +177,7 @@ func loadGlobals(p *asyncLoad) {
 }
 
 func updateGlobals(container *nucular.Window) {
-	w := globalsPanel.asyncLoad.showRequest(container, 0, "globals", loadGlobals)
+	w := globalsPanel.asyncLoad.showRequest(container, 0, "globals")
 	if w == nil {
 		return
 	}
@@ -245,7 +245,7 @@ const (
 )
 
 func updateLocals(container *nucular.Window) {
-	w := localsPanel.asyncLoad.showRequest(container, 0, "locals", loadLocals)
+	w := localsPanel.asyncLoad.showRequest(container, 0, "locals")
 	if w == nil {
 		return
 	}

@@ -12,6 +12,7 @@ import (
 	"runtime/pprof"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/aarzilli/gdlv/internal/assets"
 	"github.com/aarzilli/nucular"
@@ -116,7 +117,18 @@ var curFrame int
 var silenced bool
 var scrollbackEditor, commandLineEditor nucular.TextEditor
 
+var delayFrame bool
+
 func guiUpdate(w *nucular.Window) {
+	mu.Lock()
+	df := delayFrame
+	delayFrame = false
+	mu.Unlock()
+
+	if df {
+		time.Sleep(50 * time.Millisecond)
+	}
+
 	mu.Lock()
 	defer mu.Unlock()
 
@@ -399,6 +411,9 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 
 	mu.Lock()
 	defer mu.Unlock()
+
+	delayFrame = true
+
 	if state.CurrentThread != nil {
 		curThread = state.CurrentThread.ID
 	} else {
@@ -518,6 +533,8 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 	}
 
 	applyBreakpoints(failstate)
+
+	rootPanel.startReload()
 }
 
 func loadDisassembly(loc *api.Location, failstate func(string, error)) {

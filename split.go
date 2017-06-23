@@ -41,22 +41,12 @@ const (
 	infoCheckpoints = "Checkpoints"
 )
 
-var infoNameToFunc = map[string]func(w *nucular.Window){
-	infoCommand:     updateCommandPanel,
-	infoListing:     updateListingPanel,
-	infoDisassembly: updateDisassemblyPanel,
-	infoGoroutines:  updateGoroutines,
-	infoStacktrace:  updateStacktrace,
-	infoLocals:      updateLocals,
-	infoGlobal:      updateGlobals,
-	infoBps:         updateBreakpoints,
-	infoThreads:     updateThreads,
-	infoRegisters:   updateRegs,
-	infoSources:     sourcesPanel.update,
-	infoFuncs:       funcsPanel.update,
-	infoTypes:       typesPanel.update,
-	infoCheckpoints: updateCheckpoints,
+type infoPanel struct {
+	update    func(w *nucular.Window)
+	asyncLoad *asyncLoad
 }
+
+var infoNameToPanel map[string]infoPanel
 
 var infoModes = []string{
 	infoCommand, infoListing, infoDisassembly, infoGoroutines, infoStacktrace, infoLocals, infoGlobal, infoBps, infoThreads, infoRegisters, infoSources, infoFuncs, infoTypes, infoCheckpoints,
@@ -82,6 +72,23 @@ var codeToInfoMode = map[byte]string{
 var infoModeToCode = map[string]byte{}
 
 func init() {
+	infoNameToPanel = make(map[string]infoPanel)
+
+	infoNameToPanel[infoCommand] = infoPanel{updateCommandPanel, nil}
+	infoNameToPanel[infoListing] = infoPanel{updateListingPanel, nil}
+	infoNameToPanel[infoDisassembly] = infoPanel{updateDisassemblyPanel, nil}
+	infoNameToPanel[infoGoroutines] = infoPanel{updateGoroutines, &goroutinesPanel.asyncLoad}
+	infoNameToPanel[infoStacktrace] = infoPanel{updateStacktrace, &stackPanel.asyncLoad}
+	infoNameToPanel[infoLocals] = infoPanel{updateLocals, &localsPanel.asyncLoad}
+	infoNameToPanel[infoGlobal] = infoPanel{updateGlobals, &globalsPanel.asyncLoad}
+	infoNameToPanel[infoBps] = infoPanel{updateBreakpoints, &breakpointsPanel.asyncLoad}
+	infoNameToPanel[infoThreads] = infoPanel{updateThreads, &threadsPanel.asyncLoad}
+	infoNameToPanel[infoRegisters] = infoPanel{updateRegs, &regsPanel.asyncLoad}
+	infoNameToPanel[infoSources] = infoPanel{sourcesPanel.update, nil}
+	infoNameToPanel[infoFuncs] = infoPanel{funcsPanel.update, nil}
+	infoNameToPanel[infoTypes] = infoPanel{typesPanel.update, nil}
+	infoNameToPanel[infoCheckpoints] = infoPanel{updateCheckpoints, &checkpointsPanel.asyncLoad}
+
 	for k, v := range codeToInfoMode {
 		infoModeToCode[v] = k
 	}
@@ -231,7 +238,7 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 			}
 			sw.Row(0).Dynamic(1)
 			if p.infoMode >= 0 {
-				infoNameToFunc[infoModes[p.infoMode]](sw)
+				infoNameToPanel[infoModes[p.infoMode]].update(sw)
 			}
 			sw.GroupEnd()
 		}
@@ -257,6 +264,22 @@ func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
 		if bounds1.W > 0 {
 			p.child[1].updateIntl(w, bounds1)
 		}
+	}
+}
+
+func (p *panel) startReload() {
+	switch p.kind {
+	case fullPanelKind:
+		p.child[0].startReload()
+	case infoPanelKind:
+		if p.infoMode >= 0 {
+			if asyncLoad := infoNameToPanel[infoModes[p.infoMode]].asyncLoad; asyncLoad != nil {
+				asyncLoad.startLoad()
+			}
+		}
+	case splitHorizontalPanelKind, splitVerticalPanelKind:
+		p.child[0].startReload()
+		p.child[1].startReload()
 	}
 }
 
