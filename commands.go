@@ -188,6 +188,11 @@ func (c *Commands) help(out io.Writer, args string) error {
 	fmt.Fprintln(w, "    Ctrl +/- \t Zoom in/out")
 	fmt.Fprintln(w, "    Escape \t Focus command line")
 	fmt.Fprintln(w, "    Ctrl delete \t Request manual stop")
+	fmt.Fprintln(w, "    F5 \t Continue")
+	fmt.Fprintln(w, "    Shift-F5 \t Request manual stop")
+	fmt.Fprintln(w, "    F10 \t Next")
+	fmt.Fprintln(w, "    F11 \t Step")
+	fmt.Fprintln(w, "    Shift-F11 \t Step Out")
 	if err := w.Flush(); err != nil {
 		return err
 	}
@@ -982,4 +987,10 @@ func (c *Commands) Find(cmdstr string) cmdfunc {
 
 func (c *Commands) Call(cmdstr, args string, out io.Writer) error {
 	return c.Find(cmdstr)(out, args)
+}
+
+func doCommand(cmd string) {
+	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+	fmt.Fprintf(&scrollbackOut, "%s %s\n", currentPrompt(), cmd)
+	go executeCommand(cmd)
 }

@@ -23,6 +23,7 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 ## TO BE DEFINED
 * Pinning of expressions to specific execution frames.
+* Keybindings for continue, next, step and stepout
 
 ## 2017-06-04
 * Custom formatters for user defined types.

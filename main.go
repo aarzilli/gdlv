@@ -139,6 +139,28 @@ func guiUpdate(w *nucular.Window) {
 		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):
 			mw.ActivateEditor(&commandLineEditor)
 
+		case (e.Modifiers == 0) && (e.Code == key.CodeF5):
+			if !running && client != nil {
+				doCommand("continue")
+			}
+
+		case (e.Modifiers == 0) && (e.Code == key.CodeF10):
+			if !running && client != nil {
+				doCommand("next")
+			}
+
+		case (e.Modifiers == 0) && (e.Code == key.CodeF11):
+			if !running && client != nil {
+				doCommand("step")
+			}
+
+		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeF11):
+			if !running && client != nil {
+				doCommand("stepout")
+			}
+
+		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeF5):
+			fallthrough
 		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeDeleteForward):
 			if running && client != nil {
 				_, err := client.Halt()

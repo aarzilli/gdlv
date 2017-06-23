@@ -325,11 +325,6 @@ func (p *panel) listingToolbar(sw *nucular.Window) {
 
 func (p *panel) commandToolbar(sw *nucular.Window) {
 	style := sw.Master().Style()
-	docmd := func(cmd string) {
-		var scrollbackOut = editorWriter{&scrollbackEditor, false}
-		fmt.Fprintf(&scrollbackOut, "%s %s\n", currentPrompt(), cmd)
-		go executeCommand(cmd)
-	}
 	iconbtn := func(icon string, tooltip string) bool {
 		iconFace, style.Font = style.Font, iconFace
 		r := sw.ButtonText(icon)
@@ -341,7 +336,7 @@ func (p *panel) commandToolbar(sw *nucular.Window) {
 	}
 	cmdbtn := func(icon, cmd string) {
 		if iconbtn(icon, cmd) {
-			docmd(cmd)
+			doCommand(cmd)
 		}
 	}
 	sw.Row(headerRow).Static()
@@ -358,11 +353,11 @@ func (p *panel) commandToolbar(sw *nucular.Window) {
 		p.splitMenu(sw)
 		sw.LayoutSetWidth(controlBtnWidth)
 		if iconbtn(continueIconChar, "continue next") {
-			docmd("continue")
+			doCommand("continue")
 		}
 		sw.LayoutSetWidth(controlBtnWidth)
 		if iconbtn(cancelIconChar, "cancel next") {
-			docmd("cancelnext")
+			doCommand("cancelnext")
 		}
 
 	default:
