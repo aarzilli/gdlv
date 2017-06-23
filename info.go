@@ -244,7 +244,7 @@ func updateGoroutines(container *nucular.Window) {
 	dthread := digits(maxthreadid)
 
 	for _, g := range goroutines {
-		w.Row(40).Static()
+		w.Row(posRowHeight).Static()
 		if goroutinesPanel.onlyStopped && !g.atBreakpoint {
 			continue
 		}
@@ -328,7 +328,7 @@ func updateStacktrace(container *nucular.Window) {
 	d := hexdigits(maxpc)
 
 	for i, frame := range stack {
-		w.Row(40).Static()
+		w.Row(posRowHeight).Static()
 		selected := curFrame == i
 		w.LayoutFitWidth(stackPanel.id, 1)
 		w.SelectableLabel(fmt.Sprintf("%*d", didx, i), "LT", &selected)
@@ -379,7 +379,7 @@ func updateThreads(container *nucular.Window) {
 
 	for _, thread := range threads {
 		selected := curThread == thread.ID
-		w.Row(40).Static()
+		w.Row(posRowHeight).Static()
 
 		w.LayoutFitWidth(threadsPanel.id, 1)
 		w.SelectableLabel(fmt.Sprintf("%*d", d, thread.ID), "LT", &selected)
@@ -476,7 +476,7 @@ func updateBreakpoints(container *nucular.Window) {
 	for _, breakpoint := range breakpoints {
 		oldselectedId := breakpointsPanel.selected
 		selected := breakpointsPanel.selected == breakpoint.ID
-		w.Row(40).Static()
+		w.Row(posRowHeight).Static()
 
 		w.LayoutFitWidth(breakpointsPanel.id, 10)
 		w.SelectableLabel(fmt.Sprintf("%*d", d, breakpoint.ID), "LT", &selected)
@@ -710,7 +710,7 @@ func updateCheckpoints(container *nucular.Window) {
 
 	for _, checkpoint := range checkpoints {
 		selected := checkpointsPanel.selected == checkpoint.ID
-		w.Row(40).Static()
+		w.Row(posRowHeight).Static()
 
 		w.LayoutFitWidth(checkpointsPanel.id, 10)
 		w.SelectableLabel(fmt.Sprintf("c%d", checkpoint.ID), "LT", &selected)

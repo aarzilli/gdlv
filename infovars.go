@@ -240,6 +240,7 @@ func loadLocals(p *asyncLoad) {
 const (
 	varRowHeight    = 20
 	varEditorHeight = 25
+	posRowHeight    = 36
 	moreBtnWidth    = 70
 )
 
