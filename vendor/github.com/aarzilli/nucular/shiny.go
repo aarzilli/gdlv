@@ -396,6 +396,7 @@ func (w *masterWindow) draw() int {
 	wimg := w.wndb.RGBA()
 
 	contextAllCommands(w.ctx)
+	w.ctx.Reset()
 
 	if !w.drawChanged(w.ctx.cmds) {
 		return 0
