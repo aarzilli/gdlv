@@ -46,8 +46,9 @@ type Commands struct {
 }
 
 var (
-	LongLoadConfig  = api.LoadConfig{true, 1, 64, 64, -1}
-	ShortLoadConfig = api.LoadConfig{false, 0, 64, 0, 3}
+	LongLoadConfig      = api.LoadConfig{true, 1, 64, 16, -1}
+	LongArrayLoadConfig = api.LoadConfig{true, 1, 64, 64, -1}
+	ShortLoadConfig     = api.LoadConfig{false, 0, 64, 0, 3}
 )
 
 type ByFirstAlias []command
