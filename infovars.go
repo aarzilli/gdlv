@@ -771,6 +771,12 @@ func showInterfaceContents(w *nucular.Window, depth int, addr bool, v *Variable)
 		return
 	}
 	data := v.Children[0]
+	if data.OnlyAddr {
+		loadMoreStruct(v)
+		w.Row(varRowHeight).Dynamic(1)
+		w.Label("Loading...", "LC")
+		return
+	}
 	if data.Kind == reflect.Ptr {
 		if len(data.Children) <= 0 {
 			loadMoreStruct(v)

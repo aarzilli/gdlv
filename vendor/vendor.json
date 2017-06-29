@@ -159,10 +159,10 @@
 			"revisionTime": "2017-05-05T23:09:30Z"
 		},
 		{
-			"checksumSHA1": "3Pmc/NaZzNUbEjhnvPHoEiZ8LdI=",
+			"checksumSHA1": "koXsoSKN4MDye/a2+A/WtY0y+Us=",
 			"path": "github.com/derekparker/delve/service/api",
-			"revision": "19e3f18baa3948668715274e3291fda09bd64f7d",
-			"revisionTime": "2017-06-07T06:11:43Z"
+			"revision": "2b9105c9b26bb9bfdfb8924b2a9247c15e96c854",
+			"revisionTime": "2017-06-28T14:47:12Z"
 		},
 		{
 			"checksumSHA1": "O75qzHGp0FSYEVbmx2ClStpUsHI=",
