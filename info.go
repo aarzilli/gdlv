@@ -1026,10 +1026,6 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		listp.Label(fmt.Sprintf("TEXT %s(SB) %s", listingPanel.text[0].Loc.Function.Name, listingPanel.text[0].Loc.File), "LC")
 	}
 
-	if !listingPanel.recenterDisassembly {
-		gl.SkipToVisible(lineheight)
-	}
-
 	for gl.Next() {
 		instr := listingPanel.text[gl.Index()]
 		if instr.Loc.File != lastfile || instr.Loc.Line != lastlineno {
