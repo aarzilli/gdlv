@@ -1,7 +1,6 @@
 package debugger
 
 import (
-	"debug/gosym"
 	"fmt"
 	"go/constant"
 	"path/filepath"
@@ -178,7 +177,7 @@ func parseFuncLocationSpec(in string) *FuncLocationSpec {
 		r := stripReceiverDecoration(v[0])
 		if r != v[0] {
 			spec.ReceiverName = r
-		} else if strings.Index(r, "/") >= 0 {
+		} else if strings.Contains(r, "/") {
 			spec.PackageName = r
 		} else {
 			spec.PackageOrReceiverName = r
@@ -198,7 +197,7 @@ func parseFuncLocationSpec(in string) *FuncLocationSpec {
 		spec.AbsolutePackage = true
 	}
 
-	if strings.Index(spec.BaseName, "/") >= 0 || strings.Index(spec.ReceiverName, "/") >= 0 {
+	if strings.Contains(spec.BaseName, "/") || strings.Contains(spec.ReceiverName, "/") {
 		return nil
 	}
 
@@ -216,34 +215,34 @@ func stripReceiverDecoration(in string) string {
 	return in[2 : len(in)-1]
 }
 
-func (spec *FuncLocationSpec) Match(sym *gosym.Sym) bool {
-	if spec.BaseName != sym.BaseName() {
+func (spec *FuncLocationSpec) Match(f proc.Function) bool {
+	if spec.BaseName != f.BaseName() {
 		return false
 	}
 
-	recv := stripReceiverDecoration(sym.ReceiverName())
+	recv := stripReceiverDecoration(f.ReceiverName())
 	if spec.ReceiverName != "" && spec.ReceiverName != recv {
 		return false
 	}
 	if spec.PackageName != "" {
 		if spec.AbsolutePackage {
-			if spec.PackageName != sym.PackageName() {
+			if spec.PackageName != f.PackageName() {
 				return false
 			}
 		} else {
-			if !partialPathMatch(spec.PackageName, sym.PackageName()) {
+			if !partialPathMatch(spec.PackageName, f.PackageName()) {
 				return false
 			}
 		}
 	}
-	if spec.PackageOrReceiverName != "" && !partialPathMatch(spec.PackageOrReceiverName, sym.PackageName()) && spec.PackageOrReceiverName != recv {
+	if spec.PackageOrReceiverName != "" && !partialPathMatch(spec.PackageOrReceiverName, f.PackageName()) && spec.PackageOrReceiverName != recv {
 		return false
 	}
 	return true
 }
 
 func (loc *RegexLocationSpec) Find(d *Debugger, scope *proc.EvalScope, locStr string) ([]api.Location, error) {
-	funcs := d.target.BinInfo().Funcs()
+	funcs := d.target.BinInfo().Functions
 	matches, err := regexFilterFuncs(loc.FuncRegex, funcs)
 	if err != nil {
 		return nil, err
@@ -327,69 +326,71 @@ func (ale AmbiguousLocationError) Error() string {
 }
 
 func (loc *NormalLocationSpec) Find(d *Debugger, scope *proc.EvalScope, locStr string) ([]api.Location, error) {
-	funcs := d.target.BinInfo().Funcs()
-	files := d.target.BinInfo().Sources()
-
-	candidates := []string{}
-	for file := range files {
+	limit := maxFindLocationCandidates
+	var candidateFiles []string
+	for _, file := range d.target.BinInfo().Sources {
 		if loc.FileMatch(file) {
-			candidates = append(candidates, file)
-			if len(candidates) >= maxFindLocationCandidates {
+			candidateFiles = append(candidateFiles, file)
+			if len(candidateFiles) >= limit {
 				break
 			}
 		}
 	}
 
+	limit -= len(candidateFiles)
+
+	var candidateFuncs []string
 	if loc.FuncBase != nil {
-		for _, f := range funcs {
-			if f.Sym == nil {
+		for _, f := range d.target.BinInfo().Functions {
+			if !loc.FuncBase.Match(f) {
 				continue
 			}
-			if loc.FuncBase.Match(f.Sym) {
-				if loc.Base == f.Name {
-					// if an exact match for the function name is found use it
-					candidates = []string{f.Name}
-					break
-				}
-				if len(candidates) < maxFindLocationCandidates {
-					candidates = append(candidates, f.Name)
-				}
+			if loc.Base == f.Name {
+				// if an exact match for the function name is found use it
+				candidateFuncs = []string{f.Name}
+				break
+			}
+			candidateFuncs = append(candidateFuncs, f.Name)
+			if len(candidateFuncs) >= limit {
+				break
 			}
 		}
 	}
 
-	switch len(candidates) {
-	case 1:
-		var addr uint64
-		var err error
-		if filepath.IsAbs(candidates[0]) {
-			if loc.LineOffset < 0 {
-				return nil, fmt.Errorf("Malformed breakpoint location, no line offset specified")
-			}
-			addr, err = proc.FindFileLocation(d.target, candidates[0], loc.LineOffset)
-		} else {
-			if loc.LineOffset < 0 {
-				addr, err = proc.FindFunctionLocation(d.target, candidates[0], true, 0)
-			} else {
-				addr, err = proc.FindFunctionLocation(d.target, candidates[0], false, loc.LineOffset)
-			}
-		}
-		if err != nil {
-			return nil, err
-		}
-		return []api.Location{{PC: addr}}, nil
-
-	case 0:
+	if matching := len(candidateFiles) + len(candidateFuncs); matching == 0 {
+		// if no result was found treat this locations string could be an
+		// expression that the user forgot to prefix with '*', try treating it as
+		// such.
 		addrSpec := &AddrLocationSpec{locStr}
 		locs, err := addrSpec.Find(d, scope, locStr)
 		if err != nil {
 			return nil, fmt.Errorf("Location \"%s\" not found", locStr)
-		} else {
-			return locs, nil
 		}
-	default:
-		return nil, AmbiguousLocationError{Location: locStr, CandidatesString: candidates}
+		return locs, nil
+	} else if matching > 1 {
+		return nil, AmbiguousLocationError{Location: locStr, CandidatesString: append(candidateFiles, candidateFuncs...)}
 	}
+
+	// len(candidateFiles) + len(candidateFuncs) == 1
+	var addr uint64
+	var err error
+	if len(candidateFiles) == 1 {
+		if loc.LineOffset < 0 {
+			return nil, fmt.Errorf("Malformed breakpoint location, no line offset specified")
+		}
+		addr, err = proc.FindFileLocation(d.target, candidateFiles[0], loc.LineOffset)
+	} else { // len(candidateFUncs) == 1
+		if loc.LineOffset < 0 {
+			addr, err = proc.FindFunctionLocation(d.target, candidateFuncs[0], true, 0)
+		} else {
+			addr, err = proc.FindFunctionLocation(d.target, candidateFuncs[0], false, loc.LineOffset)
+		}
+	}
+
+	if err != nil {
+		return nil, err
+	}
+	return []api.Location{{PC: addr}}, nil
 }
 
 func (loc *OffsetLocationSpec) Find(d *Debugger, scope *proc.EvalScope, locStr string) ([]api.Location, error) {

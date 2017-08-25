@@ -6,6 +6,8 @@ import (
 	"debug/dwarf"
 )
 
+// VariableReader provides a way of reading the local variables and formal
+// parameters of a function that are visible at the specified PC address.
 type VariableReader struct {
 	dwarf       *dwarf.Data
 	reader      *dwarf.Reader

@@ -13,9 +13,8 @@ import (
 
 // Client is a RPC service.Client.
 type RPCClient struct {
-	addr       string
-	processPid int
-	client     *rpc.Client
+	addr   string
+	client *rpc.Client
 }
 
 // Ensure the implementation satisfies the interface.
@@ -45,6 +44,7 @@ func (c *RPCClient) LastModified() time.Time {
 }
 
 func (c *RPCClient) Detach(kill bool) error {
+	defer c.client.Close()
 	out := new(DetachOut)
 	return c.call("Detach", DetachIn{kill}, out)
 }
@@ -346,10 +346,6 @@ func (c *RPCClient) ClearCheckpoint(id int) error {
 	var out ClearCheckpointOut
 	err := c.call("ClearCheckpoint", ClearCheckpointIn{id}, &out)
 	return err
-}
-
-func (c *RPCClient) url(path string) string {
-	return fmt.Sprintf("http://%s%s", c.addr, path)
 }
 
 func (c *RPCClient) call(method string, args, reply interface{}) error {

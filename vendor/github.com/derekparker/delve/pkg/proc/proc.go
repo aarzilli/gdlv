@@ -1,24 +1,14 @@
 package proc
 
 import (
-	"debug/dwarf"
 	"encoding/binary"
 	"errors"
 	"fmt"
 	"go/ast"
-	"go/constant"
 	"go/token"
 	"path/filepath"
 	"strconv"
-	"strings"
-
-	"github.com/derekparker/delve/pkg/goversion"
 )
-
-type functionDebugInfo struct {
-	lowpc, highpc uint64
-	offset        dwarf.Offset
-}
 
 var NotExecutableErr = errors.New("not an executable file")
 var NotRecordedErr = errors.New("not a recording")
@@ -37,7 +27,7 @@ func (pe ProcessExitedError) Error() string {
 // FindFileLocation returns the PC for a given file:line.
 // Assumes that `file` is normailzed to lower case and '/' on Windows.
 func FindFileLocation(p Process, fileName string, lineno int) (uint64, error) {
-	pc, fn, err := p.BinInfo().goSymTable.LineToPC(fileName, lineno)
+	pc, fn, err := p.BinInfo().LineToPC(fileName, lineno)
 	if err != nil {
 		return 0, err
 	}
@@ -55,7 +45,7 @@ func FindFileLocation(p Process, fileName string, lineno int) (uint64, error) {
 // https://github.com/derekparker/delve/issues/170
 func FindFunctionLocation(p Process, funcName string, firstLine bool, lineOffset int) (uint64, error) {
 	bi := p.BinInfo()
-	origfn := bi.goSymTable.LookupFunc(funcName)
+	origfn := bi.LookupFunc[funcName]
 	if origfn == nil {
 		return 0, fmt.Errorf("Could not find function %s\n", funcName)
 	}
@@ -63,8 +53,8 @@ func FindFunctionLocation(p Process, funcName string, firstLine bool, lineOffset
 	if firstLine {
 		return FirstPCAfterPrologue(p, origfn, false)
 	} else if lineOffset > 0 {
-		filename, lineno, _ := bi.goSymTable.PCToLine(origfn.Entry)
-		breakAddr, _, err := bi.goSymTable.LineToPC(filename, lineno+lineOffset)
+		filename, lineno := origfn.cu.lineInfo.PCToLine(origfn.Entry)
+		breakAddr, _, err := bi.LineToPC(filename, lineno+lineOffset)
 		return breakAddr, err
 	}
 
@@ -74,7 +64,7 @@ func FindFunctionLocation(p Process, funcName string, firstLine bool, lineOffset
 // Next continues execution until the next source line.
 func Next(dbp Process) (err error) {
 	if dbp.Exited() {
-		return &ProcessExitedError{}
+		return &ProcessExitedError{Pid: dbp.Pid()}
 	}
 	for _, bp := range dbp.Breakpoints() {
 		if bp.Internal() {
@@ -83,12 +73,8 @@ func Next(dbp Process) (err error) {
 	}
 
 	if err = next(dbp, false); err != nil {
-		switch err.(type) {
-		case ThreadBlockedError, NoReturnAddr: // Noop
-		default:
-			dbp.ClearInternalBreakpoints()
-			return
-		}
+		dbp.ClearInternalBreakpoints()
+		return
 	}
 
 	return Continue(dbp)
@@ -98,7 +84,14 @@ func Next(dbp Process) (err error) {
 // process. It will continue until it hits a breakpoint
 // or is otherwise stopped.
 func Continue(dbp Process) error {
+	if dbp.Exited() {
+		return &ProcessExitedError{Pid: dbp.Pid()}
+	}
+	dbp.ManualStopRequested()
 	for {
+		if dbp.ManualStopRequested() {
+			return nil
+		}
 		trapthread, err := dbp.ContinueOnce()
 		if err != nil {
 			return err
@@ -216,7 +209,7 @@ func pickCurrentThread(dbp Process, trapthread Thread, threads []Thread) error {
 // Will step into functions.
 func Step(dbp Process) (err error) {
 	if dbp.Exited() {
-		return &ProcessExitedError{}
+		return &ProcessExitedError{Pid: dbp.Pid()}
 	}
 	for _, bp := range dbp.Breakpoints() {
 		if bp.Internal() {
@@ -280,6 +273,9 @@ func andFrameoffCondition(cond ast.Expr, frameoff int64) ast.Expr {
 // StepOut will continue until the current goroutine exits the
 // function currently being executed or a deferred function is executed
 func StepOut(dbp Process) error {
+	if dbp.Exited() {
+		return &ProcessExitedError{Pid: dbp.Pid()}
+	}
 	selg := dbp.SelectedGoroutine()
 	curthread := dbp.CurrentThread()
 
@@ -289,7 +285,7 @@ func StepOut(dbp Process) error {
 	}
 
 	sameGCond := SameGoroutineCondition(selg)
-	retFrameCond := andFrameoffCondition(sameGCond, retframe.CFA-int64(retframe.StackHi))
+	retFrameCond := andFrameoffCondition(sameGCond, retframe.FrameOffset())
 
 	var deferpc uint64 = 0
 	if filepath.Ext(topframe.Current.File) == ".go" {
@@ -352,7 +348,7 @@ type AllGCache interface {
 // Delve cares about from the internal runtime G structure.
 func GoroutinesInfo(dbp Process) ([]*G, error) {
 	if dbp.Exited() {
-		return nil, &ProcessExitedError{}
+		return nil, &ProcessExitedError{Pid: dbp.Pid()}
 	}
 	if dbp, ok := dbp.(AllGCache); ok {
 		if allGCache := dbp.AllGCache(); *allGCache != nil {
@@ -361,7 +357,7 @@ func GoroutinesInfo(dbp Process) ([]*G, error) {
 	}
 
 	var (
-		threadg = map[int]Thread{}
+		threadg = map[int]*G{}
 		allg    []*G
 		rdr     = dbp.BinInfo().DwarfReader()
 	)
@@ -373,7 +369,7 @@ func GoroutinesInfo(dbp Process) ([]*G, error) {
 		}
 		g, _ := GetG(th)
 		if g != nil {
-			threadg[g.ID] = th
+			threadg[g.ID] = g
 		}
 	}
 
@@ -399,6 +395,9 @@ func GoroutinesInfo(dbp Process) ([]*G, error) {
 	}
 	faddr := make([]byte, dbp.BinInfo().Arch.PtrSize())
 	_, err = dbp.CurrentThread().ReadMemory(faddr, uintptr(allgentryaddr))
+	if err != nil {
+		return nil, err
+	}
 	allgptr := binary.LittleEndian.Uint64(faddr)
 
 	for i := uint64(0); i < allglen; i++ {
@@ -410,14 +409,15 @@ func GoroutinesInfo(dbp Process) ([]*G, error) {
 		if err != nil {
 			return nil, err
 		}
-		if thread, allocated := threadg[g.ID]; allocated {
-			loc, err := thread.Location()
+		if thg, allocated := threadg[g.ID]; allocated {
+			loc, err := thg.Thread.Location()
 			if err != nil {
 				return nil, err
 			}
-			g.Thread = thread
+			g.Thread = thg.Thread
 			// Prefer actual thread location information.
 			g.CurrentLoc = *loc
+			g.SystemStack = thg.SystemStack
 		}
 		if g.Status != Gdead {
 			allg = append(allg, g)
@@ -429,38 +429,6 @@ func GoroutinesInfo(dbp Process) ([]*G, error) {
 	}
 
 	return allg, nil
-}
-
-func GetGoInformation(p Process) (ver goversion.GoVersion, isextld bool, err error) {
-	scope := &EvalScope{0, 0, p.CurrentThread(), nil, p.BinInfo(), 0}
-	vv, err := scope.packageVarAddr("runtime.buildVersion")
-	if err != nil {
-		return ver, false, fmt.Errorf("Could not determine version number: %v", err)
-	}
-	vv.loadValue(LoadConfig{true, 0, 64, 0, 0})
-	if vv.Unreadable != nil {
-		err = fmt.Errorf("Unreadable version number: %v\n", vv.Unreadable)
-		return
-	}
-
-	ver, ok := goversion.Parse(constant.StringVal(vv.Value))
-	if !ok {
-		err = fmt.Errorf("Could not parse version number: %v\n", vv.Value)
-		return
-	}
-
-	rdr := scope.BinInfo.DwarfReader()
-	rdr.Seek(0)
-	for entry, err := rdr.NextCompileUnit(); entry != nil; entry, err = rdr.NextCompileUnit() {
-		if err != nil {
-			return ver, isextld, err
-		}
-		if prod, ok := entry.Val(dwarf.AttrProducer).(string); ok && (strings.HasPrefix(prod, "GNU AS")) {
-			isextld = true
-			break
-		}
-	}
-	return
 }
 
 // FindGoroutine returns a G struct representing the goroutine
@@ -485,6 +453,9 @@ func FindGoroutine(dbp Process, gid int) (*G, error) {
 // ConvertEvalScope returns a new EvalScope in the context of the
 // specified goroutine ID and stack frame.
 func ConvertEvalScope(dbp Process, gid, frame int) (*EvalScope, error) {
+	if dbp.Exited() {
+		return nil, &ProcessExitedError{Pid: dbp.Pid()}
+	}
 	ct := dbp.CurrentThread()
 	g, err := FindGoroutine(dbp, gid)
 	if err != nil {
@@ -510,12 +481,10 @@ func ConvertEvalScope(dbp Process, gid, frame int) (*EvalScope, error) {
 		return nil, fmt.Errorf("Frame %d does not exist in goroutine %d", frame, gid)
 	}
 
-	PC, CFA := locs[frame].Current.PC, locs[frame].CFA
-
-	return &EvalScope{PC, CFA, thread, g.variable, dbp.BinInfo(), g.stackhi}, nil
+	return &EvalScope{locs[frame].Current.PC, locs[frame].DwarfRegisters(dbp.BinInfo()), thread, g.variable, dbp.BinInfo(), locs[frame].FrameOffset()}, nil
 }
 
 // FrameToScope returns a new EvalScope for this frame
 func FrameToScope(p Process, frame Stackframe) *EvalScope {
-	return &EvalScope{frame.Current.PC, frame.CFA, p.CurrentThread(), nil, p.BinInfo(), frame.StackHi}
+	return &EvalScope{frame.Current.PC, frame.DwarfRegisters(p.BinInfo()), p.CurrentThread(), nil, p.BinInfo(), frame.FrameOffset()}
 }

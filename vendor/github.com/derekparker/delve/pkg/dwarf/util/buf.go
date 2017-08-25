@@ -132,7 +132,7 @@ func (b *buf) Int() int64 {
 	return x
 }
 
-// assertEmpty checks that everything has been read from b.
+// AssertEmpty checks that everything has been read from b.
 func (b *buf) AssertEmpty() {
 	if len(b.data) == 0 {
 		return

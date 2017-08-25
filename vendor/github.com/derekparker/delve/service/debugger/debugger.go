@@ -1,7 +1,6 @@
 package debugger
 
 import (
-	"debug/gosym"
 	"errors"
 	"fmt"
 	"go/parser"
@@ -311,7 +310,7 @@ func (d *Debugger) CreateBreakpoint(requestedBp *api.Breakpoint) (*api.Breakpoin
 		if runtime.GOOS == "windows" {
 			// Accept fileName which is case-insensitive and slash-insensitive match
 			fileNameNormalized := strings.ToLower(filepath.ToSlash(fileName))
-			for symFile := range d.target.BinInfo().Sources() {
+			for _, symFile := range d.target.BinInfo().Sources {
 				if fileNameNormalized == strings.ToLower(filepath.ToSlash(symFile)) {
 					fileName = symFile
 					break
@@ -457,8 +456,9 @@ func (d *Debugger) Threads() ([]*api.Thread, error) {
 	defer d.processMutex.Unlock()
 
 	if d.target.Exited() {
-		return nil, &proc.ProcessExitedError{}
+		return nil, proc.ProcessExitedError{Pid: d.ProcessPid()}
 	}
+
 	threads := []*api.Thread{}
 	for _, th := range d.target.ThreadList() {
 		threads = append(threads, api.ConvertThread(th))
@@ -472,7 +472,7 @@ func (d *Debugger) FindThread(id int) (*api.Thread, error) {
 	defer d.processMutex.Unlock()
 
 	if d.target.Exited() {
-		return nil, &proc.ProcessExitedError{}
+		return nil, proc.ProcessExitedError{Pid: d.ProcessPid()}
 	}
 
 	for _, th := range d.target.ThreadList() {
@@ -538,7 +538,7 @@ func (d *Debugger) Command(command *api.DebuggerCommand) (*api.DebuggerState, er
 	}
 
 	if err != nil {
-		if exitedErr, exited := err.(proc.ProcessExitedError); withBreakpointInfo && exited {
+		if exitedErr, exited := err.(proc.ProcessExitedError); (command.Name == api.Continue || command.Name == api.Rewind) && exited {
 			state := &api.DebuggerState{}
 			state.Exited = true
 			state.ExitStatus = exitedErr.Status
@@ -594,6 +594,12 @@ func (d *Debugger) collectBreakpointInformation(state *api.DebuggerState) error 
 		if !found {
 			return fmt.Errorf("could not find thread %d", state.Threads[i].ID)
 		}
+
+		if len(bp.Variables) == 0 && bp.LoadArgs == nil && bp.LoadLocals == nil {
+			// don't try to create goroutine scope if there is nothing to load
+			continue
+		}
+
 		s, err := proc.GoroutineScope(thread)
 		if err != nil {
 			return err
@@ -605,9 +611,10 @@ func (d *Debugger) collectBreakpointInformation(state *api.DebuggerState) error 
 		for i := range bp.Variables {
 			v, err := s.EvalVariable(bp.Variables[i], proc.LoadConfig{true, 1, 64, 64, -1})
 			if err != nil {
-				return err
+				bpi.Variables[i] = api.Variable{Name: bp.Variables[i], Unreadable: fmt.Sprintf("eval error: %v", err)}
+			} else {
+				bpi.Variables[i] = *api.ConvertVar(v)
 			}
-			bpi.Variables[i] = *api.ConvertVar(v)
 		}
 		if bp.LoadArgs != nil {
 			if vars, err := s.FunctionArguments(*api.LoadConfigToProc(bp.LoadArgs)); err == nil {
@@ -635,7 +642,7 @@ func (d *Debugger) Sources(filter string) ([]string, error) {
 	}
 
 	files := []string{}
-	for f := range d.target.BinInfo().Sources() {
+	for _, f := range d.target.BinInfo().Sources {
 		if regex.Match([]byte(f)) {
 			files = append(files, f)
 		}
@@ -648,7 +655,7 @@ func (d *Debugger) Functions(filter string) ([]string, error) {
 	d.processMutex.Lock()
 	defer d.processMutex.Unlock()
 
-	return regexFilterFuncs(filter, d.target.BinInfo().Funcs())
+	return regexFilterFuncs(filter, d.target.BinInfo().Functions)
 }
 
 func (d *Debugger) Types(filter string) ([]string, error) {
@@ -675,7 +682,7 @@ func (d *Debugger) Types(filter string) ([]string, error) {
 	return r, nil
 }
 
-func regexFilterFuncs(filter string, allFuncs []gosym.Func) ([]string, error) {
+func regexFilterFuncs(filter string, allFuncs []proc.Function) ([]string, error) {
 	regex, err := regexp.Compile(filter)
 	if err != nil {
 		return nil, fmt.Errorf("invalid filter argument: %s", err.Error())
@@ -683,7 +690,7 @@ func regexFilterFuncs(filter string, allFuncs []gosym.Func) ([]string, error) {
 
 	funcs := []string{}
 	for _, f := range allFuncs {
-		if f.Sym != nil && regex.Match([]byte(f.Name)) {
+		if regex.Match([]byte(f.Name)) {
 			funcs = append(funcs, f.Name)
 		}
 	}
@@ -831,6 +838,10 @@ func (d *Debugger) Stacktrace(goroutineID, depth int, cfg *proc.LoadConfig) ([]a
 	d.processMutex.Lock()
 	defer d.processMutex.Unlock()
 
+	if d.target.Exited() {
+		return nil, proc.ProcessExitedError{Pid: d.ProcessPid()}
+	}
+
 	var rawlocs []proc.Stackframe
 
 	g, err := proc.FindGoroutine(d.target, goroutineID)
@@ -854,8 +865,13 @@ func (d *Debugger) convertStacktrace(rawlocs []proc.Stackframe, cfg *proc.LoadCo
 	locations := make([]api.Stackframe, 0, len(rawlocs))
 	for i := range rawlocs {
 		frame := api.Stackframe{
-			Location:    api.ConvertLocation(rawlocs[i].Call),
-			FrameOffset: rawlocs[i].CFA - int64(rawlocs[i].StackHi),
+			Location: api.ConvertLocation(rawlocs[i].Call),
+
+			FrameOffset:        rawlocs[i].FrameOffset(),
+			FramePointerOffset: rawlocs[i].FramePointerOffset(),
+		}
+		if rawlocs[i].Err != nil {
+			frame.Err = rawlocs[i].Err.Error()
 		}
 		if cfg != nil && rawlocs[i].Current.Fn != nil {
 			var err error
@@ -883,6 +899,10 @@ func (d *Debugger) FindLocation(scope api.EvalScope, locStr string) ([]api.Locat
 	d.processMutex.Lock()
 	defer d.processMutex.Unlock()
 
+	if d.target.Exited() {
+		return nil, &proc.ProcessExitedError{Pid: d.target.Pid()}
+	}
+
 	loc, err := parseLocationSpec(locStr)
 	if err != nil {
 		return nil, err
@@ -900,11 +920,15 @@ func (d *Debugger) FindLocation(scope api.EvalScope, locStr string) ([]api.Locat
 	return locs, err
 }
 
-// Disassembles code between startPC and endPC
+// Disassemble code between startPC and endPC
 // if endPC == 0 it will find the function containing startPC and disassemble the whole function
 func (d *Debugger) Disassemble(scope api.EvalScope, startPC, endPC uint64, flavour api.AssemblyFlavour) (api.AsmInstructions, error) {
 	d.processMutex.Lock()
 	defer d.processMutex.Unlock()
+
+	if d.target.Exited() {
+		return nil, &proc.ProcessExitedError{Pid: d.target.Pid()}
+	}
 
 	if endPC == 0 {
 		_, _, fn := d.target.BinInfo().PCToLine(startPC)

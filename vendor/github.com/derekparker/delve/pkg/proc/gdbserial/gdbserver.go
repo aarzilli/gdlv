@@ -62,6 +62,7 @@
 package gdbserial
 
 import (
+	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -106,6 +107,8 @@ type Process struct {
 
 	exited bool
 	ctrlC  bool // ctrl-c was sent to stop inferior
+
+	manualStopRequested bool
 
 	breakpoints                 map[uint64]*proc.Breakpoint
 	breakpointIDCounter         int
@@ -258,6 +261,14 @@ func (p *Process) Connect(conn net.Conn, path string, pid int) error {
 		}
 	}
 
+	var wg sync.WaitGroup
+	err = p.bi.LoadBinaryInfo(path, &wg)
+	if err != nil {
+		conn.Close()
+		return err
+	}
+	wg.Wait()
+
 	// None of the stubs we support returns the value of fs_base or gs_base
 	// along with the registers, therefore we have to resort to executing a MOV
 	// instruction on the inferior to find out where the G struct of a given
@@ -271,14 +282,6 @@ func (p *Process) Connect(conn net.Conn, path string, pid int) error {
 			p.loadGInstrAddr = addr
 		}
 	}
-
-	var wg sync.WaitGroup
-	err = p.bi.LoadBinaryInfo(path, &wg)
-	if err != nil {
-		conn.Close()
-		return err
-	}
-	wg.Wait()
 
 	err = p.updateThreadList(&threadUpdater{p: p})
 	if err != nil {
@@ -296,14 +299,6 @@ func (p *Process) Connect(conn net.Conn, path string, pid int) error {
 		}
 	}
 
-	ver, isextld, err := proc.GetGoInformation(p)
-	if err != nil {
-		conn.Close()
-		p.bi.Close()
-		return err
-	}
-
-	p.bi.Arch.SetGStructOffset(ver, isextld)
 	p.selectedGoroutine, _ = proc.GetG(p.CurrentThread())
 
 	panicpc, err := proc.FindFunctionLocation(p, "runtime.startpanic", true, 0)
@@ -339,6 +334,20 @@ const debugserverExecutable = "/Library/Developer/CommandLineTools/Library/Priva
 
 var ErrUnsupportedOS = errors.New("lldb backend not supported on windows")
 
+func getLdEnvVars() []string {
+	var result []string
+
+	environ := os.Environ()
+	for i := 0; i < len(environ); i++ {
+		if strings.HasPrefix(environ[i], "LD_") ||
+			strings.HasPrefix(environ[i], "DYLD_") {
+			result = append(result, "-e", environ[i])
+		}
+	}
+
+	return result
+}
+
 // LLDBLaunch starts an instance of lldb-server and connects to it, asking
 // it to launch the specified target program with the specified arguments
 // (cmd) on the specified directory wd.
@@ -363,7 +372,9 @@ func LLDBLaunch(cmd []string, wd string) (*Process, error) {
 		if err != nil {
 			return nil, err
 		}
-		args := make([]string, 0, len(cmd)+4)
+		ldEnvVars := getLdEnvVars()
+		args := make([]string, 0, len(cmd)+4+len(ldEnvVars))
+		args = append(args, ldEnvVars...)
 		args = append(args, "-F", "-R", fmt.Sprintf("127.0.0.1:%d", listener.Addr().(*net.TCPAddr).Port), "--")
 		args = append(args, cmd...)
 
@@ -547,7 +558,7 @@ func (p *Process) ContinueOnce() (proc.Thread, error) {
 		th.clearBreakpointState()
 	}
 
-	p.ctrlC = false
+	p.setCtrlC(false)
 
 	// resume all threads
 	var threadID string
@@ -572,7 +583,7 @@ continueLoop:
 		// the ctrlC flag to know that we are the originators.
 		switch sig {
 		case interruptSignal: // interrupt
-			if p.ctrlC {
+			if p.getCtrlC() {
 				break continueLoop
 			}
 		case breakpointSignal: // breakpoint
@@ -612,25 +623,33 @@ continueLoop:
 }
 
 func (p *Process) StepInstruction() error {
-	if p.selectedGoroutine == nil {
-		return errors.New("cannot single step: no selected goroutine")
-	}
-	if p.selectedGoroutine.Thread == nil {
-		if _, err := p.SetBreakpoint(p.selectedGoroutine.PC, proc.NextBreakpoint, proc.SameGoroutineCondition(p.selectedGoroutine)); err != nil {
-			return err
+	thread := p.currentThread
+	if p.selectedGoroutine != nil {
+		if p.selectedGoroutine.Thread == nil {
+			if _, err := p.SetBreakpoint(p.selectedGoroutine.PC, proc.NextBreakpoint, proc.SameGoroutineCondition(p.selectedGoroutine)); err != nil {
+				return err
+			}
+			return proc.Continue(p)
 		}
-		return proc.Continue(p)
+		thread = p.selectedGoroutine.Thread.(*Thread)
 	}
 	p.allGCache = nil
 	if p.exited {
 		return &proc.ProcessExitedError{Pid: p.conn.pid}
 	}
-	p.selectedGoroutine.Thread.(*Thread).clearBreakpointState()
-	err := p.selectedGoroutine.Thread.(*Thread).StepInstruction()
+	thread.clearBreakpointState()
+	err := thread.StepInstruction()
 	if err != nil {
 		return err
 	}
-	return p.selectedGoroutine.Thread.(*Thread).SetCurrentBreakpoint()
+	err = thread.SetCurrentBreakpoint()
+	if err != nil {
+		return err
+	}
+	if g, _ := proc.GetG(thread); g != nil {
+		p.selectedGoroutine = g
+	}
+	return nil
 }
 
 func (p *Process) SwitchThread(tid int) error {
@@ -662,18 +681,42 @@ func (p *Process) SwitchGoroutine(gid int) error {
 }
 
 func (p *Process) RequestManualStop() error {
+	p.conn.manualStopMutex.Lock()
+	p.manualStopRequested = true
 	if !p.conn.running {
+		p.conn.manualStopMutex.Unlock()
 		return nil
 	}
 	p.ctrlC = true
+	p.conn.manualStopMutex.Unlock()
 	return p.conn.sendCtrlC()
+}
+
+func (p *Process) ManualStopRequested() bool {
+	p.conn.manualStopMutex.Lock()
+	msr := p.manualStopRequested
+	p.manualStopRequested = false
+	p.conn.manualStopMutex.Unlock()
+	return msr
+}
+
+func (p *Process) setCtrlC(v bool) {
+	p.conn.manualStopMutex.Lock()
+	p.ctrlC = v
+	p.conn.manualStopMutex.Unlock()
+}
+
+func (p *Process) getCtrlC() bool {
+	p.conn.manualStopMutex.Lock()
+	defer p.conn.manualStopMutex.Unlock()
+	return p.ctrlC
 }
 
 func (p *Process) Halt() error {
 	if p.exited {
 		return nil
 	}
-	p.ctrlC = true
+	p.setCtrlC(true)
 	return p.conn.sendCtrlC()
 }
 
@@ -705,6 +748,7 @@ func (p *Process) Detach(kill bool) error {
 	if p.process != nil {
 		p.process.Kill()
 		<-p.waitChan
+		p.process = nil
 	}
 	return p.bi.Close()
 }
@@ -721,7 +765,7 @@ func (p *Process) Restart(pos string) error {
 		th.clearBreakpointState()
 	}
 
-	p.ctrlC = false
+	p.setCtrlC(false)
 
 	err := p.conn.restart(pos)
 	if err != nil {
@@ -745,11 +789,7 @@ func (p *Process) Restart(pos string) error {
 		p.conn.setBreakpoint(addr)
 	}
 
-	if err := p.setCurrentBreakpoints(); err != nil {
-		return err
-	}
-
-	return nil
+	return p.setCurrentBreakpoints()
 }
 
 func (p *Process) When() (string, error) {
@@ -1139,8 +1179,11 @@ func (t *Thread) Blocked() bool {
 		return false
 	}
 	pc := regs.PC()
-	fn := t.BinInfo().PCToFunc(pc)
+	f, ln, fn := t.BinInfo().PCToLine(pc)
 	if fn == nil {
+		if f == "" && ln == 0 {
+			return true
+		}
 		return false
 	}
 	switch fn.Name {
@@ -1158,27 +1201,24 @@ func (t *Thread) Blocked() bool {
 // OS/architecture that can be executed to load the address of G from an
 // inferior's thread.
 func (p *Process) loadGInstr() []byte {
+	var op []byte
 	switch p.bi.GOOS {
 	case "windows":
-		// mov rcx, QWORD PTR gs:0x28
-		return []byte{0x65, 0x48, 0x8b, 0x0c, 0x25, 0x28, 0x00, 0x00, 0x00}
+		// mov rcx, QWORD PTR gs:{uint32(off)}
+		op = []byte{0x65, 0x48, 0x8b, 0x0c, 0x25}
 	case "linux":
-		switch p.bi.Arch.GStructOffset() {
-		case 0xfffffffffffffff8, 0x0:
-			// mov    rcx,QWORD PTR fs:0xfffffffffffffff8
-			return []byte{0x64, 0x48, 0x8B, 0x0C, 0x25, 0xF8, 0xFF, 0xFF, 0xFF}
-		case 0xfffffffffffffff0:
-			// mov    rcx,QWORD PTR fs:0xfffffffffffffff0
-			return []byte{0x64, 0x48, 0x8B, 0x0C, 0x25, 0xF0, 0xFF, 0xFF, 0xFF}
-		default:
-			panic("not implemented")
-		}
+		// mov rcx,QWORD PTR fs:{uint32(off)}
+		op = []byte{0x64, 0x48, 0x8B, 0x0C, 0x25}
 	case "darwin":
-		// mov    rcx,QWORD PTR gs:0x8a0
-		return []byte{0x65, 0x48, 0x8B, 0x0C, 0x25, 0xA0, 0x08, 0x00, 0x00}
+		// mov rcx,QWORD PTR gs:{uint32(off)}
+		op = []byte{0x65, 0x48, 0x8B, 0x0C, 0x25}
 	default:
 		panic("unsupported operating system attempting to find Goroutine on Thread")
 	}
+	buf := &bytes.Buffer{}
+	buf.Write(op)
+	binary.Write(buf, binary.LittleEndian, uint32(p.bi.GStructOffset()))
+	return buf.Bytes()
 }
 
 // reloadRegisters loads the current value of the thread's registers.
@@ -1283,7 +1323,7 @@ func (t *Thread) reloadGAtPC() error {
 	// around by clearing and re-setting the breakpoint in a specific sequence
 	// with the memory writes.
 	// Additionally all breakpoints in [pc, pc+len(movinstr)] need to be removed
-	for addr, _ := range t.p.breakpoints {
+	for addr := range t.p.breakpoints {
 		if addr >= pc && addr <= pc+uint64(len(movinstr)) {
 			err := t.p.conn.clearBreakpoint(addr)
 			if err != nil {
@@ -1319,6 +1359,12 @@ func (t *Thread) reloadGAtPC() error {
 
 	_, _, err = t.p.conn.step(t.strID, nil)
 	if err != nil {
+		if err == threadBlockedError {
+			t.regs.tls = 0
+			t.regs.gaddr = 0
+			t.regs.hasgaddr = true
+			return nil
+		}
 		return err
 	}
 
@@ -1366,6 +1412,12 @@ func (t *Thread) reloadGAlloc() error {
 
 	_, _, err = t.p.conn.step(t.strID, nil)
 	if err != nil {
+		if err == threadBlockedError {
+			t.regs.tls = 0
+			t.regs.gaddr = 0
+			t.regs.hasgaddr = true
+			return nil
+		}
 		return err
 	}
 

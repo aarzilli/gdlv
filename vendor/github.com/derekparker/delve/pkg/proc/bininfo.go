@@ -1,21 +1,25 @@
 package proc
 
 import (
+	"bytes"
 	"debug/dwarf"
 	"debug/elf"
-	"debug/gosym"
 	"debug/macho"
 	"debug/pe"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/derekparker/delve/pkg/dwarf/frame"
 	"github.com/derekparker/delve/pkg/dwarf/godwarf"
 	"github.com/derekparker/delve/pkg/dwarf/line"
+	"github.com/derekparker/delve/pkg/dwarf/op"
 	"github.com/derekparker/delve/pkg/dwarf/reader"
 )
 
@@ -28,13 +32,21 @@ type BinaryInfo struct {
 	// Maps package names to package paths, needed to lookup types inside DWARF info
 	packageMap map[string]string
 
-	Arch         Arch
-	dwarf        *dwarf.Data
-	frameEntries frame.FrameDescriptionEntries
-	lineInfo     line.DebugLines
-	goSymTable   *gosym.Table
-	types        map[string]dwarf.Offset
-	functions    []functionDebugInfo
+	Arch          Arch
+	dwarf         *dwarf.Data
+	frameEntries  frame.FrameDescriptionEntries
+	loclist       loclistReader
+	compileUnits  []*compileUnit
+	types         map[string]dwarf.Offset
+	packageVars   map[string]dwarf.Offset
+	gStructOffset uint64
+
+	// Functions is a list of all DW_TAG_subprogram entries in debug_info.
+	Functions []Function
+	// Sources is a list of all source files found in debug_line.
+	Sources []string
+	// LookupFunc maps function names to a description of the function.
+	LookupFunc map[string]*Function
 
 	typeCache map[dwarf.Offset]godwarf.Type
 
@@ -46,6 +58,123 @@ type BinaryInfo struct {
 var UnsupportedLinuxArchErr = errors.New("unsupported architecture - only linux/amd64 is supported")
 var UnsupportedWindowsArchErr = errors.New("unsupported architecture of windows/386 - only windows/amd64 is supported")
 var UnsupportedDarwinArchErr = errors.New("unsupported architecture - only darwin/amd64 is supported")
+
+const dwarfGoLanguage = 22 // DW_LANG_Go (from DWARF v5, section 7.12, page 231)
+
+type compileUnit struct {
+	entry         *dwarf.Entry        // debug_info entry describing this compile unit
+	isgo          bool                // true if this is the go compile unit
+	Name          string              // univocal name for non-go compile units
+	lineInfo      *line.DebugLineInfo // debug_line segment associated with this compile unit
+	LowPC, HighPC uint64
+}
+
+// Function describes a function in the target program.
+type Function struct {
+	Name       string
+	Entry, End uint64 // same as DW_AT_lowpc and DW_AT_highpc
+	offset     dwarf.Offset
+	cu         *compileUnit
+}
+
+// PackageName returns the package part of the symbol name,
+// or the empty string if there is none.
+// Borrowed from $GOROOT/debug/gosym/symtab.go
+func (fn *Function) PackageName() string {
+	pathend := strings.LastIndex(fn.Name, "/")
+	if pathend < 0 {
+		pathend = 0
+	}
+
+	if i := strings.Index(fn.Name[pathend:], "."); i != -1 {
+		return fn.Name[:pathend+i]
+	}
+	return ""
+}
+
+// ReceiverName returns the receiver type name of this symbol,
+// or the empty string if there is none.
+// Borrowed from $GOROOT/debug/gosym/symtab.go
+func (fn *Function) ReceiverName() string {
+	pathend := strings.LastIndex(fn.Name, "/")
+	if pathend < 0 {
+		pathend = 0
+	}
+	l := strings.Index(fn.Name[pathend:], ".")
+	r := strings.LastIndex(fn.Name[pathend:], ".")
+	if l == -1 || r == -1 || l == r {
+		return ""
+	}
+	return fn.Name[pathend+l+1 : pathend+r]
+}
+
+// BaseName returns the symbol name without the package or receiver name.
+// Borrowed from $GOROOT/debug/gosym/symtab.go
+func (fn *Function) BaseName() string {
+	if i := strings.LastIndex(fn.Name, "."); i != -1 {
+		return fn.Name[i+1:]
+	}
+	return fn.Name
+}
+
+type loclistReader struct {
+	data  []byte
+	cur   int
+	ptrSz int
+}
+
+func (rdr *loclistReader) Seek(off int) {
+	rdr.cur = off
+}
+
+func (rdr *loclistReader) read(sz int) []byte {
+	r := rdr.data[rdr.cur : rdr.cur+sz]
+	rdr.cur += sz
+	return r
+}
+
+func (rdr *loclistReader) oneAddr() uint64 {
+	switch rdr.ptrSz {
+	case 4:
+		addr := binary.LittleEndian.Uint32(rdr.read(rdr.ptrSz))
+		if addr == ^uint32(0) {
+			return ^uint64(0)
+		}
+		return uint64(addr)
+	case 8:
+		addr := uint64(binary.LittleEndian.Uint64(rdr.read(rdr.ptrSz)))
+		return addr
+	default:
+		panic("bad address size")
+	}
+}
+
+func (rdr *loclistReader) Next(e *loclistEntry) bool {
+	e.lowpc = rdr.oneAddr()
+	e.highpc = rdr.oneAddr()
+
+	if e.lowpc == 0 && e.highpc == 0 {
+		return false
+	}
+
+	if e.BaseAddressSelection() {
+		e.instr = nil
+		return true
+	}
+
+	instrlen := binary.LittleEndian.Uint16(rdr.read(2))
+	e.instr = rdr.read(int(instrlen))
+	return true
+}
+
+type loclistEntry struct {
+	lowpc, highpc uint64
+	instr         []byte
+}
+
+func (e *loclistEntry) BaseAddressSelection() bool {
+	return e.lowpc == ^uint64(0)
+}
 
 func NewBinaryInfo(goos, goarch string) BinaryInfo {
 	r := BinaryInfo{GOOS: goos, nameOfRuntimeType: make(map[uintptr]nameOfRuntimeTypeEntry), typeCache: make(map[dwarf.Offset]godwarf.Type)}
@@ -76,6 +205,12 @@ func (bininfo *BinaryInfo) LoadBinaryInfo(path string, wg *sync.WaitGroup) error
 	return errors.New("unsupported operating system")
 }
 
+// GStructOffset returns the offset of the G
+// struct in thread local storage.
+func (bi *BinaryInfo) GStructOffset() uint64 {
+	return bi.gStructOffset
+}
+
 func (bi *BinaryInfo) LastModified() time.Time {
 	return bi.lastModified
 }
@@ -83,16 +218,6 @@ func (bi *BinaryInfo) LastModified() time.Time {
 // DwarfReader returns a reader for the dwarf data
 func (bi *BinaryInfo) DwarfReader() *reader.Reader {
 	return reader.New(bi.dwarf)
-}
-
-// Sources returns list of source files that comprise the debugged binary.
-func (bi *BinaryInfo) Sources() map[string]*gosym.Obj {
-	return bi.goSymTable.Files
-}
-
-// Funcs returns list of functions present in the debugged program.
-func (bi *BinaryInfo) Funcs() []gosym.Func {
-	return bi.goSymTable.Funcs
 }
 
 // Types returns list of types present in the debugged program.
@@ -105,22 +230,136 @@ func (bi *BinaryInfo) Types() ([]string, error) {
 }
 
 // PCToLine converts an instruction address to a file/line/function.
-func (bi *BinaryInfo) PCToLine(pc uint64) (string, int, *gosym.Func) {
-	return bi.goSymTable.PCToLine(pc)
+func (bi *BinaryInfo) PCToLine(pc uint64) (string, int, *Function) {
+	fn := bi.PCToFunc(pc)
+	if fn == nil {
+		return "", 0, nil
+	}
+	f, ln := fn.cu.lineInfo.PCToLine(pc)
+	return f, ln, fn
 }
 
 // LineToPC converts a file:line into a memory address.
-func (bi *BinaryInfo) LineToPC(filename string, lineno int) (pc uint64, fn *gosym.Func, err error) {
-	return bi.goSymTable.LineToPC(filename, lineno)
+func (bi *BinaryInfo) LineToPC(filename string, lineno int) (pc uint64, fn *Function, err error) {
+	for _, cu := range bi.compileUnits {
+		if cu.lineInfo.Lookup[filename] != nil {
+			pc = cu.lineInfo.LineToPC(filename, lineno)
+			fn = bi.PCToFunc(pc)
+			return
+		}
+	}
+	err = fmt.Errorf("could not find %s:%d", filename, lineno)
+	return
 }
 
 // PCToFunc returns the function containing the given PC address
-func (bi *BinaryInfo) PCToFunc(pc uint64) *gosym.Func {
-	return bi.goSymTable.PCToFunc(pc)
+func (bi *BinaryInfo) PCToFunc(pc uint64) *Function {
+	i := sort.Search(len(bi.Functions), func(i int) bool {
+		fn := bi.Functions[i]
+		return pc <= fn.Entry || (fn.Entry <= pc && pc < fn.End)
+	})
+	if i != len(bi.Functions) {
+		fn := &bi.Functions[i]
+		if fn.Entry <= pc && pc < fn.End {
+			return fn
+		}
+	}
+	return nil
 }
 
 func (bi *BinaryInfo) Close() error {
 	return bi.closer.Close()
+}
+
+type nilCloser struct{}
+
+func (c *nilCloser) Close() error { return nil }
+
+// New creates a new BinaryInfo object using the specified data. Use LoadBinary instead.
+func (bi *BinaryInfo) LoadFromData(dwdata *dwarf.Data, debugFrameBytes, debugLineBytes, debugLocBytes []byte) {
+	bi.closer = &nilCloser{}
+	bi.dwarf = dwdata
+
+	if debugFrameBytes != nil {
+		bi.frameEntries = frame.Parse(debugFrameBytes, frame.DwarfEndian(debugFrameBytes))
+	}
+
+	bi.loclistInit(debugLocBytes)
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go bi.loadDebugInfoMaps(debugLineBytes, &wg)
+	wg.Wait()
+}
+
+func (bi *BinaryInfo) loclistInit(data []byte) {
+	bi.loclist.data = data
+	bi.loclist.ptrSz = bi.Arch.PtrSize()
+}
+
+// Location returns the location described by attribute attr of entry.
+// This will either be an int64 address or a slice of bytes for locations
+// that don't correspond to a memory address (registers, composite locations)
+func (bi *BinaryInfo) Location(entry *dwarf.Entry, attr dwarf.Attr, pc uint64, regs op.DwarfRegisters) (int64, []op.Piece, string, error) {
+	a := entry.Val(attr)
+	if a == nil {
+		return 0, nil, "", fmt.Errorf("no location attribute %s", attr)
+	}
+	if instr, ok := a.([]byte); ok {
+		var descr bytes.Buffer
+		fmt.Fprintf(&descr, "[block] ")
+		op.PrettyPrint(&descr, instr)
+		addr, pieces, err := op.ExecuteStackProgram(regs, instr)
+		return addr, pieces, descr.String(), err
+	}
+	off, ok := a.(int64)
+	if !ok {
+		return 0, nil, "", fmt.Errorf("could not interpret location attribute %s", attr)
+	}
+	if bi.loclist.data == nil {
+		return 0, nil, "", fmt.Errorf("could not find loclist entry at %#x for address %#x (no debug_loc section found)", off, pc)
+	}
+	instr := bi.loclistEntry(off, pc)
+	if instr == nil {
+		return 0, nil, "", fmt.Errorf("could not find loclist entry at %#x for address %#x", off, pc)
+	}
+	var descr bytes.Buffer
+	fmt.Fprintf(&descr, "[%#x:%#x] ", off, pc)
+	op.PrettyPrint(&descr, instr)
+	addr, pieces, err := op.ExecuteStackProgram(regs, instr)
+	return addr, pieces, descr.String(), err
+}
+
+// loclistEntry returns the loclist entry in the loclist starting at off, for address pc
+func (bi *BinaryInfo) loclistEntry(off int64, pc uint64) []byte {
+	var base uint64
+	if cu := bi.findCompileUnit(pc); cu != nil {
+		base = cu.LowPC
+	}
+
+	bi.loclist.Seek(int(off))
+	var e loclistEntry
+	for bi.loclist.Next(&e) {
+		if e.BaseAddressSelection() {
+			base = e.highpc
+			continue
+		}
+		if pc >= e.lowpc+base && pc < e.highpc+base {
+			return e.instr
+		}
+	}
+
+	return nil
+}
+
+// findCompileUnit returns the compile unit containing address pc
+func (bi *BinaryInfo) findCompileUnit(pc uint64) *compileUnit {
+	for _, cu := range bi.compileUnits {
+		if pc >= cu.LowPC && pc < cu.HighPC {
+			return cu
+		}
+	}
+	return nil
 }
 
 // ELF ///////////////////////////////////////////////////////////////
@@ -143,11 +382,13 @@ func (bi *BinaryInfo) LoadBinaryInfoElf(path string, wg *sync.WaitGroup) error {
 		return err
 	}
 
-	wg.Add(4)
+	debugLineBytes := getDebugLinesInfoElf(elfFile)
+	bi.loclistInit(getDebugLocElf(elfFile))
+
+	wg.Add(3)
 	go bi.parseDebugFrameElf(elfFile, wg)
-	go bi.obtainGoSymbolsElf(elfFile, wg)
-	go bi.parseDebugLineInfoElf(elfFile, wg)
-	go bi.loadDebugInfoMaps(wg)
+	go bi.loadDebugInfoMaps(debugLineBytes, wg)
+	go bi.setGStructOffsetElf(elfFile, wg)
 	return nil
 }
 
@@ -175,55 +416,65 @@ func (bi *BinaryInfo) parseDebugFrameElf(exe *elf.File, wg *sync.WaitGroup) {
 	}
 }
 
-func (bi *BinaryInfo) obtainGoSymbolsElf(exe *elf.File, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	var (
-		symdat  []byte
-		pclndat []byte
-		err     error
-	)
-
-	if sec := exe.Section(".gosymtab"); sec != nil {
-		symdat, err = sec.Data()
-		if err != nil {
-			fmt.Println("could not get .gosymtab section", err)
-			os.Exit(1)
-		}
-	}
-
-	if sec := exe.Section(".gopclntab"); sec != nil {
-		pclndat, err = sec.Data()
-		if err != nil {
-			fmt.Println("could not get .gopclntab section", err)
-			os.Exit(1)
-		}
-	}
-
-	pcln := gosym.NewLineTable(pclndat, exe.Section(".text").Addr)
-	tab, err := gosym.NewTable(symdat, pcln)
-	if err != nil {
-		fmt.Println("could not get initialize line table", err)
-		os.Exit(1)
-	}
-
-	bi.goSymTable = tab
-}
-
-func (bi *BinaryInfo) parseDebugLineInfoElf(exe *elf.File, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func getDebugLinesInfoElf(exe *elf.File) []byte {
 	if sec := exe.Section(".debug_line"); sec != nil {
 		debugLine, err := exe.Section(".debug_line").Data()
 		if err != nil {
 			fmt.Println("could not get .debug_line section", err)
 			os.Exit(1)
 		}
-		bi.lineInfo = line.Parse(debugLine)
+		return debugLine
 	} else {
 		fmt.Println("could not find .debug_line section in binary")
 		os.Exit(1)
 	}
+	return nil
+}
+
+func getDebugLocElf(exe *elf.File) []byte {
+	if sec := exe.Section(".debug_loc"); sec != nil {
+		debugLoc, _ := exe.Section(".debug_loc").Data()
+		return debugLoc
+	}
+	return nil
+}
+
+func (bi *BinaryInfo) setGStructOffsetElf(exe *elf.File, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	// This is a bit arcane. Essentially:
+	// - If the program is pure Go, it can do whatever it wants, and puts the G
+	//   pointer at %fs-8.
+	// - Otherwise, Go asks the external linker to place the G pointer by
+	//   emitting runtime.tlsg, a TLS symbol, which is relocated to the chosen
+	//   offset in libc's TLS block.
+	symbols, err := exe.Symbols()
+	if err != nil {
+		fmt.Println("could not parse ELF symbols", err)
+		os.Exit(1)
+	}
+	var tlsg *elf.Symbol
+	for _, symbol := range symbols {
+		if symbol.Name == "runtime.tlsg" {
+			s := symbol
+			tlsg = &s
+			break
+		}
+	}
+	if tlsg == nil {
+		bi.gStructOffset = ^uint64(8) + 1 // -8
+		return
+	}
+	var tls *elf.Prog
+	for _, prog := range exe.Progs {
+		if prog.Type == elf.PT_TLS {
+			tls = prog
+			break
+		}
+	}
+	// The TLS register points to the end of the TLS block, which is
+	// tls.Memsz long. runtime.tlsg is an offset from the beginning of that block.
+	bi.gStructOffset = ^(tls.Memsz) + 1 + tlsg.Value // -tls.Memsz + tlsg.Value
 }
 
 // PE ////////////////////////////////////////////////////////////////
@@ -237,16 +488,23 @@ func (bi *BinaryInfo) LoadBinaryInfoPE(path string, wg *sync.WaitGroup) error {
 	if peFile.Machine != pe.IMAGE_FILE_MACHINE_AMD64 {
 		return UnsupportedWindowsArchErr
 	}
-	bi.dwarf, err = dwarfFromPE(peFile)
+	bi.dwarf, err = peFile.DWARF()
 	if err != nil {
 		return err
 	}
 
-	wg.Add(4)
+	debugLineBytes := getDebugLinesInfoPE(peFile)
+	bi.loclistInit(getDebugLocPE(peFile))
+
+	wg.Add(2)
 	go bi.parseDebugFramePE(peFile, wg)
-	go bi.obtainGoSymbolsPE(peFile, wg)
-	go bi.parseDebugLineInfoPE(peFile, wg)
-	go bi.loadDebugInfoMaps(wg)
+	go bi.loadDebugInfoMaps(debugLineBytes, wg)
+
+	// Use ArbitraryUserPointer (0x28) as pointer to pointer
+	// to G struct per:
+	// https://golang.org/src/runtime/cgo/gcc_windows_amd64.c
+
+	bi.gStructOffset = 0x28
 	return nil
 }
 
@@ -261,33 +519,6 @@ func openExecutablePathPE(path string) (*pe.File, io.Closer, error) {
 		return nil, nil, err
 	}
 	return peFile, f, nil
-}
-
-// Adapted from src/debug/pe/file.go: pe.(*File).DWARF()
-func dwarfFromPE(f *pe.File) (*dwarf.Data, error) {
-	// There are many other DWARF sections, but these
-	// are the ones the debug/dwarf package uses.
-	// Don't bother loading others.
-	var names = [...]string{"abbrev", "info", "line", "str"}
-	var dat [len(names)][]byte
-	for i, name := range names {
-		name = ".debug_" + name
-		s := f.Section(name)
-		if s == nil {
-			continue
-		}
-		b, err := s.Data()
-		if err != nil && uint32(len(b)) < s.Size {
-			return nil, err
-		}
-		if 0 < s.VirtualSize && s.VirtualSize < s.Size {
-			b = b[:s.VirtualSize]
-		}
-		dat[i] = b
-	}
-
-	abbrev, info, line, str := dat[0], dat[1], dat[2], dat[3]
-	return dwarf.New(abbrev, nil, nil, info, line, nil, nil, str)
 }
 
 func (bi *BinaryInfo) parseDebugFramePE(exe *pe.File, wg *sync.WaitGroup) {
@@ -315,25 +546,6 @@ func (bi *BinaryInfo) parseDebugFramePE(exe *pe.File, wg *sync.WaitGroup) {
 		fmt.Println("could not find .debug_frame section in binary")
 		os.Exit(1)
 	}
-}
-
-func (dbp *BinaryInfo) obtainGoSymbolsPE(exe *pe.File, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	_, symdat, pclndat, err := pclnPE(exe)
-	if err != nil {
-		fmt.Println("could not get Go symbols", err)
-		os.Exit(1)
-	}
-
-	pcln := gosym.NewLineTable(pclndat, uint64(exe.Section(".text").Offset))
-	tab, err := gosym.NewTable(symdat, pcln)
-	if err != nil {
-		fmt.Println("could not get initialize line table", err)
-		os.Exit(1)
-	}
-
-	dbp.goSymTable = tab
 }
 
 // Borrowed from https://golang.org/src/cmd/internal/objfile/pe.go
@@ -406,9 +618,7 @@ func pclnPE(exe *pe.File) (textStart uint64, symtab, pclntab []byte, err error) 
 	return textStart, symtab, pclntab, nil
 }
 
-func (bi *BinaryInfo) parseDebugLineInfoPE(exe *pe.File, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func getDebugLinesInfoPE(exe *pe.File) []byte {
 	if sec := exe.Section(".debug_line"); sec != nil {
 		debugLine, err := sec.Data()
 		if err != nil && uint32(len(debugLine)) < sec.Size {
@@ -418,11 +628,20 @@ func (bi *BinaryInfo) parseDebugLineInfoPE(exe *pe.File, wg *sync.WaitGroup) {
 		if 0 < sec.VirtualSize && sec.VirtualSize < sec.Size {
 			debugLine = debugLine[:sec.VirtualSize]
 		}
-		bi.lineInfo = line.Parse(debugLine)
+		return debugLine
 	} else {
 		fmt.Println("could not find .debug_line section in binary")
 		os.Exit(1)
 	}
+	return nil
+}
+
+func getDebugLocPE(exe *pe.File) []byte {
+	if sec := exe.Section(".debug_loc"); sec != nil {
+		debugLoc, _ := sec.Data()
+		return debugLoc
+	}
+	return nil
 }
 
 // MACH-O ////////////////////////////////////////////////////////////
@@ -441,11 +660,13 @@ func (bi *BinaryInfo) LoadBinaryInfoMacho(path string, wg *sync.WaitGroup) error
 		return err
 	}
 
-	wg.Add(4)
+	debugLineBytes := getDebugLineInfoMacho(exe)
+	bi.loclistInit(getDebugLocMacho(exe))
+
+	wg.Add(2)
 	go bi.parseDebugFrameMacho(exe, wg)
-	go bi.obtainGoSymbolsMacho(exe, wg)
-	go bi.parseDebugLineInfoMacho(exe, wg)
-	go bi.loadDebugInfoMaps(wg)
+	go bi.loadDebugInfoMaps(debugLineBytes, wg)
+	bi.gStructOffset = 0x8a0
 	return nil
 }
 
@@ -473,53 +694,25 @@ func (bi *BinaryInfo) parseDebugFrameMacho(exe *macho.File, wg *sync.WaitGroup) 
 	}
 }
 
-func (bi *BinaryInfo) obtainGoSymbolsMacho(exe *macho.File, wg *sync.WaitGroup) {
-	defer wg.Done()
-
-	var (
-		symdat  []byte
-		pclndat []byte
-		err     error
-	)
-
-	if sec := exe.Section("__gosymtab"); sec != nil {
-		symdat, err = sec.Data()
-		if err != nil {
-			fmt.Println("could not get .gosymtab section", err)
-			os.Exit(1)
-		}
-	}
-
-	if sec := exe.Section("__gopclntab"); sec != nil {
-		pclndat, err = sec.Data()
-		if err != nil {
-			fmt.Println("could not get .gopclntab section", err)
-			os.Exit(1)
-		}
-	}
-
-	pcln := gosym.NewLineTable(pclndat, exe.Section("__text").Addr)
-	tab, err := gosym.NewTable(symdat, pcln)
-	if err != nil {
-		fmt.Println("could not get initialize line table", err)
-		os.Exit(1)
-	}
-
-	bi.goSymTable = tab
-}
-
-func (bi *BinaryInfo) parseDebugLineInfoMacho(exe *macho.File, wg *sync.WaitGroup) {
-	defer wg.Done()
-
+func getDebugLineInfoMacho(exe *macho.File) []byte {
 	if sec := exe.Section("__debug_line"); sec != nil {
 		debugLine, err := exe.Section("__debug_line").Data()
 		if err != nil {
 			fmt.Println("could not get __debug_line section", err)
 			os.Exit(1)
 		}
-		bi.lineInfo = line.Parse(debugLine)
+		return debugLine
 	} else {
 		fmt.Println("could not find __debug_line section in binary")
 		os.Exit(1)
 	}
+	return nil
+}
+
+func getDebugLocMacho(exe *macho.File) []byte {
+	if sec := exe.Section("__debug_loc"); sec != nil {
+		debugLoc, _ := sec.Data()
+		return debugLoc
+	}
+	return nil
 }

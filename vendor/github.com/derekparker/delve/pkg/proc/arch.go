@@ -1,15 +1,11 @@
 package proc
 
-import "github.com/derekparker/delve/pkg/goversion"
-
 // Arch defines an interface for representing a
 // CPU architecture.
 type Arch interface {
-	SetGStructOffset(ver goversion.GoVersion, iscgo bool)
 	PtrSize() int
 	BreakpointInstruction() []byte
 	BreakpointSize() int
-	GStructOffset() uint64
 	DerefTLS() bool
 }
 
@@ -37,26 +33,6 @@ func AMD64Arch(goos string) *AMD64 {
 	}
 }
 
-// SetGStructOffset sets the offset of the G struct on the AMD64
-// arch struct. The offset is dependent on the Go compiler Version
-// and whether or not the target program was externally linked.
-func (a *AMD64) SetGStructOffset(ver goversion.GoVersion, isextld bool) {
-	switch a.goos {
-	case "darwin":
-		a.gStructOffset = 0x8a0
-	case "linux":
-		a.gStructOffset = 0xfffffffffffffff0
-		if isextld || ver.AfterOrEqual(goversion.GoVersion{1, 5, -1, 2, 0, ""}) || ver.IsDevel() {
-			a.gStructOffset += 8
-		}
-	case "windows":
-		// Use ArbitraryUserPointer (0x28) as pointer to pointer
-		// to G struct per:
-		// https://golang.org/src/runtime/cgo/gcc_windows_amd64.c
-		a.gStructOffset = 0x28
-	}
-}
-
 // PtrSize returns the size of a pointer
 // on this architecture.
 func (a *AMD64) PtrSize() int {
@@ -73,12 +49,6 @@ func (a *AMD64) BreakpointInstruction() []byte {
 // breakpoint instruction on this architecture.
 func (a *AMD64) BreakpointSize() int {
 	return a.breakInstructionLen
-}
-
-// GStructOffset returns the offset of the G
-// struct in thread local storage.
-func (a *AMD64) GStructOffset() uint64 {
-	return a.gStructOffset
 }
 
 // If DerefTLS returns true the value of regs.TLS()+GStructOffset() is a

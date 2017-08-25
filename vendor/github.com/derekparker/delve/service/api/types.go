@@ -118,9 +118,13 @@ type Location struct {
 
 type Stackframe struct {
 	Location
-	Locals      []Variable
-	Arguments   []Variable
-	FrameOffset int64
+	Locals    []Variable
+	Arguments []Variable
+
+	FrameOffset        int64
+	FramePointerOffset int64
+
+	Err string
 }
 
 func (frame *Stackframe) Var(name string) *Variable {
@@ -146,10 +150,15 @@ type Function struct {
 	GoType uint64 `json:"goType"`
 }
 
+// VariableFlags is the type of the Flags field of Variable.
 type VariableFlags uint16
 
 const (
-	VariableEscaped  = VariableFlags(proc.VariableEscaped)
+	// VariableEscaped is set for local variables that escaped to the heap
+	VariableEscaped = VariableFlags(proc.VariableEscaped)
+
+	// VariableShadowed is set for local variables that are shadowed by a
+	// variable with the same name in another scope
 	VariableShadowed = VariableFlags(proc.VariableShadowed)
 )
 
@@ -188,6 +197,9 @@ type Variable struct {
 
 	// Unreadable addresses will have this field set
 	Unreadable string `json:"unreadable"`
+
+	// LocationExpr describes the location expression of this variable's address
+	LocationExpr string
 }
 
 // LoadConfig describes how to load values from target's memory

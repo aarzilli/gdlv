@@ -29,26 +29,35 @@ type Registers interface {
 
 type Register struct {
 	Name  string
+	Bytes []byte
 	Value string
 }
 
 // AppendWordReg appends a word (16 bit) register to regs.
 func AppendWordReg(regs []Register, name string, value uint16) []Register {
-	return append(regs, Register{name, fmt.Sprintf("%#04x", value)})
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, value)
+	return append(regs, Register{name, buf.Bytes(), fmt.Sprintf("%#04x", value)})
 }
 
 // AppendDwordReg appends a double word (32 bit) register to regs.
 func AppendDwordReg(regs []Register, name string, value uint32) []Register {
-	return append(regs, Register{name, fmt.Sprintf("%#08x", value)})
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, value)
+	return append(regs, Register{name, buf.Bytes(), fmt.Sprintf("%#08x", value)})
 }
 
 // AppendQwordReg appends a quad word (64 bit) register to regs.
 func AppendQwordReg(regs []Register, name string, value uint64) []Register {
-	return append(regs, Register{name, fmt.Sprintf("%#016x", value)})
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, value)
+	return append(regs, Register{name, buf.Bytes(), fmt.Sprintf("%#016x", value)})
 }
 
 func appendFlagReg(regs []Register, name string, value uint64, descr flagRegisterDescr, size int) []Register {
-	return append(regs, Register{name, descr.Describe(value, size)})
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, value)
+	return append(regs, Register{name, buf.Bytes()[:size], descr.Describe(value, size)})
 }
 
 // AppendEflagReg appends EFLAG register to regs.
@@ -114,7 +123,11 @@ func AppendX87Reg(regs []Register, index int, exponent uint16, mantissa uint64) 
 		f = sign * math.Ldexp(significand, int(exponent-_EXP_BIAS))
 	}
 
-	return append(regs, Register{fmt.Sprintf("ST(%d)", index), fmt.Sprintf("%#04x%016x\t%g", exponent, mantissa, f)})
+	var buf bytes.Buffer
+	binary.Write(&buf, binary.LittleEndian, exponent)
+	binary.Write(&buf, binary.LittleEndian, mantissa)
+
+	return append(regs, Register{fmt.Sprintf("ST(%d)", index), buf.Bytes(), fmt.Sprintf("%#04x%016x\t%g", exponent, mantissa, f)})
 }
 
 // AppendSSEReg appends a 256 bit SSE register to regs.
@@ -151,7 +164,7 @@ func AppendSSEReg(regs []Register, name string, xmm []byte) []Register {
 	}
 	fmt.Fprintf(&out, "\tv4_float={ %g %g %g %g }", v4[0], v4[1], v4[2], v4[3])
 
-	return append(regs, Register{name, out.String()})
+	return append(regs, Register{name, xmm, out.String()})
 }
 
 var UnknownRegisterError = errors.New("unknown register")
@@ -231,4 +244,99 @@ func (descr flagRegisterDescr) Describe(reg uint64, bitsize int) string {
 		r = append(r, fmt.Sprintf("unknown_flags=%x", reg&^descr.Mask()))
 	}
 	return fmt.Sprintf("%#0*x\t[%s]", bitsize/4, reg, strings.Join(r, " "))
+}
+
+// tracks user_fpregs_struct in /usr/include/x86_64-linux-gnu/sys/user.h
+type PtraceFpRegs struct {
+	Cwd      uint16
+	Swd      uint16
+	Ftw      uint16
+	Fop      uint16
+	Rip      uint64
+	Rdp      uint64
+	Mxcsr    uint32
+	MxcrMask uint32
+	StSpace  [32]uint32
+	XmmSpace [256]byte
+	Padding  [24]uint32
+}
+
+// LinuxX86Xstate represents amd64 XSAVE area. See Section 13.1 (and
+// following) of Intel® 64 and IA-32 Architectures Software Developer’s
+// Manual, Volume 1: Basic Architecture.
+type LinuxX86Xstate struct {
+	PtraceFpRegs
+	AvxState bool // contains AVX state
+	YmmSpace [256]byte
+}
+
+// Decode decodes an XSAVE area to a list of name/value pairs of registers.
+func (xsave *LinuxX86Xstate) Decode() (regs []Register) {
+	// x87 registers
+	regs = AppendWordReg(regs, "CW", xsave.Cwd)
+	regs = AppendWordReg(regs, "SW", xsave.Swd)
+	regs = AppendWordReg(regs, "TW", xsave.Ftw)
+	regs = AppendWordReg(regs, "FOP", xsave.Fop)
+	regs = AppendQwordReg(regs, "FIP", xsave.Rip)
+	regs = AppendQwordReg(regs, "FDP", xsave.Rdp)
+
+	for i := 0; i < len(xsave.StSpace); i += 4 {
+		regs = AppendX87Reg(regs, i/4, uint16(xsave.StSpace[i+2]), uint64(xsave.StSpace[i+1])<<32|uint64(xsave.StSpace[i]))
+	}
+
+	// SSE registers
+	regs = AppendMxcsrReg(regs, "MXCSR", uint64(xsave.Mxcsr))
+	regs = AppendDwordReg(regs, "MXCSR_MASK", xsave.MxcrMask)
+
+	for i := 0; i < len(xsave.XmmSpace); i += 16 {
+		regs = AppendSSEReg(regs, fmt.Sprintf("XMM%d", i/16), xsave.XmmSpace[i:i+16])
+		if xsave.AvxState {
+			regs = AppendSSEReg(regs, fmt.Sprintf("YMM%d", i/16), xsave.YmmSpace[i:i+16])
+		}
+	}
+
+	return
+}
+
+const (
+	_XSAVE_HEADER_START          = 512
+	_XSAVE_HEADER_LEN            = 64
+	_XSAVE_EXTENDED_REGION_START = 576
+	_XSAVE_SSE_REGION_LEN        = 416
+)
+
+// LinuxX86XstateRead reads a byte array containing an XSAVE area into regset.
+// If readLegacy is true regset.PtraceFpRegs will be filled with the
+// contents of the legacy region of the XSAVE area.
+// See Section 13.1 (and following) of Intel® 64 and IA-32 Architectures
+// Software Developer’s Manual, Volume 1: Basic Architecture.
+func LinuxX86XstateRead(xstateargs []byte, readLegacy bool, regset *LinuxX86Xstate) error {
+	if _XSAVE_HEADER_START+_XSAVE_HEADER_LEN >= len(xstateargs) {
+		return nil
+	}
+	if readLegacy {
+		rdr := bytes.NewReader(xstateargs[:_XSAVE_HEADER_START])
+		if err := binary.Read(rdr, binary.LittleEndian, &regset.PtraceFpRegs); err != nil {
+			return err
+		}
+	}
+	xsaveheader := xstateargs[_XSAVE_HEADER_START : _XSAVE_HEADER_START+_XSAVE_HEADER_LEN]
+	xstate_bv := binary.LittleEndian.Uint64(xsaveheader[0:8])
+	xcomp_bv := binary.LittleEndian.Uint64(xsaveheader[8:16])
+
+	if xcomp_bv&(1<<63) != 0 {
+		// compact format not supported
+		return nil
+	}
+
+	if xstate_bv&(1<<2) == 0 {
+		// AVX state not present
+		return nil
+	}
+
+	avxstate := xstateargs[_XSAVE_EXTENDED_REGION_START:]
+	regset.AvxState = true
+	copy(regset.YmmSpace[:], avxstate[:len(regset.YmmSpace)])
+
+	return nil
 }

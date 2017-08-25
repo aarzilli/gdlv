@@ -2,6 +2,7 @@ package proc
 
 import (
 	"bytes"
+	"debug/dwarf"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -72,7 +73,7 @@ func (scope *EvalScope) evalAST(t ast.Expr) (*Variable, error) {
 				}
 				return scope.Gvar.clone(), nil
 			} else if maybePkg.Name == "runtime" && node.Sel.Name == "frameoff" {
-				return newConstant(constant.MakeInt64(scope.CFA-int64(scope.StackHi)), scope.Mem), nil
+				return newConstant(constant.MakeInt64(scope.frameOffset), scope.Mem), nil
 			} else if v, err := scope.packageVarAddr(maybePkg.Name + "." + node.Sel.Name); err == nil {
 				return v, nil
 			}
@@ -170,7 +171,7 @@ func (scope *EvalScope) evalTypeCast(node *ast.CallExpr) (*Variable, error) {
 
 		n, _ := constant.Int64Val(argv.Value)
 
-		v.Children = []Variable{*(scope.newVariable("", uintptr(n), ttyp.Type))}
+		v.Children = []Variable{*(scope.newVariable("", uintptr(n), ttyp.Type, scope.Mem))}
 		return v, nil
 
 	case *godwarf.UintType:
@@ -393,7 +394,7 @@ func complexBuiltin(args []*Variable, nodeargs []ast.Expr) (*Variable, error) {
 
 	typ := &godwarf.ComplexType{BasicType: godwarf.BasicType{CommonType: godwarf.CommonType{ByteSize: int64(sz / 8), Name: fmt.Sprintf("complex%d", sz)}, BitSize: sz, BitOffset: 0}}
 
-	r := realev.newVariable("", 0, typ)
+	r := realev.newVariable("", 0, typ, nil)
 	r.Value = constant.BinaryOp(realev.Value, token.ADD, constant.MakeImag(imagev.Value))
 	return r, nil
 }
@@ -445,28 +446,34 @@ func (scope *EvalScope) evalIdent(node *ast.Ident) (*Variable, error) {
 		return nilVariable, nil
 	}
 
-	// try to interpret this as a local variable
-	v, err := scope.extractVarInfo(node.Name)
-	if err == nil {
-		return v, nil
+	vars, err := scope.variablesByTag(dwarf.TagVariable, nil)
+	if err != nil {
+		return nil, err
 	}
-	origErr := err
-	// workaround: sometimes go inserts an entry for '&varname' instead of varname
-	v, err = scope.extractVarInfo("&" + node.Name)
-	if err == nil {
-		v = v.maybeDereference()
-		v.Name = node.Name
-		return v, nil
+	for i := range vars {
+		if vars[i].Name == node.Name && vars[i].Flags&VariableShadowed == 0 {
+			return vars[i], nil
+		}
 	}
+	args, err := scope.variablesByTag(dwarf.TagFormalParameter, nil)
+	if err != nil {
+		return nil, err
+	}
+	for i := range args {
+		if args[i].Name == node.Name {
+			return args[i], nil
+		}
+	}
+
 	// if it's not a local variable then it could be a package variable w/o explicit package name
 	_, _, fn := scope.BinInfo.PCToLine(scope.PC)
 	if fn != nil {
-		if v, err = scope.packageVarAddr(fn.PackageName() + "." + node.Name); err == nil {
+		if v, err := scope.packageVarAddr(fn.PackageName() + "." + node.Name); err == nil {
 			v.Name = node.Name
 			return v, nil
 		}
 	}
-	return nil, origErr
+	return nil, fmt.Errorf("could not find symbol value for %s", node.Name)
 }
 
 // Evaluates expressions <subexpr>.<field name> where subexpr is not a package name
@@ -504,6 +511,11 @@ func (scope *EvalScope) evalTypeAssert(node *ast.TypeAssertExpr) (*Variable, err
 	if xv.Children[0].DwarfType.Common().Name != typ.Common().Name {
 		return nil, fmt.Errorf("interface conversion: %s is %s, not %s", xv.DwarfType.Common().Name, xv.Children[0].TypeString(), typ.Common().Name)
 	}
+	// loadInterface will set OnlyAddr for the data member since here we are
+	// passing false to loadData, however returning the variable with OnlyAddr
+	// set here would be wrong since, once the expression evaluation
+	// terminates, the value of this variable will be loaded.
+	xv.Children[0].OnlyAddr = false
 	return &xv.Children[0], nil
 }
 
@@ -642,7 +654,7 @@ func (scope *EvalScope) evalAddrOf(node *ast.UnaryExpr) (*Variable, error) {
 	xev.OnlyAddr = true
 
 	typename := "*" + xev.DwarfType.Common().Name
-	rv := scope.newVariable("", 0, &godwarf.PtrType{CommonType: godwarf.CommonType{ByteSize: int64(scope.BinInfo.Arch.PtrSize()), Name: typename}, Type: xev.DwarfType})
+	rv := scope.newVariable("", 0, &godwarf.PtrType{CommonType: godwarf.CommonType{ByteSize: int64(scope.BinInfo.Arch.PtrSize()), Name: typename}, Type: xev.DwarfType}, scope.Mem)
 	rv.Children = []Variable{*xev}
 	rv.loaded = true
 
@@ -707,7 +719,7 @@ func (scope *EvalScope) evalUnary(node *ast.UnaryExpr) (*Variable, error) {
 		return nil, err
 	}
 	if xv.DwarfType != nil {
-		r := xv.newVariable("", 0, xv.DwarfType)
+		r := xv.newVariable("", 0, xv.DwarfType, scope.Mem)
 		r.Value = rc
 		return r, nil
 	}
@@ -850,7 +862,7 @@ func (scope *EvalScope) evalBinary(node *ast.BinaryExpr) (*Variable, error) {
 			return newConstant(rc, xv.mem), nil
 		}
 
-		r := xv.newVariable("", 0, typ)
+		r := xv.newVariable("", 0, typ, scope.Mem)
 		r.Value = rc
 		if r.Kind == reflect.String {
 			r.Len = xv.Len + yv.Len
@@ -942,7 +954,7 @@ func (v *Variable) isNil() bool {
 	case reflect.Ptr:
 		return v.Children[0].Addr == 0
 	case reflect.Interface:
-		return false
+		return v.Children[0].Addr == 0 && v.Children[0].Kind == reflect.Invalid
 	case reflect.Slice, reflect.Map, reflect.Func, reflect.Chan:
 		return v.Base == 0
 	}
@@ -1063,7 +1075,11 @@ func (v *Variable) sliceAccess(idx int) (*Variable, error) {
 	if idx < 0 || int64(idx) >= v.Len {
 		return nil, fmt.Errorf("index out of bounds")
 	}
-	return v.newVariable("", v.Base+uintptr(int64(idx)*v.stride), v.fieldType), nil
+	mem := v.mem
+	if v.Kind != reflect.Array {
+		mem = DereferenceMemory(mem)
+	}
+	return v.newVariable("", v.Base+uintptr(int64(idx)*v.stride), v.fieldType, mem), nil
 }
 
 func (v *Variable) mapAccess(idx *Variable) (*Variable, error) {
@@ -1128,7 +1144,12 @@ func (v *Variable) reslice(low int64, high int64) (*Variable, error) {
 		}
 	}
 
-	r := v.newVariable("", 0, typ)
+	mem := v.mem
+	if v.Kind != reflect.Array {
+		mem = DereferenceMemory(mem)
+	}
+
+	r := v.newVariable("", 0, typ, mem)
 	r.Cap = len
 	r.Len = len
 	r.Base = base
