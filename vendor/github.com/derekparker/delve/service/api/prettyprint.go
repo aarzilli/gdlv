@@ -21,6 +21,12 @@ func (v *Variable) SinglelineString() string {
 	return buf.String()
 }
 
+func (v *Variable) SinglelineStringNoType() string {
+	var buf bytes.Buffer
+	v.writeTo(&buf, true, false, false, "")
+	return buf.String()
+}
+
 // MultilineString returns a representation of v on multiple lines.
 func (v *Variable) MultilineString(indent string) string {
 	var buf bytes.Buffer

@@ -560,6 +560,11 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 			}(exprMenuIdx)
 		}
 	}
+
+	if w.MenuItem(label.TA("Location...", "LC")) {
+		out := editorWriter{&scrollbackEditor, false}
+		fmt.Fprintf(&out, "location: %s\n", v.LocationExpr)
+	}
 }
 
 func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Variable) {
