@@ -62,6 +62,8 @@ type masterWindow struct {
 	wndb   screen.Buffer
 	bounds image.Rectangle
 
+	initialSize image.Point
+
 	// show performance counters
 	Perf bool
 	// window is focused
@@ -77,13 +79,18 @@ type masterWindow struct {
 	focusedOnce bool
 }
 
-// Creates new master window
 func NewMasterWindow(flags WindowFlags, title string, updatefn UpdateFn) MasterWindow {
+	return NewMasterWindowSize(flags, title, image.Point{640, 480}, updatefn)
+}
+
+// Creates new master window
+func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, updatefn UpdateFn) MasterWindow {
 	ctx := &context{}
 	ctx.Input.Mouse.valid = true
 	wnd := &masterWindow{ctx: ctx}
 	wnd.layout.Flags = flags
 	wnd.Title = title
+	wnd.initialSize = sz
 
 	clipboardMu.Lock()
 	if !clipboardStarted {
@@ -112,7 +119,7 @@ func (mw *masterWindow) context() *context {
 func (mw *masterWindow) main(s screen.Screen) {
 	var err error
 	mw.screen = s
-	width, height := int(640*mw.ctx.Style.Scaling), int(480*mw.ctx.Style.Scaling)
+	width, height := mw.ctx.scale(mw.initialSize.X), mw.ctx.scale(mw.initialSize.Y)
 	mw.wnd, err = s.NewWindow(&screen.NewWindowOptions{width, height, mw.Title})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not create window: %v", err)
