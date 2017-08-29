@@ -485,11 +485,11 @@ func cancelnext(out io.Writer, args string) error {
 }
 
 func interrupt(out io.Writer, args string) error {
-	state, err := client.Halt()
+	_, err := client.Halt()
 	if err != nil {
 		return err
 	}
-	refreshState(refreshToFrameZero, clearStop, state)
+	//refreshState(refreshToFrameZero, clearStop, state)
 	return nil
 }
 
