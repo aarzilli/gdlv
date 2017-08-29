@@ -9,6 +9,7 @@ import (
 	"io"
 	"math/rand"
 	"strconv"
+	"strings"
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
@@ -126,6 +127,27 @@ const (
 	splitMinWidth     = 20
 	splitFlags        = nucular.WindowNoScrollbar | nucular.WindowBorder
 )
+
+func parsePanelDescrToplevel(in string) (p *panel, height int, width int) {
+	if len(in) > 3 {
+		if in[0] == '$' {
+			if dollar := strings.Index(in[1:], "$"); dollar >= 0 {
+				szstr := in[1 : 1+dollar]
+				in = in[2+dollar:]
+				if comma := strings.Index(szstr, ","); comma >= 0 {
+					width, _ = strconv.Atoi(szstr[:comma])
+					height, _ = strconv.Atoi(szstr[comma+1:])
+				}
+			}
+		}
+	}
+	if width <= 0 || height <= 0 {
+		width = 640
+		height = 480
+	}
+	p, _ = parsePanelDescr(in, nil)
+	return
+}
 
 func parsePanelDescr(in string, parent *panel) (p *panel, rest string) {
 	switch in[0] {

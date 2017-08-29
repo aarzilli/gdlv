@@ -622,6 +622,7 @@ func layoutCommand(out io.Writer, args string) error {
 		if err != nil {
 			return err
 		}
+		s = fmt.Sprintf("$%d,%d$", int(float64(lastSize.X)/conf.Scaling), int(float64(lastSize.Y)/conf.Scaling)) + s
 		conf.Layouts[name] = LayoutDescr{Description: description, Layout: s}
 		saveConfiguration()
 	default:

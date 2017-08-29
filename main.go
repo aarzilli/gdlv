@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"image"
 	"math"
 	"os"
 	"runtime"
@@ -107,6 +108,7 @@ var listingPanel struct {
 
 var mu sync.Mutex
 var wnd nucular.MasterWindow
+var lastSize image.Point
 
 var running, nextInProgress bool
 var client service.Client
@@ -124,6 +126,9 @@ func guiUpdate(w *nucular.Window) {
 	df := delayFrame
 	delayFrame = false
 	mu.Unlock()
+
+	lastSize.X = w.Bounds.W
+	lastSize.Y = w.Bounds.H
 
 	if df {
 		time.Sleep(50 * time.Millisecond)
@@ -717,10 +722,12 @@ func main() {
 
 	BackendServer = parseArguments()
 
-	wnd = nucular.NewMasterWindow(nucular.WindowNoScrollbar, "Gdlv", guiUpdate)
+	_, h, w := parsePanelDescrToplevel(conf.Layouts["default"].Layout)
+
+	wnd = nucular.NewMasterWindowSize(nucular.WindowNoScrollbar, "Gdlv", image.Point{w, h}, guiUpdate)
 	setupStyle()
 
-	rootPanel, _ = parsePanelDescr(conf.Layouts["default"].Layout, nil)
+	rootPanel, _, _ = parsePanelDescrToplevel(conf.Layouts["default"].Layout)
 
 	curThread = -1
 	curGid = -1
