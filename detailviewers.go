@@ -458,10 +458,12 @@ type customFmtMaker struct {
 	errstr string
 }
 
-func viewCustomFormatterMaker(w *nucular.Window, v *Variable) {
+func viewCustomFormatterMaker(w *nucular.Window, v *Variable, fmtstr string, argstr []string) {
 	vw := &customFmtMaker{v: v}
 	vw.fmtEd.Flags = nucular.EditSelectable | nucular.EditClipboard
 	vw.argEd.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditMultiline
+	vw.fmtEd.Buffer = []rune(fmtstr)
+	vw.argEd.Buffer = []rune(strings.Join(argstr, "\n"))
 	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Type), nucular.WindowDynamic|nucular.WindowNoScrollbar, rect.Rect{20, 100, 480, 500}, true, vw.Update)
 }
 

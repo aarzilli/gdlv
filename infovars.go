@@ -518,7 +518,10 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 	case "float32", "float64", "complex64", "complex128":
 	case "string":
 	default:
-		if conf.CustomFormatters[v.Type] != nil {
+		if cfmt := conf.CustomFormatters[v.Type]; cfmt != nil {
+			if w.MenuItem(label.TA("Edit custom formatter...", "LC")) {
+				viewCustomFormatterMaker(w, v, cfmt.Fmtstr, cfmt.Argstr)
+			}
 			if w.MenuItem(label.TA("Remove custom formatter", "LC")) {
 				delete(conf.CustomFormatters, v.Type)
 				saveConfiguration()
@@ -526,7 +529,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 			}
 		} else {
 			if w.MenuItem(label.TA("Custom format for type...", "LC")) {
-				viewCustomFormatterMaker(w, v)
+				viewCustomFormatterMaker(w, v, "", []string{})
 			}
 		}
 	}
