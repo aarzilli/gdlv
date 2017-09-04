@@ -372,7 +372,7 @@ func newFloatViewer(w *nucular.Window, v *Variable) {
 	vw := &floatViewer{v: v}
 	vw.ed.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditSigEnter
 	vw.ed.Buffer = []rune(v.FloatFmt)
-	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Name), nucular.WindowDynamic|nucular.WindowNoScrollbar, rect.Rect{20, 100, 480, 500}, true, vw.Update)
+	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Name), nucular.WindowDynamic|nucular.WindowNoScrollbar|nucular.WindowTitle, rect.Rect{20, 100, 480, 500}, true, vw.Update)
 }
 
 func (vw *floatViewer) Update(w *nucular.Window) {
@@ -464,7 +464,7 @@ func viewCustomFormatterMaker(w *nucular.Window, v *Variable, fmtstr string, arg
 	vw.argEd.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditMultiline
 	vw.fmtEd.Buffer = []rune(fmtstr)
 	vw.argEd.Buffer = []rune(strings.Join(argstr, "\n"))
-	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Type), nucular.WindowDynamic|nucular.WindowNoScrollbar, rect.Rect{20, 100, 480, 500}, true, vw.Update)
+	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Type), nucular.WindowDynamic|nucular.WindowNoScrollbar|nucular.WindowTitle, rect.Rect{20, 100, 480, 500}, true, vw.Update)
 }
 
 func (vw *customFmtMaker) Update(w *nucular.Window) {

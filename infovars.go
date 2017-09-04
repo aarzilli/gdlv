@@ -564,6 +564,15 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 		}
 	}
 
+	switch v.Kind {
+	case reflect.Slice, reflect.Array:
+		if v.Addr != 0 {
+			if w.MenuItem(label.TA("Find element...", "LC")) {
+				viewFindElement(w, v)
+			}
+		}
+	}
+
 	if w.MenuItem(label.TA("Location...", "LC")) {
 		out := editorWriter{&scrollbackEditor, false}
 		fmt.Fprintf(&out, "location: %s\n", v.LocationExpr)
@@ -729,7 +738,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 					showVariable(w, depth+1, addr, -1, v.Children[i])
 				}
 			}
-			if len(v.Children)/2 != int(v.Len) {
+			if len(v.Children)/2 != int(v.Len) && v.Addr != 0 {
 				w.Row(varRowHeight).Static(moreBtnWidth)
 				if w.ButtonText(fmt.Sprintf("%d more", int(v.Len)-(len(v.Children)/2))) {
 					loadMoreMap(v)
@@ -760,7 +769,7 @@ func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *Variab
 	for i := range v.Children {
 		showVariable(w, depth+1, addr, -1, v.Children[i])
 	}
-	if len(v.Children) != int(v.Len) {
+	if len(v.Children) != int(v.Len) && v.Addr != 0 {
 		w.Row(varRowHeight).Static(moreBtnWidth)
 		if w.ButtonText(fmt.Sprintf("%d more", int(v.Len)-len(v.Children))) {
 			loadMoreArrayOrSlice(v)
