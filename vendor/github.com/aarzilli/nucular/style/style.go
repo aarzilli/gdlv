@@ -51,39 +51,36 @@ type Style struct {
 	GroupWindow      Window
 }
 
-type StyleColors int
-
-const (
-	ColorText StyleColors = iota
-	ColorWindow
-	ColorHeader
-	ColorBorder
-	ColorButton
-	ColorButtonHover
-	ColorButtonActive
-	ColorToggle
-	ColorToggleHover
-	ColorToggleCursor
-	ColorSelect
-	ColorSelectActive
-	ColorSlider
-	ColorSliderCursor
-	ColorSliderCursorHover
-	ColorSliderCursorActive
-	ColorProperty
-	ColorEdit
-	ColorEditCursor
-	ColorCombo
-	ColorChart
-	ColorChartColor
-	ColorChartColorHighlight
-	ColorScrollbar
-	ColorScrollbarCursor
-	ColorScrollbarCursorHover
-	ColorScrollbarCursorActive
-	ColorTabHeader
-	ColorCount
-)
+type ColorTable struct {
+	ColorText                  color.RGBA
+	ColorWindow                color.RGBA
+	ColorHeader                color.RGBA
+	ColorBorder                color.RGBA
+	ColorButton                color.RGBA
+	ColorButtonHover           color.RGBA
+	ColorButtonActive          color.RGBA
+	ColorToggle                color.RGBA
+	ColorToggleHover           color.RGBA
+	ColorToggleCursor          color.RGBA
+	ColorSelect                color.RGBA
+	ColorSelectActive          color.RGBA
+	ColorSlider                color.RGBA
+	ColorSliderCursor          color.RGBA
+	ColorSliderCursorHover     color.RGBA
+	ColorSliderCursorActive    color.RGBA
+	ColorProperty              color.RGBA
+	ColorEdit                  color.RGBA
+	ColorEditCursor            color.RGBA
+	ColorCombo                 color.RGBA
+	ColorChart                 color.RGBA
+	ColorChartColor            color.RGBA
+	ColorChartColorHighlight   color.RGBA
+	ColorScrollbar             color.RGBA
+	ColorScrollbarCursor       color.RGBA
+	ColorScrollbarCursorHover  color.RGBA
+	ColorScrollbarCursorActive color.RGBA
+	ColorTabHeader             color.RGBA
+}
 
 type ItemType int
 
@@ -376,11 +373,9 @@ type Window struct {
 	MinSize         image.Point
 }
 
-var defaultColorStyle = []color.RGBA{color.RGBA{175, 175, 175, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{65, 65, 65, 255}, color.RGBA{50, 50, 50, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{35, 35, 35, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{35, 35, 35, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{175, 175, 175, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{255, 0, 0, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{40, 40, 40, 255}}
+var defaultThemeTable = ColorTable{color.RGBA{175, 175, 175, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{65, 65, 65, 255}, color.RGBA{50, 50, 50, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{35, 35, 35, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{35, 35, 35, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{175, 175, 175, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{255, 0, 0, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{40, 40, 40, 255}}
 
-var nk_color_names = []string{"ColorText", "ColorWindow", "ColorHeader", "ColorBorder", "ColorButton", "ColorButtonHover", "ColorButtonActive", "ColorToggle", "ColorToggleHover", "ColorToggleCursor", "ColorSelect", "ColorSelectActive", "ColorSlider", "ColorSliderCursor", "ColorSliderCursorHover", "ColorSliderCursorActive", "ColorProperty", "ColorEdit", "ColorEditCursor", "ColorCombo", "ColorChart", "ColorChartColor", "ColorChartColorHighlight", "ColorScrollbar", "ColorScrollbarCursor", "ColorScrollbarCursorHover", "ColorScrollbarCursorActive", "ColorTabHeader"}
-
-func FromTable(table []color.RGBA, scaling float64) *Style {
+func FromTable(table ColorTable, scaling float64) *Style {
 	var text *Text
 	var button *Button
 	var toggle *Toggle
@@ -395,28 +390,25 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	var win *Window
 
 	style := &Style{Scaling: 1.0}
-	if table == nil {
-		table = defaultColorStyle[:]
-	}
 
 	/* default text */
 	text = &style.Text
 
-	text.Color = table[ColorText]
+	text.Color = table.ColorText
 	text.Padding = image.Point{4, 4}
 
 	/* default button */
 	button = &style.Button
 
 	*button = Button{}
-	button.Normal = MakeItemColor(table[ColorButton])
-	button.Hover = MakeItemColor(table[ColorButtonHover])
-	button.Active = MakeItemColor(table[ColorButtonActive])
-	button.BorderColor = table[ColorBorder]
-	button.TextBackground = table[ColorButton]
-	button.TextNormal = table[ColorText]
-	button.TextHover = table[ColorText]
-	button.TextActive = table[ColorText]
+	button.Normal = MakeItemColor(table.ColorButton)
+	button.Hover = MakeItemColor(table.ColorButtonHover)
+	button.Active = MakeItemColor(table.ColorButtonActive)
+	button.BorderColor = table.ColorBorder
+	button.TextBackground = table.ColorButton
+	button.TextNormal = table.ColorText
+	button.TextHover = table.ColorText
+	button.TextActive = table.ColorText
 	button.Padding = image.Point{4.0, 4.0}
 	button.ImagePadding = image.Point{0.0, 0.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
@@ -430,14 +422,14 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button = &style.ContextualButton
 
 	*button = Button{}
-	button.Normal = MakeItemColor(table[ColorWindow])
-	button.Hover = MakeItemColor(table[ColorButtonHover])
-	button.Active = MakeItemColor(table[ColorButtonActive])
-	button.BorderColor = table[ColorWindow]
-	button.TextBackground = table[ColorWindow]
-	button.TextNormal = table[ColorText]
-	button.TextHover = table[ColorText]
-	button.TextActive = table[ColorText]
+	button.Normal = MakeItemColor(table.ColorWindow)
+	button.Hover = MakeItemColor(table.ColorButtonHover)
+	button.Active = MakeItemColor(table.ColorButtonActive)
+	button.BorderColor = table.ColorWindow
+	button.TextBackground = table.ColorWindow
+	button.TextNormal = table.ColorText
+	button.TextHover = table.ColorText
+	button.TextActive = table.ColorText
 	button.Padding = image.Point{4.0, 4.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0
@@ -450,14 +442,14 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button = &style.MenuButton
 
 	*button = Button{}
-	button.Normal = MakeItemColor(table[ColorWindow])
-	button.Hover = MakeItemColor(table[ColorWindow])
-	button.Active = MakeItemColor(table[ColorWindow])
-	button.BorderColor = table[ColorWindow]
-	button.TextBackground = table[ColorWindow]
-	button.TextNormal = table[ColorText]
-	button.TextHover = table[ColorText]
-	button.TextActive = table[ColorText]
+	button.Normal = MakeItemColor(table.ColorWindow)
+	button.Hover = MakeItemColor(table.ColorWindow)
+	button.Active = MakeItemColor(table.ColorWindow)
+	button.BorderColor = table.ColorWindow
+	button.TextBackground = table.ColorWindow
+	button.TextNormal = table.ColorText
+	button.TextHover = table.ColorText
+	button.TextActive = table.ColorText
 	button.Padding = image.Point{4.0, 4.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0
@@ -470,15 +462,15 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	toggle = &style.Checkbox
 
 	*toggle = Toggle{}
-	toggle.Normal = MakeItemColor(table[ColorToggle])
-	toggle.Hover = MakeItemColor(table[ColorToggleHover])
-	toggle.Active = MakeItemColor(table[ColorToggleHover])
-	toggle.CursorNormal = MakeItemColor(table[ColorToggleCursor])
-	toggle.CursorHover = MakeItemColor(table[ColorToggleCursor])
-	toggle.TextBackground = table[ColorWindow]
-	toggle.TextNormal = table[ColorText]
-	toggle.TextHover = table[ColorText]
-	toggle.TextActive = table[ColorText]
+	toggle.Normal = MakeItemColor(table.ColorToggle)
+	toggle.Hover = MakeItemColor(table.ColorToggleHover)
+	toggle.Active = MakeItemColor(table.ColorToggleHover)
+	toggle.CursorNormal = MakeItemColor(table.ColorToggleCursor)
+	toggle.CursorHover = MakeItemColor(table.ColorToggleCursor)
+	toggle.TextBackground = table.ColorWindow
+	toggle.TextNormal = table.ColorText
+	toggle.TextHover = table.ColorText
+	toggle.TextActive = table.ColorText
 	toggle.Padding = image.Point{4.0, 4.0}
 	toggle.TouchPadding = image.Point{0, 0}
 
@@ -486,15 +478,15 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	toggle = &style.Option
 
 	*toggle = Toggle{}
-	toggle.Normal = MakeItemColor(table[ColorToggle])
-	toggle.Hover = MakeItemColor(table[ColorToggleHover])
-	toggle.Active = MakeItemColor(table[ColorToggleHover])
-	toggle.CursorNormal = MakeItemColor(table[ColorToggleCursor])
-	toggle.CursorHover = MakeItemColor(table[ColorToggleCursor])
-	toggle.TextBackground = table[ColorWindow]
-	toggle.TextNormal = table[ColorText]
-	toggle.TextHover = table[ColorText]
-	toggle.TextActive = table[ColorText]
+	toggle.Normal = MakeItemColor(table.ColorToggle)
+	toggle.Hover = MakeItemColor(table.ColorToggleHover)
+	toggle.Active = MakeItemColor(table.ColorToggleHover)
+	toggle.CursorNormal = MakeItemColor(table.ColorToggleCursor)
+	toggle.CursorHover = MakeItemColor(table.ColorToggleCursor)
+	toggle.TextBackground = table.ColorWindow
+	toggle.TextNormal = table.ColorText
+	toggle.TextHover = table.ColorText
+	toggle.TextActive = table.ColorText
 	toggle.Padding = image.Point{4.0, 4.0}
 	toggle.TouchPadding = image.Point{0, 0}
 
@@ -502,18 +494,18 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	select_ = &style.Selectable
 
 	*select_ = Selectable{}
-	select_.Normal = MakeItemColor(table[ColorSelect])
-	select_.Hover = MakeItemColor(table[ColorSelect])
-	select_.Pressed = MakeItemColor(table[ColorSelect])
-	select_.NormalActive = MakeItemColor(table[ColorSelectActive])
-	select_.HoverActive = MakeItemColor(table[ColorSelectActive])
-	select_.PressedActive = MakeItemColor(table[ColorSelectActive])
-	select_.TextNormal = table[ColorText]
-	select_.TextHover = table[ColorText]
-	select_.TextPressed = table[ColorText]
-	select_.TextNormalActive = table[ColorText]
-	select_.TextHoverActive = table[ColorText]
-	select_.TextPressedActive = table[ColorText]
+	select_.Normal = MakeItemColor(table.ColorSelect)
+	select_.Hover = MakeItemColor(table.ColorSelect)
+	select_.Pressed = MakeItemColor(table.ColorSelect)
+	select_.NormalActive = MakeItemColor(table.ColorSelectActive)
+	select_.HoverActive = MakeItemColor(table.ColorSelectActive)
+	select_.PressedActive = MakeItemColor(table.ColorSelectActive)
+	select_.TextNormal = table.ColorText
+	select_.TextHover = table.ColorText
+	select_.TextPressed = table.ColorText
+	select_.TextNormalActive = table.ColorText
+	select_.TextHoverActive = table.ColorText
+	select_.TextPressedActive = table.ColorText
 	select_.Padding = image.Point{4.0, 4.0}
 	select_.TouchPadding = image.Point{0, 0}
 	select_.Rounding = 0.0
@@ -528,13 +520,13 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	slider.Normal = ItemHide()
 	slider.Hover = ItemHide()
 	slider.Active = ItemHide()
-	slider.BarNormal = table[ColorSlider]
-	slider.BarHover = table[ColorSlider]
-	slider.BarActive = table[ColorSlider]
-	slider.BarFilled = table[ColorSliderCursor]
-	slider.CursorNormal = MakeItemColor(table[ColorSliderCursor])
-	slider.CursorHover = MakeItemColor(table[ColorSliderCursorHover])
-	slider.CursorActive = MakeItemColor(table[ColorSliderCursorActive])
+	slider.BarNormal = table.ColorSlider
+	slider.BarHover = table.ColorSlider
+	slider.BarActive = table.ColorSlider
+	slider.BarFilled = table.ColorSliderCursor
+	slider.CursorNormal = MakeItemColor(table.ColorSliderCursor)
+	slider.CursorHover = MakeItemColor(table.ColorSliderCursorHover)
+	slider.CursorActive = MakeItemColor(table.ColorSliderCursorActive)
 	slider.IncSymbol = label.SymbolTriangleRight
 	slider.DecSymbol = label.SymbolTriangleLeft
 	slider.CursorSize = image.Point{16, 16}
@@ -570,12 +562,12 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	prog = &style.Progress
 
 	*prog = Progress{}
-	prog.Normal = MakeItemColor(table[ColorSlider])
-	prog.Hover = MakeItemColor(table[ColorSlider])
-	prog.Active = MakeItemColor(table[ColorSlider])
-	prog.CursorNormal = MakeItemColor(table[ColorSliderCursor])
-	prog.CursorHover = MakeItemColor(table[ColorSliderCursorHover])
-	prog.CursorActive = MakeItemColor(table[ColorSliderCursorActive])
+	prog.Normal = MakeItemColor(table.ColorSlider)
+	prog.Hover = MakeItemColor(table.ColorSlider)
+	prog.Active = MakeItemColor(table.ColorSlider)
+	prog.CursorNormal = MakeItemColor(table.ColorSliderCursor)
+	prog.CursorHover = MakeItemColor(table.ColorSliderCursorHover)
+	prog.CursorActive = MakeItemColor(table.ColorSliderCursorActive)
 	prog.Padding = image.Point{4, 4}
 	prog.Rounding = 0
 	prog.DrawBegin = nil
@@ -586,12 +578,12 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	scroll = &style.Scrollh
 
 	*scroll = Scrollbar{}
-	scroll.Normal = MakeItemColor(table[ColorScrollbar])
-	scroll.Hover = MakeItemColor(table[ColorScrollbar])
-	scroll.Active = MakeItemColor(table[ColorScrollbar])
-	scroll.CursorNormal = MakeItemColor(table[ColorScrollbarCursor])
-	scroll.CursorHover = MakeItemColor(table[ColorScrollbarCursorHover])
-	scroll.CursorActive = MakeItemColor(table[ColorScrollbarCursorActive])
+	scroll.Normal = MakeItemColor(table.ColorScrollbar)
+	scroll.Hover = MakeItemColor(table.ColorScrollbar)
+	scroll.Active = MakeItemColor(table.ColorScrollbar)
+	scroll.CursorNormal = MakeItemColor(table.ColorScrollbarCursor)
+	scroll.CursorHover = MakeItemColor(table.ColorScrollbarCursorHover)
+	scroll.CursorActive = MakeItemColor(table.ColorScrollbarCursorActive)
 	scroll.DecSymbol = label.SymbolCircleFilled
 	scroll.IncSymbol = label.SymbolCircleFilled
 	scroll.BorderColor = color.RGBA{65, 65, 65, 0xff}
@@ -629,22 +621,22 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	edit = &style.Edit
 
 	*edit = Edit{}
-	edit.Normal = MakeItemColor(table[ColorEdit])
-	edit.Hover = MakeItemColor(table[ColorEdit])
-	edit.Active = MakeItemColor(table[ColorEdit])
+	edit.Normal = MakeItemColor(table.ColorEdit)
+	edit.Hover = MakeItemColor(table.ColorEdit)
+	edit.Active = MakeItemColor(table.ColorEdit)
 	edit.Scrollbar = *scroll
-	edit.CursorNormal = table[ColorText]
-	edit.CursorHover = table[ColorText]
-	edit.CursorTextNormal = table[ColorEdit]
-	edit.CursorTextHover = table[ColorEdit]
-	edit.BorderColor = table[ColorBorder]
-	edit.TextNormal = table[ColorText]
-	edit.TextHover = table[ColorText]
-	edit.TextActive = table[ColorText]
-	edit.SelectedNormal = table[ColorText]
-	edit.SelectedHover = table[ColorText]
-	edit.SelectedTextNormal = table[ColorEdit]
-	edit.SelectedTextHover = table[ColorEdit]
+	edit.CursorNormal = table.ColorText
+	edit.CursorHover = table.ColorText
+	edit.CursorTextNormal = table.ColorEdit
+	edit.CursorTextHover = table.ColorEdit
+	edit.BorderColor = table.ColorBorder
+	edit.TextNormal = table.ColorText
+	edit.TextHover = table.ColorText
+	edit.TextActive = table.ColorText
+	edit.SelectedNormal = table.ColorText
+	edit.SelectedHover = table.ColorText
+	edit.SelectedTextNormal = table.ColorEdit
+	edit.SelectedTextHover = table.ColorEdit
 	edit.RowPadding = 2
 	edit.Padding = image.Point{4, 4}
 	edit.ScrollbarSize = image.Point{4, 4}
@@ -655,13 +647,13 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	property = &style.Property
 
 	*property = Property{}
-	property.Normal = MakeItemColor(table[ColorProperty])
-	property.Hover = MakeItemColor(table[ColorProperty])
-	property.Active = MakeItemColor(table[ColorProperty])
-	property.BorderColor = table[ColorBorder]
-	property.LabelNormal = table[ColorText]
-	property.LabelHover = table[ColorText]
-	property.LabelActive = table[ColorText]
+	property.Normal = MakeItemColor(table.ColorProperty)
+	property.Hover = MakeItemColor(table.ColorProperty)
+	property.Active = MakeItemColor(table.ColorProperty)
+	property.BorderColor = table.ColorBorder
+	property.LabelNormal = table.ColorText
+	property.LabelHover = table.ColorText
+	property.LabelActive = table.ColorText
 	property.SymLeft = label.SymbolTriangleLeft
 	property.SymRight = label.SymbolTriangleRight
 	property.Padding = image.Point{4, 4}
@@ -675,14 +667,14 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button = &style.Property.DecButton
 
 	*button = Button{}
-	button.Normal = MakeItemColor(table[ColorProperty])
-	button.Hover = MakeItemColor(table[ColorProperty])
-	button.Active = MakeItemColor(table[ColorProperty])
+	button.Normal = MakeItemColor(table.ColorProperty)
+	button.Hover = MakeItemColor(table.ColorProperty)
+	button.Active = MakeItemColor(table.ColorProperty)
 	button.BorderColor = color.RGBA{0, 0, 0, 0}
-	button.TextBackground = table[ColorProperty]
-	button.TextNormal = table[ColorText]
-	button.TextHover = table[ColorText]
-	button.TextActive = table[ColorText]
+	button.TextBackground = table.ColorProperty
+	button.TextNormal = table.ColorText
+	button.TextHover = table.ColorText
+	button.TextActive = table.ColorText
 	button.Padding = image.Point{0.0, 0.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
@@ -696,21 +688,21 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	edit = &style.Property.Edit
 
 	*edit = Edit{}
-	edit.Normal = MakeItemColor(table[ColorProperty])
-	edit.Hover = MakeItemColor(table[ColorProperty])
-	edit.Active = MakeItemColor(table[ColorProperty])
+	edit.Normal = MakeItemColor(table.ColorProperty)
+	edit.Hover = MakeItemColor(table.ColorProperty)
+	edit.Active = MakeItemColor(table.ColorProperty)
 	edit.BorderColor = color.RGBA{0, 0, 0, 0}
-	edit.CursorNormal = table[ColorText]
-	edit.CursorHover = table[ColorText]
-	edit.CursorTextNormal = table[ColorEdit]
-	edit.CursorTextHover = table[ColorEdit]
-	edit.TextNormal = table[ColorText]
-	edit.TextHover = table[ColorText]
-	edit.TextActive = table[ColorText]
-	edit.SelectedNormal = table[ColorText]
-	edit.SelectedHover = table[ColorText]
-	edit.SelectedTextNormal = table[ColorEdit]
-	edit.SelectedTextHover = table[ColorEdit]
+	edit.CursorNormal = table.ColorText
+	edit.CursorHover = table.ColorText
+	edit.CursorTextNormal = table.ColorEdit
+	edit.CursorTextHover = table.ColorEdit
+	edit.TextNormal = table.ColorText
+	edit.TextHover = table.ColorText
+	edit.TextActive = table.ColorText
+	edit.SelectedNormal = table.ColorText
+	edit.SelectedHover = table.ColorText
+	edit.SelectedTextNormal = table.ColorEdit
+	edit.SelectedTextHover = table.ColorEdit
 	edit.Padding = image.Point{0, 0}
 	edit.Border = 0
 	edit.Rounding = 0
@@ -718,13 +710,13 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	/* combo */
 	combo = &style.Combo
 
-	combo.Normal = MakeItemColor(table[ColorCombo])
-	combo.Hover = MakeItemColor(table[ColorCombo])
-	combo.Active = MakeItemColor(table[ColorCombo])
-	combo.BorderColor = table[ColorBorder]
-	combo.LabelNormal = table[ColorText]
-	combo.LabelHover = table[ColorText]
-	combo.LabelActive = table[ColorText]
+	combo.Normal = MakeItemColor(table.ColorCombo)
+	combo.Hover = MakeItemColor(table.ColorCombo)
+	combo.Active = MakeItemColor(table.ColorCombo)
+	combo.BorderColor = table.ColorBorder
+	combo.LabelNormal = table.ColorText
+	combo.LabelHover = table.ColorText
+	combo.LabelActive = table.ColorText
 	combo.SymNormal = label.SymbolTriangleDown
 	combo.SymHover = label.SymbolTriangleDown
 	combo.SymActive = label.SymbolTriangleDown
@@ -738,14 +730,14 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button = &style.Combo.Button
 
 	*button = Button{}
-	button.Normal = MakeItemColor(table[ColorCombo])
-	button.Hover = MakeItemColor(table[ColorCombo])
-	button.Active = MakeItemColor(table[ColorCombo])
+	button.Normal = MakeItemColor(table.ColorCombo)
+	button.Hover = MakeItemColor(table.ColorCombo)
+	button.Active = MakeItemColor(table.ColorCombo)
 	button.BorderColor = color.RGBA{0, 0, 0, 0}
-	button.TextBackground = table[ColorCombo]
-	button.TextNormal = table[ColorText]
-	button.TextHover = table[ColorText]
-	button.TextActive = table[ColorText]
+	button.TextBackground = table.ColorCombo
+	button.TextNormal = table.ColorText
+	button.TextHover = table.ColorText
+	button.TextActive = table.ColorText
 	button.Padding = image.Point{2.0, 2.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
@@ -757,9 +749,9 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	/* tab */
 	tab = &style.Tab
 
-	tab.Background = MakeItemColor(table[ColorTabHeader])
-	tab.BorderColor = table[ColorBorder]
-	tab.Text = table[ColorText]
+	tab.Background = MakeItemColor(table.ColorTabHeader)
+	tab.BorderColor = table.ColorBorder
+	tab.Text = table.ColorText
 	tab.SymMinimize = label.SymbolTriangleDown
 	tab.SymMaximize = label.SymbolTriangleRight
 	tab.Border = 1
@@ -771,14 +763,14 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button = &style.Tab.TabButton
 
 	*button = Button{}
-	button.Normal = MakeItemColor(table[ColorTabHeader])
-	button.Hover = MakeItemColor(table[ColorTabHeader])
-	button.Active = MakeItemColor(table[ColorTabHeader])
+	button.Normal = MakeItemColor(table.ColorTabHeader)
+	button.Hover = MakeItemColor(table.ColorTabHeader)
+	button.Active = MakeItemColor(table.ColorTabHeader)
 	button.BorderColor = color.RGBA{0, 0, 0, 0}
-	button.TextBackground = table[ColorTabHeader]
-	button.TextNormal = table[ColorText]
-	button.TextHover = table[ColorText]
-	button.TextActive = table[ColorText]
+	button.TextBackground = table.ColorTabHeader
+	button.TextNormal = table.ColorText
+	button.TextHover = table.ColorText
+	button.TextActive = table.ColorText
 	button.Padding = image.Point{2.0, 2.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
@@ -791,14 +783,14 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button = &style.Tab.NodeButton
 
 	*button = Button{}
-	button.Normal = MakeItemColor(table[ColorWindow])
-	button.Hover = MakeItemColor(table[ColorWindow])
-	button.Active = MakeItemColor(table[ColorWindow])
+	button.Normal = MakeItemColor(table.ColorWindow)
+	button.Hover = MakeItemColor(table.ColorWindow)
+	button.Active = MakeItemColor(table.ColorWindow)
 	button.BorderColor = color.RGBA{0, 0, 0, 0}
-	button.TextBackground = table[ColorTabHeader]
-	button.TextNormal = table[ColorText]
-	button.TextHover = table[ColorText]
-	button.TextActive = table[ColorText]
+	button.TextBackground = table.ColorTabHeader
+	button.TextNormal = table.ColorText
+	button.TextHover = table.ColorText
+	button.TextActive = table.ColorText
 	button.Padding = image.Point{2.0, 2.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
@@ -814,12 +806,12 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	win.Header.CloseSymbol = label.SymbolX
 	win.Header.MinimizeSymbol = label.SymbolMinus
 	win.Header.MaximizeSymbol = label.SymbolPlus
-	win.Header.Normal = MakeItemColor(table[ColorHeader])
-	win.Header.Hover = MakeItemColor(table[ColorHeader])
-	win.Header.Active = MakeItemColor(table[ColorHeader])
-	win.Header.LabelNormal = table[ColorText]
-	win.Header.LabelHover = table[ColorText]
-	win.Header.LabelActive = table[ColorText]
+	win.Header.Normal = MakeItemColor(table.ColorHeader)
+	win.Header.Hover = MakeItemColor(table.ColorHeader)
+	win.Header.Active = MakeItemColor(table.ColorHeader)
+	win.Header.LabelNormal = table.ColorText
+	win.Header.LabelHover = table.ColorText
+	win.Header.LabelActive = table.ColorText
 	win.Header.LabelPadding = image.Point{4, 4}
 	win.Header.Padding = image.Point{4, 4}
 	win.Header.Spacing = image.Point{0, 0}
@@ -828,14 +820,14 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button = &style.NormalWindow.Header.CloseButton
 
 	*button = Button{}
-	button.Normal = MakeItemColor(table[ColorHeader])
-	button.Hover = MakeItemColor(table[ColorHeader])
-	button.Active = MakeItemColor(table[ColorHeader])
+	button.Normal = MakeItemColor(table.ColorHeader)
+	button.Hover = MakeItemColor(table.ColorHeader)
+	button.Active = MakeItemColor(table.ColorHeader)
 	button.BorderColor = color.RGBA{0, 0, 0, 0}
-	button.TextBackground = table[ColorHeader]
-	button.TextNormal = table[ColorText]
-	button.TextHover = table[ColorText]
-	button.TextActive = table[ColorText]
+	button.TextBackground = table.ColorHeader
+	button.TextNormal = table.ColorText
+	button.TextHover = table.ColorText
+	button.TextActive = table.ColorText
 	button.Padding = image.Point{0.0, 0.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
@@ -848,14 +840,14 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button = &style.NormalWindow.Header.MinimizeButton
 
 	*button = Button{}
-	button.Normal = MakeItemColor(table[ColorHeader])
-	button.Hover = MakeItemColor(table[ColorHeader])
-	button.Active = MakeItemColor(table[ColorHeader])
+	button.Normal = MakeItemColor(table.ColorHeader)
+	button.Hover = MakeItemColor(table.ColorHeader)
+	button.Active = MakeItemColor(table.ColorHeader)
 	button.BorderColor = color.RGBA{0, 0, 0, 0}
-	button.TextBackground = table[ColorHeader]
-	button.TextNormal = table[ColorText]
-	button.TextHover = table[ColorText]
-	button.TextActive = table[ColorText]
+	button.TextBackground = table.ColorHeader
+	button.TextNormal = table.ColorText
+	button.TextHover = table.ColorText
+	button.TextActive = table.ColorText
 	button.Padding = image.Point{0.0, 0.0}
 	button.TouchPadding = image.Point{0.0, 0.0}
 	button.Border = 0.0
@@ -865,10 +857,10 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	button.DrawEnd = nil
 
 	/* window */
-	win.Background = table[ColorWindow]
-	win.FixedBackground = MakeItemColor(table[ColorWindow])
-	win.BorderColor = table[ColorBorder]
-	win.Scaler = MakeItemColor(table[ColorText])
+	win.Background = table.ColorWindow
+	win.FixedBackground = MakeItemColor(table.ColorWindow)
+	win.BorderColor = table.ColorBorder
+	win.Scaler = MakeItemColor(table.ColorText)
 	win.FooterPadding = image.Point{0, 0}
 	win.Rounding = 0.0
 	win.ScalerSize = image.Point{16, 16}
@@ -884,21 +876,21 @@ func FromTable(table []color.RGBA, scaling float64) *Style {
 	style.ContextualWindow = style.NormalWindow
 	style.GroupWindow = style.NormalWindow
 
-	style.MenuWindow.BorderColor = table[ColorBorder]
+	style.MenuWindow.BorderColor = table.ColorBorder
 	style.MenuWindow.Border = 1
 	style.MenuWindow.Spacing = image.Point{2, 2}
 
-	style.TooltipWindow.BorderColor = table[ColorBorder]
+	style.TooltipWindow.BorderColor = table.ColorBorder
 	style.TooltipWindow.Border = 1
 	style.TooltipWindow.Padding = image.Point{2, 2}
 
-	style.ComboWindow.BorderColor = table[ColorBorder]
+	style.ComboWindow.BorderColor = table.ColorBorder
 	style.ComboWindow.Border = 1
 
-	style.ContextualWindow.BorderColor = table[ColorText]
+	style.ContextualWindow.BorderColor = table.ColorText
 	style.ContextualWindow.Border = 1
 
-	style.GroupWindow.BorderColor = table[ColorBorder]
+	style.GroupWindow.BorderColor = table.ColorBorder
 	style.GroupWindow.Border = 1
 	style.GroupWindow.Padding = image.Point{2, 2}
 	style.GroupWindow.Spacing = image.Point{2, 2}
@@ -938,97 +930,97 @@ const (
 	DarkTheme
 )
 
-var whiteThemeTable = make([]color.RGBA, ColorCount)
-var redThemeTable = make([]color.RGBA, ColorCount)
-var darkThemeTable = make([]color.RGBA, ColorCount)
+var whiteThemeTable = ColorTable{
+	ColorText:                  color.RGBA{70, 70, 70, 255},
+	ColorWindow:                color.RGBA{175, 175, 175, 255},
+	ColorHeader:                color.RGBA{175, 175, 175, 255},
+	ColorBorder:                color.RGBA{0, 0, 0, 255},
+	ColorButton:                color.RGBA{185, 185, 185, 255},
+	ColorButtonHover:           color.RGBA{170, 170, 170, 255},
+	ColorButtonActive:          color.RGBA{160, 160, 160, 255},
+	ColorToggle:                color.RGBA{150, 150, 150, 255},
+	ColorToggleHover:           color.RGBA{120, 120, 120, 255},
+	ColorToggleCursor:          color.RGBA{175, 175, 175, 255},
+	ColorSelect:                color.RGBA{175, 175, 175, 255},
+	ColorSelectActive:          color.RGBA{190, 190, 190, 255},
+	ColorSlider:                color.RGBA{190, 190, 190, 255},
+	ColorSliderCursor:          color.RGBA{80, 80, 80, 255},
+	ColorSliderCursorHover:     color.RGBA{70, 70, 70, 255},
+	ColorSliderCursorActive:    color.RGBA{60, 60, 60, 255},
+	ColorProperty:              color.RGBA{175, 175, 175, 255},
+	ColorEdit:                  color.RGBA{150, 150, 150, 255},
+	ColorEditCursor:            color.RGBA{0, 0, 0, 255},
+	ColorCombo:                 color.RGBA{175, 175, 175, 255},
+	ColorChart:                 color.RGBA{160, 160, 160, 255},
+	ColorChartColor:            color.RGBA{45, 45, 45, 255},
+	ColorChartColorHighlight:   color.RGBA{255, 0, 0, 255},
+	ColorScrollbar:             color.RGBA{180, 180, 180, 255},
+	ColorScrollbarCursor:       color.RGBA{140, 140, 140, 255},
+	ColorScrollbarCursorHover:  color.RGBA{150, 150, 150, 255},
+	ColorScrollbarCursorActive: color.RGBA{160, 160, 160, 255},
+	ColorTabHeader:             color.RGBA{180, 180, 180, 255},
+}
 
-func init() {
-	whiteThemeTable[ColorText] = color.RGBA{70, 70, 70, 255}
-	whiteThemeTable[ColorWindow] = color.RGBA{175, 175, 175, 255}
-	whiteThemeTable[ColorHeader] = color.RGBA{175, 175, 175, 255}
-	whiteThemeTable[ColorBorder] = color.RGBA{0, 0, 0, 255}
-	whiteThemeTable[ColorButton] = color.RGBA{185, 185, 185, 255}
-	whiteThemeTable[ColorButtonHover] = color.RGBA{170, 170, 170, 255}
-	whiteThemeTable[ColorButtonActive] = color.RGBA{160, 160, 160, 255}
-	whiteThemeTable[ColorToggle] = color.RGBA{150, 150, 150, 255}
-	whiteThemeTable[ColorToggleHover] = color.RGBA{120, 120, 120, 255}
-	whiteThemeTable[ColorToggleCursor] = color.RGBA{175, 175, 175, 255}
-	whiteThemeTable[ColorSelect] = color.RGBA{175, 175, 175, 255}
-	whiteThemeTable[ColorSelectActive] = color.RGBA{190, 190, 190, 255}
-	whiteThemeTable[ColorSlider] = color.RGBA{190, 190, 190, 255}
-	whiteThemeTable[ColorSliderCursor] = color.RGBA{80, 80, 80, 255}
-	whiteThemeTable[ColorSliderCursorHover] = color.RGBA{70, 70, 70, 255}
-	whiteThemeTable[ColorSliderCursorActive] = color.RGBA{60, 60, 60, 255}
-	whiteThemeTable[ColorProperty] = color.RGBA{175, 175, 175, 255}
-	whiteThemeTable[ColorEdit] = color.RGBA{150, 150, 150, 255}
-	whiteThemeTable[ColorEditCursor] = color.RGBA{0, 0, 0, 255}
-	whiteThemeTable[ColorCombo] = color.RGBA{175, 175, 175, 255}
-	whiteThemeTable[ColorChart] = color.RGBA{160, 160, 160, 255}
-	whiteThemeTable[ColorChartColor] = color.RGBA{45, 45, 45, 255}
-	whiteThemeTable[ColorChartColorHighlight] = color.RGBA{255, 0, 0, 255}
-	whiteThemeTable[ColorScrollbar] = color.RGBA{180, 180, 180, 255}
-	whiteThemeTable[ColorScrollbarCursor] = color.RGBA{140, 140, 140, 255}
-	whiteThemeTable[ColorScrollbarCursorHover] = color.RGBA{150, 150, 150, 255}
-	whiteThemeTable[ColorScrollbarCursorActive] = color.RGBA{160, 160, 160, 255}
-	whiteThemeTable[ColorTabHeader] = color.RGBA{180, 180, 180, 255}
+var redThemeTable = ColorTable{
+	ColorText:                  color.RGBA{190, 190, 190, 255},
+	ColorWindow:                color.RGBA{30, 33, 40, 215},
+	ColorHeader:                color.RGBA{181, 45, 69, 220},
+	ColorBorder:                color.RGBA{51, 55, 67, 255},
+	ColorButton:                color.RGBA{181, 45, 69, 255},
+	ColorButtonHover:           color.RGBA{190, 50, 70, 255},
+	ColorButtonActive:          color.RGBA{195, 55, 75, 255},
+	ColorToggle:                color.RGBA{51, 55, 67, 255},
+	ColorToggleHover:           color.RGBA{45, 60, 60, 255},
+	ColorToggleCursor:          color.RGBA{181, 45, 69, 255},
+	ColorSelect:                color.RGBA{51, 55, 67, 255},
+	ColorSelectActive:          color.RGBA{181, 45, 69, 255},
+	ColorSlider:                color.RGBA{51, 55, 67, 255},
+	ColorSliderCursor:          color.RGBA{181, 45, 69, 255},
+	ColorSliderCursorHover:     color.RGBA{186, 50, 74, 255},
+	ColorSliderCursorActive:    color.RGBA{191, 55, 79, 255},
+	ColorProperty:              color.RGBA{51, 55, 67, 255},
+	ColorEdit:                  color.RGBA{51, 55, 67, 225},
+	ColorEditCursor:            color.RGBA{190, 190, 190, 255},
+	ColorCombo:                 color.RGBA{51, 55, 67, 255},
+	ColorChart:                 color.RGBA{51, 55, 67, 255},
+	ColorChartColor:            color.RGBA{170, 40, 60, 255},
+	ColorChartColorHighlight:   color.RGBA{255, 0, 0, 255},
+	ColorScrollbar:             color.RGBA{30, 33, 40, 255},
+	ColorScrollbarCursor:       color.RGBA{64, 84, 95, 255},
+	ColorScrollbarCursorHover:  color.RGBA{70, 90, 100, 255},
+	ColorScrollbarCursorActive: color.RGBA{75, 95, 105, 255},
+	ColorTabHeader:             color.RGBA{181, 45, 69, 220},
+}
 
-	redThemeTable[ColorText] = color.RGBA{190, 190, 190, 255}
-	redThemeTable[ColorWindow] = color.RGBA{30, 33, 40, 215}
-	redThemeTable[ColorHeader] = color.RGBA{181, 45, 69, 220}
-	redThemeTable[ColorBorder] = color.RGBA{51, 55, 67, 255}
-	redThemeTable[ColorButton] = color.RGBA{181, 45, 69, 255}
-	redThemeTable[ColorButtonHover] = color.RGBA{190, 50, 70, 255}
-	redThemeTable[ColorButtonActive] = color.RGBA{195, 55, 75, 255}
-	redThemeTable[ColorToggle] = color.RGBA{51, 55, 67, 255}
-	redThemeTable[ColorToggleHover] = color.RGBA{45, 60, 60, 255}
-	redThemeTable[ColorToggleCursor] = color.RGBA{181, 45, 69, 255}
-	redThemeTable[ColorSelect] = color.RGBA{51, 55, 67, 255}
-	redThemeTable[ColorSelectActive] = color.RGBA{181, 45, 69, 255}
-	redThemeTable[ColorSlider] = color.RGBA{51, 55, 67, 255}
-	redThemeTable[ColorSliderCursor] = color.RGBA{181, 45, 69, 255}
-	redThemeTable[ColorSliderCursorHover] = color.RGBA{186, 50, 74, 255}
-	redThemeTable[ColorSliderCursorActive] = color.RGBA{191, 55, 79, 255}
-	redThemeTable[ColorProperty] = color.RGBA{51, 55, 67, 255}
-	redThemeTable[ColorEdit] = color.RGBA{51, 55, 67, 225}
-	redThemeTable[ColorEditCursor] = color.RGBA{190, 190, 190, 255}
-	redThemeTable[ColorCombo] = color.RGBA{51, 55, 67, 255}
-	redThemeTable[ColorChart] = color.RGBA{51, 55, 67, 255}
-	redThemeTable[ColorChartColor] = color.RGBA{170, 40, 60, 255}
-	redThemeTable[ColorChartColorHighlight] = color.RGBA{255, 0, 0, 255}
-	redThemeTable[ColorScrollbar] = color.RGBA{30, 33, 40, 255}
-	redThemeTable[ColorScrollbarCursor] = color.RGBA{64, 84, 95, 255}
-	redThemeTable[ColorScrollbarCursorHover] = color.RGBA{70, 90, 100, 255}
-	redThemeTable[ColorScrollbarCursorActive] = color.RGBA{75, 95, 105, 255}
-	redThemeTable[ColorTabHeader] = color.RGBA{181, 45, 69, 220}
-
-	darkThemeTable[ColorText] = color.RGBA{210, 210, 210, 255}
-	darkThemeTable[ColorWindow] = color.RGBA{57, 67, 71, 255}
-	darkThemeTable[ColorHeader] = color.RGBA{51, 51, 56, 220}
-	darkThemeTable[ColorBorder] = color.RGBA{46, 46, 46, 255}
-	darkThemeTable[ColorButton] = color.RGBA{48, 83, 111, 255}
-	darkThemeTable[ColorButtonHover] = color.RGBA{58, 93, 121, 255}
-	darkThemeTable[ColorButtonActive] = color.RGBA{63, 98, 126, 255}
-	darkThemeTable[ColorToggle] = color.RGBA{50, 58, 61, 255}
-	darkThemeTable[ColorToggleHover] = color.RGBA{45, 53, 56, 255}
-	darkThemeTable[ColorToggleCursor] = color.RGBA{48, 83, 111, 255}
-	darkThemeTable[ColorSelect] = color.RGBA{57, 67, 61, 255}
-	darkThemeTable[ColorSelectActive] = color.RGBA{48, 83, 111, 255}
-	darkThemeTable[ColorSlider] = color.RGBA{50, 58, 61, 255}
-	darkThemeTable[ColorSliderCursor] = color.RGBA{48, 83, 111, 245}
-	darkThemeTable[ColorSliderCursorHover] = color.RGBA{53, 88, 116, 255}
-	darkThemeTable[ColorSliderCursorActive] = color.RGBA{58, 93, 121, 255}
-	darkThemeTable[ColorProperty] = color.RGBA{50, 58, 61, 255}
-	darkThemeTable[ColorEdit] = color.RGBA{50, 58, 61, 225}
-	darkThemeTable[ColorEditCursor] = color.RGBA{210, 210, 210, 255}
-	darkThemeTable[ColorCombo] = color.RGBA{50, 58, 61, 255}
-	darkThemeTable[ColorChart] = color.RGBA{50, 58, 61, 255}
-	darkThemeTable[ColorChartColor] = color.RGBA{48, 83, 111, 255}
-	darkThemeTable[ColorChartColorHighlight] = color.RGBA{255, 0, 0, 255}
-	darkThemeTable[ColorScrollbar] = color.RGBA{50, 58, 61, 255}
-	darkThemeTable[ColorScrollbarCursor] = color.RGBA{48, 83, 111, 255}
-	darkThemeTable[ColorScrollbarCursorHover] = color.RGBA{53, 88, 116, 255}
-	darkThemeTable[ColorScrollbarCursorActive] = color.RGBA{58, 93, 121, 255}
-	darkThemeTable[ColorTabHeader] = color.RGBA{48, 83, 111, 255}
+var darkThemeTable = ColorTable{
+	ColorText:                  color.RGBA{210, 210, 210, 255},
+	ColorWindow:                color.RGBA{57, 67, 71, 255},
+	ColorHeader:                color.RGBA{51, 51, 56, 220},
+	ColorBorder:                color.RGBA{46, 46, 46, 255},
+	ColorButton:                color.RGBA{48, 83, 111, 255},
+	ColorButtonHover:           color.RGBA{58, 93, 121, 255},
+	ColorButtonActive:          color.RGBA{63, 98, 126, 255},
+	ColorToggle:                color.RGBA{50, 58, 61, 255},
+	ColorToggleHover:           color.RGBA{45, 53, 56, 255},
+	ColorToggleCursor:          color.RGBA{48, 83, 111, 255},
+	ColorSelect:                color.RGBA{57, 67, 61, 255},
+	ColorSelectActive:          color.RGBA{48, 83, 111, 255},
+	ColorSlider:                color.RGBA{50, 58, 61, 255},
+	ColorSliderCursor:          color.RGBA{48, 83, 111, 245},
+	ColorSliderCursorHover:     color.RGBA{53, 88, 116, 255},
+	ColorSliderCursorActive:    color.RGBA{58, 93, 121, 255},
+	ColorProperty:              color.RGBA{50, 58, 61, 255},
+	ColorEdit:                  color.RGBA{50, 58, 61, 225},
+	ColorEditCursor:            color.RGBA{210, 210, 210, 255},
+	ColorCombo:                 color.RGBA{50, 58, 61, 255},
+	ColorChart:                 color.RGBA{50, 58, 61, 255},
+	ColorChartColor:            color.RGBA{48, 83, 111, 255},
+	ColorChartColorHighlight:   color.RGBA{255, 0, 0, 255},
+	ColorScrollbar:             color.RGBA{50, 58, 61, 255},
+	ColorScrollbarCursor:       color.RGBA{48, 83, 111, 255},
+	ColorScrollbarCursorHover:  color.RGBA{53, 88, 116, 255},
+	ColorScrollbarCursorActive: color.RGBA{58, 93, 121, 255},
+	ColorTabHeader:             color.RGBA{48, 83, 111, 255},
 }
 
 func FromTheme(theme Theme, scaling float64) *Style {
@@ -1036,7 +1028,7 @@ func FromTheme(theme Theme, scaling float64) *Style {
 	case DefaultTheme:
 		fallthrough
 	default:
-		return FromTable(nil, scaling)
+		return FromTable(defaultThemeTable, scaling)
 	case WhiteTheme:
 		return FromTable(whiteThemeTable, scaling)
 	case RedTheme:
