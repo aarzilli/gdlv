@@ -128,7 +128,11 @@ func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr stri
 		case reflect.Struct, reflect.Chan:
 			childName = vs[i].Name
 			if expr != "" {
-				childExpr = fmt.Sprintf("%s.%s", expr, vs[i].Name)
+				x := expr
+				if strings.HasPrefix(x, "(*(") && strings.HasSuffix(x, "))") {
+					x = x[3 : len(x)-2]
+				}
+				childExpr = fmt.Sprintf("%s.%s", x, vs[i].Name)
 			}
 		case 0:
 			childName = vs[i].Name
