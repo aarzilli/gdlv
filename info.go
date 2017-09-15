@@ -674,7 +674,7 @@ func (bped *breakpointEditor) update(w *nucular.Window) {
 	w.Row(100).Dynamic(1)
 	bped.printEditor.Edit(w)
 
-	w.Row(20).Static(70, 0)
+	w.Row(30).Static(100, 0)
 	w.Label("Condition:", "LC")
 	bped.condEditor.Edit(w)
 

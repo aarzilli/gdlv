@@ -32,7 +32,7 @@ func viewFindElement(w *nucular.Window, v *Variable) {
 	findElementWindow.searching = false
 	findElementWindow.exprEd.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditSigEnter
 	findElementWindow.exprEd.Active = true
-	w.Master().PopupOpen(fmt.Sprintf("Find Element in %s", v.Name), nucular.WindowDynamic|nucular.WindowNoScrollbar|nucular.WindowTitle, rect.Rect{20, 100, 480, 500}, true, findElementWindow.Update)
+	w.Master().PopupOpen(fmt.Sprintf("Find Element in %s", v.Name), dynamicPopupFlags, rect.Rect{20, 100, 480, 500}, true, findElementWindow.Update)
 }
 
 func (fw *findElementWindowSingleton) Update(w *nucular.Window) {
