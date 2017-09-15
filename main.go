@@ -152,6 +152,7 @@ var client service.Client
 var curThread int
 var curGid int
 var curFrame int
+var curPC uint64
 
 var silenced bool
 var scrollbackEditor, commandLineEditor nucular.TextEditor
@@ -563,8 +564,11 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 	}
 
 	if loc == nil {
+		curPC = 0
 		return
 	}
+
+	curPC = loc.PC
 
 	listingPanel.id++
 
