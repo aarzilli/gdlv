@@ -8,9 +8,17 @@ import (
 	"runtime"
 )
 
+const (
+	darkTheme  = "Dark theme"
+	whiteTheme = "White theme"
+	redTheme   = "Red theme"
+)
+
+var themes = []string{darkTheme, whiteTheme, redTheme}
+
 type Configuration struct {
 	Scaling              float64
-	WhiteTheme           bool
+	Theme                string
 	StopOnNextBreakpoint bool
 	DisassemblyFlavour   int
 	Layouts              map[string]LayoutDescr

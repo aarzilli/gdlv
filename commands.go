@@ -646,21 +646,18 @@ func configCommand(out io.Writer, args string) error {
 
 func configWindow(w *nucular.Window) {
 	const col1 = 160
-	w.Row(20).Static(col1, 150)
+	w.Row(20).Static(col1, 200)
 	w.Label("Theme:", "LC")
-	themeLbl := "Dark theme"
-	if conf.WhiteTheme {
-		themeLbl = "White theme"
+	if conf.Theme == "" {
+		conf.Theme = darkTheme
 	}
-	if w := w.Combo(label.TA(themeLbl, "LC"), 100, nil); w != nil {
+	if w := w.Combo(label.TA(conf.Theme, "LC"), 100, nil); w != nil {
 		w.Row(20).Dynamic(1)
-		if w.MenuItem(label.TA("Dark theme", "LC")) {
-			conf.WhiteTheme = false
-			setupStyle()
-		}
-		if w.MenuItem(label.TA("White theme", "LC")) {
-			conf.WhiteTheme = true
-			setupStyle()
+		for _, theme := range themes {
+			if w.MenuItem(label.TA(theme, "LC")) {
+				conf.Theme = theme
+				setupStyle()
+			}
 		}
 	}
 
