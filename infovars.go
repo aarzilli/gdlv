@@ -32,6 +32,7 @@ type Variable struct {
 	IntMode  numberMode
 	FloatFmt string
 	Varname  string
+	loading  bool
 
 	DisplayName, DisplayNameAddr string
 	Expression                   string
@@ -737,6 +738,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 		}
 	case reflect.Map:
 		if hdr() {
+			if depth < 10 && !v.loading && len(v.Children) > 0 && autoloadMore(v.Children[0]) {
+				v.loading = true
+				loadMoreStruct(v)
+			}
 			for i := range v.Children {
 				if v.Children[i] != nil {
 					showVariable(w, depth+1, addr, -1, v.Children[i])
@@ -770,6 +775,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 }
 
 func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *Variable) {
+	if depth < 10 && !v.loading && len(v.Children) > 0 && autoloadMore(v.Children[0]) {
+		v.loading = true
+		loadMoreStruct(v)
+	}
 	for i := range v.Children {
 		showVariable(w, depth+1, addr, -1, v.Children[i])
 	}
@@ -779,6 +788,19 @@ func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *Variab
 			loadMoreArrayOrSlice(v)
 		}
 	}
+}
+
+func autoloadMore(v *Variable) bool {
+	if v.OnlyAddr {
+		return true
+	}
+	if v.Kind == reflect.Struct && len(v.Children) == 0 {
+		return true
+	}
+	if v.Kind == reflect.Ptr && len(v.Children) == 1 && v.Children[0].OnlyAddr {
+		return true
+	}
+	return false
 }
 
 func showStructContents(w *nucular.Window, depth int, addr bool, v *Variable) {
