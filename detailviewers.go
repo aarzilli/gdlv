@@ -625,11 +625,20 @@ func (c *CustomFormatter) Format(v *Variable) {
 		case reflect.Bool:
 			args = append(args, v.Value == "true")
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			n, _ := strconv.ParseInt(v.Value, 0, 64)
-			args = append(args, n)
+			n, err := strconv.ParseInt(v.Value, 0, 64)
+			if err != nil {
+				args = append(args, v.Value)
+			} else {
+				args = append(args, n)
+			}
 		case reflect.Uintptr, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			n, _ := strconv.ParseUint(v.Value, 0, 64)
+			n, err := strconv.ParseUint(v.Value, 0, 64)
 			args = append(args, n)
+			if err != nil {
+				args = append(args, v.Value)
+			} else {
+				args = append(args, n)
+			}
 		case reflect.Float32, reflect.Float64:
 			n, _ := strconv.ParseFloat(v.Value, 64)
 			args = append(args, n)
