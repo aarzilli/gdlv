@@ -14,6 +14,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"golang.org/x/mobile/event/key"
+
 	"github.com/derekparker/delve/service/api"
 
 	"github.com/aarzilli/nucular"
@@ -285,6 +287,76 @@ func restart(out io.Writer, args string) error {
 		return err
 	}
 
+	if BackendServer.StaleExecutable() {
+		wnd.PopupOpen("Recompile?", dynamicPopupFlags, rect.Rect{100, 100, 550, 400}, true, restartQuery)
+		return nil
+	}
+
+	return doRestart(out)
+}
+
+func restartQuery(w *nucular.Window) {
+	w.Row(30).Static(0)
+	w.Label("Executable is stale. Rebuild?", "LC")
+	var yes, no bool
+	for _, e := range w.Input().Keyboard.Keys {
+		switch {
+		case e.Code == key.CodeEscape:
+			no = true
+		case e.Code == key.CodeReturnEnter:
+			yes = true
+		}
+	}
+	w.Row(30).Static(0, 100, 100, 0)
+	w.Spacing(1)
+	if w.ButtonText("Yes") {
+		yes = true
+	}
+	if w.ButtonText("No") {
+		no = true
+	}
+	w.Spacing(1)
+
+	switch {
+	case yes:
+		go pseudoCommandWrap(doRebuild)
+		w.Close()
+	case no:
+		go pseudoCommandWrap(doRestart)
+		w.Close()
+	}
+}
+
+func pseudoCommandWrap(cmd func(io.Writer) error) {
+	mu.Lock()
+	running = true
+	wnd.Changed()
+	mu.Unlock()
+	defer func() {
+		mu.Lock()
+		running = false
+		wnd.Changed()
+		mu.Unlock()
+	}()
+
+	out := editorWriter{&scrollbackEditor, true}
+	err := cmd(&out)
+	if err != nil {
+		fmt.Fprintf(&out, "Error executing command: %v\n", err)
+	}
+}
+
+func doRestart(out io.Writer) error {
+	_, err := client.Restart()
+	if err != nil {
+		return err
+	}
+	continueToRuntimeMain()
+	refreshState(refreshToFrameZero, clearStop, nil)
+	return nil
+}
+
+func doRebuild(out io.Writer) error {
 	dorestart := BackendServer.serverProcess != nil
 	BackendServer.Rebuild()
 	if !dorestart || !BackendServer.buildok {
@@ -305,6 +377,8 @@ func restart(out io.Writer, args string) error {
 	}
 
 	restoreFrozenBreakpoints(out)
+
+	loadProgramInfo(out)
 
 	continueToRuntimeMain()
 	refreshState(refreshToFrameZero, clearStop, nil)

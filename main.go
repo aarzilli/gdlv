@@ -153,6 +153,7 @@ var curThread int
 var curGid int
 var curFrame int
 var curPC uint64
+var lastModExe time.Time
 
 var silenced bool
 var scrollbackEditor, commandLineEditor nucular.TextEditor
@@ -625,7 +626,6 @@ func loadListing(loc *api.Location, failstate func(string, error)) {
 	defer fh.Close()
 
 	fi, _ := fh.Stat()
-	lastModExe := client.LastModified()
 	listingPanel.stale = fi.ModTime().After(lastModExe)
 
 	buf := bufio.NewScanner(fh)

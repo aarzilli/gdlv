@@ -301,6 +301,22 @@ func (descr *ServerDescr) Rebuild() {
 	}
 }
 
+func (descr *ServerDescr) StaleExecutable() bool {
+	if descr.buildcmd == nil {
+		return false
+	}
+	for _, source := range sourcesPanel.slice {
+		fi, err := os.Stat(source)
+		if err != nil {
+			continue
+		}
+		if fi.ModTime().After(lastModExe) {
+			return true
+		}
+	}
+	return false
+}
+
 func (descr *ServerDescr) connectTo() {
 	var scrollbackOut = editorWriter{&scrollbackEditor, true}
 
@@ -316,31 +332,7 @@ func (descr *ServerDescr) connectTo() {
 		fmt.Fprintf(&scrollbackOut, "Could not connect\n")
 	}
 
-	fmt.Fprintf(&scrollbackOut, "Loading program info...")
-
-	var err error
-	funcsPanel.slice, err = client.ListFunctions("")
-	if err != nil {
-		fmt.Fprintf(&scrollbackOut, "Could not list functions: %v\n", err)
-	}
-
-	sourcesPanel.slice, err = client.ListSources("")
-	if err != nil {
-		fmt.Fprintf(&scrollbackOut, "Could not list sources: %v\n", err)
-	}
-
-	typesPanel.slice, err = client.ListTypes("")
-	if err != nil {
-		fmt.Fprintf(&scrollbackOut, "Could not list types: %v\n", err)
-	}
-
-	funcsPanel.id++
-	typesPanel.id++
-	sourcesPanel.id++
-
-	completeLocationSetup()
-
-	fmt.Fprintf(&scrollbackOut, "done\n")
+	loadProgramInfo(&scrollbackOut)
 
 	if descr.atStart {
 		continueToRuntimeMain()
@@ -371,6 +363,36 @@ func continueToRuntimeMain() {
 	ch := client.Continue()
 	for range ch {
 	}
+}
+
+func loadProgramInfo(out io.Writer) {
+	fmt.Fprintf(out, "Loading program info...")
+
+	var err error
+	funcsPanel.slice, err = client.ListFunctions("")
+	if err != nil {
+		fmt.Fprintf(out, "Could not list functions: %v\n", err)
+	}
+
+	sourcesPanel.slice, err = client.ListSources("")
+	if err != nil {
+		fmt.Fprintf(out, "Could not list sources: %v\n", err)
+	}
+
+	typesPanel.slice, err = client.ListTypes("")
+	if err != nil {
+		fmt.Fprintf(out, "Could not list types: %v\n", err)
+	}
+
+	lastModExe = client.LastModified()
+
+	funcsPanel.id++
+	typesPanel.id++
+	sourcesPanel.id++
+
+	completeLocationSetup()
+
+	fmt.Fprintf(out, "done\n")
 }
 
 func (descr *ServerDescr) Close() {

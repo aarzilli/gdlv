@@ -13,6 +13,9 @@ var pathCompl []string
 var funcCompl []string
 
 func completeLocationSetup() {
+	fullpathCompl = []string{}
+	pathCompl = []string{}
+	funcCompl = []string{}
 	for _, source := range sourcesPanel.slice {
 		fullpathCompl = append(fullpathCompl, source)
 		for _, seg := range strings.Split(source, "/") {
