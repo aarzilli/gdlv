@@ -61,94 +61,94 @@
 			"revisionTime": "2017-09-07T12:30:58Z"
 		},
 		{
-			"checksumSHA1": "MP+RMblj0BIn3mK8QIQIXHzWGXk=",
+			"checksumSHA1": "f2ldr3n6IqPiE4i/3zITUBZshgY=",
 			"path": "github.com/derekparker/delve/pkg/dwarf/frame",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
 			"checksumSHA1": "i7qqjHhexDVm93zP9PAhTdP4K0k=",
 			"path": "github.com/derekparker/delve/pkg/dwarf/godwarf",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
-			"checksumSHA1": "YiXb6xbkbO+4n6GEtcTcY7BKt/U=",
+			"checksumSHA1": "jiqyRYcdH6b+N3KxyEvCl3am3eI=",
 			"path": "github.com/derekparker/delve/pkg/dwarf/line",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
 			"checksumSHA1": "FO2MBMN+dtIgy5fQanxOcHSmVwg=",
 			"path": "github.com/derekparker/delve/pkg/dwarf/op",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
-			"checksumSHA1": "tndu9+Zn6ekulRwhmuJ68Y6Q33Q=",
+			"checksumSHA1": "+uBWEXl+9Zazpx7r39PvWUPB0CQ=",
 			"path": "github.com/derekparker/delve/pkg/dwarf/reader",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
 			"checksumSHA1": "/M3NFy1S8lVx98edZmNQJQRe5PI=",
 			"path": "github.com/derekparker/delve/pkg/dwarf/util",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
 			"checksumSHA1": "IcBDU2loA6ZT3ySXDvXJVexfgnE=",
 			"path": "github.com/derekparker/delve/pkg/goversion",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
-			"checksumSHA1": "Z1SXfUGDNRqfYQCQkdcrcVm5V/8=",
+			"checksumSHA1": "qNWQiXc+/tq9YM/pcEFSMtW8IcA=",
 			"path": "github.com/derekparker/delve/pkg/proc",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
-			"checksumSHA1": "xveQKxwC1ONs3/JDknUqBd9uBZo=",
+			"checksumSHA1": "y5c4MLr7JvlE0xqEHPADf5SH4is=",
 			"path": "github.com/derekparker/delve/pkg/proc/core",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
-			"checksumSHA1": "ZJO2D248tYySsFkthUD+Xru8P4o=",
+			"checksumSHA1": "FLAfpDG7ZC/WBilH6CXbHKQAIyE=",
 			"path": "github.com/derekparker/delve/pkg/proc/gdbserial",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
-			"checksumSHA1": "PA21xxSHiYQ+Uph1CV/lSfeRrNM=",
+			"checksumSHA1": "A8uvRP/wf4h0c3Hv7J2fGsXz4xc=",
 			"path": "github.com/derekparker/delve/pkg/proc/native",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
 			"checksumSHA1": "31KSUCT2JiJDbPQG7RTNebbQX1M=",
 			"path": "github.com/derekparker/delve/service",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
-			"checksumSHA1": "t0b8Y6QFPY4cm3EiHEoc2GXWK0M=",
+			"checksumSHA1": "OZFGcR2x7T5OER+YEgIDUTPUn8Q=",
 			"path": "github.com/derekparker/delve/service/api",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
-			"checksumSHA1": "UNobRwA66EfbMlXvXUlA8hvTs18=",
+			"checksumSHA1": "CfcOSbaq+nEHvSeTyM0RrPvu9lg=",
 			"path": "github.com/derekparker/delve/service/debugger",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
 			"checksumSHA1": "XcBtzsUMn9wDmHmlHu0MKCC4PIc=",
 			"path": "github.com/derekparker/delve/service/rpc2",
-			"revision": "15ddadb0fec58bfe95224819cbebbd8379249da4",
-			"revisionTime": "2017-08-25T09:28:08Z"
+			"revision": "6f1f780acea2e0bbc8abc565736367039b71f4df",
+			"revisionTime": "2017-09-08T10:31:20Z"
 		},
 		{
 			"checksumSHA1": "w01kP96jx5UAf+uWB8m0w8Xghas=",

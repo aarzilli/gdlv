@@ -215,27 +215,27 @@ func stripReceiverDecoration(in string) string {
 	return in[2 : len(in)-1]
 }
 
-func (spec *FuncLocationSpec) Match(f proc.Function) bool {
-	if spec.BaseName != f.BaseName() {
+func (spec *FuncLocationSpec) Match(sym proc.Function) bool {
+	if spec.BaseName != sym.BaseName() {
 		return false
 	}
 
-	recv := stripReceiverDecoration(f.ReceiverName())
+	recv := stripReceiverDecoration(sym.ReceiverName())
 	if spec.ReceiverName != "" && spec.ReceiverName != recv {
 		return false
 	}
 	if spec.PackageName != "" {
 		if spec.AbsolutePackage {
-			if spec.PackageName != f.PackageName() {
+			if spec.PackageName != sym.PackageName() {
 				return false
 			}
 		} else {
-			if !partialPathMatch(spec.PackageName, f.PackageName()) {
+			if !partialPathMatch(spec.PackageName, sym.PackageName()) {
 				return false
 			}
 		}
 	}
-	if spec.PackageOrReceiverName != "" && !partialPathMatch(spec.PackageOrReceiverName, f.PackageName()) && spec.PackageOrReceiverName != recv {
+	if spec.PackageOrReceiverName != "" && !partialPathMatch(spec.PackageOrReceiverName, sym.PackageName()) && spec.PackageOrReceiverName != recv {
 		return false
 	}
 	return true

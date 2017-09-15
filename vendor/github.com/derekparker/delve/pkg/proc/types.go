@@ -149,6 +149,7 @@ func (bi *BinaryInfo) loadDebugInfoMaps(debugLineBytes []byte, wg *sync.WaitGrou
 	bi.packageVars = make(map[string]dwarf.Offset)
 	bi.Functions = []Function{}
 	bi.compileUnits = []*compileUnit{}
+	bi.consts = make(map[dwarf.Offset]*constantType)
 	reader := bi.DwarfReader()
 	var cu *compileUnit = nil
 	for entry, err := reader.Next(); entry != nil; entry, err = reader.Next() {
@@ -196,6 +197,22 @@ func (bi *BinaryInfo) loadDebugInfoMaps(debugLineBytes []byte, wg *sync.WaitGrou
 				bi.packageVars[n] = entry.Offset
 			}
 
+		case dwarf.TagConstant:
+			name, okName := entry.Val(dwarf.AttrName).(string)
+			typ, okType := entry.Val(dwarf.AttrType).(dwarf.Offset)
+			val, okVal := entry.Val(dwarf.AttrConstValue).(int64)
+			if okName && okType && okVal {
+				if !cu.isgo {
+					name = "C." + name
+				}
+				ct := bi.consts[typ]
+				if ct == nil {
+					ct = &constantType{}
+					bi.consts[typ] = ct
+				}
+				ct.values = append(ct.values, constantValue{name: name, fullName: name, value: val})
+			}
+
 		case dwarf.TagSubprogram:
 			ok1 := false
 			var lowpc, highpc uint64
@@ -237,7 +254,7 @@ func (bi *BinaryInfo) loadDebugInfoMaps(debugLineBytes []byte, wg *sync.WaitGrou
 		}
 	}
 	sort.Strings(bi.Sources)
-	uniq(bi.Sources)
+	bi.Sources = uniq(bi.Sources)
 }
 
 func uniq(s []string) []string {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 
 	"github.com/derekparker/delve/pkg/dwarf/util"
 )
@@ -166,30 +167,51 @@ func (lineInfo *DebugLineInfo) AllPCsBetween(begin, end uint64) ([]uint64, error
 	return pcs, nil
 }
 
+// copy returns a copy of this state machine, running the returned state
+// machine will not affect sm.
+func (sm *StateMachine) copy() *StateMachine {
+	var r StateMachine
+	r = *sm
+	r.buf = bytes.NewBuffer(sm.buf.Bytes())
+	return &r
+}
+
 // PCToLine returns the filename and line number associated with pc.
 // If pc isn't found inside lineInfo's table it will return the filename and
 // line number associated with the closest PC address preceding pc.
-func (lineInfo *DebugLineInfo) PCToLine(pc uint64) (string, int) {
+// basePC will be used for caching, it's normally the entry point for the
+// function containing pc.
+func (lineInfo *DebugLineInfo) PCToLine(basePC, pc uint64) (string, int) {
 	if lineInfo == nil {
 		return "", 0
 	}
+	if basePC > pc {
+		panic(fmt.Errorf("basePC after pc %#x %#x", basePC, pc))
+	}
 
-	if lineInfo.lastStateMachine != nil {
-		file, line, ok := lineInfo.lastStateMachine.PCToLine(pc)
-		if ok {
-			return file, line
+	var sm *StateMachine
+	if basePC == 0 {
+		sm = newStateMachine(lineInfo, lineInfo.Instructions)
+	} else {
+		// Try to use the last state machine that we used for this function, if
+		// there isn't one or it's already past pc try to clone the cached state
+		// machine stopped at the entry point of the function.
+		// As a last resort start from the start of the debug_line section.
+		sm = lineInfo.lastMachineCache[basePC]
+		if sm == nil || sm.lastAddress > pc {
+			sm = lineInfo.stateMachineCache[basePC]
+			if sm == nil {
+				sm = newStateMachine(lineInfo, lineInfo.Instructions)
+				sm.PCToLine(basePC)
+				lineInfo.stateMachineCache[basePC] = sm
+			}
+			sm = sm.copy()
+			lineInfo.lastMachineCache[basePC] = sm
 		}
 	}
 
-	sm := newStateMachine(lineInfo, lineInfo.Instructions)
-	file, line, ok := sm.PCToLine(pc)
-	if ok {
-		lineInfo.lastStateMachine = sm
-	} else {
-		lineInfo.lastStateMachine = nil
-	}
+	file, line, _ := sm.PCToLine(pc)
 	return file, line
-
 }
 
 func (sm *StateMachine) PCToLine(pc uint64) (string, int, bool) {

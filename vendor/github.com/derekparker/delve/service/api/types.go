@@ -155,11 +155,19 @@ type VariableFlags uint16
 
 const (
 	// VariableEscaped is set for local variables that escaped to the heap
+	//
+	// The compiler performs escape analysis on local variables, the variables
+	// that may outlive the stack frame are allocated on the heap instead and
+	// only the address is recorded on the stack. These variables will be
+	// marked with this flag.
 	VariableEscaped = VariableFlags(proc.VariableEscaped)
 
 	// VariableShadowed is set for local variables that are shadowed by a
 	// variable with the same name in another scope
 	VariableShadowed = VariableFlags(proc.VariableShadowed)
+
+	// VariableConstant means this variable is a constant value
+	VariableConstant
 )
 
 // Variable describes a variable.
@@ -194,6 +202,12 @@ type Variable struct {
 	// This field's length is capped at proc.maxArrayValues for slices and arrays and 2*proc.maxArrayValues for maps, in the circumnstances where the cap takes effect len(Children) != Len
 	// The other length cap applied to this field is related to maximum recursion depth, when the maximum recursion depth is reached this field is left empty, contrary to the previous one this cap also applies to structs (otherwise structs will always have all their member fields returned)
 	Children []Variable `json:"children"`
+
+	// Base address of arrays, Base address of the backing array for slices (0 for nil slices)
+	// Base address of the backing byte array for strings
+	// address of the struct backing chan and map variables
+	// address of the function entry point for function variables (0 for nil function pointers)
+	Base uintptr `json:"base"`
 
 	// Unreadable addresses will have this field set
 	Unreadable string `json:"unreadable"`

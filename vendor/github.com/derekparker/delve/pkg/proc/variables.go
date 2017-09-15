@@ -45,10 +45,17 @@ type VariableFlags uint16
 
 const (
 	// VariableEscaped is set for local variables that escaped to the heap
+	//
+	// The compiler performs escape analysis on local variables, the variables
+	// that may outlive the stack frame are allocated on the heap instead and
+	// only the address is recorded on the stack. These variables will be
+	// marked with this flag.
 	VariableEscaped VariableFlags = (1 << iota)
 	// VariableShadowed is set for local variables that are shadowed by a
 	// variable with the same name in another scope
 	VariableShadowed
+	// VariableConstant means this variable is a constant value
+	VariableConstant
 )
 
 // Variable represents a variable. It contains the address, name,
@@ -285,6 +292,7 @@ func newConstant(val constant.Value, mem MemoryReadWriter) *Variable {
 		v.Kind = reflect.String
 		v.Len = int64(len(constant.StringVal(val)))
 	}
+	v.Flags |= VariableConstant
 	return v
 }
 
@@ -636,7 +644,7 @@ func (scope *EvalScope) PackageVariables(cfg LoadConfig) ([]*Variable, error) {
 	return vars, nil
 }
 
-func (scope *EvalScope) packageVarAddr(name string) (*Variable, error) {
+func (scope *EvalScope) findGlobal(name string) (*Variable, error) {
 	for n, off := range scope.BinInfo.packageVars {
 		if n == name || strings.HasSuffix(n, "/"+name) {
 			reader := scope.DwarfReader()
@@ -646,6 +654,28 @@ func (scope *EvalScope) packageVarAddr(name string) (*Variable, error) {
 				return nil, err
 			}
 			return scope.extractVarInfoFromEntry(entry)
+		}
+	}
+	for offset, ctyp := range scope.BinInfo.consts {
+		for _, cval := range ctyp.values {
+			if cval.fullName == name {
+				t, err := scope.Type(offset)
+				if err != nil {
+					return nil, err
+				}
+				v := scope.newVariable(name, 0x0, t, scope.Mem)
+				switch v.Kind {
+				case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+					v.Value = constant.MakeInt64(cval.value)
+				case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+					v.Value = constant.MakeUint64(uint64(cval.value))
+				default:
+					return nil, fmt.Errorf("unsupported constant kind %v", v.Kind)
+				}
+				v.Flags |= VariableConstant
+				v.loaded = true
+				return v, nil
+			}
 		}
 	}
 	return nil, fmt.Errorf("could not find symbol value for %s", name)
@@ -1649,6 +1679,99 @@ func (v *Variable) loadInterface(recurseLevel int, loadData bool, cfg LoadConfig
 	}
 }
 
+// ConstDescr describes the value of v using constants.
+func (v *Variable) ConstDescr() string {
+	if v.bi == nil || (v.Flags&VariableConstant != 0) {
+		return ""
+	}
+	ctyp := v.bi.consts.Get(v.DwarfType)
+	if ctyp == nil {
+		return ""
+	}
+	if typename := v.DwarfType.Common().Name; strings.Index(typename, ".") < 0 || strings.HasPrefix(typename, "C.") {
+		// only attempt to use constants for user defined type, otherwise every
+		// int variable with value 1 will be described with os.SEEK_CUR and other
+		// similar problems.
+		return ""
+	}
+
+	switch v.Kind {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		fallthrough
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
+		n, _ := constant.Int64Val(v.Value)
+		return ctyp.describe(n)
+	}
+	return ""
+}
+
+// popcnt is the number of bits set to 1 in x.
+// It's the same as math/bits.OnesCount64, copied here so that we can build
+// on versions of go that don't have math/bits.
+func popcnt(x uint64) int {
+	const m0 = 0x5555555555555555 // 01010101 ...
+	const m1 = 0x3333333333333333 // 00110011 ...
+	const m2 = 0x0f0f0f0f0f0f0f0f // 00001111 ...
+	const m = 1<<64 - 1
+	x = x>>1&(m0&m) + x&(m0&m)
+	x = x>>2&(m1&m) + x&(m1&m)
+	x = (x>>4 + x) & (m2 & m)
+	x += x >> 8
+	x += x >> 16
+	x += x >> 32
+	return int(x) & (1<<7 - 1)
+}
+
+func (cm constantsMap) Get(typ godwarf.Type) *constantType {
+	ctyp := cm[typ.Common().Offset]
+	if ctyp == nil {
+		return nil
+	}
+	typepkg := packageName(typ.String()) + "."
+	if !ctyp.initialized {
+		ctyp.initialized = true
+		sort.Sort(constantValuesByValue(ctyp.values))
+		bitField := true
+		for i := range ctyp.values {
+			if strings.HasPrefix(ctyp.values[i].name, typepkg) {
+				ctyp.values[i].name = ctyp.values[i].name[len(typepkg):]
+			}
+			if bitField && popcnt(uint64(ctyp.values[i].value)) != 1 {
+				bitField = false
+			}
+		}
+		ctyp.bitField = bitField
+	}
+	return ctyp
+}
+
+func (ctyp *constantType) describe(n int64) string {
+	for _, val := range ctyp.values {
+		if val.value == n {
+			return val.name
+		}
+	}
+
+	if !ctyp.bitField || n == 0 {
+		return ""
+	}
+
+	// If all the values for this constant only have one bit set we try to
+	// represent the value as a bitwise or of constants.
+
+	fields := []string{}
+	for _, val := range ctyp.values {
+		if n&val.value != 0 {
+			fields = append(fields, val.name)
+			n = n & ^val.value
+		}
+	}
+	if n == 0 {
+		return strings.Join(fields, "|")
+	}
+	return ""
+}
+
 type variablesByDepth struct {
 	vars   []*Variable
 	depths []int
@@ -1670,9 +1793,11 @@ func (scope *EvalScope) variablesByTag(tag dwarf.Tag, cfg *LoadConfig) ([]*Varia
 		return nil, errors.New("unable to find function context")
 	}
 
+	_, line, _ := scope.BinInfo.PCToLine(scope.PC)
+
 	var vars []*Variable
 	var depths []int
-	varReader := reader.Variables(scope.BinInfo.dwarf, fn.offset, scope.PC, tag == dwarf.TagVariable)
+	varReader := reader.Variables(scope.BinInfo.dwarf, fn.offset, scope.PC, line, tag == dwarf.TagVariable)
 	hasScopes := false
 	for varReader.Next() {
 		entry := varReader.Entry()
@@ -1756,3 +1881,9 @@ func (scope *EvalScope) variablesByTag(tag dwarf.Tag, cfg *LoadConfig) ([]*Varia
 
 	return vars, nil
 }
+
+type constantValuesByValue []constantValue
+
+func (v constantValuesByValue) Len() int               { return len(v) }
+func (v constantValuesByValue) Less(i int, j int) bool { return v[i].value < v[j].value }
+func (v constantValuesByValue) Swap(i int, j int)      { v[i], v[j] = v[j], v[i] }

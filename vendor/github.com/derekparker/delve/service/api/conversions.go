@@ -120,6 +120,7 @@ func ConvertVar(v *proc.Variable) *Variable {
 		Len:      v.Len,
 		Cap:      v.Cap,
 		Flags:    VariableFlags(v.Flags),
+		Base:     v.Base,
 
 		LocationExpr: v.LocationExpr,
 	}
@@ -140,7 +141,10 @@ func ConvertVar(v *proc.Variable) *Variable {
 		case reflect.String, reflect.Func:
 			r.Value = constant.StringVal(v.Value)
 		default:
-			r.Value = v.Value.String()
+			r.Value = v.ConstDescr()
+			if r.Value == "" {
+				r.Value = v.Value.String()
+			}
 		}
 	}
 

@@ -53,6 +53,12 @@ type BinaryInfo struct {
 	loadModuleDataOnce sync.Once
 	moduleData         []moduleData
 	nameOfRuntimeType  map[uintptr]nameOfRuntimeTypeEntry
+
+	// consts[off] lists all the constants with the type defined at offset off.
+	consts constantsMap
+
+	loadErrMu sync.Mutex
+	loadErr   error
 }
 
 var UnsupportedLinuxArchErr = errors.New("unsupported architecture - only linux/amd64 is supported")
@@ -81,13 +87,17 @@ type Function struct {
 // or the empty string if there is none.
 // Borrowed from $GOROOT/debug/gosym/symtab.go
 func (fn *Function) PackageName() string {
-	pathend := strings.LastIndex(fn.Name, "/")
+	return packageName(fn.Name)
+}
+
+func packageName(name string) string {
+	pathend := strings.LastIndex(name, "/")
 	if pathend < 0 {
 		pathend = 0
 	}
 
-	if i := strings.Index(fn.Name[pathend:], "."); i != -1 {
-		return fn.Name[:pathend+i]
+	if i := strings.Index(name[pathend:], "."); i != -1 {
+		return name[:pathend+i]
 	}
 	return ""
 }
@@ -115,6 +125,20 @@ func (fn *Function) BaseName() string {
 		return fn.Name[i+1:]
 	}
 	return fn.Name
+}
+
+type constantsMap map[dwarf.Offset]*constantType
+
+type constantType struct {
+	initialized bool
+	bitField    bool
+	values      []constantValue
+}
+
+type constantValue struct {
+	name     string
+	fullName string
+	value    int64
 }
 
 type loclistReader struct {
@@ -235,7 +259,7 @@ func (bi *BinaryInfo) PCToLine(pc uint64) (string, int, *Function) {
 	if fn == nil {
 		return "", 0, nil
 	}
-	f, ln := fn.cu.lineInfo.PCToLine(pc)
+	f, ln := fn.cu.lineInfo.PCToLine(fn.Entry, pc)
 	return f, ln, fn
 }
 
@@ -245,6 +269,9 @@ func (bi *BinaryInfo) LineToPC(filename string, lineno int) (pc uint64, fn *Func
 		if cu.lineInfo.Lookup[filename] != nil {
 			pc = cu.lineInfo.LineToPC(filename, lineno)
 			fn = bi.PCToFunc(pc)
+			if fn == nil {
+				err = fmt.Errorf("no code at %s:%d", filename, lineno)
+			}
 			return
 		}
 	}
@@ -271,13 +298,23 @@ func (bi *BinaryInfo) Close() error {
 	return bi.closer.Close()
 }
 
+func (bi *BinaryInfo) setLoadError(fmtstr string, args ...interface{}) {
+	bi.loadErrMu.Lock()
+	bi.loadErr = fmt.Errorf(fmtstr, args...)
+	bi.loadErrMu.Unlock()
+}
+
+func (bi *BinaryInfo) LoadError() error {
+	return bi.loadErr
+}
+
 type nilCloser struct{}
 
 func (c *nilCloser) Close() error { return nil }
 
 // New creates a new BinaryInfo object using the specified data. Use LoadBinary instead.
 func (bi *BinaryInfo) LoadFromData(dwdata *dwarf.Data, debugFrameBytes, debugLineBytes, debugLocBytes []byte) {
-	bi.closer = &nilCloser{}
+	bi.closer = (*nilCloser)(nil)
 	bi.dwarf = dwdata
 
 	if debugFrameBytes != nil {
@@ -382,7 +419,10 @@ func (bi *BinaryInfo) LoadBinaryInfoElf(path string, wg *sync.WaitGroup) error {
 		return err
 	}
 
-	debugLineBytes := getDebugLinesInfoElf(elfFile)
+	debugLineBytes, err := getDebugLineInfoElf(elfFile)
+	if err != nil {
+		return err
+	}
 	bi.loclistInit(getDebugLocElf(elfFile))
 
 	wg.Add(3)
@@ -401,34 +441,30 @@ func (bi *BinaryInfo) parseDebugFrameElf(exe *elf.File, wg *sync.WaitGroup) {
 	if debugFrameSec != nil && debugInfoSec != nil {
 		debugFrame, err := exe.Section(".debug_frame").Data()
 		if err != nil {
-			fmt.Println("could not get .debug_frame section", err)
-			os.Exit(1)
+			bi.setLoadError("could not get .debug_frame section: %v", err)
+			return
 		}
 		dat, err := debugInfoSec.Data()
 		if err != nil {
-			fmt.Println("could not get .debug_info section", err)
-			os.Exit(1)
+			bi.setLoadError("could not get .debug_frame section: %v", err)
+			return
 		}
 		bi.frameEntries = frame.Parse(debugFrame, frame.DwarfEndian(dat))
 	} else {
-		fmt.Println("could not find .debug_frame section in binary")
-		os.Exit(1)
+		bi.setLoadError("could not find .debug_frame section in binary")
+		return
 	}
 }
 
-func getDebugLinesInfoElf(exe *elf.File) []byte {
+func getDebugLineInfoElf(exe *elf.File) ([]byte, error) {
 	if sec := exe.Section(".debug_line"); sec != nil {
 		debugLine, err := exe.Section(".debug_line").Data()
 		if err != nil {
-			fmt.Println("could not get .debug_line section", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("could not get .debug_line section: %v", err)
 		}
-		return debugLine
-	} else {
-		fmt.Println("could not find .debug_line section in binary")
-		os.Exit(1)
+		return debugLine, nil
 	}
-	return nil
+	return nil, errors.New("could not find .debug_line section in binary")
 }
 
 func getDebugLocElf(exe *elf.File) []byte {
@@ -450,8 +486,8 @@ func (bi *BinaryInfo) setGStructOffsetElf(exe *elf.File, wg *sync.WaitGroup) {
 	//   offset in libc's TLS block.
 	symbols, err := exe.Symbols()
 	if err != nil {
-		fmt.Println("could not parse ELF symbols", err)
-		os.Exit(1)
+		bi.setLoadError("could not parse ELF symbols: %v", err)
+		return
 	}
 	var tlsg *elf.Symbol
 	for _, symbol := range symbols {
@@ -493,7 +529,10 @@ func (bi *BinaryInfo) LoadBinaryInfoPE(path string, wg *sync.WaitGroup) error {
 		return err
 	}
 
-	debugLineBytes := getDebugLinesInfoPE(peFile)
+	debugLineBytes, err := getDebugLineInfoPE(peFile)
+	if err != nil {
+		return err
+	}
 	bi.loclistInit(getDebugLocPE(peFile))
 
 	wg.Add(2)
@@ -530,21 +569,21 @@ func (bi *BinaryInfo) parseDebugFramePE(exe *pe.File, wg *sync.WaitGroup) {
 	if debugFrameSec != nil && debugInfoSec != nil {
 		debugFrame, err := debugFrameSec.Data()
 		if err != nil && uint32(len(debugFrame)) < debugFrameSec.Size {
-			fmt.Println("could not get .debug_frame section", err)
-			os.Exit(1)
+			bi.setLoadError("could not get .debug_frame section: %v", err)
+			return
 		}
 		if 0 < debugFrameSec.VirtualSize && debugFrameSec.VirtualSize < debugFrameSec.Size {
 			debugFrame = debugFrame[:debugFrameSec.VirtualSize]
 		}
 		dat, err := debugInfoSec.Data()
 		if err != nil {
-			fmt.Println("could not get .debug_info section", err)
-			os.Exit(1)
+			bi.setLoadError("could not get .debug_info section: %v", err)
+			return
 		}
 		bi.frameEntries = frame.Parse(debugFrame, frame.DwarfEndian(dat))
 	} else {
-		fmt.Println("could not find .debug_frame section in binary")
-		os.Exit(1)
+		bi.setLoadError("could not find .debug_frame section in binary")
+		return
 	}
 }
 
@@ -618,22 +657,18 @@ func pclnPE(exe *pe.File) (textStart uint64, symtab, pclntab []byte, err error) 
 	return textStart, symtab, pclntab, nil
 }
 
-func getDebugLinesInfoPE(exe *pe.File) []byte {
+func getDebugLineInfoPE(exe *pe.File) ([]byte, error) {
 	if sec := exe.Section(".debug_line"); sec != nil {
 		debugLine, err := sec.Data()
 		if err != nil && uint32(len(debugLine)) < sec.Size {
-			fmt.Println("could not get .debug_line section", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("could not get .debug_line section: %v", err)
 		}
 		if 0 < sec.VirtualSize && sec.VirtualSize < sec.Size {
 			debugLine = debugLine[:sec.VirtualSize]
 		}
-		return debugLine
-	} else {
-		fmt.Println("could not find .debug_line section in binary")
-		os.Exit(1)
+		return debugLine, nil
 	}
-	return nil
+	return nil, errors.New("could not find .debug_line section in binary")
 }
 
 func getDebugLocPE(exe *pe.File) []byte {
@@ -660,7 +695,10 @@ func (bi *BinaryInfo) LoadBinaryInfoMacho(path string, wg *sync.WaitGroup) error
 		return err
 	}
 
-	debugLineBytes := getDebugLineInfoMacho(exe)
+	debugLineBytes, err := getDebugLineInfoMacho(exe)
+	if err != nil {
+		return err
+	}
 	bi.loclistInit(getDebugLocMacho(exe))
 
 	wg.Add(2)
@@ -679,34 +717,30 @@ func (bi *BinaryInfo) parseDebugFrameMacho(exe *macho.File, wg *sync.WaitGroup) 
 	if debugFrameSec != nil && debugInfoSec != nil {
 		debugFrame, err := exe.Section("__debug_frame").Data()
 		if err != nil {
-			fmt.Println("could not get __debug_frame section", err)
-			os.Exit(1)
+			bi.setLoadError("could not get __debug_frame section: %v", err)
+			return
 		}
 		dat, err := debugInfoSec.Data()
 		if err != nil {
-			fmt.Println("could not get .debug_info section", err)
-			os.Exit(1)
+			bi.setLoadError("could not get .debug_info section: %v", err)
+			return
 		}
 		bi.frameEntries = frame.Parse(debugFrame, frame.DwarfEndian(dat))
 	} else {
-		fmt.Println("could not find __debug_frame section in binary")
-		os.Exit(1)
+		bi.setLoadError("could not find __debug_frame section in binary")
+		return
 	}
 }
 
-func getDebugLineInfoMacho(exe *macho.File) []byte {
+func getDebugLineInfoMacho(exe *macho.File) ([]byte, error) {
 	if sec := exe.Section("__debug_line"); sec != nil {
 		debugLine, err := exe.Section("__debug_line").Data()
 		if err != nil {
-			fmt.Println("could not get __debug_line section", err)
-			os.Exit(1)
+			return nil, fmt.Errorf("could not get __debug_line section: %v", err)
 		}
-		return debugLine
-	} else {
-		fmt.Println("could not find __debug_line section in binary")
-		os.Exit(1)
+		return debugLine, nil
 	}
-	return nil
+	return nil, errors.New("could not find __debug_line section in binary")
 }
 
 func getDebugLocMacho(exe *macho.File) []byte {

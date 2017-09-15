@@ -301,7 +301,7 @@ func (it *stackIterator) switchStack() bool {
 		it.top = false
 		return true
 
-	case "runtime.mstart":
+	case "runtime.mstart", "runtime.sigtramp":
 		if it.top || !it.systemstack || it.g == nil {
 			return false
 		}
@@ -384,42 +384,54 @@ func (it *stackIterator) Err() error {
 }
 
 func (it *stackIterator) frameInfo(pc, sp, bp uint64, top bool) (Stackframe, error) {
-	fde, err := it.bi.frameEntries.FDEForPC(pc)
-	if _, nofde := err.(*frame.NoFDEForPCError); nofde {
+	f, l, fn := it.bi.PCToLine(pc)
+	curloc := Location{PC: pc, File: f, Line: l, Fn: fn}
+	var fde *frame.FrameDescriptionEntry
+	var err error
+	if curloc.Fn == nil || curloc.Fn.cu.isgo {
+		// The C compiler emits debug_frame instructions that we don't know how to
+		// interpret correctly.
+		fde, err = it.bi.frameEntries.FDEForPC(pc)
+	}
+	if fde == nil {
 		if bp == 0 {
 			return Stackframe{}, err
 		}
 		// When no FDE is available attempt to use BP instead
 		retaddr := uintptr(int(bp) + it.bi.Arch.PtrSize())
 		cfa := int64(retaddr) + int64(it.bi.Arch.PtrSize())
-		return it.newStackframe(pc, cfa, bp, retaddr, nil, top)
+		return it.newStackframe(curloc, cfa, bp, retaddr, nil, top)
 	}
 
 	spoffset, retoffset := fde.ReturnAddressOffset(pc)
 
 	if it.crosscall2fn != nil {
 		if pc >= it.crosscall2fn.Entry && pc < it.crosscall2fn.End && spoffset == 8 && !it.top {
-			// the frame descriptor entry of crosscall2 is wrong
-			spoffset += 0x58
+			// the frame descriptor entry of crosscall2 is wrong, see: https://github.com/golang/go/issues/21569
+			switch it.bi.GOOS {
+			case "windows":
+				spoffset += 0x118
+			default:
+				spoffset += 0x58
+			}
 		}
 	}
 
 	cfa := int64(sp) + spoffset
 
 	retaddr := uintptr(cfa + retoffset)
-	return it.newStackframe(pc, cfa, bp, retaddr, fde, top)
+	return it.newStackframe(curloc, cfa, bp, retaddr, fde, top)
 }
 
-func (it *stackIterator) newStackframe(pc uint64, cfa int64, bp uint64, retaddr uintptr, fde *frame.FrameDescriptionEntry, top bool) (Stackframe, error) {
+func (it *stackIterator) newStackframe(curloc Location, cfa int64, bp uint64, retaddr uintptr, fde *frame.FrameDescriptionEntry, top bool) (Stackframe, error) {
 	if retaddr == 0 {
 		return Stackframe{}, NullAddrError{}
 	}
-	f, l, fn := it.bi.PCToLine(pc)
 	ret, err := readUintRaw(it.mem, retaddr, int64(it.bi.Arch.PtrSize()))
 	if err != nil {
 		it.err = err
 	}
-	r := Stackframe{Current: Location{PC: pc, File: f, Line: l, Fn: fn}, CFA: cfa, regs: it.regs, bp: bp, FDE: fde, Ret: ret, addrret: uint64(retaddr), stackHi: it.stackhi, SystemStack: it.systemstack}
+	r := Stackframe{Current: curloc, CFA: cfa, regs: it.regs, bp: bp, FDE: fde, Ret: ret, addrret: uint64(retaddr), stackHi: it.stackhi, SystemStack: it.systemstack}
 	if !top {
 		fnname := ""
 		if r.Current.Fn != nil {
@@ -431,7 +443,7 @@ func (it *stackIterator) newStackframe(pc uint64, cfa int64, bp uint64, retaddr 
 			// instruction to look for at pc - 1
 			r.Call = r.Current
 		default:
-			r.Call.File, r.Call.Line, r.Call.Fn = it.bi.PCToLine(pc - 1)
+			r.Call.File, r.Call.Line, r.Call.Fn = it.bi.PCToLine(curloc.PC - 1)
 			r.Call.PC = r.Current.PC
 		}
 	} else {
