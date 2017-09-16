@@ -292,12 +292,9 @@ func updateLocals(container *nucular.Window) {
 		w.TreePop()
 	}
 
-	editorShown := false
-
 	for i := 0; i < len(localsPanel.expressions); i++ {
 		if i == localsPanel.selected {
-			exprsEditor(false, w)
-			editorShown = true
+			exprsEditor(w)
 		} else {
 			if localsPanel.v[i] == nil {
 				w.Row(varRowHeight).Dynamic(1)
@@ -306,10 +303,6 @@ func updateLocals(container *nucular.Window) {
 				showVariable(w, 0, localsPanel.showAddr, i, localsPanel.v[i])
 			}
 		}
-	}
-
-	if !editorShown {
-		exprsEditor(true, w)
 	}
 }
 
@@ -358,16 +351,8 @@ func loadOneExpr(i int) {
 	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name)
 }
 
-func exprsEditor(isnew bool, w *nucular.Window) {
-	if isnew {
-		w.Row(varEditorHeight).Static(50, 0)
-		w.Label("New: ", "LC")
-		if w.Input().Mouse.HoveringRect(w.LastWidgetBounds) {
-			w.Tooltip("Evaluate new expression")
-		}
-	} else {
-		w.Row(varEditorHeight).Dynamic(1)
-	}
+func exprsEditor(w *nucular.Window) {
+	w.Row(varEditorHeight).Dynamic(1)
 	active := localsPanel.ed.Edit(w)
 	if active&nucular.EditCommitted == 0 {
 		return
@@ -517,6 +502,8 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected].Expr)
 			localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
 			localsPanel.ed.CursorFollow = true
+			localsPanel.ed.Active = true
+			commandLineEditor.Active = false
 		}
 		if w.MenuItem(label.TA("Remove", "LC")) {
 			if exprMenuIdx+1 < len(localsPanel.expressions) {
