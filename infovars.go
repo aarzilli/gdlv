@@ -13,6 +13,7 @@ import (
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/label"
+	"github.com/aarzilli/nucular/rect"
 
 	"github.com/derekparker/delve/service/api"
 )
@@ -164,7 +165,7 @@ var localsPanel = struct {
 	args         []*Variable
 	locals       []*Variable
 
-	expressions []string
+	expressions []Expr
 	selected    int
 	ed          nucular.TextEditor
 	v           []*Variable
@@ -172,6 +173,13 @@ var localsPanel = struct {
 	filterEditor: nucular.TextEditor{Filter: spacefilter},
 	selected:     -1,
 	ed:           nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard},
+}
+
+type Expr struct {
+	Expr                         string
+	pinnedGid                    int
+	pinnedFrameOffset            int64
+	maxArrayValues, maxStringLen int
 }
 
 func loadGlobals(p *asyncLoad) {
@@ -309,56 +317,14 @@ func isPinned(expr string) bool {
 	return expr[0] == '['
 }
 
-// parseFramePin parses a frame pin expression:
-// [g 12 f -543] expr
-// pins expr to goroutine 12 and frame -543
-func parseFramePin(expr string) (pin bool, gid, frameOffset int, varExpr string) {
-	if !isPinned(expr) {
-		return false, 0, 0, expr
-	}
-	close := strings.Index(expr, "]")
-	if close < 0 {
-		return false, 0, 0, expr
-	}
-	pinexpr := strings.TrimSpace(expr[1:close])
-	varExpr = strings.TrimSpace(expr[close+1:])
-
-	if pinexpr[0] != 'g' {
-		return false, 0, 0, expr
-	}
-	gidexpr := pinexpr[1:]
-	fpos := strings.Index(gidexpr, "f")
-	if fpos < 0 {
-		return false, 0, 0, expr
-	}
-	pinexpr = gidexpr[fpos:]
-	gidexpr = strings.TrimSpace(gidexpr[:fpos])
-	var err error
-	gid, err = strconv.Atoi(gidexpr)
-	if err != nil {
-		return false, 0, 0, expr
-	}
-
-	if pinexpr[0] != 'f' {
-		return false, 0, 0, expr
-	}
-	pinexpr = strings.TrimSpace(pinexpr[1:])
-	frameOffset, err = strconv.Atoi(pinexpr)
-	if err != nil {
-		return false, 0, 0, expr
-	}
-	pin = true
-	return
-}
-
-func findFrameOffset(gid, frameOffset int) (frame int) {
+func findFrameOffset(gid int, frameOffset int64) (frame int) {
 	frames, err := client.Stacktrace(gid, 100, nil)
 	if err != nil {
 		return -1
 	}
 
 	for i := range frames {
-		if frames[i].FrameOffset == int64(frameOffset) {
+		if frames[i].FrameOffset == frameOffset {
 			return i
 		}
 	}
@@ -366,24 +332,29 @@ func findFrameOffset(gid, frameOffset int) (frame int) {
 }
 
 func loadOneExpr(i int) {
-	pin, gid, frameOffset, expr := parseFramePin(localsPanel.expressions[i])
-	var frame int
-	if !pin {
-		gid = curGid
-		frame = curFrame
-	} else {
-		frame = findFrameOffset(gid, frameOffset)
+	expr := localsPanel.expressions[i].Expr
+	gid, frame := curGid, curFrame
+	if localsPanel.expressions[i].pinnedGid > 0 {
+		gid = localsPanel.expressions[i].pinnedGid
+		frame = findFrameOffset(localsPanel.expressions[i].pinnedGid, localsPanel.expressions[i].pinnedFrameOffset)
 		if frame < 0 {
-			localsPanel.v[i] = wrapApiVariable(&api.Variable{Unreadable: "could not find frame"}, "", "")
+			localsPanel.v[i] = wrapApiVariable(&api.Variable{Name: "(pinned) " + expr, Unreadable: "could not find frame"}, "", "")
 			return
 		}
 	}
-
-	v, err := client.EvalVariable(api.EvalScope{gid, frame}, expr, LongLoadConfig)
-	if err != nil {
-		v = &api.Variable{Name: localsPanel.expressions[i], Unreadable: err.Error()}
+	cfg := LongLoadConfig
+	if localsPanel.expressions[i].maxArrayValues > 0 {
+		cfg.MaxArrayValues = localsPanel.expressions[i].maxArrayValues
+		cfg.MaxStringLen = localsPanel.expressions[i].maxStringLen
 	}
-	v.Name = localsPanel.expressions[i]
+	v, err := client.EvalVariable(api.EvalScope{gid, frame}, expr, cfg)
+	if err != nil {
+		v = &api.Variable{Unreadable: err.Error()}
+	}
+	v.Name = expr
+	if localsPanel.expressions[i].pinnedGid > 0 {
+		v.Name = "(pinned) " + v.Name
+	}
 	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name)
 }
 
@@ -411,7 +382,7 @@ func exprsEditor(isnew bool, w *nucular.Window) {
 	if localsPanel.selected < 0 {
 		addExpression(newexpr)
 	} else {
-		localsPanel.expressions[localsPanel.selected] = newexpr
+		localsPanel.expressions[localsPanel.selected].Expr = newexpr
 		go func(i int) {
 			additionalLoadMu.Lock()
 			defer additionalLoadMu.Unlock()
@@ -422,7 +393,7 @@ func exprsEditor(isnew bool, w *nucular.Window) {
 }
 
 func addExpression(newexpr string) {
-	localsPanel.expressions = append(localsPanel.expressions, newexpr)
+	localsPanel.expressions = append(localsPanel.expressions, Expr{Expr: newexpr})
 	localsPanel.v = append(localsPanel.v, nil)
 	i := len(localsPanel.v) - 1
 	go func(i int) {
@@ -540,10 +511,10 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 	}
 
 	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
-		pinned := isPinned(localsPanel.expressions[exprMenuIdx])
+		pinned := localsPanel.expressions[exprMenuIdx].pinnedGid > 0
 		if w.MenuItem(label.TA("Edit", "LC")) {
 			localsPanel.selected = exprMenuIdx
-			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected])
+			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected].Expr)
 			localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
 			localsPanel.ed.CursorFollow = true
 		}
@@ -555,11 +526,15 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 			localsPanel.expressions = localsPanel.expressions[:len(localsPanel.expressions)-1]
 			localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
 		}
+		if w.MenuItem(label.TA("Load parameters...", "LC")) {
+			w.Master().PopupOpen(fmt.Sprintf("Load parameters for %s", localsPanel.expressions[exprMenuIdx].Expr), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, configureLoadParameters(exprMenuIdx))
+		}
 		if w.CheckboxText("Pin to frame", &pinned) {
 			if pinned && curFrame < len(stackPanel.stack) {
-				localsPanel.expressions[exprMenuIdx] = fmt.Sprintf("[g %d f %d] %s", curGid, stackPanel.stack[curFrame].FrameOffset, localsPanel.expressions[exprMenuIdx])
+				localsPanel.expressions[exprMenuIdx].pinnedGid = curGid
+				localsPanel.expressions[exprMenuIdx].pinnedFrameOffset = stackPanel.stack[curFrame].FrameOffset
 			} else {
-				_, _, _, localsPanel.expressions[exprMenuIdx] = parseFramePin(localsPanel.expressions[exprMenuIdx])
+				localsPanel.expressions[exprMenuIdx].pinnedGid = 0
 			}
 			go func(i int) {
 				additionalLoadMu.Lock()
@@ -934,4 +909,38 @@ func detailsAvailable(v *Variable) openDetailsWindowFn {
 		return newIntArrayViewer
 	}
 	return nil
+}
+
+func configureLoadParameters(exprMenuIdx int) func(w *nucular.Window) {
+	expr := &localsPanel.expressions[exprMenuIdx]
+	maxArrayValues := expr.maxArrayValues
+	maxStringLen := expr.maxStringLen
+	if maxArrayValues <= 0 {
+		maxArrayValues = LongLoadConfig.MaxArrayValues
+		maxStringLen = LongLoadConfig.MaxStringLen
+	}
+
+	return func(w *nucular.Window) {
+		commit := false
+		w.Row(30).Static(0)
+		w.PropertyInt("Max array load:", 0, &maxArrayValues, 4096, 1, 1)
+
+		w.Row(30).Static(0)
+		w.PropertyInt("Max string load:", 0, &maxStringLen, 4096, 1, 1)
+
+		w.Row(30).Static(0, 100, 100)
+		w.Spacing(1)
+		if w.ButtonText("Cancel") {
+			w.Close()
+		}
+		if w.ButtonText("OK") {
+			commit = true
+		}
+		if commit {
+			expr.maxArrayValues = maxArrayValues
+			expr.maxStringLen = maxStringLen
+			loadOneExpr(exprMenuIdx)
+			w.Close()
+		}
+	}
 }
