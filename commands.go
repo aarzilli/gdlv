@@ -95,9 +95,11 @@ See also: "help on", "help cond" and "help clear"`},
 	checkpoint [where]`},
 		{aliases: []string{"step", "s"}, cmdFn: step, helpMsg: `Single step through program.
 		
-		step [-list|name]
+		step [-list|-first|-last|name]
 		
-Specify a name to step into one specific function call. Use the -list option for all the function calls on the current line. To step into a specific function call you can also right click on a function call (on the current line) and select "Step into"`},
+Specify a name to step into one specific function call. Use the -list option for all the function calls on the current line. To step into a specific function call you can also right click on a function call (on the current line) and select "Step into".
+
+Option -first will step into the first function call of the line, -last will step into the last call of the line. When called without arguments step will use -first as default, but this can be changed using config.`},
 		{aliases: []string{"step-instruction", "si"}, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
 		{aliases: []string{"next", "n"}, cmdFn: next, helpMsg: "Step over to next source line."},
 		{aliases: []string{"stepout", "o"}, cmdFn: stepout, helpMsg: "Step out of the current function."},
@@ -453,14 +455,19 @@ func step(out io.Writer, args string) error {
 		return stepIntoList(*loc), state.CurrentThread.PC, nil
 	}
 
+	if args == "" {
+		args = conf.DefaultStepBehaviour
+	}
+
 	switch args {
-	case "":
-		state, err := client.Step()
-		if err != nil {
-			return err
+	case "", "-first":
+		return stepIntoFirst(out)
+
+	case "-last":
+		sics, _, _ := getsics()
+		if len(sics) > 0 {
+			return stepInto(out, sics[len(sics)-1])
 		}
-		printcontext(out, state)
-		return continueUntilCompleteNext(out, state, "step")
 
 	case "-list":
 		sics, pc, err := getsics()
@@ -487,6 +494,15 @@ func step(out io.Writer, args string) error {
 	return nil
 }
 
+func stepIntoFirst(out io.Writer) error {
+	state, err := client.Step()
+	if err != nil {
+		return err
+	}
+	printcontext(out, state)
+	return continueUntilCompleteNext(out, state, "step")
+}
+
 func stepInto(out io.Writer, sic stepIntoCall) error {
 	stack, err := client.Stacktrace(curGid, 1, nil)
 	if err != nil {
@@ -495,7 +511,8 @@ func stepInto(out io.Writer, sic stepIntoCall) error {
 	if len(stack) < 1 {
 		return errors.New("could not stacktrace")
 	}
-	bp, err := client.CreateBreakpoint(&api.Breakpoint{Addr: sic.Inst.Loc.PC, Cond: fmt.Sprintf("(runtime.curg.goid == %d) && (runtime.frameoff == %d)", curGid, stack[0].FrameOffset)})
+	cond := fmt.Sprintf("(runtime.curg.goid == %d) && (runtime.frameoff == %d)", curGid, stack[0].FrameOffset)
+	bp, err := client.CreateBreakpoint(&api.Breakpoint{Addr: sic.Inst.Loc.PC, Cond: cond})
 	if err != nil {
 		return err
 	}
@@ -522,7 +539,7 @@ func stepInto(out io.Writer, sic stepIntoCall) error {
 		}
 	}
 	if bpfound {
-		return step(out, "")
+		return stepIntoFirst(out)
 	}
 	return nil
 }
@@ -765,9 +782,27 @@ func configWindow(w *nucular.Window) {
 		}
 	}
 
+	w.Row(20).Static()
+	w.LayoutFitWidth(0, 100)
+	w.Label("Default step behavior:", "LC")
+	w.LayoutSetWidth(200)
+	stepBehaviours := []string{"-first", "-last"}
+	stepBehaviourIdx := 0
+	for i := range stepBehaviours {
+		if conf.DefaultStepBehaviour == stepBehaviours[i] {
+			stepBehaviourIdx = i
+			break
+		}
+	}
+	i := w.ComboSimple(stepBehaviours, stepBehaviourIdx, 20)
+	if i >= 0 {
+		conf.DefaultStepBehaviour = stepBehaviours[i]
+	}
+
 	w.Row(20).Static(0, 100)
 	w.Spacing(1)
 	if w.ButtonText("OK") {
+		saveConfiguration()
 		w.Close()
 	}
 }
