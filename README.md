@@ -21,6 +21,13 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2017-09-17
+* "Find Element" command: search through a slice or an array for the element matching a given expression.
+* New red theme.
+* Only recompile if one of the source files changed.
+* `step -last` command option to step into the last call on the line.
+* Search command history with Ctrl+R
+
 ## 2017-06-29
 * Pinning of expressions to specific execution frames.
 * Keybindings for continue, next, step and stepout
