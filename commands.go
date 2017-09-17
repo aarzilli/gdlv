@@ -61,6 +61,8 @@ func (a ByFirstAlias) Less(i, j int) bool { return a[i].aliases[0] < a[j].aliase
 
 var cmdhistory = []string{""}
 var historyShown int = 0
+var historySearch bool
+var historyNeedle string
 var cmds *Commands
 
 func DebugCommands() *Commands {

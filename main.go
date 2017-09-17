@@ -271,11 +271,16 @@ func updateCommandPanel(container *nucular.Window) {
 	scrollbackEditor.Edit(w)
 
 	p := currentPrompt()
+	p2 := p
 
-	promptwidth := nucular.FontWidth(style.Font, p) + style.Text.Padding.X*2
+	if historySearch {
+		p2 += " (searching)"
+	}
+
+	promptwidth := nucular.FontWidth(style.Font, p2) + style.Text.Padding.X*2
 
 	w.Row(commandLineHeight).StaticScaled(promptwidth, 0)
-	w.Label(p, "LC")
+	w.Label(p2, "LC")
 
 	if running {
 		commandLineEditor.Flags |= nucular.EditReadOnly
@@ -287,26 +292,43 @@ func updateCommandPanel(container *nucular.Window) {
 	}
 	if commandLineEditor.Active {
 		showHistory := false
-		kbd := w.Input().Keyboard
+		kbd := &w.Input().Keyboard
 		for _, k := range kbd.Keys {
 			switch {
 			case k.Modifiers == 0 && k.Code == key.CodeTab:
+				historySearch = false
 				w.Input().Keyboard.Text = ""
 				completeAny()
 			case k.Modifiers == 0 && k.Code == key.CodeUpArrow:
+				historySearch = false
 				historyShown--
 				showHistory = true
 			case k.Modifiers == 0 && k.Code == key.CodeDownArrow:
+				historySearch = false
 				historyShown++
 				showHistory = true
+			case k.Modifiers == key.ModControl && k.Code == key.CodeR:
+				historySearch = true
+				historyShown = -1
+				historyNeedle = ""
+				showHistory = true
+			case k.Modifiers == 0 && k.Code == key.CodeEscape:
+				historySearch = false
+				historyShown = -1
+				showHistory = true
+			case k.Modifiers == 0 && k.Code == key.CodeDeleteBackspace && historySearch:
+				historyNeedle = historyNeedle[:len(historyNeedle)]
 			}
+		}
+		if historySearch && kbd.Text != "" && kbd.Text != "\n" {
+			historyNeedle = historyNeedle + kbd.Text
+			kbd.Text = ""
+			searchHistory()
+			showHistory = true
 		}
 		if showHistory {
 			w.Input().Keyboard.Keys = w.Input().Keyboard.Keys[:0]
-			switch {
-			case historyShown < 0:
-				historyShown = len(cmdhistory)
-			case historyShown > len(cmdhistory):
+			if historyShown < 0 || historyShown > len(cmdhistory) {
 				historyShown = len(cmdhistory)
 			}
 
@@ -323,6 +345,7 @@ func updateCommandPanel(container *nucular.Window) {
 	}
 	active := commandLineEditor.Edit(w)
 	if active&nucular.EditCommitted != 0 {
+		historySearch = false
 		var scrollbackOut = editorWriter{&scrollbackEditor, false}
 		cmd := string(commandLineEditor.Buffer)
 		if canExecuteCmd(client, cmd) {
@@ -342,6 +365,19 @@ func updateCommandPanel(container *nucular.Window) {
 		commandLineEditor.CursorFollow = true
 		commandLineEditor.Active = true
 	}
+}
+
+func searchHistory() {
+	if historyShown < 0 || historyShown >= len(cmdhistory) {
+		historyShown = len(cmdhistory) - 1
+	}
+	for historyShown >= 0 {
+		if strings.Index(cmdhistory[historyShown], historyNeedle) >= 0 {
+			return
+		}
+		historyShown--
+	}
+	historyShown = -1
 }
 
 func canExecuteCmd(client service.Client, cmd string) bool {
