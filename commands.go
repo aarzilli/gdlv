@@ -469,6 +469,8 @@ func step(out io.Writer, args string) error {
 		sics, _, _ := getsics()
 		if len(sics) > 0 {
 			return stepInto(out, sics[len(sics)-1])
+		} else {
+			return stepIntoFirst(out)
 		}
 
 	case "-list":
