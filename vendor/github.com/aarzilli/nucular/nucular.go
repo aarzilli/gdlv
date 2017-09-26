@@ -23,6 +23,7 @@ import (
 ///////////////////////////////////////////////////////////////////////////////////
 
 type UpdateFn func(*Window)
+type SaveFn func() []byte
 
 type Window struct {
 	LastWidgetBounds rect.Rect
@@ -36,6 +37,8 @@ type Window struct {
 	widgets          widgetBuffer
 	layout           *panel
 	close, first     bool
+	moving           bool
+	scaling          bool
 	// trigger rectangle of nonblocking windows
 	header rect.Rect
 	// root of the node tree
@@ -50,12 +53,14 @@ type Window struct {
 	editor *TextEditor
 	// update function
 	updateFn      UpdateFn
+	saveFn        SaveFn
 	usingSub      bool
 	began         bool
 	rowCtor       rowConstructor
 	menuItemWidth int
 	lastLayoutCnt int
 	adjust        map[int]map[int]*adjustCol
+	undockedSz    image.Point
 }
 
 type FittingWidthFn func(width int)
@@ -128,16 +133,14 @@ const (
 	WindowMovable
 	WindowScalable
 	WindowClosable
-	WindowMinimizable
 	WindowDynamic
 	WindowNoScrollbar
 	WindowNoHScrollbar
 	WindowTitle
 	WindowContextualReplace
+	WindowNonmodal
 
 	windowPrivate
-	windowHidden
-	windowMinimized
 	windowSub
 	windowGroup
 	windowPopup
@@ -148,8 +151,9 @@ const (
 	windowTooltip
 	windowEnabled
 	windowHDynamic
+	windowDocked
 
-	WindowDefaultFlags = WindowBorder | WindowMovable | WindowScalable | WindowClosable | WindowMinimizable | WindowTitle
+	WindowDefaultFlags = WindowBorder | WindowMovable | WindowScalable | WindowClosable | WindowTitle
 )
 
 func createTreeNode(initialState bool, parent *treeNode) *treeNode {
@@ -212,7 +216,7 @@ func (win *Window) style() *nstyle.Window {
 	}
 }
 
-func panelBegin(ctx *context, win *Window, title string) bool {
+func panelBegin(ctx *context, win *Window, title string) {
 	win.usingSub = false
 	style := &ctx.Style
 	font := style.Font
@@ -229,30 +233,25 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	/* check arguments */
 	*layout = panel{}
 
-	if win.flags&windowHidden != 0 {
-		return false
-	}
-
 	/* window dragging */
-	if (win.flags&WindowMovable != 0) && win.toplevel() {
+	if win.moving {
+		if in == nil || !in.Mouse.Down(mouse.ButtonLeft) {
+			if win.flags&windowDocked == 0 && in != nil {
+				win.ctx.DockedWindows.Dock(win, in.Mouse.Pos, win.ctx.Windows[0].Bounds, win.ctx.Style.Scaling)
+			}
+			win.moving = false
+		} else {
+			win.move(in.Mouse.Delta, in.Mouse.Pos)
+		}
+	} else if (win.flags&WindowMovable != 0) && win.toplevel() {
 		var move rect.Rect
 		move.X = win.Bounds.X
 		move.Y = win.Bounds.Y
 		move.W = win.Bounds.W
-		move.H = layout.HeaderH
+		move.H = FontHeight(font) + 2.0*wstyle.Header.Padding.Y + 2.0*wstyle.Header.LabelPadding.Y
 
-		if win.idx != 0 {
-			move.H = FontHeight(font) + 2.0*wstyle.Header.Padding.Y
-			move.H += 2.0 * wstyle.Header.LabelPadding.Y
-		} else {
-			move.H = window_padding.Y + item_spacing.Y
-		}
-
-		incursor := in.Mouse.PrevHoveringRect(move)
-		if in.Mouse.Down(mouse.ButtonLeft) && incursor {
-			delta := in.Mouse.Delta
-			win.Bounds.X = win.Bounds.X + delta.X
-			win.Bounds.Y = win.Bounds.Y + delta.Y
+		if in.Mouse.IsClickDownInRect(mouse.ButtonLeft, move, true) {
+			win.moving = true
 		}
 	}
 
@@ -291,10 +290,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	}
 
 	/* calculate window header */
-	if win.flags&windowMinimized != 0 {
-		layout.HeaderH = 0
-		layout.Row.Height = 0
-	} else if win.flags&windowMenu != 0 || win.flags&windowContextual != 0 {
+	if win.flags&windowMenu != 0 || win.flags&windowContextual != 0 {
 		layout.HeaderH = window_padding.Y
 		layout.Row.Height = window_padding.Y
 	} else {
@@ -320,7 +316,6 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	header_active := (win.idx != 0) && (win.flags&WindowTitle != 0)
 
 	var dwh drawableWindowHeader
-	dwh.Minimized = layout.Flags&windowMinimized != 0
 	dwh.Dynamic = layout.Flags&WindowDynamic != 0
 	dwh.Bounds = layout.Bounds
 	dwh.HeaderActive = header_active
@@ -379,37 +374,7 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 			}
 
 			if doButton(win, label.S(wstyle.Header.CloseSymbol), button, &wstyle.Header.CloseButton, in, false) {
-				layout.Flags |= windowHidden
-			}
-		}
-
-		/* window minimize button */
-		if win.flags&WindowMinimizable != 0 {
-			if wstyle.Header.Align == nstyle.HeaderRight {
-				button.X = (header.W + header.X) - button.W
-				if win.flags&WindowClosable == 0 {
-					button.X -= wstyle.Header.Padding.X
-					header.W -= wstyle.Header.Padding.X
-				}
-
-				header.W -= button.W + wstyle.Header.Spacing.X
-			} else {
-				button.X = header.X
-				header.X += button.W + wstyle.Header.Spacing.X + wstyle.Header.Padding.X
-			}
-
-			var symbolType label.SymbolType
-			if layout.Flags&windowMinimized != 0 {
-				symbolType = wstyle.Header.MaximizeSymbol
-			} else {
-				symbolType = wstyle.Header.MinimizeSymbol
-			}
-			if doButton(win, label.S(symbolType), button, &wstyle.Header.MinimizeButton, in, false) {
-				if layout.Flags&windowMinimized != 0 {
-					layout.Flags = layout.Flags & ^windowMinimized
-				} else {
-					layout.Flags = layout.Flags | windowMinimized
-				}
+				win.close = true
 			}
 		}
 	} else {
@@ -419,20 +384,10 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 		dwh.Draw(&win.ctx.Style, &win.cmds)
 	}
 
-	/* fix header height for transition between minimized and maximized window state */
-	if win.flags&windowMinimized != 0 && layout.Flags&windowMinimized == 0 {
-		layout.Row.Height += 2*item_spacing.Y + wstyle.Border
-	}
-
 	var dwb drawableWindowBody
 
 	dwb.NoScrollbar = win.flags&WindowNoScrollbar != 0
 	dwb.Style = win.style()
-
-	if dwh.Minimized {
-		/* draw window background if minimized */
-		layout.Row.Height = 0
-	}
 
 	/* calculate and set the window clipping rectangle*/
 	if win.flags&WindowDynamic == 0 {
@@ -464,8 +419,6 @@ func panelBegin(ctx *context, win *Window, title string) bool {
 	dwb.Draw(&win.ctx.Style, &win.cmds)
 
 	layout.Row.Type = layoutInvalid
-
-	return layout.Flags&windowHidden == 0 && layout.Flags&windowMinimized == 0
 }
 
 func (win *Window) specialPanelBegin() {
@@ -526,9 +479,7 @@ func (win *Window) specialPanelBegin() {
 	if win.flags&windowPopup != 0 {
 		win.cmds.PushScissor(nk_null_rect)
 
-		if !panelBegin(ctx, win, win.title) {
-			win.close = true
-		}
+		panelBegin(ctx, win, win.title)
 		win.layout.Offset = &win.Scrollbar
 	}
 
@@ -569,7 +520,7 @@ func panelEnd(ctx *context, window *Window) {
 	layout.AtY += layout.Row.Height
 
 	/* draw footer and fill empty spaces inside a dynamically growing panel */
-	if layout.Flags&WindowDynamic != 0 && layout.Flags&windowMinimized == 0 {
+	if layout.Flags&WindowDynamic != 0 {
 		layout.Height = layout.AtY - layout.Bounds.Y
 		layout.Height = min(layout.Height, layout.Bounds.H)
 
@@ -629,7 +580,7 @@ func panelEnd(ctx *context, window *Window) {
 	}
 
 	/* scrollbars */
-	if layout.Flags&WindowNoScrollbar == 0 && layout.Flags&windowMinimized == 0 {
+	if layout.Flags&WindowNoScrollbar == 0 {
 		var bounds rect.Rect
 		var scroll_target float64
 		var scroll_offset float64
@@ -690,33 +641,29 @@ func panelEnd(ctx *context, window *Window) {
 	dsab.HeaderH = layout.HeaderH
 
 	/* scaler */
-	if (layout.Flags&WindowScalable != 0) && layout.Flags&windowMinimized == 0 {
+	if layout.Flags&WindowScalable != 0 {
 		dsab.DrawScaler = true
 
-		dsab.ScalerRect.W = max(0, scaler_size.X-window_padding.X)
-		dsab.ScalerRect.H = max(0, scaler_size.Y-window_padding.Y)
+		dsab.ScalerRect.W = max(0, scaler_size.X)
+		dsab.ScalerRect.H = max(0, scaler_size.Y)
 		dsab.ScalerRect.X = (layout.Bounds.X + layout.Bounds.W) - (window_padding.X + dsab.ScalerRect.W)
 		/* calculate scaler bounds */
 		if layout.Flags&WindowDynamic != 0 {
 			dsab.ScalerRect.Y = footer.Y + layout.FooterH - scaler_size.Y
 		} else {
-			dsab.ScalerRect.Y = layout.Bounds.Y + layout.Bounds.H - scaler_size.Y
+			dsab.ScalerRect.Y = layout.Bounds.Y + layout.Bounds.H - (scaler_size.Y + window_padding.Y)
 		}
 
 		/* do window scaling logic */
 		if window.toplevel() {
-			prev := in.Mouse.Prev
-			window_size := wstyle.MinSize
-
-			incursor := dsab.ScalerRect.Contains(prev)
-
-			if in != nil && in.Mouse.Down(mouse.ButtonLeft) && incursor {
-				window.Bounds.W = max(window_size.X, window.Bounds.W+in.Mouse.Delta.X)
-
-				/* dragging in y-direction is only possible if static window */
-				if layout.Flags&WindowDynamic == 0 {
-					window.Bounds.H = max(window_size.Y, window.Bounds.H+in.Mouse.Delta.Y)
+			if window.scaling {
+				if in == nil || !in.Mouse.Down(mouse.ButtonLeft) {
+					window.scaling = false
+				} else {
+					window.scale(in.Mouse.Delta)
 				}
+			} else if in != nil && in.Mouse.IsClickDownInRect(mouse.ButtonLeft, dsab.ScalerRect, true) {
+				window.scaling = true
 			}
 		}
 	}
@@ -725,9 +672,7 @@ func panelEnd(ctx *context, window *Window) {
 	if layout.Flags&WindowBorder != 0 {
 		dsab.DrawBorders = true
 
-		if layout.Flags&windowMinimized != 0 {
-			dsab.PaddingY = 2.0*wstyle.Border + window.Bounds.Y + layout.HeaderH
-		} else if layout.Flags&WindowDynamic != 0 {
+		if layout.Flags&WindowDynamic != 0 {
 			dsab.PaddingY = layout.FooterH + footer.Y
 		} else {
 			dsab.PaddingY = layout.Bounds.Y + layout.Bounds.H
@@ -744,13 +689,6 @@ func panelEnd(ctx *context, window *Window) {
 	window.widgets.Add(nstyle.WidgetStateInactive, dsab.Bounds)
 	dsab.Draw(&window.ctx.Style, &window.cmds)
 
-	if window.flags&windowSub == 0 {
-		if layout.Flags&windowHidden != 0 {
-			/* window is hidden so clear command buffer  */
-			window.widgets.reset()
-		}
-	}
-
 	layout.Flags |= windowEnabled
 	window.flags = layout.Flags
 
@@ -764,9 +702,6 @@ func panelEnd(ctx *context, window *Window) {
 // Remember to call MenubarEnd when you are done adding elements to the menubar.
 func (win *Window) MenubarBegin() {
 	layout := win.layout
-	if layout.Flags&windowHidden != 0 || layout.Flags&windowMinimized != 0 {
-		return
-	}
 
 	layout.Menu.X = layout.AtX
 	layout.Menu.Y = layout.Bounds.Y + layout.HeaderH
@@ -775,12 +710,37 @@ func (win *Window) MenubarBegin() {
 	layout.Offset.Y = 0
 }
 
+func (win *Window) move(delta image.Point, pos image.Point) {
+	if win.flags&windowDocked != 0 {
+		if delta.X != 0 && delta.Y != 0 {
+			win.ctx.DockedWindows.Undock(win)
+		}
+		return
+	}
+	if canDock, bounds := win.ctx.DockedWindows.Dock(nil, pos, win.ctx.Windows[0].Bounds, win.ctx.Style.Scaling); canDock {
+		win.cmds.FillRect(bounds, 0, color.RGBA{0x0, 0x0, 0x50, 0x50})
+	}
+	win.Bounds.X = win.Bounds.X + delta.X
+	win.Bounds.Y = win.Bounds.Y + delta.Y
+}
+
+func (win *Window) scale(delta image.Point) {
+	if win.flags&windowDocked != 0 {
+		win.ctx.DockedWindows.Scale(win, delta, win.ctx.Style.Scaling)
+		return
+	}
+	window_size := win.style().MinSize
+	win.Bounds.W = max(window_size.X, win.Bounds.W+delta.X)
+
+	/* dragging in y-direction is only possible if static window */
+	if win.layout.Flags&WindowDynamic == 0 {
+		win.Bounds.H = max(window_size.Y, win.Bounds.H+delta.Y)
+	}
+}
+
 // MenubarEnd signals that all widgets have been added to the menubar.
 func (win *Window) MenubarEnd() {
 	layout := win.layout
-	if layout.Flags&windowHidden != 0 || layout.Flags&windowMinimized != 0 {
-		return
-	}
 
 	layout.Menu.H = layout.AtY - layout.Menu.Y
 	layout.Clip.Y = layout.Bounds.Y + layout.HeaderH + layout.Menu.H + layout.Row.Height
@@ -866,7 +826,16 @@ func panelLayout(ctx *context, win *Window, height int, cols int, cnt int) {
 
 	if height == 0 {
 		height = layout.Clip.H - (layout.AtY - layout.Bounds.Y)
-		height -= layout.Row.Height
+		subtractHeight := true
+		if layout.Row.Columns > 0 && layout.Row.Index >= layout.Row.Columns {
+			subtractHeight = false
+		}
+		if layout.Row.Index == 0 {
+			subtractHeight = false
+		}
+		if subtractHeight {
+			height -= layout.Row.Height
+		}
 		if layout.ReservedHeight > 0 {
 			height -= layout.ReservedHeight + item_spacing.Y
 		}
@@ -2545,7 +2514,7 @@ func (win *Window) doProperty(property rect.Rect, name string, text string, filt
 		ed.Cursor = len(ed.Buffer)
 	}
 	ed.Flags = EditAlwaysInsertMode | EditNoHorizontalScroll
-	ed.doEdit(edit, &style.Edit, in)
+	ed.doEdit(edit, &style.Edit, in, false, false, false)
 	active = ed.Active
 
 	if active && in.Keyboard.Pressed(key.CodeReturnEnter) {
@@ -2659,15 +2628,28 @@ func (mw *masterWindow) PopupOpen(title string, flags WindowFlags, rect rect.Rec
 	go func() {
 		mw.uilock.Lock()
 		defer mw.uilock.Unlock()
-		mw.ctx.popupOpen(title, flags, rect, scale, updateFn)
+		mw.ctx.popupOpen(title, flags, rect, scale, updateFn, nil)
 		mw.Changed()
 	}()
 }
 
-func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn) {
+func (mw *masterWindow) PopupOpenPersistent(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn, saveFn SaveFn) {
+	if flags&WindowNonmodal == 0 && saveFn != nil {
+		panic("save function set on modal window")
+	}
+	go func() {
+		mw.uilock.Lock()
+		defer mw.uilock.Unlock()
+		mw.ctx.popupOpen(title, flags, rect, scale, updateFn, saveFn)
+		mw.Changed()
+	}()
+}
+
+func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn, saveFn SaveFn) {
 	popup := createWindow(ctx, title)
 	popup.idx = len(ctx.Windows)
 	popup.updateFn = updateFn
+	popup.saveFn = saveFn
 	if updateFn == nil {
 		panic("nil update function")
 	}
@@ -2681,9 +2663,27 @@ func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, s
 		rect.H = ctx.scale(rect.H)
 	}
 
+	if rect.X == 0 && rect.Y == 0 && flags&WindowNonmodal != 0 {
+		rect.X, rect.Y = ctx.autoPosition()
+	}
+
 	popup.Bounds = rect
 	popup.layout = &panel{}
 	popup.flags = flags | WindowBorder | windowSub | windowPopup
+}
+
+func (ctx *context) autoPosition() (int, int) {
+	x, y := ctx.autopos.X, ctx.autopos.Y
+
+	ctx.autopos.X += ctx.scale(20)
+	ctx.autopos.Y += ctx.scale(20)
+
+	if ctx.autopos.X >= ctx.Windows[0].Bounds.W || ctx.autopos.Y >= ctx.Windows[0].Bounds.H {
+		ctx.autopos.X = 0
+		ctx.autopos.Y = 0
+	}
+
+	return x, y
 }
 
 // Programmatically closes this window
@@ -2778,7 +2778,7 @@ func (win *Window) TooltipOpen(width int, scale bool, updateFn UpdateFn) {
 	bounds.X = (in.Mouse.Pos.X + 1)
 	bounds.Y = (in.Mouse.Pos.Y + 1)
 
-	win.ctx.popupOpen(tooltipWindowTitle, WindowDynamic|WindowNoScrollbar|windowTooltip, bounds, false, updateFn)
+	win.ctx.popupOpen(tooltipWindowTitle, WindowDynamic|WindowNoScrollbar|windowTooltip, bounds, false, updateFn, nil)
 }
 
 // Shows a tooltip window containing the specified text.

@@ -812,8 +812,8 @@ func FromTable(table ColorTable, scaling float64) *Style {
 	win.Header.LabelNormal = table.ColorText
 	win.Header.LabelHover = table.ColorText
 	win.Header.LabelActive = table.ColorText
-	win.Header.LabelPadding = image.Point{4, 4}
-	win.Header.Padding = image.Point{4, 4}
+	win.Header.LabelPadding = image.Point{2, 2}
+	win.Header.Padding = image.Point{2, 2}
 	win.Header.Spacing = image.Point{0, 0}
 
 	/* window header close button */
@@ -863,7 +863,7 @@ func FromTable(table ColorTable, scaling float64) *Style {
 	win.Scaler = MakeItemColor(table.ColorText)
 	win.FooterPadding = image.Point{0, 0}
 	win.Rounding = 0.0
-	win.ScalerSize = image.Point{16, 16}
+	win.ScalerSize = image.Point{9, 9}
 	win.Padding = image.Point{4, 4}
 	win.Spacing = image.Point{4, 4}
 	win.ScrollbarSize = image.Point{10, 10}

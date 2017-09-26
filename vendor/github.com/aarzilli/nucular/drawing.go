@@ -74,7 +74,6 @@ type drawableWindowHeader struct {
 	Hovered bool
 	Title   string
 
-	Minimized     bool
 	Dynamic       bool
 	HeaderActive  bool
 	Bounds        rect.Rect
@@ -86,10 +85,7 @@ type drawableWindowHeader struct {
 
 func (dwh *drawableWindowHeader) Draw(z *nstyle.Style, out *command.Buffer) {
 	style := dwh.Style
-	if dwh.Minimized {
-		/* draw window background if minimized */
-		out.FillRect(rect.Rect{dwh.Bounds.X, dwh.Bounds.Y, dwh.Bounds.W, dwh.RowHeight}, 0, style.Background)
-	} else if !dwh.Dynamic {
+	if !dwh.Dynamic {
 		/* draw fixed window body */
 		body := dwh.Bounds
 		if dwh.HeaderActive {

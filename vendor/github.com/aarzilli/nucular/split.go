@@ -16,10 +16,35 @@ type ScalableSplit struct {
 }
 
 func (s *ScalableSplit) Horizontal(w *Window, bounds rect.Rect) (bounds0, bounds1 rect.Rect) {
+	scaling := w.Master().Style().Scaling
+
+	var rszbounds rect.Rect
+	bounds0, bounds1, rszbounds = s.horizontalnw(bounds, scaling)
+
+	w.LayoutSpacePushScaled(rszbounds)
+	rszbounds, _ = w.Custom(nstyle.WidgetStateInactive)
+
+	if w.Input().Mouse.IsClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
+		s.resize = true
+	}
+	if s.resize {
+		if !w.Input().Mouse.Down(mouse.ButtonLeft) {
+			s.resize = false
+		} else {
+			s.Size += int(float64(w.Input().Mouse.Delta.Y) / scaling)
+			if s.Size <= s.MinSize {
+				s.Size = s.MinSize
+			}
+		}
+	}
+
+	return
+}
+
+func (s *ScalableSplit) horizontalnw(bounds rect.Rect, scaling float64) (bounds0, bounds1, rszbounds rect.Rect) {
 	if bounds.H < 0 || bounds.W < 0 {
 		return
 	}
-	scaling := w.Master().Style().Scaling
 
 	if s.lastsize == 0 {
 		s.lastsize = bounds.H
@@ -55,13 +80,22 @@ func (s *ScalableSplit) Horizontal(w *Window, bounds rect.Rect) (bounds0, bounds
 	bounds0 = bounds
 	bounds0.H = h0
 
-	rszbounds := bounds
+	rszbounds = bounds
 	rszbounds.Y += bounds0.H
 	rszbounds.H = hs
 
 	bounds1 = bounds
 	bounds1.Y = rszbounds.Y + rszbounds.H
 	bounds1.H = h1
+
+	return bounds0, bounds1, rszbounds
+}
+
+func (s *ScalableSplit) Vertical(w *Window, bounds rect.Rect) (bounds0, bounds1 rect.Rect) {
+	scaling := w.Master().Style().Scaling
+
+	var rszbounds rect.Rect
+	bounds0, bounds1, rszbounds = s.verticalnw(bounds, scaling)
 
 	w.LayoutSpacePushScaled(rszbounds)
 	rszbounds, _ = w.Custom(nstyle.WidgetStateInactive)
@@ -73,7 +107,7 @@ func (s *ScalableSplit) Horizontal(w *Window, bounds rect.Rect) (bounds0, bounds
 		if !w.Input().Mouse.Down(mouse.ButtonLeft) {
 			s.resize = false
 		} else {
-			s.Size += int(float64(w.Input().Mouse.Delta.Y) / scaling)
+			s.Size += int(float64(w.Input().Mouse.Delta.X) / scaling)
 			if s.Size <= s.MinSize {
 				s.Size = s.MinSize
 			}
@@ -83,11 +117,10 @@ func (s *ScalableSplit) Horizontal(w *Window, bounds rect.Rect) (bounds0, bounds
 	return bounds0, bounds1
 }
 
-func (s *ScalableSplit) Vertical(w *Window, bounds rect.Rect) (bounds0, bounds1 rect.Rect) {
+func (s *ScalableSplit) verticalnw(bounds rect.Rect, scaling float64) (bounds0, bounds1, rszbounds rect.Rect) {
 	if bounds.H < 0 || bounds.W < 0 {
 		return
 	}
-	scaling := w.Master().Style().Scaling
 
 	if s.lastsize == 0 {
 		s.lastsize = bounds.W
@@ -123,7 +156,7 @@ func (s *ScalableSplit) Vertical(w *Window, bounds rect.Rect) (bounds0, bounds1 
 	bounds0 = bounds
 	bounds0.W = w0
 
-	rszbounds := bounds
+	rszbounds = bounds
 	rszbounds.X += bounds0.W
 	rszbounds.W = ws
 
@@ -131,22 +164,5 @@ func (s *ScalableSplit) Vertical(w *Window, bounds rect.Rect) (bounds0, bounds1 
 	bounds1.X = rszbounds.X + rszbounds.W
 	bounds1.W = w1
 
-	w.LayoutSpacePushScaled(rszbounds)
-	rszbounds, _ = w.Custom(nstyle.WidgetStateInactive)
-
-	if w.Input().Mouse.IsClickDownInRect(mouse.ButtonLeft, rszbounds, true) {
-		s.resize = true
-	}
-	if s.resize {
-		if !w.Input().Mouse.Down(mouse.ButtonLeft) {
-			s.resize = false
-		} else {
-			s.Size += int(float64(w.Input().Mouse.Delta.X) / scaling)
-			if s.Size <= s.MinSize {
-				s.Size = s.MinSize
-			}
-		}
-	}
-
-	return bounds0, bounds1
+	return bounds0, bounds1, rszbounds
 }

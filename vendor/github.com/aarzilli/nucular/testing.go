@@ -79,7 +79,11 @@ func (w *TestWindow) SetPerf(p bool) {
 }
 
 func (w *TestWindow) PopupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn) {
-	w.ctx.popupOpen(title, flags, rect, scale, updateFn)
+	w.ctx.popupOpen(title, flags, rect, scale, updateFn, nil)
+}
+
+func (w *TestWindow) PopupOpenPersistent(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn, saveFn SaveFn) {
+	w.ctx.popupOpen(title, flags, rect, scale, updateFn, saveFn)
 }
 
 // Click simulates a click at point p.
@@ -122,4 +126,12 @@ func (w *TestWindow) TypeKey(e key.Event) {
 	w.ctx.processKeyEvent(e, &b)
 	w.ctx.Input.Keyboard.Text = w.ctx.Input.Keyboard.Text + b.String()
 	w.Update()
+}
+
+func (w *TestWindow) Save() ([]byte, error) {
+	return nil, nil
+}
+
+func (w *TestWindow) Restore([]byte, RestoreFn) {
+	return
 }

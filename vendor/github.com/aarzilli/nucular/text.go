@@ -166,6 +166,8 @@ type TextEditor struct {
 	lastClickTime   time.Time
 	clickCount      int
 	trueSelectStart int
+
+	needle []rune
 }
 
 type drawchunk struct {
@@ -214,6 +216,7 @@ const (
 	EditMultiline
 	EditNeverInsertMode
 	EditFocusFollowsMouse
+	EditNoContextMenu
 
 	EditSimple = EditAlwaysInsertMode
 	EditField  = EditSelectable | EditClipboard | EditSigEnter
@@ -1193,7 +1196,7 @@ func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, po
 	return image.Point{lblrect.X + lblrect.W, lblrect.Y}
 }
 
-func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (ret EditEvents) {
+func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, cut, copy, paste bool) (ret EditEvents) {
 	font := ed.win.ctx.Style.Font
 	state := ed.win.widgets.PrevState(bounds)
 
@@ -1305,10 +1308,6 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 			cursor_follow = true
 		}
 
-		copy := false
-		cut := false
-		paste := false
-
 		clipboardModifier := key.ModControl
 		if runtime.GOOS == "darwin" {
 			clipboardModifier = key.ModMeta
@@ -1342,6 +1341,17 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input) (
 			case key.CodeV:
 				if e.Modifiers&clipboardModifier != 0 {
 					paste = true
+				}
+
+			case key.CodeF:
+				if e.Modifiers&clipboardModifier != 0 {
+					ed.popupFind()
+				}
+
+			case key.CodeG:
+				if e.Modifiers&clipboardModifier != 0 {
+					ed.lookForward(true)
+					cursor_follow = true
 				}
 
 			default:
@@ -1614,6 +1624,110 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 	return
 }
 
+func runeSliceEquals(a, b []rune) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+var clipboardModifier = func() key.Modifiers {
+	if runtime.GOOS == "darwin" {
+		return key.ModMeta
+	}
+	return key.ModControl
+}()
+
+func (edit *TextEditor) popupFind() {
+	if edit.Flags&EditMultiline == 0 {
+		return
+	}
+	var searchEd TextEditor
+	searchEd.Flags = EditSigEnter | EditClipboard | EditSelectable
+	searchEd.Buffer = append(searchEd.Buffer[:0], edit.needle...)
+	searchEd.SelectStart = 0
+	searchEd.SelectEnd = len(searchEd.Buffer)
+	searchEd.Cursor = searchEd.SelectEnd
+	searchEd.Active = true
+
+	edit.SelectEnd = edit.SelectStart
+	edit.Cursor = edit.SelectStart
+
+	edit.win.Master().PopupOpen("Search...", WindowTitle|WindowNoScrollbar|WindowMovable|WindowBorder|WindowDynamic, rect.Rect{100, 100, 400, 500}, true, func(w *Window) {
+		w.Row(30).Static()
+		w.LayoutFitWidth(0, 30)
+		w.Label("Search: ", "LC")
+		w.LayoutSetWidth(150)
+		ev := searchEd.Edit(w)
+		if ev&EditCommitted != 0 {
+			edit.Active = true
+			w.Close()
+		}
+		w.LayoutSetWidth(100)
+		if w.ButtonText("Done") {
+			edit.Active = true
+			w.Close()
+		}
+		kbd := &w.Input().Keyboard
+		for _, k := range kbd.Keys {
+			switch {
+			case k.Modifiers == clipboardModifier && k.Code == key.CodeG:
+				edit.lookForward(true)
+			case k.Modifiers == 0 && k.Code == key.CodeEscape:
+				edit.SelectEnd = edit.SelectStart
+				edit.Cursor = edit.SelectStart
+				edit.Active = true
+				w.Close()
+			}
+		}
+		if !runeSliceEquals(searchEd.Buffer, edit.needle) {
+			edit.needle = append(edit.needle[:0], searchEd.Buffer...)
+			edit.lookForward(false)
+		}
+	})
+}
+
+func (edit *TextEditor) lookForward(forceAdvance bool) {
+	if edit.Flags&EditMultiline == 0 {
+		return
+	}
+	if edit.hasSelection() {
+		if forceAdvance {
+			edit.SelectStart = edit.SelectEnd
+		} else {
+			edit.SelectEnd = edit.SelectStart
+		}
+		if edit.SelectEnd >= 0 {
+			edit.Cursor = edit.SelectEnd
+		}
+	}
+	for start := edit.Cursor; start < len(edit.Buffer); start++ {
+		found := true
+		for i := 0; i < len(edit.needle); i++ {
+			if edit.needle[i] != edit.Buffer[start+i] {
+				found = false
+				break
+			}
+		}
+		if found {
+			edit.SelectStart = start
+			edit.SelectEnd = start + len(edit.needle)
+			edit.Cursor = edit.SelectEnd
+			edit.CursorFollow = true
+			return
+		}
+	}
+	edit.SelectStart = 0
+	edit.SelectEnd = 0
+	edit.Cursor = 0
+	edit.CursorFollow = true
+}
+
 // Adds text editor edit to win.
 // Initial contents of the text editor will be set to text. If
 // alwaysSet is specified the contents of the editor will be reset
@@ -1643,5 +1757,34 @@ func (edit *TextEditor) Edit(win *Window) EditEvents {
 	}
 	in := edit.win.inputMaybe(widget_state)
 
-	return edit.doEdit(bounds, &style.Edit, in)
+	var cut, copy, paste bool
+
+	if w := win.ContextualOpen(0, image.Point{}, bounds, nil); w != nil {
+		w.Row(20).Dynamic(1)
+		visible := false
+		if edit.Flags&EditClipboard != 0 {
+			visible = true
+			if w.MenuItem(label.TA("Cut", "LC")) {
+				cut = true
+			}
+			if w.MenuItem(label.TA("Copy", "LC")) {
+				copy = true
+			}
+			if w.MenuItem(label.TA("Paste", "LC")) {
+				paste = true
+			}
+		}
+		if edit.Flags&EditMultiline != 0 {
+			visible = true
+			if w.MenuItem(label.TA("Find...", "LC")) {
+				edit.popupFind()
+			}
+		}
+		if !visible {
+			w.Close()
+		}
+	}
+
+	ev := edit.doEdit(bounds, &style.Edit, in, cut, copy, paste)
+	return ev
 }
