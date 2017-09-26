@@ -420,7 +420,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 
 	if v.Kind == reflect.Func {
 		if w.MenuItem(label.TA("Go to definition", "LC")) {
-			locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, v.Value)
+			locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, fmt.Sprintf("*%#x", v.Base))
 			if err == nil && len(locs) == 1 {
 				listingPanel.pinnedLoc = &locs[0]
 				go refreshState(refreshToSameFrame, clearNothing, nil)
