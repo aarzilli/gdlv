@@ -135,3 +135,7 @@ func (w *TestWindow) Save() ([]byte, error) {
 func (w *TestWindow) Restore([]byte, RestoreFn) {
 	return
 }
+
+func (w *TestWindow) ListWindowsData() []interface{} {
+	return w.ctx.ListWindowsData()
+}

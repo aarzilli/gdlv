@@ -837,17 +837,15 @@ retry:
 
 		p := state.indexToCoord(state.Cursor, font, row_height)
 		p.Y -= row_height
-		if p.Y >= 0 {
-			if state.HasPreferredX {
-				p.X = state.PreferredX
-			} else {
-				state.HasPreferredX = true
-				state.PreferredX = p.X
-			}
-			state.Cursor = state.locateCoord(p, font, row_height)
-
-			state.clamp()
+		if state.HasPreferredX {
+			p.X = state.PreferredX
+		} else {
+			state.HasPreferredX = true
+			state.PreferredX = p.X
 		}
+		state.Cursor = state.locateCoord(p, font, row_height)
+
+		state.clamp()
 
 	case key.CodeDeleteForward:
 		if readOnly {

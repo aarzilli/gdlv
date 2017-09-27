@@ -227,6 +227,26 @@ func (ctx *context) restackClick(w *Window) bool {
 	return false
 }
 
+func (w *masterWindow) ListWindowsData() []interface{} {
+	return w.ctx.ListWindowsData()
+}
+
+func (ctx *context) ListWindowsData() []interface{} {
+	r := []interface{}{}
+	ctx.DockedWindows.Walk(func(w *Window) *Window {
+		if w.Data != nil {
+			r = append(r, w.Data)
+		}
+		return w
+	})
+	for _, w := range ctx.Windows {
+		if w.Data != nil {
+			r = append(r, w.Data)
+		}
+	}
+	return r
+}
+
 var cnt = 0
 var ln, frect, brrect, frrect, ftri, circ, fcirc, txt int
 

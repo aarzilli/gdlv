@@ -116,7 +116,7 @@ func (win *Window) toplevel() bool {
 	if win.moving {
 		return false
 	}
-	if win.idx == win.ctx.dockedWindowFocus {
+	if (win.flags&windowDocked != 0) && (win.idx == win.ctx.dockedWindowFocus) {
 		return true
 	}
 	for i := len(win.ctx.Windows) - 1; i >= 0; i-- {

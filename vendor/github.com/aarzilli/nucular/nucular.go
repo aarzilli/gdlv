@@ -27,6 +27,7 @@ type SaveFn func() []byte
 
 type Window struct {
 	LastWidgetBounds rect.Rect
+	Data             interface{}
 	title            string
 	ctx              *context
 	idx              int
@@ -827,9 +828,6 @@ func panelLayout(ctx *context, win *Window, height int, cols int, cnt int) {
 	if height == 0 {
 		height = layout.Clip.H - (layout.AtY - layout.Bounds.Y)
 		subtractHeight := true
-		if layout.Row.Columns > 0 && layout.Row.Index >= layout.Row.Columns {
-			subtractHeight = false
-		}
 		if layout.Row.Index == 0 {
 			subtractHeight = false
 		}

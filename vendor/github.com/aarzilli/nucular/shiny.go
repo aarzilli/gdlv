@@ -57,6 +57,7 @@ type MasterWindow interface {
 
 	Save() ([]byte, error)
 	Restore([]byte, RestoreFn)
+	ListWindowsData() []interface{}
 }
 
 type masterWindow struct {

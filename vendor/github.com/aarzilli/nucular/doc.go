@@ -15,7 +15,7 @@ Updatefn will be responsible for drawing the contents of the window and handling
 
 The second line configures the theme, the font (passing nil will use the default font face) and the default scaling factor (see the "Scaling" section).
 
-The third line opens the window and starts its event loop, updatefn will be called whenever the window needs to be redrawn, this is usually only in response to mouse and keyboard events, if you want the window to be redrawn you can also manually call wnd.Update().
+The third line opens the window and starts its event loop, updatefn will be called whenever the window needs to be redrawn, this is usually only in response to mouse and keyboard events, if you want the window to be redrawn you can also manually call wnd.Changed().
 
 Window Update and layout
 
