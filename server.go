@@ -70,7 +70,7 @@ func parseArguments() (descr ServerDescr) {
 	cmd := os.Args[1]
 
 	useFlagA := false
-	if ver, _ := goversion.Installed(); ver.Major < 0 || ver.AfterOrEqual(goversion.GoVersion{1, 9, -1, 0, 0, ""}) {
+	if ver, _ := goversion.Installed(); ver.Major >= 0 && ver.AfterOrEqual(goversion.GoVersion{1, 9, -1, 0, 0, ""}) && !ver.AfterOrEqual(goversion.GoVersion{1, 10, -1, 0, 0, ""}) {
 		useFlagA = true
 	}
 
