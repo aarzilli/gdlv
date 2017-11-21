@@ -10,19 +10,11 @@ import (
 	"github.com/derekparker/delve/pkg/dwarf/util"
 )
 
-type stackfn func(Opcode, *context) error
-
-// DwarfRegisters represents a set of dwarf registers.
-type DwarfRegisters struct {
-	CFA           int64
-	FrameBase     int64
-	ObjBase       int64
-	DwarfRegister func(i int) []byte
-}
-
 type Opcode byte
 
-//go:generate go run ../../../scripts/gen-opcodes.go opcodes.txt opcodes.go
+//go:generate go run ../../../scripts/gen-opcodes.go opcodes.table opcodes.go
+
+type stackfn func(Opcode, *context) error
 
 type context struct {
 	buf    *bytes.Buffer
@@ -37,13 +29,13 @@ type context struct {
 type Piece struct {
 	Size       int
 	Addr       int64
-	RegNum     int
+	RegNum     uint64
 	IsRegister bool
 }
 
 // ExecuteStackProgram executes a DWARF location expression and returns
-// either an address (int64), or a slice of bytes for location expression
-// that don't evaluate to an address (such as registers and composite expressions)
+// either an address (int64), or a slice of Pieces for location expressions
+// that don't evaluate to an address (such as register and composite expressions).
 func ExecuteStackProgram(regs DwarfRegisters, instructions []byte) (int64, []Piece, error) {
 	ctxt := &context{
 		buf:            bytes.NewBuffer(instructions),
@@ -52,19 +44,20 @@ func ExecuteStackProgram(regs DwarfRegisters, instructions []byte) (int64, []Pie
 	}
 
 	for {
-		opcode, err := ctxt.buf.ReadByte()
+		opcodeByte, err := ctxt.buf.ReadByte()
 		if err != nil {
 			break
 		}
-		if ctxt.reg && Opcode(opcode) != DW_OP_piece {
+		opcode := Opcode(opcodeByte)
+		if ctxt.reg && opcode != DW_OP_piece {
 			break
 		}
-		fn, ok := oplut[Opcode(opcode)]
+		fn, ok := oplut[opcode]
 		if !ok {
 			return 0, nil, fmt.Errorf("invalid instruction %#v", opcode)
 		}
 
-		err = fn(Opcode(opcode), ctxt)
+		err = fn(opcode, ctxt)
 		if err != nil {
 			return 0, nil, err
 		}
@@ -178,9 +171,9 @@ func register(opcode Opcode, ctxt *context) error {
 	ctxt.reg = true
 	if opcode == DW_OP_regx {
 		n, _ := util.DecodeSLEB128(ctxt.buf)
-		ctxt.pieces = append(ctxt.pieces, Piece{IsRegister: true, RegNum: int(n)})
+		ctxt.pieces = append(ctxt.pieces, Piece{IsRegister: true, RegNum: uint64(n)})
 	} else {
-		ctxt.pieces = append(ctxt.pieces, Piece{IsRegister: true, RegNum: int(opcode - DW_OP_reg0)})
+		ctxt.pieces = append(ctxt.pieces, Piece{IsRegister: true, RegNum: uint64(opcode - DW_OP_reg0)})
 	}
 	return nil
 }

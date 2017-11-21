@@ -13,6 +13,8 @@ import (
 var NotExecutableErr = errors.New("not an executable file")
 var NotRecordedErr = errors.New("not a recording")
 
+const UnrecoveredPanic = "unrecovered-panic"
+
 // ProcessExitedError indicates that the process has exited and contains both
 // process id and exit status.
 type ProcessExitedError struct {
@@ -66,10 +68,8 @@ func Next(dbp Process) (err error) {
 	if dbp.Exited() {
 		return &ProcessExitedError{Pid: dbp.Pid()}
 	}
-	for _, bp := range dbp.Breakpoints() {
-		if bp.Internal() {
-			return fmt.Errorf("next while nexting")
-		}
+	if dbp.Breakpoints().HasInternalBreakpoints() {
+		return fmt.Errorf("next while nexting")
 	}
 
 	if err = next(dbp, false); err != nil {
@@ -104,10 +104,10 @@ func Continue(dbp Process) error {
 		}
 
 		curthread := dbp.CurrentThread()
-		curbp, curbpActive, _ := curthread.Breakpoint()
+		curbp := curthread.Breakpoint()
 
 		switch {
-		case curbp == nil:
+		case curbp.Breakpoint == nil:
 			// runtime.Breakpoint or manual stop
 			if recorded, _ := dbp.Recorded(); onRuntimeBreakpoint(curthread) && !recorded {
 				// Single-step current thread until we exit runtime.breakpoint and
@@ -125,7 +125,7 @@ func Continue(dbp Process) error {
 				}
 			}
 			return conditionErrors(threads)
-		case curbpActive && curbp.Internal():
+		case curbp.Active && curbp.Internal:
 			if curbp.Kind == StepBreakpoint {
 				// See description of proc.(*Process).next for the meaning of StepBreakpoints
 				if err := conditionErrors(threads); err != nil {
@@ -136,7 +136,7 @@ func Continue(dbp Process) error {
 					return err
 				}
 				pc := regs.PC()
-				text, err := disassemble(curthread, regs, dbp.Breakpoints(), dbp.BinInfo(), pc, pc+maxInstructionLength)
+				text, err := disassemble(curthread, regs, dbp.Breakpoints(), dbp.BinInfo(), pc, pc+maxInstructionLength, true)
 				if err != nil {
 					return err
 				}
@@ -152,7 +152,7 @@ func Continue(dbp Process) error {
 				}
 				return conditionErrors(threads)
 			}
-		case curbpActive:
+		case curbp.Active:
 			onNextGoroutine, err := onNextGoroutine(curthread, dbp.Breakpoints())
 			if err != nil {
 				return err
@@ -162,6 +162,9 @@ func Continue(dbp Process) error {
 				if err != nil {
 					return err
 				}
+			}
+			if curbp.Name == UnrecoveredPanic {
+				dbp.ClearInternalBreakpoints()
 			}
 			return conditionErrors(threads)
 		default:
@@ -173,9 +176,9 @@ func Continue(dbp Process) error {
 func conditionErrors(threads []Thread) error {
 	var condErr error
 	for _, th := range threads {
-		if bp, _, bperr := th.Breakpoint(); bp != nil && bperr != nil {
+		if bp := th.Breakpoint(); bp.Breakpoint != nil && bp.CondError != nil {
 			if condErr == nil {
-				condErr = bperr
+				condErr = bp.CondError
 			} else {
 				return fmt.Errorf("multiple errors evaluating conditions")
 			}
@@ -190,15 +193,15 @@ func conditionErrors(threads []Thread) error {
 // 	- trapthread
 func pickCurrentThread(dbp Process, trapthread Thread, threads []Thread) error {
 	for _, th := range threads {
-		if bp, active, _ := th.Breakpoint(); active && bp.Internal() {
+		if bp := th.Breakpoint(); bp.Active && bp.Internal {
 			return dbp.SwitchThread(th.ThreadID())
 		}
 	}
-	if _, active, _ := trapthread.Breakpoint(); active {
+	if bp := trapthread.Breakpoint(); bp.Active {
 		return dbp.SwitchThread(trapthread.ThreadID())
 	}
 	for _, th := range threads {
-		if _, active, _ := th.Breakpoint(); active {
+		if bp := th.Breakpoint(); bp.Active {
 			return dbp.SwitchThread(th.ThreadID())
 		}
 	}
@@ -211,10 +214,8 @@ func Step(dbp Process) (err error) {
 	if dbp.Exited() {
 		return &ProcessExitedError{Pid: dbp.Pid()}
 	}
-	for _, bp := range dbp.Breakpoints() {
-		if bp.Internal() {
-			return fmt.Errorf("next while nexting")
-		}
+	if dbp.Breakpoints().HasInternalBreakpoints() {
+		return fmt.Errorf("next while nexting")
 	}
 
 	if err = next(dbp, true); err != nil {
@@ -301,10 +302,6 @@ func StepOut(dbp Process) error {
 		}
 	}
 
-	if topframe.Ret == 0 && deferpc == 0 {
-		return errors.New("nothing to stepout to")
-	}
-
 	if deferpc != 0 && deferpc != topframe.Current.PC {
 		bp, err := dbp.SetBreakpoint(deferpc, NextDeferBreakpoint, sameGCond)
 		if err != nil {
@@ -321,6 +318,12 @@ func StepOut(dbp Process) error {
 		}
 	}
 
+	//TODO: if topframe.Inlined then do something like next but exclude everything in topframe.Call.Fn and all siblings of topframe.Call.Fn
+
+	if topframe.Ret == 0 && deferpc == 0 {
+		return errors.New("nothing to stepout to")
+	}
+
 	if topframe.Ret != 0 {
 		_, err := dbp.SetBreakpoint(topframe.Ret, NextBreakpoint, retFrameCond)
 		if err != nil {
@@ -331,7 +334,7 @@ func StepOut(dbp Process) error {
 		}
 	}
 
-	if bp, _, _ := curthread.Breakpoint(); bp == nil {
+	if bp := curthread.Breakpoint(); bp.Breakpoint == nil {
 		curthread.SetCurrentBreakpoint()
 	}
 
@@ -481,10 +484,16 @@ func ConvertEvalScope(dbp Process, gid, frame int) (*EvalScope, error) {
 		return nil, fmt.Errorf("Frame %d does not exist in goroutine %d", frame, gid)
 	}
 
-	return &EvalScope{locs[frame].Current.PC, locs[frame].DwarfRegisters(dbp.BinInfo()), thread, g.variable, dbp.BinInfo(), locs[frame].FrameOffset()}, nil
+	return FrameToScope(dbp.BinInfo(), thread, g, locs[frame]), nil
 }
 
 // FrameToScope returns a new EvalScope for this frame
-func FrameToScope(p Process, frame Stackframe) *EvalScope {
-	return &EvalScope{frame.Current.PC, frame.DwarfRegisters(p.BinInfo()), p.CurrentThread(), nil, p.BinInfo(), frame.FrameOffset()}
+func FrameToScope(bi *BinaryInfo, thread MemoryReadWriter, g *G, frame Stackframe) *EvalScope {
+	var gvar *Variable
+	if g != nil {
+		gvar = g.variable
+	}
+	s := &EvalScope{frame.Call, frame.Regs, thread, gvar, bi, frame.FrameOffset(), nil}
+	s.PC = frame.lastpc
+	return s
 }

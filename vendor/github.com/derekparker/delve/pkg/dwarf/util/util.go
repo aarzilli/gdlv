@@ -5,6 +5,9 @@ import (
 	"io"
 )
 
+// The Little Endian Base 128 format is defined in the DWARF v4 standard,
+// section 7.6, page 161 and following.
+
 // DecodeULEB128 decodes an unsigned Little Endian Base 128
 // represented number.
 func DecodeULEB128(buf *bytes.Buffer) (uint64, uint32) {
@@ -74,6 +77,8 @@ func DecodeSLEB128(buf *bytes.Buffer) (int64, uint32) {
 	return result, length
 }
 
+// EncodeULEB128 encodes x to the unsigned Little Endian Base 128 format
+// into out.
 func EncodeULEB128(out io.ByteWriter, x uint64) {
 	for {
 		b := byte(x & 0x7f)
@@ -88,6 +93,8 @@ func EncodeULEB128(out io.ByteWriter, x uint64) {
 	}
 }
 
+// EncodeSLEB128 encodes x to the signed Little Endian Base 128 format
+// into out.
 func EncodeSLEB128(out io.ByteWriter, x int64) {
 	for {
 		b := byte(x & 0x7f)

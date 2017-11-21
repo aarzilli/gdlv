@@ -319,3 +319,116 @@ func (reader *Reader) NextCompileUnit() (*dwarf.Entry, error) {
 
 	return nil, nil
 }
+
+type Entry interface {
+	Val(dwarf.Attr) interface{}
+}
+
+type compositeEntry []*dwarf.Entry
+
+func (ce compositeEntry) Val(attr dwarf.Attr) interface{} {
+	for _, e := range ce {
+		if r := e.Val(attr); r != nil {
+			return r
+		}
+	}
+	return nil
+}
+
+// LoadAbstractOrigin loads the entry corresponding to the
+// DW_AT_abstract_origin of entry and returns a combination of entry and its
+// abstract origin.
+func LoadAbstractOrigin(entry *dwarf.Entry, dwarfData *dwarf.Data, aordr **dwarf.Reader) (Entry, dwarf.Offset) {
+	ao, ok := entry.Val(dwarf.AttrAbstractOrigin).(dwarf.Offset)
+	if !ok {
+		return entry, entry.Offset
+	}
+
+	if *aordr == nil {
+		*aordr = dwarfData.Reader()
+	}
+
+	r := []*dwarf.Entry{entry}
+
+	for {
+		(*aordr).Seek(ao)
+		e, _ := (*aordr).Next()
+		if e == nil {
+			break
+		}
+		r = append(r, e)
+
+		ao, ok = e.Val(dwarf.AttrAbstractOrigin).(dwarf.Offset)
+		if !ok {
+			break
+		}
+	}
+
+	return compositeEntry(r), entry.Offset
+}
+
+// InlineStackReader provides a way to read the stack of inlined calls at a
+// specified PC address.
+type InlineStackReader struct {
+	dwarf  *dwarf.Data
+	reader *dwarf.Reader
+	entry  *dwarf.Entry
+	depth  int
+	pc     uint64
+	err    error
+}
+
+// InlineStack returns an InlineStackReader for the specified function and
+// PC address.
+func InlineStack(dwarf *dwarf.Data, fnoff dwarf.Offset, pc uint64) *InlineStackReader {
+	reader := dwarf.Reader()
+	reader.Seek(fnoff)
+	return &InlineStackReader{dwarf: dwarf, reader: reader, entry: nil, depth: 0, pc: pc}
+}
+
+func (irdr *InlineStackReader) Next() bool {
+	if irdr.err != nil {
+		return false
+	}
+
+	for {
+		irdr.entry, irdr.err = irdr.reader.Next()
+		if irdr.entry == nil || irdr.err != nil {
+			return false
+		}
+
+		switch irdr.entry.Tag {
+		case 0:
+			irdr.depth--
+			if irdr.depth == 0 {
+				return false
+			}
+
+		case dwarf.TagLexDwarfBlock, dwarf.TagSubprogram, dwarf.TagInlinedSubroutine:
+			var recur bool
+			recur, irdr.err = entryRangesContains(irdr.dwarf, irdr.entry, irdr.pc)
+			if recur {
+				irdr.depth++
+				if irdr.entry.Tag == dwarf.TagInlinedSubroutine {
+					return true
+				}
+			} else {
+				if irdr.depth == 0 {
+					return false
+				}
+				irdr.reader.SkipChildren()
+			}
+
+		default:
+			irdr.reader.SkipChildren()
+		}
+	}
+}
+
+func (irdr *InlineStackReader) Entry() *dwarf.Entry {
+	return irdr.entry
+}
+
+func (irdr *InlineStackReader) Err() error {
+	return irdr.err
+}

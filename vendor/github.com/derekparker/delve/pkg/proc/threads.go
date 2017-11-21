@@ -19,11 +19,7 @@ type Thread interface {
 	Location() (*Location, error)
 	// Breakpoint will return the breakpoint that this thread is stopped at or
 	// nil if the thread is not stopped at any breakpoint.
-	// Active will be true if the thread is stopped at a breakpoint and the
-	// breakpoint's condition is met.
-	// If there was an error evaluating the breakpoint's condition it will be
-	// returned as condErr
-	Breakpoint() (breakpoint *Breakpoint, active bool, condErr error)
+	Breakpoint() BreakpointState
 	ThreadID() int
 	Registers(floatingPoint bool) (Registers, error)
 	Arch() Arch
@@ -79,6 +75,14 @@ func topframe(g *G, thread Thread) (Stackframe, Stackframe, error) {
 	}
 }
 
+type NoSourceForPCError struct {
+	pc uint64
+}
+
+func (err *NoSourceForPCError) Error() string {
+	return fmt.Sprintf("no source for pc %#x", err.pc)
+}
+
 // Set breakpoints at every line, and the return address. Also look for
 // a deferred function and set a breakpoint there too.
 // If stepInto is true it will also set breakpoints inside all
@@ -105,7 +109,7 @@ func next(dbp Process, stepInto bool) error {
 	}
 
 	if topframe.Current.Fn == nil {
-		return fmt.Errorf("no source for pc %#x", topframe.Current.PC)
+		return &NoSourceForPCError{topframe.Current.PC}
 	}
 
 	success := false
@@ -127,7 +131,7 @@ func next(dbp Process, stepInto bool) error {
 		}
 	}
 
-	text, err := disassemble(thread, regs, dbp.Breakpoints(), dbp.BinInfo(), topframe.Current.Fn.Entry, topframe.Current.Fn.End)
+	text, err := disassemble(thread, regs, dbp.Breakpoints(), dbp.BinInfo(), topframe.Current.Fn.Entry, topframe.Current.Fn.End, false)
 	if err != nil && stepInto {
 		return err
 	}
@@ -137,6 +141,7 @@ func next(dbp Process, stepInto bool) error {
 	sameFrameCond := andFrameoffCondition(sameGCond, topframe.FrameOffset())
 	var sameOrRetFrameCond ast.Expr
 	if sameGCond != nil {
+		//TODO: if topframe is inlined sameOrRetFrameCond = sameFrameCond
 		sameOrRetFrameCond = &ast.BinaryExpr{
 			Op: token.LAND,
 			X:  sameGCond,
@@ -200,7 +205,7 @@ func next(dbp Process, stepInto bool) error {
 					return err
 				}
 			}
-			if bp != nil {
+			if bp != nil && stepInto {
 				bp.DeferReturns = deferreturns
 			}
 		}
@@ -212,10 +217,14 @@ func next(dbp Process, stepInto bool) error {
 		return err
 	}
 
+	if !stepInto {
+		//TODO: Load inlined calls for the topframe.Call.Fn, then remove any pc range belonging to an inlined call
+	}
+
 	if !csource {
 		var covered bool
 		for i := range pcs {
-			if topframe.FDE.Cover(pcs[i]) {
+			if topframe.Current.Fn.Entry <= pcs[i] && pcs[i] < topframe.Current.Fn.End {
 				covered = true
 				break
 			}
@@ -229,7 +238,6 @@ func next(dbp Process, stepInto bool) error {
 		}
 	}
 
-	// Add a breakpoint on the return address for the current frame
 	for _, pc := range pcs {
 		if _, err := dbp.SetBreakpoint(pc, NextBreakpoint, sameFrameCond); err != nil {
 			if _, ok := err.(BreakpointExistsError); !ok {
@@ -239,6 +247,8 @@ func next(dbp Process, stepInto bool) error {
 		}
 
 	}
+	//TODO: only do this if it's not inlined, it doesn't matter that we are not setting any return breakpoint since we set a breakpoint on all addresses of the containing function
+	// Add a breakpoint on the return address for the current frame
 	if bp, err := dbp.SetBreakpoint(topframe.Ret, NextBreakpoint, retFrameCond); err != nil {
 		if _, isexists := err.(BreakpointExistsError); isexists {
 			if bp.Kind == NextBreakpoint {
@@ -253,7 +263,7 @@ func next(dbp Process, stepInto bool) error {
 		// there it's ok.
 	}
 
-	if bp, _, _ := curthread.Breakpoint(); bp == nil {
+	if bp := curthread.Breakpoint(); bp.Breakpoint == nil {
 		curthread.SetCurrentBreakpoint()
 	}
 	success = true
@@ -391,7 +401,7 @@ func ThreadScope(thread Thread) (*EvalScope, error) {
 	if len(locations) < 1 {
 		return nil, errors.New("could not decode first frame")
 	}
-	return &EvalScope{locations[0].Current.PC, locations[0].DwarfRegisters(thread.BinInfo()), thread, nil, thread.BinInfo(), 0}, nil
+	return FrameToScope(thread.BinInfo(), thread, nil, locations[0]), nil
 }
 
 // GoroutineScope returns an EvalScope for the goroutine running on this thread.
@@ -407,7 +417,7 @@ func GoroutineScope(thread Thread) (*EvalScope, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &EvalScope{locations[0].Current.PC, locations[0].DwarfRegisters(thread.BinInfo()), thread, g.variable, thread.BinInfo(), locations[0].FrameOffset()}, nil
+	return FrameToScope(thread.BinInfo(), thread, g, locations[0]), nil
 }
 
 func onRuntimeBreakpoint(thread Thread) bool {
@@ -419,11 +429,11 @@ func onRuntimeBreakpoint(thread Thread) bool {
 }
 
 // onNextGorutine returns true if this thread is on the goroutine requested by the current 'next' command
-func onNextGoroutine(thread Thread, breakpoints map[uint64]*Breakpoint) (bool, error) {
+func onNextGoroutine(thread Thread, breakpoints *BreakpointMap) (bool, error) {
 	var bp *Breakpoint
-	for i := range breakpoints {
-		if breakpoints[i].Internal() && breakpoints[i].Cond != nil {
-			bp = breakpoints[i]
+	for i := range breakpoints.M {
+		if breakpoints.M[i].Kind != UserBreakpoint && breakpoints.M[i].internalCond != nil {
+			bp = breakpoints.M[i]
 			break
 		}
 	}
@@ -440,7 +450,7 @@ func onNextGoroutine(thread Thread, breakpoints map[uint64]*Breakpoint) (bool, e
 	//   runtime.curg.goid == X && (runtime.frameoff == Y || runtime.frameoff == Z)
 	// Here we are only interested in testing the runtime.curg.goid clause.
 	w := onNextGoroutineWalker{thread: thread}
-	ast.Walk(&w, bp.Cond)
+	ast.Walk(&w, bp.internalCond)
 	return w.ret, w.err
 }
 

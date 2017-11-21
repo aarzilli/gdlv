@@ -156,13 +156,15 @@ type G struct {
 // EvalScope is the scope for variable evaluation. Contains the thread,
 // current location (PC), and canonical frame address.
 type EvalScope struct {
-	PC      uint64 // Current instruction of the evaluation frame
+	Location
 	Regs    op.DwarfRegisters
 	Mem     MemoryReadWriter // Target's memory
 	Gvar    *Variable
 	BinInfo *BinaryInfo
 
 	frameOffset int64
+
+	aordr *dwarf.Reader // extra reader to load DW_AT_abstract_origin entries, do not initialize
 }
 
 // IsNilErr is returned when a variable is nil.
@@ -172,6 +174,10 @@ type IsNilErr struct {
 
 func (err *IsNilErr) Error() string {
 	return fmt.Sprintf("%s is nil", err.name)
+}
+
+func globalScope(bi *BinaryInfo, mem MemoryReadWriter) *EvalScope {
+	return &EvalScope{Location{}, op.DwarfRegisters{}, mem, nil, bi, 0, nil}
 }
 
 func (scope *EvalScope) newVariable(name string, addr uintptr, dwarfType godwarf.Type, mem MemoryReadWriter) *Variable {
@@ -205,6 +211,9 @@ func newVariable(name string, addr uintptr, dwarfType godwarf.Type, bi *BinaryIn
 		}
 	case *godwarf.ChanType:
 		v.Kind = reflect.Chan
+		if v.Addr != 0 {
+			v.loadChanInfo()
+		}
 	case *godwarf.MapType:
 		v.Kind = reflect.Map
 	case *godwarf.StringType:
@@ -685,6 +694,16 @@ func (v *Variable) structMember(memberName string) (*Variable, error) {
 	if v.Unreadable != nil {
 		return v.clone(), nil
 	}
+	switch v.Kind {
+	case reflect.Chan:
+		v = v.clone()
+		v.RealType = resolveTypedef(&(v.RealType.(*godwarf.ChanType).TypedefType))
+	case reflect.Interface:
+		v.loadInterface(0, false, LoadConfig{})
+		if len(v.Children) > 0 {
+			v = &v.Children[0]
+		}
+	}
 	structVar := v.maybeDereference()
 	structVar.Name = v.Name
 	if structVar.Unreadable != nil {
@@ -742,14 +761,16 @@ func (v *Variable) structMember(memberName string) (*Variable, error) {
 
 // Extracts the name and type of a variable from a dwarf entry
 // then executes the instructions given in the  DW_AT_location attribute to grab the variable's address
-func (scope *EvalScope) extractVarInfoFromEntry(entry *dwarf.Entry) (*Variable, error) {
-	if entry == nil {
+func (scope *EvalScope) extractVarInfoFromEntry(varEntry *dwarf.Entry) (*Variable, error) {
+	if varEntry == nil {
 		return nil, fmt.Errorf("invalid entry")
 	}
 
-	if entry.Tag != dwarf.TagFormalParameter && entry.Tag != dwarf.TagVariable {
-		return nil, fmt.Errorf("invalid entry tag, only supports FormalParameter and Variable, got %s", entry.Tag.String())
+	if varEntry.Tag != dwarf.TagFormalParameter && varEntry.Tag != dwarf.TagVariable {
+		return nil, fmt.Errorf("invalid entry tag, only supports FormalParameter and Variable, got %s", varEntry.Tag.String())
 	}
+
+	entry, _ := reader.LoadAbstractOrigin(varEntry, scope.BinInfo.dwarf, &scope.aordr)
 
 	n, ok := entry.Val(dwarf.AttrName).(string)
 	if !ok {
@@ -1031,6 +1052,66 @@ func (v *Variable) loadSliceInfo(t *godwarf.SliceType) {
 	v.stride = v.fieldType.Size()
 	if t, ok := v.fieldType.(*godwarf.PtrType); ok {
 		v.stride = t.ByteSize
+	}
+}
+
+// loadChanInfo loads the buffer size of the channel and changes the type of
+// the buf field from unsafe.Pointer to an array of the correct type.
+func (v *Variable) loadChanInfo() {
+	chanType, ok := v.RealType.(*godwarf.ChanType)
+	if !ok {
+		v.Unreadable = errors.New("bad channel type")
+		return
+	}
+	sv := v.clone()
+	sv.RealType = resolveTypedef(&(chanType.TypedefType))
+	sv = sv.maybeDereference()
+	if sv.Unreadable != nil || sv.Addr == 0 {
+		return
+	}
+	structType, ok := sv.DwarfType.(*godwarf.StructType)
+	if !ok {
+		v.Unreadable = errors.New("bad channel type")
+		return
+	}
+
+	lenAddr, _ := sv.toField(structType.Field[1])
+	lenAddr.loadValue(loadSingleValue)
+	if lenAddr.Unreadable != nil {
+		v.Unreadable = fmt.Errorf("unreadable length: %v", lenAddr.Unreadable)
+		return
+	}
+	chanLen, _ := constant.Uint64Val(lenAddr.Value)
+
+	newStructType := &godwarf.StructType{}
+	*newStructType = *structType
+	newStructType.Field = make([]*godwarf.StructField, len(structType.Field))
+
+	for i := range structType.Field {
+		field := &godwarf.StructField{}
+		*field = *structType.Field[i]
+		if field.Name == "buf" {
+			stride := chanType.ElemType.Common().ByteSize
+			atyp := &godwarf.ArrayType{
+				CommonType: godwarf.CommonType{
+					ReflectKind: reflect.Array,
+					ByteSize:    int64(chanLen) * stride,
+					Name:        fmt.Sprintf("[%d]%s", chanLen, chanType.ElemType.String())},
+				Type:          chanType.ElemType,
+				StrideBitSize: stride * 8,
+				Count:         int64(chanLen)}
+
+			field.Type = pointerTo(atyp, v.bi.Arch)
+		}
+		newStructType.Field[i] = field
+	}
+
+	v.RealType = &godwarf.ChanType{
+		TypedefType: godwarf.TypedefType{
+			CommonType: chanType.TypedefType.CommonType,
+			Type:       pointerTo(newStructType, v.bi.Arch),
+		},
+		ElemType: chanType.ElemType,
 	}
 }
 
@@ -1731,16 +1812,14 @@ func (cm constantsMap) Get(typ godwarf.Type) *constantType {
 	if !ctyp.initialized {
 		ctyp.initialized = true
 		sort.Sort(constantValuesByValue(ctyp.values))
-		bitField := true
 		for i := range ctyp.values {
 			if strings.HasPrefix(ctyp.values[i].name, typepkg) {
 				ctyp.values[i].name = ctyp.values[i].name[len(typepkg):]
 			}
-			if bitField && popcnt(uint64(ctyp.values[i].value)) != 1 {
-				bitField = false
+			if popcnt(uint64(ctyp.values[i].value)) == 1 {
+				ctyp.values[i].singleBit = true
 			}
 		}
-		ctyp.bitField = bitField
 	}
 	return ctyp
 }
@@ -1752,7 +1831,7 @@ func (ctyp *constantType) describe(n int64) string {
 		}
 	}
 
-	if !ctyp.bitField || n == 0 {
+	if n == 0 {
 		return ""
 	}
 
@@ -1761,6 +1840,9 @@ func (ctyp *constantType) describe(n int64) string {
 
 	fields := []string{}
 	for _, val := range ctyp.values {
+		if !val.singleBit {
+			continue
+		}
 		if n&val.value != 0 {
 			fields = append(fields, val.name)
 			n = n & ^val.value
@@ -1788,16 +1870,13 @@ func (v *variablesByDepth) Swap(i int, j int) {
 
 // Fetches all variables of a specific type in the current function scope
 func (scope *EvalScope) variablesByTag(tag dwarf.Tag, cfg *LoadConfig) ([]*Variable, error) {
-	fn := scope.BinInfo.PCToFunc(scope.PC)
-	if fn == nil {
+	if scope.Fn == nil {
 		return nil, errors.New("unable to find function context")
 	}
 
-	_, line, _ := scope.BinInfo.PCToLine(scope.PC)
-
 	var vars []*Variable
 	var depths []int
-	varReader := reader.Variables(scope.BinInfo.dwarf, fn.offset, scope.PC, line, tag == dwarf.TagVariable)
+	varReader := reader.Variables(scope.BinInfo.dwarf, scope.Fn.offset, scope.PC, scope.Line, tag == dwarf.TagVariable)
 	hasScopes := false
 	for varReader.Next() {
 		entry := varReader.Entry()

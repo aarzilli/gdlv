@@ -73,6 +73,7 @@ type compileUnit struct {
 	Name          string              // univocal name for non-go compile units
 	lineInfo      *line.DebugLineInfo // debug_line segment associated with this compile unit
 	LowPC, HighPC uint64
+	optimized     bool // this compile unit is optimized
 }
 
 // Function describes a function in the target program.
@@ -127,18 +128,23 @@ func (fn *Function) BaseName() string {
 	return fn.Name
 }
 
+// Optimized returns true if the function was optimized by the compiler.
+func (fn *Function) Optimized() bool {
+	return fn.cu.optimized
+}
+
 type constantsMap map[dwarf.Offset]*constantType
 
 type constantType struct {
 	initialized bool
-	bitField    bool
 	values      []constantValue
 }
 
 type constantValue struct {
-	name     string
-	fullName string
-	value    int64
+	name      string
+	fullName  string
+	value     int64
+	singleBit bool
 }
 
 type loclistReader struct {
@@ -279,6 +285,16 @@ func (bi *BinaryInfo) LineToPC(filename string, lineno int) (pc uint64, fn *Func
 	return
 }
 
+func (bi *BinaryInfo) AllPCsForFileLine(filename string, lineno int) []uint64 {
+	r := make([]uint64, 0, 1)
+	for _, cu := range bi.compileUnits {
+		if cu.lineInfo.Lookup[filename] != nil {
+			r = append(r, cu.lineInfo.AllPCsForFileLine(filename, lineno)...)
+		}
+	}
+	return r
+}
+
 // PCToFunc returns the function containing the given PC address
 func (bi *BinaryInfo) PCToFunc(pc uint64) *Function {
 	i := sort.Search(len(bi.Functions), func(i int) bool {
@@ -312,7 +328,8 @@ type nilCloser struct{}
 
 func (c *nilCloser) Close() error { return nil }
 
-// New creates a new BinaryInfo object using the specified data. Use LoadBinary instead.
+// LoadFromData creates a new BinaryInfo object using the specified data.
+// This is used for debugging BinaryInfo, you should use LoadBinary instead.
 func (bi *BinaryInfo) LoadFromData(dwdata *dwarf.Data, debugFrameBytes, debugLineBytes, debugLocBytes []byte) {
 	bi.closer = (*nilCloser)(nil)
 	bi.dwarf = dwdata
@@ -323,10 +340,7 @@ func (bi *BinaryInfo) LoadFromData(dwdata *dwarf.Data, debugFrameBytes, debugLin
 
 	bi.loclistInit(debugLocBytes)
 
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go bi.loadDebugInfoMaps(debugLineBytes, &wg)
-	wg.Wait()
+	bi.loadDebugInfoMaps(debugLineBytes, nil)
 }
 
 func (bi *BinaryInfo) loclistInit(data []byte) {
@@ -335,9 +349,10 @@ func (bi *BinaryInfo) loclistInit(data []byte) {
 }
 
 // Location returns the location described by attribute attr of entry.
-// This will either be an int64 address or a slice of bytes for locations
-// that don't correspond to a memory address (registers, composite locations)
-func (bi *BinaryInfo) Location(entry *dwarf.Entry, attr dwarf.Attr, pc uint64, regs op.DwarfRegisters) (int64, []op.Piece, string, error) {
+// This will either be an int64 address or a slice of Pieces for locations
+// that don't correspond to a single memory address (registers, composite
+// locations).
+func (bi *BinaryInfo) Location(entry reader.Entry, attr dwarf.Attr, pc uint64, regs op.DwarfRegisters) (int64, []op.Piece, string, error) {
 	a := entry.Val(attr)
 	if a == nil {
 		return 0, nil, "", fmt.Errorf("no location attribute %s", attr)
@@ -367,7 +382,8 @@ func (bi *BinaryInfo) Location(entry *dwarf.Entry, attr dwarf.Attr, pc uint64, r
 	return addr, pieces, descr.String(), err
 }
 
-// loclistEntry returns the loclist entry in the loclist starting at off, for address pc
+// loclistEntry returns the loclist entry in the loclist starting at off,
+// for address pc.
 func (bi *BinaryInfo) loclistEntry(off int64, pc uint64) []byte {
 	var base uint64
 	if cu := bi.findCompileUnit(pc); cu != nil {
@@ -389,7 +405,7 @@ func (bi *BinaryInfo) loclistEntry(off int64, pc uint64) []byte {
 	return nil
 }
 
-// findCompileUnit returns the compile unit containing address pc
+// findCompileUnit returns the compile unit containing address pc.
 func (bi *BinaryInfo) findCompileUnit(pc uint64) *compileUnit {
 	for _, cu := range bi.compileUnits {
 		if pc >= cu.LowPC && pc < cu.HighPC {

@@ -264,12 +264,7 @@ func (d *Debugger) state() (*api.DebuggerState, error) {
 		}
 	}
 
-	for _, bp := range d.target.Breakpoints() {
-		if bp.Internal() {
-			state.NextInProgress = true
-			break
-		}
-	}
+	state.NextInProgress = d.target.Breakpoints().HasInternalBreakpoints()
 
 	if recorded, _ := d.target.Recorded(); recorded {
 		state.When, _ = d.target.When()
@@ -398,11 +393,10 @@ func (d *Debugger) Breakpoints() []*api.Breakpoint {
 
 func (d *Debugger) breakpoints() []*api.Breakpoint {
 	bps := []*api.Breakpoint{}
-	for _, bp := range d.target.Breakpoints() {
-		if bp.Internal() {
-			continue
+	for _, bp := range d.target.Breakpoints().M {
+		if bp.IsUser() {
+			bps = append(bps, api.ConvertBreakpoint(bp))
 		}
-		bps = append(bps, api.ConvertBreakpoint(bp))
 	}
 	return bps
 }
@@ -420,7 +414,7 @@ func (d *Debugger) FindBreakpoint(id int) *api.Breakpoint {
 }
 
 func (d *Debugger) findBreakpoint(id int) *proc.Breakpoint {
-	for _, bp := range d.target.Breakpoints() {
+	for _, bp := range d.target.Breakpoints().M {
 		if bp.ID == id {
 			return bp
 		}
@@ -869,7 +863,7 @@ func (d *Debugger) convertStacktrace(rawlocs []proc.Stackframe, cfg *proc.LoadCo
 		}
 		if cfg != nil && rawlocs[i].Current.Fn != nil {
 			var err error
-			scope := proc.FrameToScope(d.target, rawlocs[i])
+			scope := proc.FrameToScope(d.target.BinInfo(), d.target.CurrentThread(), nil, rawlocs[i])
 			locals, err := scope.LocalVariables(*cfg)
 			if err != nil {
 				return nil, err

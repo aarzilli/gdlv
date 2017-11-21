@@ -1,32 +1,25 @@
-// This file lists all DWARF expression opcodes, it is used to generate the
-// opcodes.go file used by the expression interpreter and pretty printer.
+// This file is used by scripts/gen-opcodes.go to generate
+// pkg/dwarf/op/opcodes.go 
+// Lines starting with // are comments and will be discarded.
+// Non empty lines contain the following tab separated fields:
 //
-// Syntax:
+//  <opcode name> <opcode code> <arguments> <function name>
+// 
+// With the last column, <function name>, being optional.
 //
-// Lines starting with // or empty are ignored.
-// All other lines have three columns followed by an optional fourth column.
-// Columns are tab separated.
+// The arguments field should contain a string with one character for each
+// argument of the opcode:
 //
-// The columns are:
-//
-// <opcode_name> <opcode_number> <arguments_description> <opcode_function>
-//
-// - <opcode_name> is the name of the opcode
-// - <opcode_number> is the hexadecimal encoding of the opcode
-// - <arguments_description> is a quoted string describing the arguments of
-//   the opcode, one character per argument:
-//      s	SLEB128
-//      u	ULEB128
-//      1	8-bit argument
-//      2	16-bit argument
-//      4	32-bit argument
-//	8	64-bit argument
-//      B	a SLEB128 size followed by a block of that size
-// - <opcode_function> is the function implementing the opcode, omitted if
-//   the opcode is not implemented.
+//  s		signed variable length integer
+//  u		unsigned variable length integer
+//  1		one byte unsigned integer
+//  2		two bytes unsigned integer
+//  4		four bytes unsigned integer
+//  8		eight bytes unsigned integer
+//  B		an unsigned variable length integer 'n' followed by n a block of n bytes
 
 
-DW_OP_addr	0x03	"Q"	addr
+DW_OP_addr	0x03	"8"	addr
 DW_OP_deref	0x06	""
 DW_OP_const1u	0x08	"1"
 DW_OP_const1s	0x09	"1"
@@ -171,8 +164,6 @@ DW_OP_piece	0x93	"u"	piece
 DW_OP_deref_size	0x94	"1"
 DW_OP_xderef_size	0x95	"1"
 DW_OP_nop	0x96	""
-
-// DWARF 3 extensions.
 DW_OP_push_object_address	0x97	""
 DW_OP_call2	0x98	"2"
 DW_OP_call4	0x99	"4"
@@ -180,7 +171,5 @@ DW_OP_call_ref	0x9a	"4"
 DW_OP_form_tls_address	0x9b	""
 DW_OP_call_frame_cfa	0x9c	""	callframecfa
 DW_OP_bit_piece	0x9d	"uu"
-
-// DWARF 4 extensions.
 DW_OP_implicit_value	0x9e	"B"
 DW_OP_stack_value	0x9f	""

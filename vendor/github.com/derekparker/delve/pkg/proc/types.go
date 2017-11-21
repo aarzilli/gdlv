@@ -83,6 +83,32 @@ func (bi *BinaryInfo) findTypeExpr(expr ast.Expr) (godwarf.Type, error) {
 		}
 		return pointerTo(ptyp, bi.Arch), nil
 	}
+	if anode, ok := expr.(*ast.ArrayType); ok {
+		// Byte array types (i.e. [N]byte) are only present in DWARF if they are
+		// used by the program, but it's convenient to make all of them available
+		// to the user so that they can be used to read arbitrary memory, byte by
+		// byte.
+
+		alen, litlen := anode.Len.(*ast.BasicLit)
+		if litlen && alen.Kind == token.INT {
+			n, _ := strconv.Atoi(alen.Value)
+			switch exprToString(anode.Elt) {
+			case "byte", "uint8":
+				btyp, err := bi.findType("uint8")
+				if err != nil {
+					return nil, err
+				}
+				return &godwarf.ArrayType{
+					CommonType: godwarf.CommonType{
+						ReflectKind: reflect.Array,
+						ByteSize:    int64(n),
+						Name:        fmt.Sprintf("[%d]uint8", n)},
+					Type:          btyp,
+					StrideBitSize: 8,
+					Count:         int64(n)}, nil
+			}
+		}
+	}
 	return bi.findType(exprToString(expr))
 }
 
@@ -144,7 +170,9 @@ func (v compileUnitsByLowpc) Less(i int, j int) bool { return v[i].LowPC < v[j].
 func (v compileUnitsByLowpc) Swap(i int, j int)      { v[i], v[j] = v[j], v[i] }
 
 func (bi *BinaryInfo) loadDebugInfoMaps(debugLineBytes []byte, wg *sync.WaitGroup) {
-	defer wg.Done()
+	if wg != nil {
+		defer wg.Done()
+	}
 	bi.types = make(map[string]dwarf.Offset)
 	bi.packageVars = make(map[string]dwarf.Offset)
 	bi.Functions = []Function{}
@@ -175,6 +203,10 @@ func (bi *BinaryInfo) loadDebugInfoMaps(debugLineBytes []byte, wg *sync.WaitGrou
 			lineInfoOffset, _ := entry.Val(dwarf.AttrStmtList).(int64)
 			if lineInfoOffset >= 0 && lineInfoOffset < int64(len(debugLineBytes)) {
 				cu.lineInfo = line.Parse(compdir, bytes.NewBuffer(debugLineBytes[lineInfoOffset:]))
+			}
+			if producer, _ := entry.Val(dwarf.AttrProducer).(string); cu.isgo && producer != "" {
+				semicolon := strings.Index(producer, ";")
+				cu.optimized = semicolon < 0 || !strings.Contains(producer[semicolon:], "-N") || !strings.Contains(producer[semicolon:], "-l")
 			}
 			bi.compileUnits = append(bi.compileUnits, cu)
 

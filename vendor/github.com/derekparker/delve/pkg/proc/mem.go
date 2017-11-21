@@ -91,7 +91,7 @@ func newCompositeMemory(mem MemoryReadWriter, regs op.DwarfRegisters, pieces []o
 	cmem := &compositeMemory{realmem: mem, regs: regs, pieces: pieces, data: []byte{}}
 	for _, piece := range pieces {
 		if piece.IsRegister {
-			reg := regs.DwarfRegister(piece.RegNum)
+			reg := regs.Bytes(piece.RegNum)
 			sz := piece.Size
 			if sz == 0 && len(pieces) == 1 {
 				sz = len(reg)
@@ -116,7 +116,7 @@ func (mem *compositeMemory) ReadMemory(data []byte, addr uintptr) (int, error) {
 }
 
 func (mem *compositeMemory) WriteMemory(addr uintptr, data []byte) (int, error) {
-	//TODO: implement
+	//TODO(aarzilli): implement
 	return 0, errors.New("can't write composite memory")
 }
 
