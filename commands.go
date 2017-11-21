@@ -23,6 +23,8 @@ import (
 	"github.com/aarzilli/nucular/rect"
 )
 
+const optimizedFunctionWarning = "Warning: debugging optimized function"
+
 type cmdfunc func(out io.Writer, args string) error
 
 type command struct {
@@ -894,6 +896,9 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 
 	if th.Breakpoint == nil {
 		fmt.Fprintf(out, "> %s() %s:%d (PC: %#v)\n", fn.Name, ShortenFilePath(th.File), th.Line, th.PC)
+		if th.Function != nil && th.Function.Optimized {
+			fmt.Fprintln(out, optimizedFunctionWarning)
+		}
 		return
 	}
 
@@ -931,6 +936,9 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 			th.Line,
 			th.Breakpoint.TotalHitCount,
 			th.PC)
+	}
+	if th.Function != nil && th.Function.Optimized {
+		fmt.Fprintln(out, optimizedFunctionWarning)
 	}
 
 	if th.BreakpointInfo != nil {
