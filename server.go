@@ -69,9 +69,13 @@ func parseArguments() (descr ServerDescr) {
 
 	cmd := os.Args[1]
 
-	useFlagA := false
-	if ver, _ := goversion.Installed(); ver.Major >= 0 && ver.AfterOrEqual(goversion.GoVersion{1, 9, -1, 0, 0, ""}) && !ver.AfterOrEqual(goversion.GoVersion{1, 10, -1, 0, 0, ""}) {
-		useFlagA = true
+	optflags := []string{"-gcflags", "-N -l"}
+	ver, _ := goversion.Installed()
+	switch {
+	case ver.Major < 0 || ver.AfterOrEqual(goversion.GoVersion{1, 10, -1, 0, 0, ""}):
+		optflags = []string{"-gcflags", "all=-N -l"}
+	case ver.AfterOrEqual(goversion.GoVersion{1, 9, -1, 0, 0, ""}):
+		optflags = []string{"-gcflags", "-N -l", "-a"}
 	}
 
 	const defaultBackend = "--backend=default"
@@ -104,10 +108,8 @@ func parseArguments() (descr ServerDescr) {
 	case "debug":
 		dir, _ := os.Getwd()
 		debugname(dir)
-		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe}
-		if useFlagA {
-			descr.buildcmd = append(descr.buildcmd, "-a")
-		}
+		descr.buildcmd = []string{"build", "-o", descr.exe}
+		descr.buildcmd = append(descr.buildcmd, optflags...)
 		args := make([]string, 0, len(os.Args[2:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
 		args = append(args, os.Args[2:]...)
@@ -115,10 +117,8 @@ func parseArguments() (descr ServerDescr) {
 
 	case "run":
 		debugname(os.Args[2])
-		descr.buildcmd = []string{"build", "-gcflags", "-N -l", "-o", descr.exe}
-		if useFlagA {
-			descr.buildcmd = append(descr.buildcmd, "-a")
-		}
+		descr.buildcmd = []string{"build", "-o", descr.exe}
+		descr.buildcmd = append(descr.buildcmd, optflags...)
 		descr.buildcmd = append(descr.buildcmd, os.Args[2])
 		args := make([]string, 0, len(os.Args[3:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
@@ -137,11 +137,9 @@ func parseArguments() (descr ServerDescr) {
 	case "test":
 		dir, _ := os.Getwd()
 		debugname(dir)
-		descr.buildcmd = []string{"test", "-gcflags", "-N -l", "-c"}
-		if useFlagA {
-			descr.buildcmd = append(descr.buildcmd, "-a")
-		}
-		descr.buildcmd = append(descr.buildcmd, "-o", descr.exe)
+		descr.buildcmd = []string{"test"}
+		descr.buildcmd = append(descr.buildcmd, optflags...)
+		descr.buildcmd = append(descr.buildcmd, "-c", "-o", descr.exe)
 		args := make([]string, 0, len(os.Args[2:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
 		for _, arg := range os.Args[2:] {
