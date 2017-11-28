@@ -1032,7 +1032,7 @@ func updateDisassemblyPanel(container *nucular.Window) {
 			listp.Row(lineheight).Static()
 			listp.Row(lineheight).Static()
 			text := ""
-			if instr.Loc.File == listingPanel.file && instr.Loc.Line-1 < len(listingPanel.listing) {
+			if instr.Loc.File == listingPanel.file && instr.Loc.Line-1 < len(listingPanel.listing) && instr.Loc.Line-1 > 0 {
 				text = strings.TrimSpace(listingPanel.listing[instr.Loc.Line-1].text)
 			}
 			listp.LayoutFitWidth(listingPanel.id, 1)
