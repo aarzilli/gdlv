@@ -542,7 +542,8 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 
 	if w.MenuItem(label.TA("Location...", "LC")) {
 		out := editorWriter{&scrollbackEditor, false}
-		fmt.Fprintf(&out, "location of %q at %#x: %s\n", v.Name, curPC, v.LocationExpr)
+		//fmt.Fprintf(&out, "location of %q at %#x: %s\n", v.Name, curPC, v.LocationExpr)
+		fmt.Fprintf(&out, "not implemented\n")
 	}
 }
 
