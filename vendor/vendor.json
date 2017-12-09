@@ -195,76 +195,76 @@
 			"revision": "fb508927b491eca48a708e9d000fdb7afa53c32b"
 		},
 		{
-			"checksumSHA1": "pW2nwAGQCmVOIMRTqg9Iioor9oI=",
+			"checksumSHA1": "9vFGVPbTQNOeiLu916mlHThiiCc=",
 			"path": "golang.org/x/exp/shiny/driver",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
-			"checksumSHA1": "UlgVqBQOJFG7X1Tf5TYY8/7GHnE=",
+			"checksumSHA1": "utW7XWhNw/TJRBGra4liCiG3lV0=",
 			"path": "golang.org/x/exp/shiny/driver/gldriver",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "ZQzUhkR1Pq7AhTC21Rh+X7VOBgo=",
 			"path": "golang.org/x/exp/shiny/driver/internal/drawer",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "8hM+2pDpRhd1jzaEPKA3gkzkaNc=",
 			"path": "golang.org/x/exp/shiny/driver/internal/errscreen",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "OMOAZ6/CxypTNG7zhCNWOZXnLdo=",
 			"path": "golang.org/x/exp/shiny/driver/internal/event",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "WlJipkRBYEWj1Fpz5O7eIiOSm8Q=",
 			"path": "golang.org/x/exp/shiny/driver/internal/lifecycler",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "raR29NHy9nCiZhwk+ify0O9nrq0=",
 			"path": "golang.org/x/exp/shiny/driver/internal/swizzle",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "Ud4BcTFgY1g+UHG5Ujwql30/vOk=",
 			"path": "golang.org/x/exp/shiny/driver/internal/win32",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "COu0qxRtt0udmF/fU2kjsZXyVDY=",
 			"path": "golang.org/x/exp/shiny/driver/internal/x11key",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "n/nE3e5dprAtafqUzvNKsN77p5A=",
 			"path": "golang.org/x/exp/shiny/driver/windriver",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
-			"checksumSHA1": "+V1mJ7YfDb6oTOeeljj9DQw73J8=",
+			"checksumSHA1": "du34meG0/45Tn6q0koNGjjgPWao=",
 			"path": "golang.org/x/exp/shiny/driver/x11driver",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "ZHYdL6sMTTmjb/eEsi8CLNbAKXY=",
 			"path": "golang.org/x/exp/shiny/screen",
-			"revision": "239d448f23a0d683c1ab7225da01af038355f5e9",
-			"revisionTime": "2017-04-22T22:56:19Z"
+			"revision": "072991165226c11c888c881218850e8318c2b32e",
+			"revisionTime": "2016-10-23T06:49:24Z"
 		},
 		{
 			"checksumSHA1": "+U1IB5N4LDS74y4fXjARb4/S4IE=",

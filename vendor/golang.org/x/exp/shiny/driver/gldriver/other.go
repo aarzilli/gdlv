@@ -5,6 +5,7 @@
 // +build !darwin !386,!amd64 ios
 // +build !linux android
 // +build !windows
+// +build !openbsd
 
 package gldriver
 

@@ -4,6 +4,7 @@
 
 // +build !linux
 // +build !dragonfly
+// +build !openbsd
 
 package x11driver
 

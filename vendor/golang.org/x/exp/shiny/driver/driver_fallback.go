@@ -6,6 +6,7 @@
 // +build !linux android
 // +build !windows
 // +build !dragonfly
+// +build !openbsd
 
 package driver
 

@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build linux,!android
+// +build linux,!android openbsd
 
 package gldriver
 
 /*
-#cgo LDFLAGS: -lEGL -lGLESv2 -lX11
+#cgo linux      LDFLAGS: -lEGL -lGLESv2 -lX11
+#cgo openbsd    LDFLAGS: -L/usr/X11R6/lib/ -lEGL -lGLESv2 -lX11
+
+#cgo openbsd    CFLAGS: -I/usr/X11R6/include/
 
 #include <stdbool.h>
 #include <stdint.h>
