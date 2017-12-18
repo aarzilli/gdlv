@@ -52,13 +52,15 @@ type MasterWindow interface {
 	GetPerf() bool
 	SetPerf(bool)
 
-	PopupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn)
-	PopupOpenPersistent(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn, saveFn SaveFn)
+	Input() *Input
 
-	Save() ([]byte, error)
-	Restore([]byte, RestoreFn)
-	ListWindowsData() []interface{}
+	PopupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn)
+
+	Walk(WindowWalkFn)
+	ResetWindows() *DockSplit
 }
+
+type WindowWalkFn func(title string, data interface{}, docked bool, splitSize int, rect rect.Rect)
 
 type masterWindow struct {
 	Title  string
@@ -120,6 +122,18 @@ func (mw *masterWindow) Main() {
 
 func (mw *masterWindow) context() *context {
 	return mw.ctx
+}
+
+func (mw *masterWindow) Walk(fn WindowWalkFn) {
+	mw.ctx.Walk(fn)
+}
+
+func (mw *masterWindow) Input() *Input {
+	return &mw.ctx.Input
+}
+
+func (mw *masterWindow) ResetWindows() *DockSplit {
+	return mw.ctx.ResetWindows()
 }
 
 func (mw *masterWindow) main(s screen.Screen) {

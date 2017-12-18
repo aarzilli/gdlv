@@ -146,6 +146,24 @@ Lists saved layouts.`},
 	scroll noise		Re-enables output from inferior.
 `},
 		{aliases: []string{"exit", "quit", "q"}, cmdFn: exitCommand, helpMsg: "Exit the debugger."},
+
+		{aliases: []string{"window", "win"}, complete: completeWindow, cmdFn: windowCommand, helpMsg: `Opens a window.
+	
+	window <kind>
+	
+Kind is one of listing, diassembly, goroutines, stacktrace, variables, globals, breakpoints, threads, registers, sources, functions, types and checkpoints.
+
+Shortcuts:
+	Alt-1	Listing window
+	Alt-2	Variables window
+	Alt-3	Globals window
+	Alt-4	Registers window
+	Alt-5	Breakpoints window
+	Alt-6	Stacktrace window
+	Alt-7	Disassembly window
+	Alt-8	Goroutines window
+	Alt-9	Threads Window
+`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -721,23 +739,15 @@ func layoutCommand(out io.Writer, args string) error {
 			description = argv[2]
 		}
 
-		s, err := rootPanel.String()
-		if err != nil {
-			return err
-		}
-		s = fmt.Sprintf("$%d,%d$", int(float64(lastSize.X)/conf.Scaling), int(float64(lastSize.Y)/conf.Scaling)) + s
-		conf.Layouts[name] = LayoutDescr{Description: description, Layout: s}
+		conf.Layouts[name] = LayoutDescr{Description: description, Layout: serializeLayout()}
 		saveConfiguration()
 	default:
 		ld, ok := conf.Layouts[argv[0]]
 		if !ok {
 			return fmt.Errorf("unknown layout %q", argv[0])
 		}
-		newRoot, _ := parsePanelDescr(ld.Layout, nil)
-		mu.Lock()
-		rootPanel = newRoot
+		loadPanelDescrToplevel(ld.Layout)
 		wnd.Changed()
-		mu.Unlock()
 	}
 	return nil
 }
@@ -842,6 +852,16 @@ func scrollCommand(out io.Writer, args string) error {
 		}
 	}
 	return nil
+}
+
+func windowCommand(out io.Writer, args string) error {
+	args = strings.ToLower(strings.TrimSpace(args))
+	for _, w := range infoModes {
+		if strings.ToLower(w) == args {
+			openWindow(w)
+		}
+	}
+	return fmt.Errorf("unknown window kind %q", args)
 }
 
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {

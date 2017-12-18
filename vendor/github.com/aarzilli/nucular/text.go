@@ -1220,8 +1220,14 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 	prev_state := ed.Active
 
 	if ed.win.ctx.activateEditor != nil {
-		ed.Active = ed.win.ctx.activateEditor == ed
-
+		if ed.win.ctx.activateEditor == ed {
+			ed.Active = true
+			if ed.win.flags&windowDocked != 0 {
+				ed.win.ctx.dockedWindowFocus = ed.win.idx
+			}
+		} else {
+			ed.Active = false
+		}
 	}
 
 	is_hovered := inp.Mouse.HoveringRect(bounds)
@@ -1414,6 +1420,7 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 	d.Bounds = bounds
 	d.Area = area
 	d.RowHeight = row_height
+	d.hasInput = inp.Mouse.valid
 	ed.win.widgets.Add(state, bounds)
 	d.Draw(&ed.win.ctx.Style, &ed.win.cmds)
 
@@ -1469,6 +1476,7 @@ type drawableTextEditor struct {
 	Bounds    rect.Rect
 	Area      rect.Rect
 	RowHeight int
+	hasInput  bool
 
 	SelectionBegin, SelectionEnd int
 
@@ -1573,7 +1581,7 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 		/* no selection so just draw the complete text */
 		pos = edit.editDrawText(out, style, pos, x_margin, edit.Buffer[:edit.Cursor], 0, row_height, font, background_color, text_color, false)
 		d.CursorPos = pos.Sub(startPos)
-		if edit.Active {
+		if edit.Active && d.hasInput {
 			if edit.Cursor < len(edit.Buffer) {
 				switch edit.Buffer[edit.Cursor] {
 				case '\n', '\t':

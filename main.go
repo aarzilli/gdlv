@@ -6,7 +6,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"image"
 	"image/color"
 	"math"
 	"os"
@@ -18,6 +17,7 @@ import (
 
 	"github.com/aarzilli/gdlv/internal/assets"
 	"github.com/aarzilli/nucular"
+	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
 	"github.com/derekparker/delve/service"
 	"github.com/derekparker/delve/service/api"
@@ -145,7 +145,6 @@ var listingPanel struct {
 
 var mu sync.Mutex
 var wnd nucular.MasterWindow
-var lastSize image.Point
 
 var running, nextInProgress bool
 var client service.Client
@@ -159,15 +158,13 @@ var silenced bool
 var scrollbackEditor, commandLineEditor nucular.TextEditor
 
 var delayFrame bool
+var frameCount int
 
 func guiUpdate(w *nucular.Window) {
 	mu.Lock()
 	df := delayFrame
 	delayFrame = false
 	mu.Unlock()
-
-	lastSize.X = w.Bounds.W
-	lastSize.Y = w.Bounds.H
 
 	if df {
 		time.Sleep(50 * time.Millisecond)
@@ -179,7 +176,7 @@ func guiUpdate(w *nucular.Window) {
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
 	mw := w.Master()
 
-	for _, e := range w.Input().Keyboard.Keys {
+	for _, e := range wnd.Input().Keyboard.Keys {
 		switch {
 		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Code == key.CodeEqualSign):
 			conf.Scaling += 0.1
@@ -228,10 +225,63 @@ func guiUpdate(w *nucular.Window) {
 					fmt.Fprintf(&scrollbackOut, "Could not cancel next operation: %v\n", err)
 				}
 			}
+
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code1):
+			openWindow(infoListing)
+
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code2):
+			openWindow(infoLocals)
+
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code3):
+			openWindow(infoGlobal)
+
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code4):
+			openWindow(infoRegisters)
+
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code5):
+			openWindow(infoBps)
+
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code6):
+			openWindow(infoStacktrace)
+
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code7):
+			openWindow(infoDisassembly)
+
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code8):
+			openWindow(infoGoroutines)
+
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code9):
+			openWindow(infoThreads)
 		}
 	}
 
-	rootPanel.update(w)
+	descale := func(x int) int {
+		return int(float64(x) / conf.Scaling)
+	}
+
+	frameCount++
+	if frameCount%200 == 0 {
+		changed := false
+		wnd.Walk(func(title string, data interface{}, docked bool, size int, rect rect.Rect) {
+			if docked {
+				return
+			}
+			if idx := strings.Index(title, " "); idx >= 0 {
+				title = title[:idx]
+			}
+			rect.X = descale(rect.X)
+			rect.Y = descale(rect.Y)
+			rect.H = descale(rect.H)
+			rect.W = descale(rect.W)
+			if rect != conf.SavedBounds[title] {
+				conf.SavedBounds[title] = rect
+				changed = true
+			}
+		})
+		if changed {
+			saveConfiguration()
+		}
+	}
 }
 
 func currentPrompt() string {
@@ -257,16 +307,13 @@ func currentPrompt() string {
 	}
 }
 
-func updateCommandPanel(container *nucular.Window) {
-	w := container.GroupBegin("command", nucular.WindowNoScrollbar)
-	if w == nil {
-		return
-	}
-	defer w.GroupEnd()
-
+func updateCommandPanel(w *nucular.Window) {
 	style := w.Master().Style()
 
+	w.Row(headerRow).Static()
 	w.LayoutReserveRow(commandLineHeight, 1)
+	commandToolbar(w)
+
 	w.Row(0).Dynamic(1)
 	scrollbackEditor.Edit(w)
 
@@ -617,7 +664,12 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 
 	applyBreakpoints(failstate)
 
-	rootPanel.startReload()
+	wnd.Walk(func(title string, data interface{}, docked bool, splitSize int, rect rect.Rect) {
+		if asyncLoad, ok := data.(*asyncLoad); ok && asyncLoad != nil {
+			asyncLoad.startLoad()
+		}
+	})
+
 }
 
 func loadDisassembly(loc *api.Location, failstate func(string, error)) {
@@ -799,12 +851,7 @@ func main() {
 
 	BackendServer = parseArguments()
 
-	_, h, w := parsePanelDescrToplevel(conf.Layouts["default"].Layout)
-
-	wnd = nucular.NewMasterWindowSize(nucular.WindowNoScrollbar, "Gdlv", image.Point{w, h}, guiUpdate)
-	setupStyle()
-
-	rootPanel, _, _ = parsePanelDescrToplevel(conf.Layouts["default"].Layout)
+	loadPanelDescrToplevel(conf.Layouts["default"].Layout)
 
 	curThread = -1
 	curGid = -1
@@ -815,7 +862,7 @@ func main() {
 
 	var scrollbackOut = editorWriter{&scrollbackEditor, true}
 
-	fmt.Fprintf(&scrollbackOut, `gdlv  Copyright (C) 2016 Gdlv Authors
+	fmt.Fprintf(&scrollbackOut, `gdlv  Copyright (C) 2016-2017 Gdlv Authors
 This program comes with ABSOLUTELY NO WARRANTY;
 This is free software, and you are welcome to redistribute it
 under certain conditions; see COPYING for details.

@@ -207,11 +207,34 @@ func (ctx *context) Restack() {
 		return
 	}
 	ctx.DockedWindows.Walk(func(w *Window) *Window {
-		if ctx.restackClick(w) {
+		if ctx.restackClick(w) && (w.flags&windowDocked != 0) {
 			ctx.dockedWindowFocus = w.idx
 		}
 		return w
 	})
+}
+
+func (ctx *context) Walk(fn WindowWalkFn) {
+	fn(ctx.Windows[0].title, ctx.Windows[0].Data, false, 0, ctx.Windows[0].Bounds)
+	ctx.DockedWindows.walkExt(func(t *dockedTree) {
+		switch t.Type {
+		case dockedNodeHoriz:
+			fn("", nil, true, t.Split.Size, rect.Rect{})
+		case dockedNodeVert:
+			fn("", nil, true, -t.Split.Size, rect.Rect{})
+		case dockedNodeLeaf:
+			if t.W == nil {
+				fn("", nil, true, 0, rect.Rect{})
+			} else {
+				fn(t.W.title, t.W.Data, true, 0, t.W.Bounds)
+			}
+		}
+	})
+	for _, win := range ctx.Windows[1:] {
+		if win.flags&WindowNonmodal != 0 {
+			fn(win.title, win.Data, false, 0, win.Bounds)
+		}
+	}
 }
 
 func (ctx *context) restackClick(w *Window) bool {
@@ -225,26 +248,6 @@ func (ctx *context) restackClick(w *Window) bool {
 		}
 	}
 	return false
-}
-
-func (w *masterWindow) ListWindowsData() []interface{} {
-	return w.ctx.ListWindowsData()
-}
-
-func (ctx *context) ListWindowsData() []interface{} {
-	r := []interface{}{}
-	ctx.DockedWindows.Walk(func(w *Window) *Window {
-		if w.Data != nil {
-			r = append(r, w.Data)
-		}
-		return w
-	})
-	for _, w := range ctx.Windows {
-		if w.Data != nil {
-			r = append(r, w.Data)
-		}
-	}
-	return r
 }
 
 var cnt = 0
@@ -697,19 +700,26 @@ func (t *dockedTree) Update(bounds rect.Rect, scaling float64) *dockedTree {
 	return t
 }
 
-func (t *dockedTree) Walk(fn func(win *Window) *Window) {
+func (t *dockedTree) walkExt(fn func(t *dockedTree)) {
 	if t == nil {
 		return
 	}
 	switch t.Type {
 	case dockedNodeVert, dockedNodeHoriz:
-		t.Child[0].Walk(fn)
-		t.Child[1].Walk(fn)
+		fn(t)
+		t.Child[0].walkExt(fn)
+		t.Child[1].walkExt(fn)
 	case dockedNodeLeaf:
-		if t.W != nil {
+		fn(t)
+	}
+}
+
+func (t *dockedTree) Walk(fn func(t *Window) *Window) {
+	t.walkExt(func(t *dockedTree) {
+		if t.Type == dockedNodeLeaf && t.W != nil {
 			t.W = fn(t.W)
 		}
-	}
+	})
 }
 
 func newDockedLeaf(win *Window) *dockedTree {
@@ -783,6 +793,7 @@ func (t *dockedTree) Dock(win *Window, pos image.Point, bounds rect.Rect, scalin
 func (ctx *context) dockWindow(win *Window) {
 	win.undockedSz = image.Point{win.Bounds.W, win.Bounds.H}
 	win.flags |= windowDocked
+	win.layout.Flags |= windowDocked
 	ctx.dockedCnt--
 	win.idx = ctx.dockedCnt
 	for i := range ctx.Windows {
@@ -804,6 +815,7 @@ func (t *dockedTree) Undock(win *Window) {
 		return w
 	})
 	win.flags &= ^windowDocked
+	win.layout.Flags &= ^windowDocked
 	win.Bounds.H = win.undockedSz.Y
 	win.Bounds.W = win.undockedSz.X
 	win.idx = len(win.ctx.Windows)
@@ -847,6 +859,37 @@ func (t *dockedTree) Scale(win *Window, delta image.Point, scaling float64) imag
 		}
 	}
 	return image.ZP
+}
+
+func (ctx *context) ResetWindows() *DockSplit {
+	ctx.DockedWindows = dockedTree{}
+	ctx.Windows = ctx.Windows[:1]
+	ctx.dockedCnt = 0
+	return &DockSplit{ctx, &ctx.DockedWindows}
+}
+
+type DockSplit struct {
+	ctx  *context
+	node *dockedTree
+}
+
+func (ds *DockSplit) Split(horiz bool, size int) (left, right *DockSplit) {
+	if horiz {
+		ds.node.Type = dockedNodeHoriz
+	} else {
+		ds.node.Type = dockedNodeVert
+	}
+	ds.node.Split.Size = size
+	ds.node.Child[0] = &dockedTree{Type: dockedNodeLeaf, Split: ScalableSplit{MinSize: 40}}
+	ds.node.Child[1] = &dockedTree{Type: dockedNodeLeaf, Split: ScalableSplit{MinSize: 40}}
+	return &DockSplit{ds.ctx, ds.node.Child[0]}, &DockSplit{ds.ctx, ds.node.Child[1]}
+}
+
+func (ds *DockSplit) Open(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn) {
+	ds.ctx.popupOpen(title, flags, rect, scale, updateFn)
+	ds.node.Type = dockedNodeLeaf
+	ds.node.W = ds.ctx.Windows[len(ds.ctx.Windows)-1]
+	ds.ctx.dockWindow(ds.node.W)
 }
 
 func percentages(bounds rect.Rect, f float64) (r [4]rect.Rect) {

@@ -134,12 +134,22 @@ func completeCommand() {
 	if cmds == nil || len(commandLineEditor.Buffer) == 0 {
 		return
 	}
-	word := string(commandLineEditor.Buffer)
-	cm := completeMachine{word: word}
+	cm := completeMachine{word: string(commandLineEditor.Buffer)}
 	for _, cmd := range cmds.cmds {
 		for _, alias := range cmd.aliases {
 			cm.add(alias)
 		}
+	}
+	cm.finish()
+}
+
+func completeWindow() {
+	if cmds == nil || len(commandLineEditor.Buffer) == 0 {
+		return
+	}
+	cm := completeMachine{word: lastWord([]rune{' '})}
+	for _, w := range infoModes {
+		cm.add(strings.ToLower(w))
 	}
 	cm.finish()
 }

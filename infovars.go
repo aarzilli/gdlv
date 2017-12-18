@@ -190,11 +190,10 @@ func loadGlobals(p *asyncLoad) {
 }
 
 func updateGlobals(container *nucular.Window) {
-	w := globalsPanel.asyncLoad.showRequest(container, 0, "globals")
+	w := globalsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
 	}
-	defer w.GroupEnd()
 
 	w.MenubarBegin()
 	w.Row(varRowHeight).Static(90, 0, 100)
@@ -258,11 +257,10 @@ const (
 )
 
 func updateLocals(container *nucular.Window) {
-	w := localsPanel.asyncLoad.showRequest(container, 0, "locals")
+	w := localsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
 	}
-	defer w.GroupEnd()
 
 	w.MenubarBegin()
 	w.Row(varRowHeight).Static(90, 0, 100)

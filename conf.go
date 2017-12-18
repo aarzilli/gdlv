@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"os"
 	"runtime"
+
+	"github.com/aarzilli/nucular/rect"
 )
 
 const (
@@ -24,6 +26,7 @@ type Configuration struct {
 	DefaultStepBehaviour string
 	Layouts              map[string]LayoutDescr
 	CustomFormatters     map[string]*CustomFormatter
+	SavedBounds          map[string]rect.Rect
 }
 
 type LayoutDescr struct {
@@ -45,6 +48,9 @@ func adjustConfiguration() {
 	}
 	if ld, ok := conf.Layouts["default"]; !ok || ld.Layout == "" {
 		conf.Layouts["default"] = LayoutDescr{"|300_250LC_180Sl", "Default layout"}
+	}
+	if conf.SavedBounds == nil {
+		conf.SavedBounds = make(map[string]rect.Rect)
 	}
 }
 

@@ -5,24 +5,16 @@ package main
 import (
 	"bytes"
 	"fmt"
+	"image"
 	"image/color"
-	"io"
 	"math/rand"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
-)
-
-type panelKind string
-
-const (
-	fullPanelKind            panelKind = "Full"
-	splitHorizontalPanelKind panelKind = "Horizontal"
-	splitVerticalPanelKind   panelKind = "Vertical"
-	infoPanelKind            panelKind = "Info"
 )
 
 const (
@@ -44,6 +36,7 @@ const (
 
 type infoPanel struct {
 	update    func(w *nucular.Window)
+	flags     nucular.WindowFlags
 	asyncLoad *asyncLoad
 }
 
@@ -75,46 +68,25 @@ var infoModeToCode = map[string]byte{}
 func init() {
 	infoNameToPanel = make(map[string]infoPanel)
 
-	infoNameToPanel[infoCommand] = infoPanel{updateCommandPanel, nil}
-	infoNameToPanel[infoListing] = infoPanel{updateListingPanel, nil}
-	infoNameToPanel[infoDisassembly] = infoPanel{updateDisassemblyPanel, nil}
-	infoNameToPanel[infoGoroutines] = infoPanel{updateGoroutines, &goroutinesPanel.asyncLoad}
-	infoNameToPanel[infoStacktrace] = infoPanel{updateStacktrace, &stackPanel.asyncLoad}
-	infoNameToPanel[infoLocals] = infoPanel{updateLocals, &localsPanel.asyncLoad}
-	infoNameToPanel[infoGlobal] = infoPanel{updateGlobals, &globalsPanel.asyncLoad}
-	infoNameToPanel[infoBps] = infoPanel{updateBreakpoints, &breakpointsPanel.asyncLoad}
-	infoNameToPanel[infoThreads] = infoPanel{updateThreads, &threadsPanel.asyncLoad}
-	infoNameToPanel[infoRegisters] = infoPanel{updateRegs, &regsPanel.asyncLoad}
-	infoNameToPanel[infoSources] = infoPanel{sourcesPanel.update, nil}
-	infoNameToPanel[infoFuncs] = infoPanel{funcsPanel.update, nil}
-	infoNameToPanel[infoTypes] = infoPanel{typesPanel.update, nil}
-	infoNameToPanel[infoCheckpoints] = infoPanel{updateCheckpoints, &checkpointsPanel.asyncLoad}
+	infoNameToPanel[infoCommand] = infoPanel{updateCommandPanel, nucular.WindowNoScrollbar, nil}
+	infoNameToPanel[infoListing] = infoPanel{updateListingPanel, nucular.WindowNoScrollbar, nil}
+	infoNameToPanel[infoDisassembly] = infoPanel{updateDisassemblyPanel, nucular.WindowNoScrollbar, nil}
+	infoNameToPanel[infoGoroutines] = infoPanel{updateGoroutines, 0, &goroutinesPanel.asyncLoad}
+	infoNameToPanel[infoStacktrace] = infoPanel{updateStacktrace, 0, &stackPanel.asyncLoad}
+	infoNameToPanel[infoLocals] = infoPanel{updateLocals, 0, &localsPanel.asyncLoad}
+	infoNameToPanel[infoGlobal] = infoPanel{updateGlobals, 0, &globalsPanel.asyncLoad}
+	infoNameToPanel[infoBps] = infoPanel{updateBreakpoints, 0, &breakpointsPanel.asyncLoad}
+	infoNameToPanel[infoThreads] = infoPanel{updateThreads, 0, &threadsPanel.asyncLoad}
+	infoNameToPanel[infoRegisters] = infoPanel{updateRegs, 0, &regsPanel.asyncLoad}
+	infoNameToPanel[infoSources] = infoPanel{sourcesPanel.update, 0, nil}
+	infoNameToPanel[infoFuncs] = infoPanel{funcsPanel.update, 0, nil}
+	infoNameToPanel[infoTypes] = infoPanel{typesPanel.update, 0, nil}
+	infoNameToPanel[infoCheckpoints] = infoPanel{updateCheckpoints, 0, &checkpointsPanel.asyncLoad}
 
 	for k, v := range codeToInfoMode {
 		infoModeToCode[v] = k
 	}
 }
-
-func (kind panelKind) Internal() bool {
-	switch kind {
-	case fullPanelKind, splitHorizontalPanelKind, splitVerticalPanelKind:
-		return true
-	default:
-		return false
-	}
-}
-
-type panel struct {
-	kind     panelKind
-	split    nucular.ScalableSplit
-	infoMode int
-	child    [2]*panel
-	parent   *panel
-
-	name string
-}
-
-var rootPanel *panel
 
 const (
 	headerRow         = 20
@@ -128,7 +100,8 @@ const (
 	splitFlags        = nucular.WindowNoScrollbar | nucular.WindowBorder
 )
 
-func parsePanelDescrToplevel(in string) (p *panel, height int, width int) {
+func loadPanelDescrToplevel(in string) {
+	var width, height int
 	if len(in) > 3 {
 		if in[0] == '$' {
 			if dollar := strings.Index(in[1:], "$"); dollar >= 0 {
@@ -145,24 +118,28 @@ func parsePanelDescrToplevel(in string) (p *panel, height int, width int) {
 		width = 640
 		height = 480
 	}
-	p, _ = parsePanelDescr(in, nil)
+
+	if wnd == nil {
+		wnd = nucular.NewMasterWindowSize(nucular.WindowNoScrollbar, "Gdlv", image.Point{width, height}, guiUpdate)
+		setupStyle()
+	}
+
+	in = loadPanelDescr(in, wnd.ResetWindows())
+
+	loadFloatingDescr(in)
+
 	return
 }
 
-func parsePanelDescr(in string, parent *panel) (p *panel, rest string) {
+func loadPanelDescr(in string, curDockSplit *nucular.DockSplit) (rest string) {
 	switch in[0] {
 	case '0':
-		p = &panel{kind: fullPanelKind, name: randomname(), parent: parent}
-		p.child[0], rest = parsePanelDescr(in[1:], p)
-		return p, rest
+		rest = loadPanelDescr(in[1:], curDockSplit)
+		return rest
 	case '_', '|':
-		kind := splitHorizontalPanelKind
-		minSize := splitMinHeight
-		spacing := horizontalSpacing
+		horiz := true
 		if in[0] == '|' {
-			kind = splitVerticalPanelKind
-			minSize = splitMinWidth
-			spacing = verticalSpacing
+			horiz = false
 		}
 		var i int
 		for i = 1; i < len(in); i++ {
@@ -171,52 +148,104 @@ func parsePanelDescr(in string, parent *panel) (p *panel, rest string) {
 			}
 		}
 		size, _ := strconv.Atoi(in[1:i])
-		p = &panel{kind: kind, name: randomname(), parent: parent}
-		p.split.Size = size
-		p.split.MinSize = minSize
-		p.split.Spacing = spacing
+
+		left, right := curDockSplit.Split(horiz, size)
+
 		rest = in[i:]
-		p.child[0], rest = parsePanelDescr(rest, p)
-		p.child[1], rest = parsePanelDescr(rest, p)
-		return p, rest
+		rest = loadPanelDescr(rest, left)
+		rest = loadPanelDescr(rest, right)
+		return rest
 	default:
-		p = &panel{kind: infoPanelKind, name: randomname(), infoMode: infoModeIdx(codeToInfoMode[in[0]]), parent: parent}
+		m := codeToInfoMode[in[0]]
+		p := infoNameToPanel[m]
+		flags := nucular.WindowDefaultFlags | nucular.WindowNonmodal | p.flags
+		if m == infoCommand {
+			flags = flags &^ nucular.WindowClosable
+		}
+		curDockSplit.Open(m, flags, rect.Rect{0, 0, 500, 300}, true, p.update)
 		rest = in[1:]
-		return p, rest
+		return rest
 	}
 }
 
-func (p *panel) String() (s string, err error) {
-	defer func() {
-		if ierr := recover(); ierr != nil {
-			err = ierr.(error)
+func loadFloatingDescr(rest string) {
+	for len(rest) > 0 {
+		if rest[0] != ',' {
+			fmt.Fprintf(os.Stderr, "deserialization error: %q\n", rest)
+			return
 		}
-	}()
+
+		rest = rest[1:]
+
+		var dim [4]int
+
+		for i := 0; i < len(dim); i++ {
+			for j := 0; j < len(rest); j++ {
+				if rest[j] < '0' || rest[j] > '9' {
+					var err error
+					dim[i], err = strconv.Atoi(rest[:j])
+					if err != nil {
+						fmt.Fprintf(os.Stderr, "deserialization error (%v): %q\n", err, rest)
+					}
+					if i == len(dim)-1 {
+						rest = rest[j:]
+					} else {
+						rest = rest[j+1:]
+					}
+					break
+				}
+			}
+		}
+
+		m := codeToInfoMode[rest[0]]
+		p := infoNameToPanel[m]
+		rest = rest[1:]
+		flags := nucular.WindowDefaultFlags | nucular.WindowNonmodal | p.flags
+		if m == infoCommand {
+			flags = flags &^ nucular.WindowClosable
+		}
+		wnd.PopupOpen(m, flags, rect.Rect{dim[0], dim[1], dim[2], dim[3]}, true, p.update)
+	}
+}
+
+func serializeLayout() string {
 	var out bytes.Buffer
-	p.serialize(&out)
-	return out.String(), err
-}
-
-func (p *panel) serialize(out io.Writer) {
-	switch p.kind {
-	case fullPanelKind:
-		out.Write([]byte{'0'})
-		p.child[0].serialize(out)
-	case splitHorizontalPanelKind:
-		fmt.Fprintf(out, "_%d", p.split.Size)
-		p.child[0].serialize(out)
-		p.child[1].serialize(out)
-	case splitVerticalPanelKind:
-		fmt.Fprintf(out, "|%d", p.split.Size)
-		p.child[0].serialize(out)
-		p.child[1].serialize(out)
-	case infoPanelKind:
-		code, ok := infoModeToCode[infoModes[p.infoMode]]
-		if !ok {
-			panic(fmt.Errorf("could not convert info mode %s to a code", infoModes[p.infoMode]))
-		}
-		out.Write([]byte{code})
+	cnt := 0
+	descale := func(x int) int {
+		return int(float64(x) / conf.Scaling)
 	}
+	wnd.Walk(func(title string, data interface{}, docked bool, size int, rect rect.Rect) {
+		if idx := strings.Index(title, " "); idx >= 0 {
+			title = title[:idx]
+		}
+		c := infoModeToCode[title]
+		if c == 0 {
+			c = '?'
+		}
+		if cnt == 0 {
+			fmt.Fprintf(&out, "$%d,%d$", descale(rect.W), descale(rect.H))
+		} else if docked {
+			if size != 0 {
+				if size < 0 {
+					fmt.Fprintf(&out, "|%d", -size)
+				} else {
+					fmt.Fprintf(&out, "_%d", size)
+				}
+			} else {
+				if cnt == 1 {
+					fmt.Fprintf(&out, "0")
+				}
+				fmt.Fprintf(&out, "%c", c)
+			}
+		} else {
+			if idx := strings.Index(title, " "); idx >= 0 {
+				title = title[:idx]
+			}
+			fmt.Fprintf(&out, ",%d,%d,%d,%d%c", descale(rect.X), descale(rect.Y), descale(rect.W), descale(rect.H), c)
+		}
+		cnt++
+	})
+	return out.String()
 }
 
 func infoModeIdx(n string) int {
@@ -237,110 +266,8 @@ func randomname() string {
 	return string(out)
 }
 
-func (p *panel) update(w *nucular.Window) {
-	area := w.Row(0).SpaceBegin(0)
-	p.updateIntl(w, area)
-}
-
-func (p *panel) updateIntl(w *nucular.Window, bounds rect.Rect) {
-	switch p.kind {
-	case fullPanelKind:
-		p.child[0].updateIntl(w, bounds)
-
-	case infoPanelKind:
-		w.LayoutSpacePushScaled(bounds)
-		if sw := w.GroupBegin(p.name, splitFlags); sw != nil {
-			switch infoModes[p.infoMode] {
-			case infoCommand:
-				p.commandToolbar(sw)
-			case infoListing, infoDisassembly:
-				p.listingToolbar(sw)
-			default:
-				p.normalToolbar(sw)
-			}
-			sw.Row(0).Dynamic(1)
-			if p.infoMode >= 0 {
-				infoNameToPanel[infoModes[p.infoMode]].update(sw)
-			}
-			sw.GroupEnd()
-		}
-
-	case splitHorizontalPanelKind:
-		bounds0, bounds1 := p.split.Horizontal(w, bounds)
-
-		if bounds0.H > 0 {
-			p.child[0].updateIntl(w, bounds0)
-		}
-
-		if bounds1.H > 0 {
-			p.child[1].updateIntl(w, bounds1)
-		}
-
-	case splitVerticalPanelKind:
-		bounds0, bounds1 := p.split.Vertical(w, bounds)
-
-		if bounds0.W > 0 {
-			p.child[0].updateIntl(w, bounds0)
-		}
-
-		if bounds1.W > 0 {
-			p.child[1].updateIntl(w, bounds1)
-		}
-	}
-}
-
-func (p *panel) startReload() {
-	switch p.kind {
-	case fullPanelKind:
-		p.child[0].startReload()
-	case infoPanelKind:
-		if p.infoMode >= 0 {
-			if asyncLoad := infoNameToPanel[infoModes[p.infoMode]].asyncLoad; asyncLoad != nil {
-				asyncLoad.startLoad()
-			}
-		}
-	case splitHorizontalPanelKind, splitVerticalPanelKind:
-		p.child[0].startReload()
-		p.child[1].startReload()
-	}
-}
-
-func (p *panel) splitMenu(w *nucular.Window) {
-	w.LayoutSetWidth(headerSplitMenu)
-	style := w.Master().Style()
-	iconFace, style.Font = style.Font, iconFace
-	mw := w.Menu(label.TA(splitIconChar, "CC"), 160, nil)
-	iconFace, style.Font = style.Font, iconFace
-	if w := mw; w != nil {
-		w.Row(20).Dynamic(1)
-		if w.MenuItem(label.TA("Split Horizontal", "LC")) {
-			p.dosplit(splitHorizontalPanelKind)
-		}
-		if w.MenuItem(label.TA("Split Vertical", "LC")) {
-			p.dosplit(splitVerticalPanelKind)
-		}
-		if w.MenuItem(label.TA("Close", "LC")) {
-			p.closeMyself()
-		}
-	}
-}
-
-func (p *panel) toolbarHeaderCombo(sw *nucular.Window) {
-	sw.LayoutResetStatic(0, headerCombo, 2)
-	sw.Spacing(1)
-	p.infoMode = sw.ComboSimple(infoModes, p.infoMode, 22)
-}
-
-func (p *panel) normalToolbar(sw *nucular.Window) {
+func listingToolbar(sw *nucular.Window) {
 	sw.Row(headerRow).Static()
-	p.splitMenu(sw)
-	p.toolbarHeaderCombo(sw)
-}
-
-func (p *panel) listingToolbar(sw *nucular.Window) {
-	sw.Row(headerRow).Static()
-
-	p.splitMenu(sw)
 
 	showfilename := true
 
@@ -360,15 +287,13 @@ func (p *panel) listingToolbar(sw *nucular.Window) {
 	}
 
 	if showfilename {
-		style := sw.Master().Style()
-		sw.LayoutSetWidthScaled(sw.LayoutAvailableWidth() - style.Text.Padding.X*2)
+		sw.LayoutSetWidthScaled(4096)
 		sw.Label(listingPanel.abbrevFile, "LC")
 	}
 
-	p.toolbarHeaderCombo(sw)
 }
 
-func (p *panel) commandToolbar(sw *nucular.Window) {
+func commandToolbar(sw *nucular.Window) {
 	style := sw.Master().Style()
 	iconbtn := func(icon string, tooltip string) bool {
 		iconFace, style.Font = style.Font, iconFace
@@ -384,18 +309,14 @@ func (p *panel) commandToolbar(sw *nucular.Window) {
 			doCommand(cmd)
 		}
 	}
-	sw.Row(headerRow).Static()
 	switch {
 	case client == nil:
-		p.splitMenu(sw)
 
 	case running:
-		p.splitMenu(sw)
 		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(interruptIconChar, "interrupt")
 
 	case nextInProgress:
-		p.splitMenu(sw)
 		sw.LayoutSetWidth(controlBtnWidth)
 		if iconbtn(continueIconChar, "continue next") {
 			doCommand("continue")
@@ -406,7 +327,6 @@ func (p *panel) commandToolbar(sw *nucular.Window) {
 		}
 
 	default:
-		p.splitMenu(sw)
 		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(continueIconChar, "continue")
 		sw.LayoutSetWidth(controlBtnWidth / 2)
@@ -418,83 +338,27 @@ func (p *panel) commandToolbar(sw *nucular.Window) {
 		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(stepoutIconChar, "stepout")
 	}
-	p.toolbarHeaderCombo(sw)
-}
 
-func (p *panel) dosplit(kind panelKind) {
-	if p.parent == nil {
-		return
-	}
-
-	if p.parent.kind == fullPanelKind {
-		p.parent.kind = kind
-		p.parent.child[1] = &panel{kind: p.kind, name: randomname(), infoMode: p.infoMode, parent: p.parent}
-		return
-	}
-
-	idx := p.parent.idx(p)
-	if idx < 0 {
-		return
-	}
-
-	newpanel := &panel{kind: kind, name: randomname(), parent: p.parent}
-	newpanel.split.Size = 0
-	switch kind {
-	case splitHorizontalPanelKind:
-		newpanel.split.MinSize = splitMinHeight
-		newpanel.split.Spacing = horizontalSpacing
-	case splitVerticalPanelKind:
-		newpanel.split.MinSize = splitMinWidth
-		newpanel.split.Spacing = verticalSpacing
-	}
-
-	newpanel.child[0] = p
-	newpanel.child[1] = &panel{kind: p.kind, name: randomname(), infoMode: p.infoMode, parent: newpanel}
-
-	p.parent.child[idx] = newpanel
-	p.parent = newpanel
-}
-
-func (p *panel) idx(child *panel) int {
-	for i := range p.child {
-		if p.child[i] == child {
-			return i
+	sw.LayoutResetStatic(0, headerCombo, 2)
+	sw.Spacing(1)
+	if w := sw.Combo(label.TA("NEW WINDOW", "CC"), 800, nil); w != nil {
+		w.Row(20).Dynamic(1)
+		for _, m := range infoModes {
+			if m == "Command" {
+				continue
+			}
+			if w.MenuItem(label.TA(m, "LC")) {
+				openWindow(m)
+			}
 		}
 	}
-	return -1
+	sw.Spacing(1)
 }
 
-func (p *panel) closeMyself() {
-	if p.parent == nil || p.parent.kind == fullPanelKind {
-		return
+func openWindow(m string) {
+	bounds, ok := conf.SavedBounds[m]
+	if !ok {
+		bounds = rect.Rect{0, 0, 500, 300}
 	}
-
-	idx := p.parent.idx(p)
-	if idx < 0 {
-		return
-	}
-	p.parent.closeChild(idx)
-}
-
-func (p *panel) closeChild(idx int) {
-	if p.parent == nil {
-		p.kind = fullPanelKind
-		if idx == 0 {
-			p.child[0] = p.child[1]
-		}
-		return
-	}
-
-	ownidx := p.parent.idx(p)
-	if ownidx < 0 {
-		return
-	}
-
-	survivor := p.child[0]
-	if idx == 0 {
-		survivor = p.child[1]
-	}
-
-	p.parent.child[ownidx] = survivor
-	survivor.parent = p.parent
+	wnd.PopupOpen(m, nucular.WindowDefaultFlags|nucular.WindowNonmodal|nucular.WindowNoScrollbar, bounds, true, infoNameToPanel[m].update)
 }

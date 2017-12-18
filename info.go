@@ -30,6 +30,7 @@ type asyncLoad struct {
 	loading bool
 	err     error
 	load    func(*asyncLoad)
+	code    byte
 }
 
 func (l *asyncLoad) clear() {
@@ -59,16 +60,20 @@ func (l *asyncLoad) startLoad() {
 	go l.load(l)
 }
 
-func (l *asyncLoad) showRequest(container *nucular.Window, flags nucular.WindowFlags, name string) *nucular.Window {
+func (l *asyncLoad) showRequest(container *nucular.Window) *nucular.Window {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
+	container.Data = l
+
 	if l.loading {
+		container.Row(0).Dynamic(1)
 		container.Label("Loading...", "LT")
 		return nil
 	}
 
 	if !l.loaded {
+		container.Row(0).Dynamic(1)
 		if client == nil {
 			container.Label("Connecting...", "LT")
 			return nil
@@ -88,14 +93,12 @@ func (l *asyncLoad) showRequest(container *nucular.Window, flags nucular.WindowF
 	}
 
 	if l.err != nil {
+		container.Row(0).Dynamic(1)
 		container.Label(fmt.Sprintf("Error: %v", l.err), "LT")
 		return nil
 	}
 
-	if w := container.GroupBegin(name, flags); w != nil {
-		return w
-	}
-	return nil
+	return container
 }
 
 const (
@@ -238,11 +241,10 @@ func loadGoroutines(p *asyncLoad) {
 }
 
 func updateGoroutines(container *nucular.Window) {
-	w := goroutinesPanel.asyncLoad.showRequest(container, 0, "goroutines")
+	w := goroutinesPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
 	}
-	defer w.GroupEnd()
 	style := container.Master().Style()
 
 	goroutines := goroutinesPanel.goroutines
@@ -323,11 +325,10 @@ func loadStacktrace(p *asyncLoad) {
 }
 
 func updateStacktrace(container *nucular.Window) {
-	w := stackPanel.asyncLoad.showRequest(container, 0, "stack")
+	w := stackPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
 	}
-	defer w.GroupEnd()
 
 	w.MenubarBegin()
 	w.Row(20).Static(120)
@@ -388,11 +389,10 @@ func loadThreads(p *asyncLoad) {
 }
 
 func updateThreads(container *nucular.Window) {
-	w := threadsPanel.asyncLoad.showRequest(container, 0, "threads")
+	w := threadsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
 	}
-	defer w.GroupEnd()
 
 	threads := threadsPanel.threads
 
@@ -424,7 +424,6 @@ func updateThreads(container *nucular.Window) {
 			}(thread.ID)
 		}
 	}
-	w.GroupEnd()
 }
 
 func loadRegs(p *asyncLoad) {
@@ -447,11 +446,10 @@ func loadRegs(p *asyncLoad) {
 }
 
 func updateRegs(container *nucular.Window) {
-	w := regsPanel.asyncLoad.showRequest(container, 0, "registers")
+	w := regsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
 	}
-	defer w.GroupEnd()
 
 	w.MenubarBegin()
 	w.Row(varRowHeight).Static(100)
@@ -481,11 +479,10 @@ func loadBreakpoints(p *asyncLoad) {
 }
 
 func updateBreakpoints(container *nucular.Window) {
-	w := breakpointsPanel.asyncLoad.showRequest(container, 0, "breakpoints")
+	w := breakpointsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
 	}
-	defer w.GroupEnd()
 
 	breakpoints := breakpointsPanel.breakpoints
 
@@ -724,11 +721,10 @@ func loadCheckpoints(p *asyncLoad) {
 }
 
 func updateCheckpoints(container *nucular.Window) {
-	w := checkpointsPanel.asyncLoad.showRequest(container, 0, "checkpoints")
+	w := checkpointsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
 	}
-	defer w.GroupEnd()
 
 	checkpoints := checkpointsPanel.checkpoints
 
@@ -774,6 +770,7 @@ func (p *stringSlicePanel) update(container *nucular.Window) {
 	if p.filterEditor.Filter == nil {
 		p.filterEditor.Filter = spacefilter
 	}
+	container.Row(0).Dynamic(1)
 	w := container.GroupBegin(p.name, 0)
 	if w == nil {
 		return
@@ -887,16 +884,19 @@ func breakpointIcon(w *nucular.Window, atbp bool, align label.Align, style *nsty
 	} else {
 		w.Spacing(1)
 	}
-
 }
 
 func updateListingPanel(container *nucular.Window) {
 	if len(listingPanel.listing) == 0 {
 		updateDisassemblyPanel(container)
+		return
 	}
+
+	listingToolbar(container)
 
 	const lineheight = 14
 
+	container.Row(0).Dynamic(1)
 	gl, listp := nucular.GroupListStart(container, len(listingPanel.listing), "listing", 0)
 	if listp == nil {
 		return
@@ -1008,6 +1008,8 @@ func listingSetBreakpoint(file string, line int) {
 
 func updateDisassemblyPanel(container *nucular.Window) {
 	const lineheight = 14
+
+	container.Row(0).Dynamic(1)
 
 	gl, listp := nucular.GroupListStart(container, len(listingPanel.text), "disassembly", 0)
 	if listp == nil {
