@@ -21,6 +21,10 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2017-12-20
+* Support for upcoming go 1.10.
+* Changed how split windows are implemented (floating windows with docking).
+
 ## 2017-09-17
 * "Find Element" command: search through a slice or an array for the element matching a given expression.
 * New red theme.
