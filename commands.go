@@ -438,7 +438,7 @@ func rewind(out io.Writer, args string) error {
 	return nil
 }
 
-func continueUntilCompleteNext(out io.Writer, state *api.DebuggerState, op string) error {
+func continueUntilCompleteNext(out io.Writer, state *api.DebuggerState, op string, bp *api.Breakpoint) error {
 	if !state.NextInProgress {
 		refreshState(refreshToFrameZero, clearStop, state)
 		return nil
@@ -452,6 +452,14 @@ func continueUntilCompleteNext(out io.Writer, state *api.DebuggerState, op strin
 				return state.Err
 			}
 			printcontext(out, state)
+		}
+		if bp != nil {
+			for _, th := range state.Threads {
+				if th.Breakpoint != nil && th.Breakpoint.ID == bp.ID {
+					refreshState(refreshToFrameZero, clearStop, state)
+					return nil
+				}
+			}
 		}
 		if !state.NextInProgress || conf.StopOnNextBreakpoint {
 			refreshState(refreshToFrameZero, clearStop, state)
@@ -524,7 +532,7 @@ func stepIntoFirst(out io.Writer) error {
 		return err
 	}
 	printcontext(out, state)
-	return continueUntilCompleteNext(out, state, "step")
+	return continueUntilCompleteNext(out, state, "step", nil)
 }
 
 func stepInto(out io.Writer, sic stepIntoCall) error {
@@ -550,7 +558,7 @@ func stepInto(out io.Writer, sic stepIntoCall) error {
 		return err
 	}
 	printcontext(out, state)
-	err = continueUntilCompleteNext(out, state, "step")
+	err = continueUntilCompleteNext(out, state, "step", nil)
 	client.ClearBreakpoint(bp.ID)
 	if err != nil {
 		return err
@@ -584,7 +592,7 @@ func next(out io.Writer, args string) error {
 		return err
 	}
 	printcontext(out, state)
-	return continueUntilCompleteNext(out, state, "next")
+	return continueUntilCompleteNext(out, state, "next", nil)
 }
 
 func stepout(out io.Writer, args string) error {
@@ -593,7 +601,7 @@ func stepout(out io.Writer, args string) error {
 		return err
 	}
 	printcontext(out, state)
-	return continueUntilCompleteNext(out, state, "stepout")
+	return continueUntilCompleteNext(out, state, "stepout", nil)
 }
 
 func cancelnext(out io.Writer, args string) error {
@@ -1139,4 +1147,27 @@ func doCommand(cmd string) {
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
 	fmt.Fprintf(&scrollbackOut, "%s %s\n", currentPrompt(), cmd)
 	go executeCommand(cmd)
+}
+
+func continueToLine(file string, lineno int) {
+	out := editorWriter{&scrollbackEditor, true}
+	bp, err := client.CreateBreakpoint(&api.Breakpoint{File: file, Line: lineno})
+	if err != nil {
+		fmt.Fprintf(&out, "Could not continue to specified line, could not create breakpoint: %v\n", err)
+		return
+	}
+	state, err := client.StepOut()
+	if err != nil {
+		fmt.Fprintf(&out, "Could not continue to specified line, could not step out: %v\n", err)
+		return
+	}
+	printcontext(&out, state)
+	err = continueUntilCompleteNext(&out, state, "continue-to-line", bp)
+	client.ClearBreakpoint(bp.ID)
+	client.CancelNext()
+	refreshState(refreshToSameFrame, clearBreakpoint, nil)
+	if err != nil {
+		fmt.Fprintf(&out, "Could not continue to specified line, could not step out: %v\n", err)
+		return
+	}
 }

@@ -995,6 +995,10 @@ func updateListingPanel(container *nucular.Window) {
 							go stepInto(&editorWriter{&scrollbackEditor, true}, listingPanel.stepIntoInfo.Call)
 						}
 					}
+				} else {
+					if w.MenuItem(label.TA("Continue to this line", "LC")) {
+						go continueToLine(listingPanel.file, line.lineno)
+					}
 				}
 			}
 		}
