@@ -1864,7 +1864,7 @@ func scrollbarBehavior(state *nstyle.WidgetStates, in *Input, scroll, cursor, em
 }
 
 func scrollwheelBehavior(win *Window, scroll, scrollwheel_bounds rect.Rect, scroll_offset, target, scroll_step float64) float64 {
-	in := &win.ctx.Input
+	in := win.Input()
 
 	if ((in.Mouse.ScrollDelta < 0) || (in.Mouse.ScrollDelta > 0)) && in.Mouse.HoveringRect(scrollwheel_bounds) {
 		/* update cursor by mouse scrolling */
@@ -2637,6 +2637,7 @@ func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, s
 		panic("nil update function")
 	}
 	ctx.Windows = append(ctx.Windows, popup)
+	ctx.dockedWindowFocus = 0
 	popup.cmds.UseClipping = true
 
 	if scale {
