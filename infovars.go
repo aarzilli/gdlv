@@ -272,34 +272,43 @@ func updateLocals(container *nucular.Window) {
 
 	args, locals := localsPanel.args, localsPanel.locals
 
-	if w.TreePush(nucular.TreeTab, "Arguments", true) {
-		for i := range args {
-			if strings.Index(args[i].Name, filter) >= 0 {
-				showVariable(w, 0, localsPanel.showAddr, -1, args[i])
+	if len(args) > 0 {
+		if w.TreePush(nucular.TreeTab, "Arguments", true) {
+			for i := range args {
+				if strings.Index(args[i].Name, filter) >= 0 {
+					showVariable(w, 0, localsPanel.showAddr, -1, args[i])
+				}
 			}
+			w.TreePop()
 		}
-		w.TreePop()
 	}
 
-	if w.TreePush(nucular.TreeTab, "Locals", true) {
-		for i := range locals {
-			if strings.Index(locals[i].Name, filter) >= 0 {
-				showVariable(w, 0, localsPanel.showAddr, -1, locals[i])
+	if len(locals) > 0 {
+		if w.TreePush(nucular.TreeTab, "Locals", true) {
+			for i := range locals {
+				if strings.Index(locals[i].Name, filter) >= 0 {
+					showVariable(w, 0, localsPanel.showAddr, -1, locals[i])
+				}
 			}
+			w.TreePop()
 		}
-		w.TreePop()
 	}
 
-	for i := 0; i < len(localsPanel.expressions); i++ {
-		if i == localsPanel.selected {
-			exprsEditor(w)
-		} else {
-			if localsPanel.v[i] == nil {
-				w.Row(varRowHeight).Dynamic(1)
-				w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i]), "LC")
-			} else {
-				showVariable(w, 0, localsPanel.showAddr, i, localsPanel.v[i])
+	if len(localsPanel.expressions) > 0 {
+		if w.TreePush(nucular.TreeTab, "Expression", true) {
+			for i := 0; i < len(localsPanel.expressions); i++ {
+				if i == localsPanel.selected {
+					exprsEditor(w)
+				} else {
+					if localsPanel.v[i] == nil {
+						w.Row(varRowHeight).Dynamic(1)
+						w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i]), "LC")
+					} else {
+						showVariable(w, 0, localsPanel.showAddr, i, localsPanel.v[i])
+					}
+				}
 			}
+			w.TreePop()
 		}
 	}
 }
