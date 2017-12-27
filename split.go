@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"image"
 	"image/color"
-	"math/rand"
 	"os"
 	"strconv"
 	"strings"
@@ -89,15 +88,9 @@ func init() {
 }
 
 const (
-	headerRow         = 20
-	headerCombo       = 110
-	controlBtnWidth   = 30
-	headerSplitMenu   = 30
-	verticalSpacing   = 8
-	horizontalSpacing = 8
-	splitMinHeight    = 20
-	splitMinWidth     = 20
-	splitFlags        = nucular.WindowNoScrollbar | nucular.WindowBorder
+	headerRow       = 20
+	headerCombo     = 110
+	controlBtnWidth = 30
 )
 
 func loadPanelDescrToplevel(in string) {
@@ -208,6 +201,13 @@ func loadFloatingDescr(rest string) {
 	}
 }
 
+func cleanWindowTitle(title string) string {
+	if idx := strings.Index(title, " "); idx >= 0 {
+		title = title[:idx]
+	}
+	return title
+}
+
 func serializeLayout() string {
 	var out bytes.Buffer
 	cnt := 0
@@ -215,9 +215,7 @@ func serializeLayout() string {
 		return int(float64(x) / conf.Scaling)
 	}
 	wnd.Walk(func(title string, data interface{}, docked bool, size int, rect rect.Rect) {
-		if idx := strings.Index(title, " "); idx >= 0 {
-			title = title[:idx]
-		}
+		title = cleanWindowTitle(title)
 		c := infoModeToCode[title]
 		if c == 0 {
 			c = '?'
@@ -238,32 +236,11 @@ func serializeLayout() string {
 				fmt.Fprintf(&out, "%c", c)
 			}
 		} else {
-			if idx := strings.Index(title, " "); idx >= 0 {
-				title = title[:idx]
-			}
 			fmt.Fprintf(&out, ",%d,%d,%d,%d%c", descale(rect.X), descale(rect.Y), descale(rect.W), descale(rect.H), c)
 		}
 		cnt++
 	})
 	return out.String()
-}
-
-func infoModeIdx(n string) int {
-	for i := range infoModes {
-		if infoModes[i] == n {
-			return i
-		}
-	}
-	return -1
-}
-
-func randomname() string {
-	var alphabet = []byte{'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O', 'P', 'Q', 'R', 'S', 'T', 'U', 'V', 'W', 'X', 'Y', 'Z'}
-	out := make([]byte, 8)
-	for i := range out {
-		out[i] = alphabet[rand.Intn(len(alphabet))]
-	}
-	return string(out)
 }
 
 func listingToolbar(sw *nucular.Window) {

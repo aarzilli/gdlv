@@ -266,9 +266,7 @@ func guiUpdate(w *nucular.Window) {
 			if docked {
 				return
 			}
-			if idx := strings.Index(title, " "); idx >= 0 {
-				title = title[:idx]
-			}
+			title = cleanWindowTitle(title)
 			rect.X = descale(rect.X)
 			rect.Y = descale(rect.Y)
 			rect.H = descale(rect.H)
