@@ -151,11 +151,7 @@ func loadPanelDescr(in string, curDockSplit *nucular.DockSplit) (rest string) {
 	default:
 		m := codeToInfoMode[in[0]]
 		p := infoNameToPanel[m]
-		flags := nucular.WindowDefaultFlags | nucular.WindowNonmodal | p.flags
-		if m == infoCommand {
-			flags = flags &^ nucular.WindowClosable
-		}
-		curDockSplit.Open(m, flags, rect.Rect{0, 0, 500, 300}, true, p.update)
+		curDockSplit.Open(m, p.Flags(m), rect.Rect{0, 0, 500, 300}, true, p.update)
 		rest = in[1:]
 		return rest
 	}
@@ -193,11 +189,7 @@ func loadFloatingDescr(rest string) {
 		m := codeToInfoMode[rest[0]]
 		p := infoNameToPanel[m]
 		rest = rest[1:]
-		flags := nucular.WindowDefaultFlags | nucular.WindowNonmodal | p.flags
-		if m == infoCommand {
-			flags = flags &^ nucular.WindowClosable
-		}
-		wnd.PopupOpen(m, flags, rect.Rect{dim[0], dim[1], dim[2], dim[3]}, true, p.update)
+		wnd.PopupOpen(m, p.Flags(m), rect.Rect{dim[0], dim[1], dim[2], dim[3]}, true, p.update)
 	}
 }
 
@@ -206,6 +198,14 @@ func cleanWindowTitle(title string) string {
 		title = title[:idx]
 	}
 	return title
+}
+
+func (p *infoPanel) Flags(m string) nucular.WindowFlags {
+	flags := nucular.WindowDefaultFlags | nucular.WindowNonmodal | p.flags
+	if m == infoCommand {
+		flags = flags &^ nucular.WindowClosable
+	}
+	return flags
 }
 
 func serializeLayout() string {
@@ -333,9 +333,22 @@ func commandToolbar(sw *nucular.Window) {
 }
 
 func openWindow(m string) {
+	found := false
+	wnd.Walk(func(title string, data interface{}, docked bool, size int, rect rect.Rect) {
+		title = cleanWindowTitle(title)
+		if title == m {
+			// raise?
+			found = true
+			return
+		}
+	})
+	if found {
+		return
+	}
 	bounds, ok := conf.SavedBounds[m]
 	if !ok {
 		bounds = rect.Rect{0, 0, 500, 300}
 	}
-	wnd.PopupOpen(m, nucular.WindowDefaultFlags|nucular.WindowNonmodal|nucular.WindowNoScrollbar, bounds, true, infoNameToPanel[m].update)
+	p := infoNameToPanel[m]
+	wnd.PopupOpen(m, p.Flags(m), bounds, true, p.update)
 }
