@@ -864,10 +864,22 @@ func scrollCommand(out io.Writer, args string) error {
 
 func windowCommand(out io.Writer, args string) error {
 	args = strings.ToLower(strings.TrimSpace(args))
+	foundw := ""
 	for _, w := range infoModes {
 		if strings.ToLower(w) == args {
 			openWindow(w)
+			return nil
 		}
+		if strings.HasPrefix(strings.ToLower(w), args) {
+			if foundw != "" {
+				return fmt.Errorf("unknown window kind %q", args)
+			}
+			foundw = w
+		}
+	}
+	if foundw != "" {
+		openWindow(foundw)
+		return nil
 	}
 	return fmt.Errorf("unknown window kind %q", args)
 }
