@@ -1864,7 +1864,7 @@ func scrollbarBehavior(state *nstyle.WidgetStates, in *Input, scroll, cursor, em
 }
 
 func scrollwheelBehavior(win *Window, scroll, scrollwheel_bounds rect.Rect, scroll_offset, target, scroll_step float64) float64 {
-	in := win.Input()
+	in := win.scrollwheelInput()
 
 	if ((in.Mouse.ScrollDelta < 0) || (in.Mouse.ScrollDelta > 0)) && in.Mouse.HoveringRect(scrollwheel_bounds) {
 		/* update cursor by mouse scrolling */

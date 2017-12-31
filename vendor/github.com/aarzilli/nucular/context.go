@@ -32,6 +32,8 @@ type context struct {
 	autopos        image.Point
 
 	dockedWindowFocus int
+	floatWindowFocus  int
+	scrollwheelFocus  int
 	dockedCnt         int
 }
 
@@ -65,6 +67,7 @@ func (ctx *context) Update() {
 			ctx.Windows[i].began = false
 		}
 		ctx.Restack()
+		ctx.FindFocus()
 		for i := 0; i < len(ctx.Windows); i++ { // this must not use range or tooltips won't work
 			ctx.updateWindow(ctx.Windows[i])
 			if i == 0 {
@@ -212,6 +215,31 @@ func (ctx *context) Restack() {
 		}
 		return w
 	})
+}
+
+func (ctx *context) FindFocus() {
+	ctx.floatWindowFocus = 0
+	for i := len(ctx.Windows) - 1; i >= 0; i-- {
+		if ctx.Windows[i].flags&windowTooltip == 0 {
+			ctx.floatWindowFocus = i
+			break
+		}
+	}
+	ctx.scrollwheelFocus = 0
+	for i := len(ctx.Windows) - 1; i > 0; i-- {
+		if ctx.Windows[i].Bounds.Contains(ctx.Input.Mouse.Pos) {
+			ctx.scrollwheelFocus = i
+			break
+		}
+	}
+	if ctx.scrollwheelFocus == 0 {
+		ctx.DockedWindows.Walk(func(w *Window) *Window {
+			if w.Bounds.Contains(ctx.Input.Mouse.Pos) {
+				ctx.scrollwheelFocus = w.idx
+			}
+			return w
+		})
+	}
 }
 
 func (ctx *context) Walk(fn WindowWalkFn) {
