@@ -49,7 +49,9 @@ func wrapApiVariable(v *api.Variable, name, expr string) *Variable {
 		f(r)
 	} else if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) {
 		n, _ := strconv.Atoi(v.Value)
-		r.Value = fmt.Sprintf("%s %q", v.Value, n)
+		if n >= ' ' && n <= '~' {
+			r.Value = fmt.Sprintf("%s %q", v.Value, n)
+		}
 	} else if f := conf.CustomFormatters[v.Type]; f != nil {
 		f.Format(r)
 	}
