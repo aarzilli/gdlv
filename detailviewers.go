@@ -51,7 +51,7 @@ func newStringViewer(mw nucular.MasterWindow, v *Variable) {
 	}
 	sv.ed.Flags = nucular.EditReadOnly | nucular.EditMultiline | nucular.EditSelectable | nucular.EditClipboard
 	sv.setupView()
-	mw.PopupOpen("Viewing string: "+v.Name, popupFlags|nucular.WindowScalable, rect.Rect{100, 100, 550, 400}, true, sv.Update)
+	mw.PopupOpen("Viewing string: "+v.Name, popupFlags|nucular.WindowScalable|nucular.WindowClosable, rect.Rect{100, 100, 550, 400}, true, sv.Update)
 }
 
 func (sv *stringViewer) Update(w *nucular.Window) {
@@ -98,6 +98,7 @@ func (sv *stringViewer) Update(w *nucular.Window) {
 		}
 	}
 
+	w.LayoutReserveRow(20, 1)
 	w.Row(0).Dynamic(1)
 	sv.ed.Edit(w)
 
@@ -296,7 +297,7 @@ func newIntArrayViewer(mw nucular.MasterWindow, v *Variable) {
 	av.mode = decMode
 	av.ed.Flags = nucular.EditReadOnly | nucular.EditMultiline | nucular.EditSelectable | nucular.EditClipboard
 	av.setupView()
-	mw.PopupOpen("Viewing array: "+v.Name, popupFlags|nucular.WindowScalable, rect.Rect{100, 100, 550, 400}, true, av.Update)
+	mw.PopupOpen("Viewing array: "+v.Name, popupFlags|nucular.WindowScalable|nucular.WindowClosable, rect.Rect{100, 100, 550, 400}, true, av.Update)
 }
 
 func (av *intArrayViewer) Update(w *nucular.Window) {
@@ -324,6 +325,7 @@ func (av *intArrayViewer) Update(w *nucular.Window) {
 		av.setupView()
 	}
 
+	w.LayoutReserveRow(20, 1)
 	w.Row(0).Dynamic(1)
 	av.ed.Edit(w)
 
@@ -372,7 +374,7 @@ func newFloatViewer(w *nucular.Window, v *Variable) {
 	vw := &floatViewer{v: v}
 	vw.ed.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditSigEnter
 	vw.ed.Buffer = []rune(v.FloatFmt)
-	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Name), dynamicPopupFlags, rect.Rect{20, 100, 480, 500}, true, vw.Update)
+	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Name), dynamicPopupFlags|nucular.WindowClosable, rect.Rect{20, 100, 480, 500}, true, vw.Update)
 }
 
 func (vw *floatViewer) Update(w *nucular.Window) {
