@@ -77,9 +77,9 @@ func init() {
 	infoNameToPanel[infoBps] = infoPanel{updateBreakpoints, 0, &breakpointsPanel.asyncLoad}
 	infoNameToPanel[infoThreads] = infoPanel{updateThreads, 0, &threadsPanel.asyncLoad}
 	infoNameToPanel[infoRegisters] = infoPanel{updateRegs, 0, &regsPanel.asyncLoad}
-	infoNameToPanel[infoSources] = infoPanel{sourcesPanel.update, 0, nil}
-	infoNameToPanel[infoFuncs] = infoPanel{funcsPanel.update, 0, nil}
-	infoNameToPanel[infoTypes] = infoPanel{typesPanel.update, 0, nil}
+	infoNameToPanel[infoSources] = infoPanel{sourcesPanel.update, nucular.WindowNoScrollbar, nil}
+	infoNameToPanel[infoFuncs] = infoPanel{funcsPanel.update, nucular.WindowNoScrollbar, nil}
+	infoNameToPanel[infoTypes] = infoPanel{typesPanel.update, nucular.WindowNoScrollbar, nil}
 	infoNameToPanel[infoCheckpoints] = infoPanel{updateCheckpoints, 0, &checkpointsPanel.asyncLoad}
 
 	for k, v := range codeToInfoMode {
