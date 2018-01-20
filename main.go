@@ -16,11 +16,11 @@ import (
 	"time"
 
 	"github.com/aarzilli/gdlv/internal/assets"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
-	"github.com/derekparker/delve/service"
-	"github.com/derekparker/delve/service/api"
 	"github.com/golang/freetype"
 	"github.com/golang/freetype/truetype"
 

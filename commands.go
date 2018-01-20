@@ -16,7 +16,7 @@ import (
 
 	"golang.org/x/mobile/event/key"
 
-	"github.com/derekparker/delve/service/api"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"

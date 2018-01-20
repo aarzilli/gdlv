@@ -19,7 +19,7 @@ import (
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
 
-	"github.com/derekparker/delve/service/api"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 
 	"golang.org/x/mobile/event/mouse"
 )

@@ -15,7 +15,7 @@ import (
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 
-	"github.com/derekparker/delve/service/api"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
 
 type numberMode int

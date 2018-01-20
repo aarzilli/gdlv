@@ -16,7 +16,7 @@ import (
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/rect"
 
-	"github.com/derekparker/delve/service/api"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
 
 type formatterFn func(*Variable)

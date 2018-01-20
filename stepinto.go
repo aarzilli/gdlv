@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/derekparker/delve/service/api"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
 
 type stmtsInLocVisitor struct {

@@ -6,7 +6,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/derekparker/delve/service/api"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
 
 type frozenBreakpoint struct {

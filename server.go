@@ -11,9 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/rpc2"
 	"github.com/derekparker/delve/pkg/goversion"
-	"github.com/derekparker/delve/service/api"
-	"github.com/derekparker/delve/service/rpc2"
 )
 
 type ServerDescr struct {

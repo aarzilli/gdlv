@@ -10,9 +10,9 @@ import (
 	"reflect"
 	"sync"
 
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/rect"
-	"github.com/derekparker/delve/service/api"
 )
 
 type findElementWindowSingleton struct {
