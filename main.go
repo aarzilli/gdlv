@@ -7,10 +7,12 @@ import (
 	"bytes"
 	"fmt"
 	"image/color"
+	"io"
 	"math"
 	"os"
 	"runtime"
 	"runtime/pprof"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -159,6 +161,8 @@ var scrollbackEditor, commandLineEditor nucular.TextEditor
 
 var delayFrame bool
 var frameCount int
+
+var LogOutput io.WriteCloser
 
 func guiUpdate(w *nucular.Window) {
 	mu.Lock()
@@ -831,6 +835,10 @@ Executes "gdlv run" using mozilla rr has a backend.
 	os.Exit(1)
 }
 
+func replacepid(in string) string {
+	return strings.Replace(in, "%p", strconv.Itoa(os.Getpid()), -1)
+}
+
 func main() {
 	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" {
 		fmt.Fprintf(os.Stderr, "DISPLAY not set\n")
@@ -844,6 +852,20 @@ func main() {
 			if err := pprof.StartCPUProfile(f); err == nil {
 				defer pprof.StopCPUProfile()
 			}
+		}
+	}
+
+	if os.Getenv("GDLVLOG") != "" {
+		logfile := replacepid(os.Getenv("GDLVLOG"))
+		fh, err := os.Create(logfile)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "error opening log %v\n", err)
+		} else {
+			LogOutput = fh
+			defer func() {
+				LogOutput.Close()
+				os.Remove(logfile)
+			}()
 		}
 	}
 
