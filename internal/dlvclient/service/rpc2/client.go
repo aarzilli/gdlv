@@ -82,6 +82,14 @@ func (c *RPCClient) Rewind() <-chan *api.DebuggerState {
 	return c.continueDir(api.Rewind)
 }
 
+type ProcessExitedError struct {
+	pid, exitStatus int
+}
+
+func (err *ProcessExitedError) Error() string {
+	return fmt.Sprintf("Process %d has exited with status %d", err.pid, err.exitStatus)
+}
+
 func (c *RPCClient) continueDir(cmd string) <-chan *api.DebuggerState {
 	ch := make(chan *api.DebuggerState)
 	go func() {
@@ -94,7 +102,7 @@ func (c *RPCClient) continueDir(cmd string) <-chan *api.DebuggerState {
 			}
 			if state.Exited {
 				// Error types apparantly cannot be marshalled by Go correctly. Must reset error here.
-				state.Err = fmt.Errorf("Process %d has exited with status %d", c.ProcessPid(), state.ExitStatus)
+				state.Err = &ProcessExitedError{c.ProcessPid(), state.ExitStatus}
 			}
 			ch <- &state
 			if err != nil || state.Exited {
@@ -120,28 +128,39 @@ func (c *RPCClient) continueDir(cmd string) <-chan *api.DebuggerState {
 	return ch
 }
 
+// exitedToError returns an error if out.State says that the process exited.
+func (c *RPCClient) exitedToError(out *CommandOut, err error) (*api.DebuggerState, error) {
+	if err != nil {
+		return nil, err
+	}
+	if out.State.Exited {
+		return nil, &ProcessExitedError{c.ProcessPid(), out.State.ExitStatus}
+	}
+	return &out.State, nil
+}
+
 func (c *RPCClient) Next() (*api.DebuggerState, error) {
 	var out CommandOut
 	err := c.call("Command", api.DebuggerCommand{Name: api.Next}, &out)
-	return &out.State, err
+	return c.exitedToError(&out, err)
 }
 
 func (c *RPCClient) Step() (*api.DebuggerState, error) {
 	var out CommandOut
 	err := c.call("Command", api.DebuggerCommand{Name: api.Step}, &out)
-	return &out.State, err
+	return c.exitedToError(&out, err)
 }
 
 func (c *RPCClient) StepOut() (*api.DebuggerState, error) {
 	var out CommandOut
 	err := c.call("Command", &api.DebuggerCommand{Name: api.StepOut}, &out)
-	return &out.State, err
+	return c.exitedToError(&out, err)
 }
 
 func (c *RPCClient) StepInstruction() (*api.DebuggerState, error) {
 	var out CommandOut
 	err := c.call("Command", api.DebuggerCommand{Name: api.StepInstruction}, &out)
-	return &out.State, err
+	return c.exitedToError(&out, err)
 }
 
 func (c *RPCClient) SwitchThread(threadID int) (*api.DebuggerState, error) {
