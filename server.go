@@ -67,6 +67,8 @@ func parseArguments() (descr ServerDescr) {
 		usage()
 	}
 
+	os.Setenv("CGO_CFLAGS", "-O0 -g")
+
 	cmd := os.Args[1]
 
 	optflags := []string{"-gcflags", "-N -l"}
