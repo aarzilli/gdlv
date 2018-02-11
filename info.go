@@ -574,7 +574,7 @@ func execClearBreakpoint(id int) {
 
 func execRestartCheckpoint(id int) {
 	scrollbackOut := editorWriter{&scrollbackEditor, true}
-	_, err := client.RestartFrom(fmt.Sprintf("c%d", id))
+	_, err := client.RestartFrom(fmt.Sprintf("c%d", id), false, nil)
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not restart from checkpoint c%d: %v\n", id, err)
 		return

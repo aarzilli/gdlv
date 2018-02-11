@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"go/parser"
@@ -13,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"unicode"
 
 	"golang.org/x/mobile/event/key"
 
@@ -91,7 +93,14 @@ See also: "help on", "help cond" and "help clear"`},
 		{aliases: []string{"clear"}, cmdFn: clear, helpMsg: `Deletes breakpoint.
 		
 			clear <breakpoint name or id>`},
-		{aliases: []string{"restart", "r"}, cmdFn: restart, helpMsg: "Restart process."},
+		{aliases: []string{"restart", "r"}, cmdFn: restart, helpMsg: `Restart process.
+
+For recordings a checkpoint can be optionally specified.
+For live processes any argument to restart will be used as argument to the program, use:
+
+	restart --
+	
+To clear the arguments passed to the program.`},
 		{aliases: []string{"continue", "c"}, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
 		{aliases: []string{"rewind", "rw"}, cmdFn: rewind, helpMsg: "Run backwards until breakpoint or program termination."},
 		{aliases: []string{"checkpoint", "check"}, cmdFn: checkpoint, helpMsg: `Creates a checkpoint at the current position.
@@ -307,49 +316,117 @@ func clear(out io.Writer, args string) error {
 
 func restart(out io.Writer, args string) error {
 	if client != nil && client.Recorded() {
-		_, err := client.RestartFrom(args)
+		_, err := client.RestartFrom(args, false, nil)
 		refreshState(refreshToFrameZero, clearStop, nil)
 		return err
 	}
 
+	resetArgs := false
+	var newArgs []string
+	args = strings.TrimSpace(args)
+	if args != "" {
+		argv := splitQuotedFields(args)
+		if len(argv) > 0 {
+			if argv[0] == "--" {
+				argv = argv[1:]
+			}
+			resetArgs = true
+			newArgs = argv
+		}
+	}
+
 	if BackendServer.StaleExecutable() {
-		wnd.PopupOpen("Recompile?", dynamicPopupFlags, rect.Rect{100, 100, 550, 400}, true, restartQuery)
+		wnd.PopupOpen("Recompile?", dynamicPopupFlags, rect.Rect{100, 100, 550, 400}, true, func(w *nucular.Window) {
+			w.Row(30).Static(0)
+			w.Label("Executable is stale. Rebuild?", "LC")
+			var yes, no bool
+			for _, e := range w.Input().Keyboard.Keys {
+				switch {
+				case e.Code == key.CodeEscape:
+					no = true
+				case e.Code == key.CodeReturnEnter:
+					yes = true
+				}
+			}
+			w.Row(30).Static(0, 100, 100, 0)
+			w.Spacing(1)
+			if w.ButtonText("Yes") {
+				yes = true
+			}
+			if w.ButtonText("No") {
+				no = true
+			}
+			w.Spacing(1)
+
+			switch {
+			case yes:
+				go pseudoCommandWrap(doRebuild)
+				w.Close()
+			case no:
+				go pseudoCommandWrap(func(w io.Writer) error {
+					return doRestart(w, resetArgs, newArgs)
+				})
+				w.Close()
+			}
+		})
 		return nil
 	}
 
-	return doRestart(out)
+	return doRestart(out, resetArgs, newArgs)
 }
 
-func restartQuery(w *nucular.Window) {
-	w.Row(30).Static(0)
-	w.Label("Executable is stale. Rebuild?", "LC")
-	var yes, no bool
-	for _, e := range w.Input().Keyboard.Keys {
-		switch {
-		case e.Code == key.CodeEscape:
-			no = true
-		case e.Code == key.CodeReturnEnter:
-			yes = true
+func splitQuotedFields(in string) []string {
+	type stateEnum int
+	const (
+		inSpace stateEnum = iota
+		inField
+		inQuote
+		inQuoteEscaped
+	)
+	state := inSpace
+	r := []string{}
+	var buf bytes.Buffer
+
+	for _, ch := range in {
+		switch state {
+		case inSpace:
+			if ch == '\'' {
+				state = inQuote
+			} else if !unicode.IsSpace(ch) {
+				buf.WriteRune(ch)
+				state = inField
+			}
+
+		case inField:
+			if ch == '\'' {
+				state = inQuote
+			} else if unicode.IsSpace(ch) {
+				r = append(r, buf.String())
+				buf.Reset()
+			} else {
+				buf.WriteRune(ch)
+			}
+
+		case inQuote:
+			if ch == '\'' {
+				state = inField
+			} else if ch == '\\' {
+				state = inQuoteEscaped
+			} else {
+				buf.WriteRune(ch)
+			}
+
+		case inQuoteEscaped:
+			buf.WriteRune(ch)
+			state = inQuote
 		}
 	}
-	w.Row(30).Static(0, 100, 100, 0)
-	w.Spacing(1)
-	if w.ButtonText("Yes") {
-		yes = true
-	}
-	if w.ButtonText("No") {
-		no = true
-	}
-	w.Spacing(1)
 
-	switch {
-	case yes:
-		go pseudoCommandWrap(doRebuild)
-		w.Close()
-	case no:
-		go pseudoCommandWrap(doRestart)
-		w.Close()
+	if buf.Len() != 0 {
+		r = append(r, buf.String())
 	}
+
+	return r
 }
 
 func pseudoCommandWrap(cmd func(io.Writer) error) {
@@ -371,8 +448,8 @@ func pseudoCommandWrap(cmd func(io.Writer) error) {
 	}
 }
 
-func doRestart(out io.Writer) error {
-	_, err := client.Restart()
+func doRestart(out io.Writer, resetArgs bool, args []string) error {
+	_, err := client.RestartFrom("", resetArgs, args)
 	if err != nil {
 		return err
 	}
