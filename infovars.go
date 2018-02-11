@@ -420,7 +420,41 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 		clipboard.Set(fmt.Sprintf("%#x", v.Addr))
 	}
 
-	if v.Expression != "" {
+	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
+		pinned := localsPanel.expressions[exprMenuIdx].pinnedGid > 0
+		if w.MenuItem(label.TA("Edit expression", "LC")) {
+			localsPanel.selected = exprMenuIdx
+			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected].Expr)
+			localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
+			localsPanel.ed.CursorFollow = true
+			localsPanel.ed.Active = true
+			commandLineEditor.Active = false
+		}
+		if w.MenuItem(label.TA("Remove expression", "LC")) {
+			if exprMenuIdx+1 < len(localsPanel.expressions) {
+				copy(localsPanel.expressions[exprMenuIdx:], localsPanel.expressions[exprMenuIdx+1:])
+				copy(localsPanel.v[exprMenuIdx:], localsPanel.v[exprMenuIdx+1:])
+			}
+			localsPanel.expressions = localsPanel.expressions[:len(localsPanel.expressions)-1]
+			localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
+		}
+		if w.MenuItem(label.TA("Load parameters...", "LC")) {
+			w.Master().PopupOpen(fmt.Sprintf("Load parameters for %s", localsPanel.expressions[exprMenuIdx].Expr), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, configureLoadParameters(exprMenuIdx))
+		}
+		if w.CheckboxText("Pin to frame", &pinned) {
+			if pinned && curFrame < len(stackPanel.stack) {
+				localsPanel.expressions[exprMenuIdx].pinnedGid = curGid
+				localsPanel.expressions[exprMenuIdx].pinnedFrameOffset = stackPanel.stack[curFrame].FrameOffset
+			} else {
+				localsPanel.expressions[exprMenuIdx].pinnedGid = 0
+			}
+			go func(i int) {
+				additionalLoadMu.Lock()
+				defer additionalLoadMu.Unlock()
+				loadOneExpr(i)
+			}(exprMenuIdx)
+		}
+	} else if v.Expression != "" {
 		if w.MenuItem(label.TA("Add as expression", "LC")) {
 			addExpression(v.Expression)
 
@@ -501,42 +535,6 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 			if w.MenuItem(label.TA("Custom format for type...", "LC")) {
 				viewCustomFormatterMaker(w, v, "", []string{})
 			}
-		}
-	}
-
-	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
-		pinned := localsPanel.expressions[exprMenuIdx].pinnedGid > 0
-		if w.MenuItem(label.TA("Edit", "LC")) {
-			localsPanel.selected = exprMenuIdx
-			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected].Expr)
-			localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
-			localsPanel.ed.CursorFollow = true
-			localsPanel.ed.Active = true
-			commandLineEditor.Active = false
-		}
-		if w.MenuItem(label.TA("Remove", "LC")) {
-			if exprMenuIdx+1 < len(localsPanel.expressions) {
-				copy(localsPanel.expressions[exprMenuIdx:], localsPanel.expressions[exprMenuIdx+1:])
-				copy(localsPanel.v[exprMenuIdx:], localsPanel.v[exprMenuIdx+1:])
-			}
-			localsPanel.expressions = localsPanel.expressions[:len(localsPanel.expressions)-1]
-			localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
-		}
-		if w.MenuItem(label.TA("Load parameters...", "LC")) {
-			w.Master().PopupOpen(fmt.Sprintf("Load parameters for %s", localsPanel.expressions[exprMenuIdx].Expr), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, configureLoadParameters(exprMenuIdx))
-		}
-		if w.CheckboxText("Pin to frame", &pinned) {
-			if pinned && curFrame < len(stackPanel.stack) {
-				localsPanel.expressions[exprMenuIdx].pinnedGid = curGid
-				localsPanel.expressions[exprMenuIdx].pinnedFrameOffset = stackPanel.stack[curFrame].FrameOffset
-			} else {
-				localsPanel.expressions[exprMenuIdx].pinnedGid = 0
-			}
-			go func(i int) {
-				additionalLoadMu.Lock()
-				defer additionalLoadMu.Unlock()
-				loadOneExpr(i)
-			}(exprMenuIdx)
 		}
 	}
 
