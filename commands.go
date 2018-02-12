@@ -698,7 +698,7 @@ func printVar(out io.Writer, args string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("not enough arguments")
 	}
-	val, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, args, LongLoadConfig)
+	val, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, args, getVariableLoadConfig())
 	if err != nil {
 		return err
 	}
@@ -899,6 +899,18 @@ func configWindow(w *nucular.Window) {
 	if i >= 0 {
 		conf.DefaultStepBehaviour = stepBehaviours[i]
 	}
+
+	if conf.MaxArrayValues == 0 {
+		conf.MaxArrayValues = LongLoadConfig.MaxArrayValues
+	}
+	if conf.MaxStringLen == 0 {
+		conf.MaxStringLen = LongLoadConfig.MaxStringLen
+	}
+
+	w.Row(30).Static(0)
+	w.PropertyInt("Max array load:", 1, &conf.MaxArrayValues, 4096, 1, 1)
+	w.Row(30).Static(0)
+	w.PropertyInt("Max string load:", 1, &conf.MaxStringLen, 4096, 1, 1)
 
 	w.Row(20).Static(0, 100)
 	w.Spacing(1)
@@ -1259,4 +1271,15 @@ func continueToLine(file string, lineno int) {
 		fmt.Fprintf(&out, "Could not continue to specified line, could not step out: %v\n", err)
 		return
 	}
+}
+
+func getVariableLoadConfig() api.LoadConfig {
+	cfg := LongLoadConfig
+	if conf.MaxArrayValues > 0 {
+		cfg.MaxArrayValues = conf.MaxArrayValues
+	}
+	if conf.MaxStringLen > 0 {
+		cfg.MaxStringLen = conf.MaxStringLen
+	}
+	return cfg
 }

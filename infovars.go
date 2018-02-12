@@ -185,7 +185,7 @@ type Expr struct {
 }
 
 func loadGlobals(p *asyncLoad) {
-	globals, err := client.ListPackageVariables("", LongLoadConfig)
+	globals, err := client.ListPackageVariables("", getVariableLoadConfig())
 	globalsPanel.globals = wrapApiVariables(globals, 0, 0, "")
 	sort.Sort(variablesByName(globalsPanel.globals))
 	p.done(err)
@@ -225,9 +225,9 @@ func (vars variablesByName) Swap(i, j int) {
 func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].Name }
 
 func loadLocals(p *asyncLoad) {
-	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, LongLoadConfig)
+	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, getVariableLoadConfig())
 	localsPanel.args = wrapApiVariables(args, 0, 0, "")
-	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, LongLoadConfig)
+	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, getVariableLoadConfig())
 	for i := range locals {
 		v := &locals[i]
 		if v.Kind == reflect.Ptr && len(v.Name) > 1 && v.Name[0] == '&' && len(v.Children) > 0 {
@@ -344,7 +344,7 @@ func loadOneExpr(i int) {
 			return
 		}
 	}
-	cfg := LongLoadConfig
+	cfg := getVariableLoadConfig()
 	if localsPanel.expressions[i].maxArrayValues > 0 {
 		cfg.MaxArrayValues = localsPanel.expressions[i].maxArrayValues
 		cfg.MaxStringLen = localsPanel.expressions[i].maxStringLen
@@ -871,7 +871,7 @@ func loadMoreStruct(v *Variable) {
 	if !additionalLoadRunning {
 		additionalLoadRunning = true
 		go func() {
-			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, fmt.Sprintf("*(*%q)(%#x)", v.Type, v.Addr), LongLoadConfig)
+			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, fmt.Sprintf("*(*%q)(%#x)", v.Type, v.Addr), getVariableLoadConfig())
 			if err != nil {
 				v.Unreadable = err.Error()
 			} else {
@@ -910,8 +910,9 @@ func configureLoadParameters(exprMenuIdx int) func(w *nucular.Window) {
 	maxArrayValues := expr.maxArrayValues
 	maxStringLen := expr.maxStringLen
 	if maxArrayValues <= 0 {
-		maxArrayValues = LongLoadConfig.MaxArrayValues
-		maxStringLen = LongLoadConfig.MaxStringLen
+		cfg := getVariableLoadConfig()
+		maxArrayValues = cfg.MaxArrayValues
+		maxStringLen = cfg.MaxStringLen
 	}
 
 	return func(w *nucular.Window) {

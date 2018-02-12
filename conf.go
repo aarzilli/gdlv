@@ -27,6 +27,8 @@ type Configuration struct {
 	Layouts              map[string]LayoutDescr
 	CustomFormatters     map[string]*CustomFormatter
 	SavedBounds          map[string]rect.Rect
+	MaxArrayValues       int
+	MaxStringLen         int
 }
 
 type LayoutDescr struct {
