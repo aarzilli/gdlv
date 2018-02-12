@@ -21,6 +21,11 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2017-02-12
+* Implemented "Continue to line"
+* Let `restart` change program arguments
+* Made load parameters configurable
+
 ## 2017-12-20
 * Support for upcoming go 1.10.
 * Changed how split windows are implemented (floating windows with docking).
