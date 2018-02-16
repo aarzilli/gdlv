@@ -147,6 +147,7 @@ func (fw *findElementWindowSingleton) search(cancel chan struct{}, n int, strexp
 		ret, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, buf.String(), LongLoadConfig)
 		if err != nil {
 			fmt.Fprintf(&out, "error evaluating expression %q: %v", buf.String(), err)
+			return
 		}
 
 		if ret.Kind != reflect.Bool {
