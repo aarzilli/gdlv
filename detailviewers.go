@@ -510,9 +510,8 @@ func (vw *customFmtMaker) Update(w *nucular.Window) {
 }
 
 type CustomFormatter struct {
-	Fmtstr  string
-	Argstr  []string
-	argexpr []ast.Expr
+	Fmtstr string
+	Argstr []string
 }
 
 func newCustomFormatter(fmtstr string, argstr string) (*CustomFormatter, error) {
@@ -530,7 +529,7 @@ func newCustomFormatter(fmtstr string, argstr string) (*CustomFormatter, error) 
 		r.Argstr = append(r.Argstr, v[i])
 	}
 
-	err := r.parseArgs()
+	_, err := r.parseArgs()
 	if err != nil {
 		return nil, err
 	}
@@ -538,14 +537,16 @@ func newCustomFormatter(fmtstr string, argstr string) (*CustomFormatter, error) 
 	return r, nil
 }
 
-func (c *CustomFormatter) parseArgs() error {
-	c.argexpr = make([]ast.Expr, len(c.Argstr))
+func (c *CustomFormatter) parseArgs() ([]ast.Expr, error) {
+	argexpr := make([]ast.Expr, len(c.Argstr))
 	for i := range c.Argstr {
-		if err := c.parseArg(i); err != nil {
-			return err
+		ae, err := c.parseArg(i)
+		if err != nil {
+			return nil, err
 		}
+		argexpr[i] = ae
 	}
-	return nil
+	return argexpr, nil
 }
 
 type CustomFormatterWalker struct {
@@ -553,20 +554,20 @@ type CustomFormatterWalker struct {
 	err     error
 }
 
-func (c *CustomFormatter) parseArg(i int) error {
+func (c *CustomFormatter) parseArg(i int) (ast.Expr, error) {
 	var err error
-	c.argexpr[i], err = parser.ParseExpr(c.Argstr[i])
+	argexpr, err := parser.ParseExpr(c.Argstr[i])
 	if err != nil {
-		return fmt.Errorf("argument %d: %s", i, err.Error())
+		return nil, fmt.Errorf("argument %d: %s", i, err.Error())
 	}
 
 	var cfw CustomFormatterWalker
-	ast.Walk(&cfw, c.argexpr[i])
+	ast.Walk(&cfw, argexpr)
 	if cfw.err != nil {
-		return fmt.Errorf("argument %d: %s", i, cfw.err.Error())
+		return nil, fmt.Errorf("argument %d: %s", i, cfw.err.Error())
 	}
 
-	return nil
+	return argexpr, nil
 }
 
 func (cfw *CustomFormatterWalker) Visit(n ast.Node) ast.Visitor {
@@ -578,12 +579,8 @@ func (cfw *CustomFormatterWalker) Visit(n ast.Node) ast.Visitor {
 		ast.Walk(cfw, n.X)
 		return nil
 	case *ast.Ident:
-		if cfw.replace != "" {
+		if cfw.replace != "" && n.Name == "x" {
 			n.Name = cfw.replace
-		} else {
-			if n.Name != "x" {
-				cfw.err = fmt.Errorf("unexpected identifier %q (use x)", n.Name)
-			}
 		}
 		return nil
 	default:
@@ -592,24 +589,22 @@ func (cfw *CustomFormatterWalker) Visit(n ast.Node) ast.Visitor {
 }
 
 func (c *CustomFormatter) Format(v *Variable) {
-	if c.argexpr == nil {
-		c.parseArgs()
-	}
+	argexpr, _ := c.parseArgs()
 
-	vars := make([]*api.Variable, len(c.argexpr))
-	errors := make([]error, len(c.argexpr))
+	vars := make([]*api.Variable, len(argexpr))
+	errors := make([]error, len(argexpr))
 
 	var cfw CustomFormatterWalker
 	cfw.replace = fmt.Sprintf("(*(*%q)(%#x))", v.Type, v.Addr)
 
-	for i := range c.argexpr {
-		if _, isident := c.argexpr[i].(*ast.Ident); isident {
+	for i := range argexpr {
+		if _, isident := argexpr[i].(*ast.Ident); isident {
 			vars[i] = v.Variable
 		} else {
-			ast.Walk(&cfw, c.argexpr[i])
+			ast.Walk(&cfw, argexpr[i])
 
 			var buf bytes.Buffer
-			printer.Fprint(&buf, token.NewFileSet(), c.argexpr[i])
+			printer.Fprint(&buf, token.NewFileSet(), argexpr[i])
 			expr := buf.String()
 
 			vars[i], errors[i] = client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
