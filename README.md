@@ -21,7 +21,7 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
-## 2017-02-12
+## 2018-02-12
 * Implemented "Continue to line"
 * Let `restart` change program arguments
 * Made load parameters configurable
