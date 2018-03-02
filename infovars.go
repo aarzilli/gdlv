@@ -68,6 +68,8 @@ func wrapApiVariable(v *api.Variable, name, expr string) *Variable {
 
 	r.DisplayNameAddr = fmt.Sprintf("%#x %s", v.Addr, r.DisplayName)
 
+	r.Varname = r.DisplayName
+
 	r.Children = wrapApiVariables(v.Children, v.Kind, 0, r.Expression)
 
 	if v.Kind == reflect.Interface {
@@ -237,6 +239,16 @@ func loadLocals(p *asyncLoad) {
 		}
 	}
 	localsPanel.locals = wrapApiVariables(locals, 0, 0, "")
+
+	varmap := map[string]int{}
+
+	for i := range localsPanel.locals {
+		varname := localsPanel.locals[i].Varname
+		d := varmap[varname]
+		localsPanel.locals[i].Varname += fmt.Sprintf(" %d", d)
+		d++
+		varmap[varname] = d
+	}
 
 	for i := range localsPanel.expressions {
 		loadOneExpr(i)
@@ -558,10 +570,6 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 	if addr {
 		name = v.DisplayNameAddr
 	}
-	varname := v.Varname
-	if varname == "" {
-		varname = name
-	}
 
 	style := w.Master().Style()
 
@@ -598,10 +606,10 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 			}
 		}
 		w.LayoutSetWidthScaled(v.Width)
-		if !w.TreeIsOpen(varname) {
+		if !w.TreeIsOpen(v.Varname) {
 			name = hdrCollapsedName()
 		}
-		r := w.TreePushNamed(nucular.TreeNode, varname, name, false)
+		r := w.TreePushNamed(nucular.TreeNode, v.Varname, name, false)
 		showExprMenu(w, exprMenu, v, name)
 		return r
 	}
