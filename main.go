@@ -708,7 +708,7 @@ func loadListing(loc *api.Location, failstate func(string, error)) {
 		return
 	}
 
-	fh, err := os.Open(loc.File)
+	fh, err := os.Open(conf.substitutePath(loc.File))
 	if err != nil {
 		failstate("Open()", err)
 		return

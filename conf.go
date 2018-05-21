@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"os"
 	"runtime"
+	"strings"
 
 	"github.com/aarzilli/nucular/rect"
 )
@@ -29,11 +30,20 @@ type Configuration struct {
 	SavedBounds          map[string]rect.Rect
 	MaxArrayValues       int
 	MaxStringLen         int
+	SubstitutePath       []SubstitutePathRule
 }
 
 type LayoutDescr struct {
 	Layout      string
 	Description string
+}
+
+// Describes a rule for substitution of path to source code file.
+type SubstitutePathRule struct {
+	// Directory path will be substituted if it matches `From`.
+	From string
+	// Path to which substitution is performed.
+	To string
 }
 
 var conf Configuration
@@ -84,4 +94,31 @@ func saveConfiguration() {
 	}
 	defer fh.Close()
 	json.NewEncoder(fh).Encode(&conf)
+}
+
+func (conf *Configuration) substitutePath(path string) string {
+	path = crossPlatformPath(path)
+	separator := string(os.PathSeparator)
+	for _, r := range conf.SubstitutePath {
+		from := crossPlatformPath(r.From)
+		to := r.To
+
+		if !strings.HasSuffix(from, separator) {
+			from = from + separator
+		}
+		if !strings.HasSuffix(to, separator) {
+			to = to + separator
+		}
+		if strings.HasPrefix(path, from) {
+			return strings.Replace(path, from, to, 1)
+		}
+	}
+	return path
+}
+
+func crossPlatformPath(path string) string {
+	if runtime.GOOS == "windows" {
+		return strings.ToLower(path)
+	}
+	return path
 }

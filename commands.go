@@ -838,11 +838,26 @@ func layoutCommand(out io.Writer, args string) error {
 }
 
 func configCommand(out io.Writer, args string) error {
-	wnd.PopupOpen("Configuration", dynamicPopupFlags, rect.Rect{100, 100, 600, 700}, true, configWindow)
+	cw := newConfigWindow()
+	wnd.PopupOpen("Configuration", dynamicPopupFlags, rect.Rect{100, 100, 600, 700}, true, cw.Update)
 	return nil
 }
 
-func configWindow(w *nucular.Window) {
+type configWindow struct {
+	selectedSubstitutionRule int
+	from                     nucular.TextEditor
+	to                       nucular.TextEditor
+}
+
+func newConfigWindow() *configWindow {
+	return &configWindow{
+		selectedSubstitutionRule: -1,
+		from:                     nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
+		to:                       nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
+	}
+}
+
+func (cw *configWindow) Update(w *nucular.Window) {
 	const col1 = 160
 	w.Row(20).Static(col1, 200)
 	w.Label("Theme:", "LC")
@@ -908,9 +923,57 @@ func configWindow(w *nucular.Window) {
 	}
 
 	w.Row(30).Static(0)
+
+	w.Row(30).Static(200, 200)
+	w.Label("Load configuration:", "LC")
 	w.PropertyInt("Max array load:", 1, &conf.MaxArrayValues, 4096, 1, 1)
-	w.Row(30).Static(0)
+	w.Row(30).Static(200, 200)
+	w.Spacing(1)
 	w.PropertyInt("Max string load:", 1, &conf.MaxStringLen, 4096, 1, 1)
+
+	w.Row(30).Static(0)
+
+	w.Row(30).Static(0)
+	w.Label("Path substitutions:", "LC")
+	w.Row(240).Static(0, 100)
+	if w := w.GroupBegin("path-substitution-list", nucular.WindowNoHScrollbar); w != nil {
+		w.Row(30).Static(0)
+		if len(conf.SubstitutePath) == 0 {
+			w.Label("(no substitution rules)", "LC")
+		}
+		for i, r := range conf.SubstitutePath {
+			s := cw.selectedSubstitutionRule == i
+			w.SelectableLabel(fmt.Sprintf("%s -> %s", r.From, r.To), "LC", &s)
+			if s {
+				cw.selectedSubstitutionRule = i
+			}
+		}
+		w.GroupEnd()
+	}
+	if w := w.GroupBegin("path-substitution-controls", nucular.WindowNoScrollbar); w != nil {
+		w.Row(30).Static(0)
+		if w.ButtonText("Remove") && cw.selectedSubstitutionRule >= 0 && cw.selectedSubstitutionRule < len(conf.SubstitutePath) {
+			copy(conf.SubstitutePath[cw.selectedSubstitutionRule:], conf.SubstitutePath[cw.selectedSubstitutionRule+1:])
+			conf.SubstitutePath = conf.SubstitutePath[:len(conf.SubstitutePath)-1]
+			cw.selectedSubstitutionRule = -1
+		}
+		w.GroupEnd()
+	}
+
+	w.Row(30).Static(0)
+	w.Label("New rule:", "LC")
+	w.Row(30).Static(50, 150, 50, 150, 80)
+	w.Label("From:", "LC")
+	cw.from.Edit(w)
+	w.Label("To:", "LC")
+	cw.to.Edit(w)
+	if w.ButtonText("Add") {
+		conf.SubstitutePath = append(conf.SubstitutePath, SubstitutePathRule{From: string(cw.from.Buffer), To: string(cw.to.Buffer)})
+		cw.from.Buffer = cw.from.Buffer[:0]
+		cw.to.Buffer = cw.to.Buffer[:0]
+	}
+
+	w.Row(30).Static(0)
 
 	w.Row(20).Static(0, 100)
 	w.Spacing(1)

@@ -21,6 +21,9 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2018-05-21
+* Implemented path substitution rules
+
 ## 2018-02-12
 * Implemented "Continue to line"
 * Let `restart` change program arguments
