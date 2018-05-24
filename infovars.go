@@ -10,10 +10,13 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/image/font"
+
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
+	nstyle "github.com/aarzilli/nucular/style"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
@@ -32,11 +35,11 @@ type Variable struct {
 	Value    string
 	IntMode  numberMode
 	FloatFmt string
-	Varname  string
 	loading  bool
+	Varname  string
 
-	DisplayName, DisplayNameAddr string
-	Expression                   string
+	DisplayName string
+	Expression  string
 
 	Children []*Variable
 }
@@ -56,17 +59,11 @@ func wrapApiVariable(v *api.Variable, name, expr string) *Variable {
 		f.Format(r)
 	}
 
-	if v.Type != "" {
-		if name != "" {
-			r.DisplayName = fmt.Sprintf("%s %s", name, v.Type)
-		} else {
-			r.DisplayName = v.Type
-		}
-	} else {
+	if name != "" {
 		r.DisplayName = name
+	} else {
+		r.DisplayName = v.Type
 	}
-
-	r.DisplayNameAddr = fmt.Sprintf("%#x %s", v.Addr, r.DisplayName)
 
 	r.Varname = r.DisplayName
 
@@ -76,7 +73,6 @@ func wrapApiVariable(v *api.Variable, name, expr string) *Variable {
 		if len(r.Children) > 0 && r.Children[0].Kind == reflect.Ptr {
 			if len(r.Children[0].Children) > 0 {
 				r.Children[0].Children[0].DisplayName = r.Children[0].DisplayName
-				r.Children[0].Children[0].DisplayNameAddr = r.Children[0].DisplayNameAddr
 			}
 		}
 	}
@@ -409,7 +405,7 @@ func addExpression(newexpr string) {
 	}(i)
 }
 
-func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb string) {
+func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb []byte) {
 	if running {
 		return
 	}
@@ -425,11 +421,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 	}
 
 	if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
-		clipboard.Set(clipb)
-	}
-
-	if w.MenuItem(label.TA("Copy address to clipboard", "LC")) {
-		clipboard.Set(fmt.Sprintf("%#x", v.Addr))
+		clipboard.Set(string(clipb))
 	}
 
 	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
@@ -565,12 +557,102 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb s
 	}
 }
 
-func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Variable) {
-	name := v.DisplayName
-	if addr {
-		name = v.DisplayNameAddr
+const maxVariableHeaderWidth = 4096
+
+func variableHeader(w *nucular.Window, addr bool, exprMenu int, v *Variable) bool {
+	style := w.Master().Style()
+
+	w.LayoutSetWidthScaled(maxVariableHeaderWidth)
+	lblrect, out, isopen := w.TreePushCustom(nucular.TreeNode, v.Varname, false)
+	if out == nil {
+		return isopen
 	}
 
+	clipb := []byte{}
+
+	print := func(str string, font font.Face) {
+		clipb = append(clipb, []byte(str)...)
+		clipb = append(clipb, ' ')
+		out.DrawText(lblrect, str, font, style.Tab.Text)
+		width := nucular.FontWidth(font, str) + spaceWidth
+		lblrect.X += width
+		lblrect.W -= width
+	}
+
+	if addr {
+		print(fmt.Sprintf("%#x", v.Addr), style.Font)
+	}
+	if isopen {
+		print(v.DisplayName, boldFace)
+
+		switch v.Kind {
+		case reflect.Slice:
+			print(v.Type, style.Font)
+			print(fmt.Sprintf("(len: %d cap: %d)", v.Len, v.Cap), style.Font)
+		case reflect.Interface:
+			if len(v.Children) > 0 && v.Children[0] != nil {
+				print(fmt.Sprintf("%s (%v)", v.Type, v.Children[0].Type), style.Font)
+			} else {
+				print(v.Type, style.Font)
+			}
+		default:
+			print(v.Type, style.Font)
+		}
+	} else {
+		print(v.DisplayName, boldFace)
+		print(v.Type, style.Font)
+		if v.Value != "" {
+			print("= "+v.Value, style.Font)
+		} else {
+			print("= "+v.SinglelineStringNoType(), style.Font)
+		}
+	}
+	showExprMenu(w, exprMenu, v, clipb)
+	return isopen
+}
+
+func variableNoHeader(w *nucular.Window, addr bool, exprMenu int, v *Variable, value string) {
+	style := w.Master().Style()
+	symX := style.Tab.Padding.X
+	symW := nucular.FontHeight(style.Font)
+	item_spacing := style.NormalWindow.Spacing
+	z := symX + symW + item_spacing.X + 2*style.Tab.Spacing.X
+	w.LayoutSetWidthScaled(z)
+	w.Spacing(1)
+	w.LayoutSetWidthScaled(maxVariableHeaderWidth)
+
+	//w.Label(fmt.Sprintf("%s %s = %s", v.DisplayName, v.Type, value), "LC")
+
+	lblrect, out := w.Custom(nstyle.WidgetStateActive)
+	if out == nil {
+		return
+	}
+
+	lblrect.Y += style.Text.Padding.Y
+	lblrect.H -= 2 * style.Text.Padding.Y
+
+	clipb := []byte{}
+
+	print := func(str string, font font.Face) {
+		clipb = append(clipb, []byte(str)...)
+		clipb = append(clipb, ' ')
+		out.DrawText(lblrect, str, font, style.Text.Color)
+		width := nucular.FontWidth(font, str) + spaceWidth
+		lblrect.X += width
+		lblrect.W -= width
+	}
+
+	if addr {
+		print(fmt.Sprintf("%#x", v.Addr), style.Font)
+	}
+	print(v.DisplayName, boldFace)
+	print(v.Type, style.Font)
+	print("= "+value, style.Font)
+
+	showExprMenu(w, exprMenu, v, clipb)
+}
+
+func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Variable) {
 	style := w.Master().Style()
 
 	if v.Flags&api.VariableShadowed != 0 {
@@ -586,50 +668,12 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 		}
 	}
 
-	const maxWidth = 4096
-
-	hdrCollapsedName := func() string {
-		if v.Value != "" {
-			return name + " = " + v.Value
-		}
-		return name + " = " + v.SinglelineStringNoType()
-	}
-
 	hdr := func() bool {
-		if v.Width == 0 {
-			v.Width = nucular.FontWidth(style.Font, hdrCollapsedName()) + nucular.FontHeight(style.Font) + style.Tab.Padding.X*3 + style.GroupWindow.Padding.X*2 + style.Tab.NodeButton.Padding.X*2 + style.Tab.NodeButton.Border*2
-			if !addr {
-				v.Width += nucular.FontWidth(style.Font, fmt.Sprintf("%#x ", v.Addr))
-			}
-			if v.Width > maxWidth {
-				v.Width = maxWidth
-			}
-		}
-		w.LayoutSetWidthScaled(v.Width)
-		if !w.TreeIsOpen(v.Varname) {
-			name = hdrCollapsedName()
-		}
-		r := w.TreePushNamed(nucular.TreeNode, v.Varname, name, false)
-		showExprMenu(w, exprMenu, v, name)
-		return r
+		return variableHeader(w, addr, exprMenu, v)
 	}
 
 	cblbl := func(fmtstr string, args ...interface{}) {
-		s := fmt.Sprintf(fmtstr, args...)
-		if v.Width == 0 {
-			v.Width = nucular.FontWidth(style.Font, s) + style.Text.Padding.X*2
-			if !addr {
-				v.Width += nucular.FontWidth(style.Font, fmt.Sprintf("%#x ", v.Addr))
-			}
-			if v.Width > maxWidth {
-				v.Width = maxWidth
-			}
-		}
-		w.LayoutSetWidthScaled(w.Master().Style().Tab.Indent)
-		w.Spacing(1)
-		w.LayoutSetWidthScaled(v.Width)
-		w.Label(s, "LC")
-		showExprMenu(w, exprMenu, v, s)
+		variableNoHeader(w, addr, exprMenu, v, fmt.Sprintf(fmtstr, args...))
 	}
 
 	dynlbl := func(s string) {
@@ -639,33 +683,31 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 
 	w.Row(varRowHeight).Static()
 	if v.Unreadable != "" {
-		cblbl("%s = (unreadable %s)", name, v.Unreadable)
+		cblbl("(unreadable %s)", v.Unreadable)
 		return
 	}
 
 	if depth > 0 && v.Addr == 0 {
-		cblbl("%s = nil", name, v.Type)
+		cblbl("nil")
 		return
 	}
 
 	switch v.Kind {
 	case reflect.Slice:
 		if hdr() {
-			dynlbl(fmt.Sprintf("len: %d cap: %d", v.Len, v.Cap))
 			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
 		}
 	case reflect.Array:
 		if hdr() {
-			dynlbl(fmt.Sprintf("len: %d", v.Len))
 			showArrayOrSliceContents(w, depth, addr, v)
 			w.TreePop()
 		}
 	case reflect.Ptr:
 		if len(v.Children) == 0 {
-			cblbl("%s ?", name)
+			cblbl("?")
 		} else if v.Type == "" || v.Children[0].Addr == 0 {
-			cblbl("%s = nil", name)
+			cblbl("nil")
 		} else {
 			if hdr() {
 				if v.Children[0].OnlyAddr {
@@ -678,16 +720,16 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 			}
 		}
 	case reflect.UnsafePointer:
-		cblbl("%s = unsafe.Pointer(%#x)", name, v.Children[0].Addr)
+		cblbl("unsafe.Pointer(%#x)", v.Children[0].Addr)
 	case reflect.String:
 		if v.Len == int64(len(v.Value)) {
-			cblbl("%s = %q", name, v.Value)
+			cblbl("%q", v.Value)
 		} else {
-			cblbl("%s = %q...", name, v.Value)
+			cblbl("%q...", v.Value)
 		}
 	case reflect.Chan:
 		if len(v.Children) == 0 {
-			cblbl("%s = nil", name)
+			cblbl("nil")
 		} else {
 			if hdr() {
 				showStructContents(w, depth, addr, v)
@@ -706,7 +748,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 		}
 	case reflect.Interface:
 		if v.Children[0].Kind == reflect.Invalid {
-			cblbl("%s = nil", name)
+			cblbl("nil")
 		} else {
 			if hdr() {
 				showInterfaceContents(w, depth, addr, v)
@@ -734,19 +776,19 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 		}
 	case reflect.Func:
 		if v.Value == "" {
-			cblbl("%s = nil", name)
+			cblbl("nil")
 		} else {
-			cblbl(fmt.Sprintf("%s = %s", name, v.Value))
+			cblbl(v.Value)
 		}
 	case reflect.Complex64, reflect.Complex128:
-		cblbl("%s = (%s + %si)", name, v.Children[0].Value, v.Children[1].Value)
+		cblbl("(%s + %si)", v.Children[0].Value, v.Children[1].Value)
 	case reflect.Float32, reflect.Float64:
-		cblbl("%s = %s", name, v.Value)
+		cblbl(v.Value)
 	default:
 		if v.Value != "" {
-			cblbl("%s = %s", name, v.Value)
+			cblbl(v.Value)
 		} else {
-			cblbl("%s = (unknown %s)", name, v.Kind)
+			cblbl("(unknown %s)", v.Kind)
 		}
 	}
 }
@@ -809,12 +851,8 @@ func showInterfaceContents(w *nucular.Window, depth int, addr bool, v *Variable)
 
 	switch data.Kind {
 	case reflect.Struct:
-		w.Row(varRowHeight).Dynamic(1)
-		w.Label("concrete type: "+v.Children[0].Type, "LC")
 		showStructContents(w, depth, addr, data)
 	case reflect.Array, reflect.Slice:
-		w.Row(varRowHeight).Dynamic(1)
-		w.Label("concrete type: "+v.Children[0].Type, "LC")
 		showArrayOrSliceContents(w, depth, addr, data)
 	default:
 		showVariable(w, depth+1, addr, -1, data)
@@ -884,11 +922,11 @@ func loadMoreStruct(v *Variable) {
 				v.Unreadable = err.Error()
 			} else {
 				dn := v.DisplayName
-				dna := v.DisplayNameAddr
+				vn := v.Varname
 				lv.Name = v.Name
 				*v = *wrapApiVariable(lv, lv.Name, v.Expression)
+				v.Varname = vn
 				v.DisplayName = dn
-				v.DisplayNameAddr = dna
 			}
 			wnd.Changed()
 			additionalLoadMu.Lock()

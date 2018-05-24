@@ -30,15 +30,17 @@ import (
 	"golang.org/x/mobile/event/key"
 )
 
-//go:generate go-bindata -o internal/assets/assets.go -pkg assets fontawesome-webfont.ttf
+//go:generate go-bindata -o internal/assets/assets.go -pkg assets fontawesome-webfont.ttf droid-sans.bold.ttf
 
 const profileEnabled = false
 
-var zeroWidth, arrowWidth, starWidth int
+var zeroWidth, arrowWidth, starWidth, spaceWidth int
 
-var iconFontInit sync.Once
+var extraFontInit sync.Once
 var iconTtfont *truetype.Font
 var iconFace font.Face
+var boldTtfont *truetype.Font
+var boldFace font.Face
 
 const (
 	arrowIconChar      = "\uf061"
@@ -104,14 +106,18 @@ func setupStyle() {
 	style.MenuWindow.FooterPadding.Y = 0
 	style.ContextualWindow.FooterPadding.Y = 0
 	zeroWidth = nucular.FontWidth(style.Font, "0")
+	spaceWidth = nucular.FontWidth(style.Font, " ")
 
-	iconFontInit.Do(func() {
+	extraFontInit.Do(func() {
 		iconFontData, _ := assets.Asset("fontawesome-webfont.ttf")
 		iconTtfont, _ = freetype.ParseFont(iconFontData)
+		boldFontData, _ := assets.Asset("droid-sans.bold.ttf")
+		boldTtfont, _ = freetype.ParseFont(boldFontData)
 	})
 
 	sz := int(12 * conf.Scaling)
 	iconFace = truetype.NewFace(iconTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
+	boldFace = truetype.NewFace(boldTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
 
 	arrowWidth = nucular.FontWidth(iconFace, arrowIconChar)
 	starWidth = nucular.FontWidth(style.Font, breakpointIconChar)

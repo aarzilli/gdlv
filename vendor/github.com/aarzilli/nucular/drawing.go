@@ -199,27 +199,21 @@ func (d *drawableScalerAndBorders) Draw(z *nstyle.Style, out *command.Buffer) {
 // TREE
 ///////////////////////////////////////////////////////////////////////////////////
 
-func drawTreeNode(win *Window, style *nstyle.Window, type_ TreeType, header rect.Rect, sym rect.Rect, title string) {
+func drawTreeNode(win *Window, style *nstyle.Window, type_ TreeType, header rect.Rect, sym rect.Rect) rect.Rect {
 	z := &win.ctx.Style
 	out := &win.cmds
 
 	item_spacing := style.Spacing
 	panel_padding := style.Padding
 
-	var text textWidget
-
 	if type_ == TreeTab {
 		var background *nstyle.Item = &z.Tab.Background
 		if background.Type == nstyle.ItemImage {
 			win.cmds.DrawImage(header, background.Data.Image)
-			text.Background = color.RGBA{0, 0, 0, 0}
 		} else {
-			text.Background = background.Data.Color
 			out.FillRect(header, 0, z.Tab.BorderColor)
 			out.FillRect(shrinkRect(header, z.Tab.Border), z.Tab.Rounding, background.Data.Color)
 		}
-	} else {
-		text.Background = style.Background
 	}
 
 	/* draw node label */
@@ -230,9 +224,7 @@ func drawTreeNode(win *Window, style *nstyle.Window, type_ TreeType, header rect
 	lblrect.W = header.W - (sym.W + 2*z.Tab.Spacing.X + item_spacing.Y + panel_padding.X)
 	lblrect.H = FontHeight(z.Font)
 
-	text.Text = z.Tab.Text
-	widgetText(out, lblrect, title, &text, "LC", z.Font)
-	return
+	return lblrect
 }
 
 ///////////////////////////////////////////////////////////////////////////////////

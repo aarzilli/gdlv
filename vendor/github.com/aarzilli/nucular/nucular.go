@@ -1359,6 +1359,31 @@ func (win *Window) TreePush(type_ TreeType, title string, initialOpen bool) bool
 // will be initially open.
 // Type_ will determine the style of this collapsable section.
 func (win *Window) TreePushNamed(type_ TreeType, name, title string, initial_open bool) bool {
+	labelBounds, _, ok := win.TreePushCustom(type_, name, initial_open)
+
+	style := win.style()
+	z := &win.ctx.Style
+	out := &win.cmds
+
+	var text textWidget
+	if type_ == TreeTab {
+		var background *nstyle.Item = &z.Tab.Background
+		if background.Type == nstyle.ItemImage {
+			text.Background = color.RGBA{0, 0, 0, 0}
+		} else {
+			text.Background = background.Data.Color
+		}
+	} else {
+		text.Background = style.Background
+	}
+
+	text.Text = z.Tab.Text
+	widgetText(out, labelBounds, title, &text, "LC", z.Font)
+
+	return ok
+}
+
+func (win *Window) TreePushCustom(type_ TreeType, name string, initial_open bool) (bounds rect.Rect, out *command.Buffer, ok bool) {
 	/* cache some data */
 	layout := win.layout
 	style := &win.ctx.Style
@@ -1407,7 +1432,7 @@ func (win *Window) TreePushNamed(type_ TreeType, name, title string, initial_ope
 	sym.X = header.X + panel_padding.X + style.Tab.Padding.X
 
 	win.widgets.Add(ws, header)
-	drawTreeNode(win, win.style(), type_, header, sym, title)
+	labelBounds := drawTreeNode(win, win.style(), type_, header, sym)
 
 	/* calculate the triangle points and draw triangle */
 	symbolType := style.Tab.SymMaximize
@@ -1427,9 +1452,9 @@ func (win *Window) TreePushNamed(type_ TreeType, name, title string, initial_ope
 		layout.Width -= (style.Tab.Indent + panel_padding.X)
 		layout.Row.TreeDepth++
 		win.curNode = node
-		return true
+		return labelBounds, &win.cmds, true
 	} else {
-		return false
+		return labelBounds, &win.cmds, false
 	}
 }
 
