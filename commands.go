@@ -1083,6 +1083,17 @@ func printcontext(out io.Writer, state *api.DebuggerState) error {
 	return nil
 }
 
+func printReturnValues(out io.Writer, th *api.Thread) {
+	if len(th.ReturnValues) == 0 {
+		return
+	}
+	fmt.Fprintln(out, "Values returned:")
+	for _, v := range th.ReturnValues {
+		fmt.Fprintf(out, "\t%s: %s\n", v.Name, v.MultilineString("\t"))
+	}
+	fmt.Fprintln(out)
+}
+
 func printcontextThread(out io.Writer, th *api.Thread) {
 	fn := th.Function
 
@@ -1091,6 +1102,7 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 		if th.Function != nil && th.Function.Optimized {
 			fmt.Fprintln(out, optimizedFunctionWarning)
 		}
+		printReturnValues(out, th)
 		return
 	}
 
@@ -1132,6 +1144,8 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 	if th.Function != nil && th.Function.Optimized {
 		fmt.Fprintln(out, optimizedFunctionWarning)
 	}
+
+	printReturnValues(out, th)
 
 	if th.BreakpointInfo != nil {
 		bp := th.Breakpoint

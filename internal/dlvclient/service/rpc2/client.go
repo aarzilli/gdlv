@@ -17,6 +17,8 @@ import (
 type RPCClient struct {
 	addr   string
 	client *rpc.Client
+
+	retValLoadCfg *api.LoadConfig
 }
 
 // Ensure the implementation satisfies the interface.
@@ -95,7 +97,7 @@ func (c *RPCClient) continueDir(cmd string) <-chan *api.DebuggerState {
 	go func() {
 		for {
 			out := new(CommandOut)
-			err := c.call("Command", &api.DebuggerCommand{Name: cmd}, &out)
+			err := c.call("Command", &api.DebuggerCommand{Name: cmd, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
 			state := out.State
 			if err != nil {
 				state.Err = err
@@ -141,25 +143,25 @@ func (c *RPCClient) exitedToError(out *CommandOut, err error) (*api.DebuggerStat
 
 func (c *RPCClient) Next() (*api.DebuggerState, error) {
 	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.Next}, &out)
+	err := c.call("Command", api.DebuggerCommand{Name: api.Next, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
 	return c.exitedToError(&out, err)
 }
 
 func (c *RPCClient) Step() (*api.DebuggerState, error) {
 	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.Step}, &out)
+	err := c.call("Command", api.DebuggerCommand{Name: api.Step, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
 	return c.exitedToError(&out, err)
 }
 
 func (c *RPCClient) StepOut() (*api.DebuggerState, error) {
 	var out CommandOut
-	err := c.call("Command", &api.DebuggerCommand{Name: api.StepOut}, &out)
+	err := c.call("Command", &api.DebuggerCommand{Name: api.StepOut, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
 	return c.exitedToError(&out, err)
 }
 
 func (c *RPCClient) StepInstruction() (*api.DebuggerState, error) {
 	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.StepInstruction}, &out)
+	err := c.call("Command", api.DebuggerCommand{Name: api.StepInstruction, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
 	return c.exitedToError(&out, err)
 }
 
@@ -372,6 +374,10 @@ func (c *RPCClient) ClearCheckpoint(id int) error {
 	var out ClearCheckpointOut
 	err := c.call("ClearCheckpoint", ClearCheckpointIn{id}, &out)
 	return err
+}
+
+func (c *RPCClient) SetReturnValuesLoadConfig(cfg *api.LoadConfig) {
+	c.retValLoadCfg = cfg
 }
 
 func (c *RPCClient) call(method string, args, reply interface{}) error {
