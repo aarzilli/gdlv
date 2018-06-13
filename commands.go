@@ -237,6 +237,16 @@ func (c *Commands) help(out io.Writer, args string) error {
 }
 
 func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
+	if curThread < 0 {
+		cmd := "B"
+		if tracepoint {
+			cmd = "T"
+		}
+		ScheduledBreakpoints = append(ScheduledBreakpoints, fmt.Sprintf("%s%s", cmd, argstr))
+		fmt.Fprintf(out, "Breakpoint will be set on restart\n")
+		return nil
+	}
+
 	defer refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	args := strings.SplitN(argstr, " ", 2)
 
@@ -278,6 +288,21 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 }
 
 func setBreakpointEx(out io.Writer, requestedBp *api.Breakpoint) {
+	if curThread < 0 {
+		switch {
+		default:
+			fallthrough
+		case requestedBp.Addr != 0:
+			fmt.Fprintf(out, "error: process exited\n")
+			return
+		case requestedBp.FunctionName != "":
+			ScheduledBreakpoints = append(ScheduledBreakpoints, fmt.Sprintf("B%s", requestedBp.FunctionName))
+		case requestedBp.File != "":
+			ScheduledBreakpoints = append(ScheduledBreakpoints, fmt.Sprintf("T%s:%d", requestedBp.File, requestedBp.Line))
+		}
+		fmt.Fprintf(out, "Breakpoint will be set on restart\n")
+		return
+	}
 	bp, err := client.CreateBreakpoint(requestedBp)
 	if err != nil {
 		fmt.Fprintf(out, "Could not create breakpoint: %v\n", err)
@@ -453,7 +478,7 @@ func doRestart(out io.Writer, resetArgs bool, args []string) error {
 	if err != nil {
 		return err
 	}
-	continueToRuntimeMain()
+	finishRestart(out, true)
 	refreshState(refreshToFrameZero, clearStop, nil)
 	return nil
 }
@@ -480,9 +505,8 @@ func doRebuild(out io.Writer) error {
 
 	restoreFrozenBreakpoints(out)
 
-	loadProgramInfo(out)
+	finishRestart(out, true)
 
-	continueToRuntimeMain()
 	refreshState(refreshToFrameZero, clearStop, nil)
 	return nil
 }

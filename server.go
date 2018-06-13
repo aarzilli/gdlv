@@ -39,6 +39,7 @@ type ServerDescr struct {
 
 var RemoveExecutable bool = true
 var BackendServer ServerDescr
+var ScheduledBreakpoints []string
 
 func parseArguments() (descr ServerDescr) {
 	debugname := func(p string) {
@@ -333,11 +334,7 @@ func (descr *ServerDescr) connectTo() {
 		fmt.Fprintf(&scrollbackOut, "Could not connect\n")
 	}
 
-	loadProgramInfo(&scrollbackOut)
-
-	if descr.atStart {
-		continueToRuntimeMain()
-	}
+	finishRestart(&scrollbackOut, descr.atStart)
 
 	mu.Lock()
 	running = false
@@ -363,6 +360,23 @@ func continueToRuntimeMain() {
 
 	ch := client.Continue()
 	for range ch {
+	}
+}
+
+func finishRestart(out io.Writer, contToMain bool) {
+	loadProgramInfo(out)
+
+	if len(ScheduledBreakpoints) > 0 {
+		refreshState(refreshToFrameZero, clearStop, nil)
+		for _, scheduledBp := range ScheduledBreakpoints {
+			tracepoint := scheduledBp[0] == 'T'
+			setBreakpoint(out, tracepoint, scheduledBp[1:])
+		}
+		ScheduledBreakpoints = ScheduledBreakpoints[:0]
+	}
+
+	if contToMain {
+		continueToRuntimeMain()
 	}
 }
 
