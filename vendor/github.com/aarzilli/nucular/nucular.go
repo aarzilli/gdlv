@@ -1226,12 +1226,8 @@ func (win *Window) LayoutFitWidth(id int, minwidth int) {
 	}
 	adjust, ok := win.adjust[layout.Cnt]
 	if !ok {
-		win.adjust[layout.Cnt] = make(map[int]*adjustCol)
-		win.adjust[layout.Cnt][layout.Row.Index2] = &adjustCol{id: id, width: minwidth, first: true}
-		win.ctx.trashFrame = true
-		win.LayoutSetWidth(minwidth)
-		layout.Row.CalcMaxWidth = true
-		return
+		adjust = make(map[int]*adjustCol)
+		win.adjust[layout.Cnt] = adjust
 	}
 	col, ok := adjust[layout.Row.Index2]
 	if !ok || col.id != id || col.font != win.ctx.Style.Font {
@@ -1244,7 +1240,7 @@ func (win *Window) LayoutFitWidth(id int, minwidth int) {
 		col.width = minwidth
 		col.first = true
 		win.ctx.trashFrame = true
-		win.LayoutSetWidthScaled(minwidth)
+		win.LayoutSetWidth(minwidth)
 		layout.Row.CalcMaxWidth = true
 		return
 	}
