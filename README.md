@@ -21,6 +21,10 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2018-06-13
+* Print return values when stepping out of a function
+* Allow setting breakpoints after the program has exited
+
 ## 2018-05-21
 * Implemented path substitution rules
 
