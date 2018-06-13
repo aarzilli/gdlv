@@ -536,7 +536,15 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 			curThread = -1
 			curGid = -1
 			curFrame = 0
-			failstate("GetState()", err)
+			if !strings.Contains(err.Error(), " has exited with status ") {
+				failstate("GetState()", err)
+			}
+
+			listingPanel.id++
+			if clearKind != clearBreakpoint {
+				loadListing(listingPanel.pinnedLoc, failstate)
+			}
+
 			mu.Unlock()
 			return
 		}
