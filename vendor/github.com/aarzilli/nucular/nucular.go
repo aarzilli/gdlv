@@ -1441,6 +1441,11 @@ func (win *Window) TreePushCustom(type_ TreeType, name string, initial_open bool
 	}
 	doButton(win, label.S(symbolType), sym, styleButton, in, false)
 
+	out = &win.cmds
+	if !widget_state {
+		out = nil
+	}
+
 	/* increase x-axis cursor widget position pointer */
 	if node.Open {
 		layout.AtX = header.X + layout.Offset.X + style.Tab.Indent
@@ -1448,9 +1453,9 @@ func (win *Window) TreePushCustom(type_ TreeType, name string, initial_open bool
 		layout.Width -= (style.Tab.Indent + panel_padding.X)
 		layout.Row.TreeDepth++
 		win.curNode = node
-		return labelBounds, &win.cmds, true
+		return labelBounds, out, true
 	} else {
-		return labelBounds, &win.cmds, false
+		return labelBounds, out, false
 	}
 }
 
