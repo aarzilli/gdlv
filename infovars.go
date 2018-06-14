@@ -629,7 +629,6 @@ func variableNoHeader(w *nucular.Window, addr bool, exprMenu int, v *Variable, v
 	}
 
 	lblrect.Y += style.Text.Padding.Y
-	lblrect.H -= 2 * style.Text.Padding.Y
 
 	clipb := []byte{}
 
