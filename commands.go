@@ -234,12 +234,11 @@ and GDLV_BOLD_FONT to the path of two ttf files.
 	fmt.Fprintln(out, "Keybindings:")
 	fmt.Fprintln(w, "    Ctrl +/- \t Zoom in/out")
 	fmt.Fprintln(w, "    Escape \t Focus command line")
-	fmt.Fprintln(w, "    Ctrl delete \t Request manual stop")
+	fmt.Fprintln(w, "    Shift-F5, Ctrl-delete \t Request manual stop")
 	fmt.Fprintln(w, "    F5 \t Continue")
-	fmt.Fprintln(w, "    Shift-F5 \t Request manual stop")
-	fmt.Fprintln(w, "    F10 \t Next")
-	fmt.Fprintln(w, "    F11 \t Step")
-	fmt.Fprintln(w, "    Shift-F11 \t Step Out")
+	fmt.Fprintln(w, "    F10, Alt-right \t Next")
+	fmt.Fprintln(w, "    F11, Alt-down \t Step")
+	fmt.Fprintln(w, "    Shift-F11, Alt-up \t Step Out")
 
 	if err := w.Flush(); err != nil {
 		return err

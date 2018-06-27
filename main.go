@@ -246,16 +246,22 @@ func guiUpdate(w *nucular.Window) {
 			}
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeF10):
+			fallthrough
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeRightArrow):
 			if !running && client != nil {
 				doCommand("next")
 			}
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeF11):
+			fallthrough
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeDownArrow):
 			if !running && client != nil {
 				doCommand("step")
 			}
 
 		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeF11):
+			fallthrough
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeUpArrow):
 			if !running && client != nil {
 				doCommand("stepout")
 			}
