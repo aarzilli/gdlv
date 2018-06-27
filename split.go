@@ -271,12 +271,13 @@ func listingToolbar(sw *nucular.Window) {
 }
 
 func commandToolbar(sw *nucular.Window) {
+	hovering := ""
 	style := sw.Master().Style()
 	iconbtn := func(icon string, tooltip string) bool {
 		iconFace, style.Font = style.Font, iconFace
 		r := sw.ButtonText(icon)
 		if sw.Input().Mouse.HoveringRect(sw.LastWidgetBounds) {
-			sw.Tooltip(tooltip)
+			hovering = tooltip
 		}
 		iconFace, style.Font = style.Font, iconFace
 		return r
@@ -315,6 +316,9 @@ func commandToolbar(sw *nucular.Window) {
 		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(stepoutIconChar, "stepout")
 	}
+
+	sw.LayoutSetWidth(100)
+	sw.Label(hovering, "LC")
 
 	sw.LayoutResetStatic(0, headerCombo, 2)
 	sw.Spacing(1)

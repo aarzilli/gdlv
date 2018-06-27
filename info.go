@@ -971,6 +971,14 @@ func updateListingPanel(container *nucular.Window) {
 			ctxtbounds := bpbounds
 			ctxtbounds.W = (textbounds.X + textbounds.W) - ctxtbounds.X
 
+			if listp.Input().Mouse.Clicked(mouse.ButtonMiddle, ctxtbounds) {
+				if line.bp != nil {
+					go execClearBreakpoint(line.bp.ID)
+				} else {
+					go listingSetBreakpoint(listingPanel.file, line.lineno)
+				}
+			}
+
 			if w := listp.ContextualOpen(0, image.Point{}, ctxtbounds, nil); w != nil {
 				w.Row(20).Dynamic(1)
 				if line.bp != nil {
