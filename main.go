@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"image/color"
 	"io"
+	"io/ioutil"
 	"math"
 	"os"
 	"runtime"
@@ -36,10 +37,10 @@ const profileEnabled = false
 
 var zeroWidth, arrowWidth, starWidth, spaceWidth int
 
-var extraFontInit sync.Once
+var fontInit sync.Once
 var iconTtfont *truetype.Font
 var iconFace font.Face
-var boldTtfont *truetype.Font
+var boldTtfont, normalTtfont *truetype.Font
 var boldFace font.Face
 
 const (
@@ -98,6 +99,47 @@ func setupStyle() {
 	case redTheme:
 		wnd.SetStyle(nstyle.FromTable(redThemeTable, conf.Scaling))
 	}
+
+	fontInit.Do(func() {
+		iconFontData, _ := assets.Asset("fontawesome-webfont.ttf")
+		iconTtfont, _ = freetype.ParseFont(iconFontData)
+
+		normalFontPath := os.Getenv("GDLV_NORMAL_FONT")
+		boldFontPath := os.Getenv("GDLV_BOLD_FONT")
+		customFonts := false
+
+		if normalFontPath != "" && boldFontPath != "" {
+			_, normerr := os.Stat(normalFontPath)
+			_, bolderr := os.Stat(boldFontPath)
+			if normerr == nil && bolderr == nil {
+				normalFontData, normerr := ioutil.ReadFile(normalFontPath)
+				boldFontData, bolderr := ioutil.ReadFile(boldFontPath)
+				if normerr == nil && bolderr == nil {
+					normalTtfont, normerr = freetype.ParseFont(normalFontData)
+					boldTtfont, bolderr = freetype.ParseFont(boldFontData)
+					if normerr == nil && bolderr == nil {
+						customFonts = true
+					}
+				}
+			}
+			if normerr != nil {
+				fmt.Fprintf(os.Stderr, "Error opening GDLV_NORMAL_FONT %q: %v\n", normalFontPath, normerr)
+			}
+			if bolderr != nil {
+				fmt.Fprintf(os.Stderr, "Error opening GDLV_BOLD_FONT %q: %v\n", boldFontPath, bolderr)
+			}
+		} else if normalFontPath != "" && boldFontPath == "" {
+			fmt.Fprintf(os.Stderr, "GDLV_NORMAL_FONT set without GDLV_BOLD_FONT\n")
+		} else if normalFontPath == "" && boldFontPath != "" {
+			fmt.Fprintf(os.Stderr, "GDLV_BOLD_FONT set without GDLV_NORMAL_FONT\n")
+		}
+
+		if !customFonts {
+			boldFontData, _ := assets.Asset("droid-sans.bold.ttf")
+			boldTtfont, _ = freetype.ParseFont(boldFontData)
+		}
+	})
+
 	style := wnd.Style()
 	style.Tab.Indent = style.Tab.Padding.X + style.Tab.Spacing.X + nucular.FontHeight(style.Font) + style.GroupWindow.Spacing.X
 	style.Selectable.Normal.Data.Color = style.NormalWindow.Background
@@ -108,16 +150,12 @@ func setupStyle() {
 	zeroWidth = nucular.FontWidth(style.Font, "0")
 	spaceWidth = nucular.FontWidth(style.Font, " ")
 
-	extraFontInit.Do(func() {
-		iconFontData, _ := assets.Asset("fontawesome-webfont.ttf")
-		iconTtfont, _ = freetype.ParseFont(iconFontData)
-		boldFontData, _ := assets.Asset("droid-sans.bold.ttf")
-		boldTtfont, _ = freetype.ParseFont(boldFontData)
-	})
-
 	sz := int(12 * conf.Scaling)
 	iconFace = truetype.NewFace(iconTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
 	boldFace = truetype.NewFace(boldTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
+	if normalTtfont != nil {
+		style.Font = truetype.NewFace(normalTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
+	}
 
 	arrowWidth = nucular.FontWidth(iconFace, arrowIconChar)
 	starWidth = nucular.FontWidth(style.Font, breakpointIconChar)

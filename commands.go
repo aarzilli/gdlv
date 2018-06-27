@@ -199,6 +199,16 @@ func (c *Commands) help(out io.Writer, args string) error {
 				}
 			}
 		}
+		switch args {
+		case "fonts":
+			fmt.Fprintln(out, `By default gdlv uses a built-in version of Droid Sans Mono.
+
+If you don't like the font or if it doesn't cover a script that you need you
+can change the font by setting the environment variables GDLV_NORMAL_FONT
+and GDLV_BOLD_FONT to the path of two ttf files.
+`)
+			return nil
+		}
 		return noCmdError
 	}
 
@@ -230,9 +240,13 @@ func (c *Commands) help(out io.Writer, args string) error {
 	fmt.Fprintln(w, "    F10 \t Next")
 	fmt.Fprintln(w, "    F11 \t Step")
 	fmt.Fprintln(w, "    Shift-F11 \t Step Out")
+
 	if err := w.Flush(); err != nil {
 		return err
 	}
+
+	fmt.Fprintln(out, "\nFor help about changing fonts type \"help fonts\".")
+
 	return nil
 }
 
