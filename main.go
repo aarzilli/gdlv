@@ -760,7 +760,12 @@ func loadDisassembly(p *asyncLoad) {
 	p.done(nil)
 }
 
+var listingMu sync.Mutex
+
 func loadListing(loc *api.Location, failstate func(string, error)) {
+	listingMu.Lock()
+	defer listingMu.Unlock()
+
 	listingPanel.listing = listingPanel.listing[:0]
 	listingPanel.recenterListing = true
 
