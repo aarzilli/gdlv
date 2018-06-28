@@ -176,6 +176,11 @@ var checkpointsPanel = struct {
 	id          int
 }{}
 
+var disassemblyPanel = struct {
+	asyncLoad asyncLoad
+	loc       api.Location
+}{}
+
 func init() {
 	goroutinesPanel.asyncLoad.load = loadGoroutines
 	stackPanel.asyncLoad.load = loadStacktrace
@@ -185,6 +190,7 @@ func init() {
 	checkpointsPanel.asyncLoad.load = loadCheckpoints
 	globalsPanel.asyncLoad.load = loadGlobals
 	localsPanel.asyncLoad.load = loadLocals
+	disassemblyPanel.asyncLoad.load = loadDisassembly
 }
 
 func spacefilter(ch rune) bool {
@@ -892,6 +898,8 @@ func updateListingPanel(container *nucular.Window) {
 		return
 	}
 
+	container.Data = nil
+
 	listingToolbar(container)
 
 	const lineheight = 14
@@ -1019,6 +1027,11 @@ func listingSetBreakpoint(file string, line int) {
 }
 
 func updateDisassemblyPanel(container *nucular.Window) {
+	container = disassemblyPanel.asyncLoad.showRequest(container)
+	if container == nil {
+		return
+	}
+
 	const lineheight = 14
 
 	container.Row(0).Dynamic(1)

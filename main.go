@@ -716,7 +716,9 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 
 	listingPanel.id++
 
-	loadDisassembly(loc, failstate)
+	listingPanel.text = nil
+	disassemblyPanel.asyncLoad.clear()
+	disassemblyPanel.loc = *loc
 
 	if clearKind != clearBreakpoint {
 		loadListing(loc, failstate)
@@ -732,9 +734,11 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 
 }
 
-func loadDisassembly(loc *api.Location, failstate func(string, error)) {
+func loadDisassembly(p *asyncLoad) {
 	listingPanel.text = nil
 	listingPanel.recenterDisassembly = true
+
+	loc := disassemblyPanel.loc
 
 	flavour := api.IntelFlavour
 	if conf.DisassemblyFlavour == 1 {
@@ -743,7 +747,7 @@ func loadDisassembly(loc *api.Location, failstate func(string, error)) {
 	if loc.PC != 0 {
 		text, err := client.DisassemblePC(api.EvalScope{curGid, curFrame}, loc.PC, flavour)
 		if err != nil {
-			failstate("DisassemblePC()", err)
+			p.done(err)
 			return
 		}
 
@@ -753,6 +757,7 @@ func loadDisassembly(loc *api.Location, failstate func(string, error)) {
 		listingPanel.text = nil
 		listingPanel.framePC = 0
 	}
+	p.done(nil)
 }
 
 func loadListing(loc *api.Location, failstate func(string, error)) {
