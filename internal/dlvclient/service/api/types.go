@@ -215,6 +215,7 @@ type Variable struct {
 
 	// LocationExpr describes the location expression of this variable's address
 	LocationExpr string
+	DeclLine     int64
 }
 
 // LoadConfig describes how to load values from target's memory

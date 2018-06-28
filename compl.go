@@ -106,9 +106,6 @@ func completeVariable() {
 			return
 		}
 
-		for i := range localsPanel.args {
-			cm.add(localsPanel.args[i].Name)
-		}
 		for i := range localsPanel.locals {
 			cm.add(localsPanel.locals[i].Name)
 		}

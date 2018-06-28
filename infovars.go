@@ -162,7 +162,6 @@ var localsPanel = struct {
 	asyncLoad    asyncLoad
 	filterEditor nucular.TextEditor
 	showAddr     bool
-	args         []*Variable
 	locals       []*Variable
 
 	expressions []Expr
@@ -214,17 +213,13 @@ func updateGlobals(container *nucular.Window) {
 
 type variablesByName []*Variable
 
-func (vars variablesByName) Len() int { return len(vars) }
-func (vars variablesByName) Swap(i, j int) {
-	temp := vars[i]
-	vars[i] = vars[j]
-	vars[j] = temp
-}
+func (vars variablesByName) Len() int           { return len(vars) }
+func (vars variablesByName) Swap(i, j int)      { vars[i], vars[j] = vars[j], vars[i] }
 func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].Name }
 
 func loadLocals(p *asyncLoad) {
 	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, getVariableLoadConfig())
-	localsPanel.args = wrapApiVariables(args, 0, 0, "")
+	localsPanel.locals = wrapApiVariables(args, 0, 0, "")
 	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, getVariableLoadConfig())
 	for i := range locals {
 		v := &locals[i]
@@ -234,7 +229,18 @@ func loadLocals(p *asyncLoad) {
 			locals[i].Name = name
 		}
 	}
-	localsPanel.locals = wrapApiVariables(locals, 0, 0, "")
+	localsPanel.locals = append(localsPanel.locals, wrapApiVariables(locals, 0, 0, "")...)
+
+	hasDeclLine := false
+	for i := range localsPanel.locals {
+		if localsPanel.locals[i].DeclLine != 0 {
+			hasDeclLine = true
+		}
+	}
+
+	if hasDeclLine {
+		sort.Slice(localsPanel.locals, func(i, j int) bool { return localsPanel.locals[i].DeclLine < localsPanel.locals[j].DeclLine })
+	}
 
 	varmap := map[string]int{}
 
@@ -280,7 +286,7 @@ func updateLocals(container *nucular.Window) {
 	w.CheckboxText("Address", &localsPanel.showAddr)
 	w.MenubarEnd()
 
-	args, locals := localsPanel.args, localsPanel.locals
+	locals := localsPanel.locals
 
 	if len(localsPanel.expressions) > 0 {
 		if w.TreePush(nucular.TreeTab, "Expression", true) {
@@ -300,19 +306,8 @@ func updateLocals(container *nucular.Window) {
 		}
 	}
 
-	if len(args) > 0 {
-		if w.TreePush(nucular.TreeTab, "Arguments", true) {
-			for i := range args {
-				if strings.Index(args[i].Name, filter) >= 0 {
-					showVariable(w, 0, localsPanel.showAddr, -1, args[i])
-				}
-			}
-			w.TreePop()
-		}
-	}
-
 	if len(locals) > 0 {
-		if w.TreePush(nucular.TreeTab, "Locals", true) {
+		if w.TreePush(nucular.TreeTab, "Local variables and arguments", true) {
 			for i := range locals {
 				if strings.Index(locals[i].Name, filter) >= 0 {
 					showVariable(w, 0, localsPanel.showAddr, -1, locals[i])
