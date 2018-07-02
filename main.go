@@ -769,6 +769,17 @@ func loadListing(loc *api.Location, failstate func(string, error)) {
 	listingPanel.listing = listingPanel.listing[:0]
 	listingPanel.recenterListing = true
 
+	listingPanel.stepIntoInfo.Filename = ""
+	listingPanel.stepIntoInfo.Lineno = -1
+	listingPanel.stepIntoInfo.Colno = -1
+	listingPanel.stepIntoInfo.Valid = false
+
+	if loc == nil {
+		listingPanel.file = ""
+		listingPanel.abbrevFile = ""
+		return
+	}
+
 	listingPanel.file = loc.File
 	listingPanel.abbrevFile = abbrevFileName(loc.File)
 
@@ -794,11 +805,6 @@ func loadListing(loc *api.Location, failstate func(string, error)) {
 		linetext := expandTabs(buf.Text())
 		listingPanel.listing = append(listingPanel.listing, listline{"", lineno, linetext, buf.Text(), atpc, nil})
 	}
-
-	listingPanel.stepIntoInfo.Filename = ""
-	listingPanel.stepIntoInfo.Lineno = -1
-	listingPanel.stepIntoInfo.Colno = -1
-	listingPanel.stepIntoInfo.Valid = false
 
 	if err := buf.Err(); err != nil {
 		failstate("(reading file)", err)
