@@ -353,7 +353,12 @@ func clear(out io.Writer, args string) error {
 }
 
 func restart(out io.Writer, args string) error {
-	if client != nil && client.Recorded() {
+	if client == nil {
+		go pseudoCommandWrap(doRebuild)
+		return nil
+	}
+
+	if client.Recorded() {
 		_, err := client.RestartFrom(args, false, nil)
 		refreshState(refreshToFrameZero, clearStop, nil)
 		return err
@@ -889,8 +894,8 @@ type configWindow struct {
 func newConfigWindow() *configWindow {
 	return &configWindow{
 		selectedSubstitutionRule: -1,
-		from:                     nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
-		to:                       nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
+		from: nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
+		to:   nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
 	}
 }
 
