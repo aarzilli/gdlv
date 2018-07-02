@@ -327,7 +327,15 @@ func (descr *ServerDescr) connectTo() {
 
 	mu.Lock()
 	running = true
-	client = rpc2.NewClient(descr.connectString, LogOutput)
+	var err error
+	client, err = rpc2.NewClient(descr.connectString, LogOutput)
+	if err != nil {
+		client = nil
+		running = false
+		mu.Unlock()
+		fmt.Fprintf(&scrollbackOut, "Could not connect: %v\n", err)
+		return
+	}
 	client.SetReturnValuesLoadConfig(&LongLoadConfig)
 	mu.Unlock()
 	if client == nil {

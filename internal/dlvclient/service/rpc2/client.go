@@ -3,7 +3,6 @@ package rpc2
 import (
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
@@ -25,10 +24,10 @@ type RPCClient struct {
 var _ service.Client = &RPCClient{}
 
 // NewClient creates a new RPCClient.
-func NewClient(addr string, logFile io.Writer) *RPCClient {
+func NewClient(addr string, logFile io.Writer) (*RPCClient, error) {
 	netclient, err := net.Dial("tcp", addr)
 	if err != nil {
-		log.Fatal("dialing:", err)
+		return nil, err
 	}
 	var rwc io.ReadWriteCloser = netclient
 	if logFile != nil {
@@ -37,7 +36,7 @@ func NewClient(addr string, logFile io.Writer) *RPCClient {
 	client := jsonrpc.NewClient(rwc)
 	c := &RPCClient{addr: addr, client: client}
 	c.call("SetApiVersion", api.SetAPIVersionIn{2}, &api.SetAPIVersionOut{})
-	return c
+	return c, nil
 }
 
 func (c *RPCClient) ProcessPid() int {
