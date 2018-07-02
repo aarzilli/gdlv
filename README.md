@@ -21,6 +21,11 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2018-07-02
+* Support font changes
+* Sort variables by declaration line
+* Miscellaneous bug fixes
+
 ## 2018-06-13
 * Print return values when stepping out of a function
 * Allow setting breakpoints after the program has exited
