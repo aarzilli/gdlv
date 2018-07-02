@@ -1005,7 +1005,7 @@ func updateListingPanel(container *nucular.Window) {
 					}
 				}
 				if isCurrentLine {
-					m := w.Input().Mouse.Buttons[mouse.ButtonRight]
+					m := listp.Input().Mouse.Buttons[mouse.ButtonRight]
 					colno := (m.ClickedPos.X - textbounds.X) / zeroWidth
 					_, colno = expandTabsEx(line.textWithTabs, colno)
 					colno++
