@@ -446,11 +446,7 @@ func floatFormatter(format string) formatterFn {
 }
 
 func formatLocation2(loc api.Location) string {
-	name := "(nil)"
-	if loc.Function != nil {
-		name = loc.Function.Name
-	}
-	return fmt.Sprintf("%s\nat %s:%d", name, ShortenFilePath(loc.File), loc.Line)
+	return fmt.Sprintf("%s\nat %s:%d", loc.Function.Name(), ShortenFilePath(loc.File), loc.Line)
 }
 
 type customFmtMaker struct {

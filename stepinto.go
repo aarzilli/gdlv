@@ -178,7 +178,7 @@ func isVisibleCall(inst api.AsmInstruction) bool {
 	}
 	if inst.DestLoc != nil && inst.DestLoc.Function != nil {
 		fn := inst.DestLoc.Function
-		if strings.HasPrefix(fn.Name, "runtime.") && !isExportedRuntime(fn.Name) {
+		if strings.HasPrefix(fn.Name(), "runtime.") && !isExportedRuntime(fn.Name()) {
 			return false
 		}
 	}
@@ -283,7 +283,7 @@ func stepIntoList(loc api.Location) []stepIntoCall {
 			fun = x1.Name
 		}
 
-		if fun != "" && isFunc[fun] && (inst.DestLoc == nil || inst.DestLoc.Function == nil || (!isClosure(inst.DestLoc.Function.Name) && removePath(inst.DestLoc.Function.Name) != fun)) {
+		if fun != "" && isFunc[fun] && (inst.DestLoc == nil || inst.DestLoc.Function == nil || (!isClosure(inst.DestLoc.Function.Name()) && removePath(inst.DestLoc.Function.Name()) != fun)) {
 			return nil
 		}
 
@@ -297,7 +297,7 @@ func stepIntoList(loc api.Location) []stepIntoCall {
 			format.Node(&buf, &fset, x.Fun)
 			sic.Name = buf.String()
 		case inst.DestLoc != nil && inst.DestLoc.Function != nil:
-			sic.Name = removePath(inst.DestLoc.Function.Name)
+			sic.Name = removePath(inst.DestLoc.Function.Name())
 		default:
 			sic.Name = fmt.Sprintf("call%d", i)
 		}

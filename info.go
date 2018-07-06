@@ -1053,7 +1053,7 @@ func updateDisassemblyPanel(container *nucular.Window) {
 
 	if len(listingPanel.text) > 0 && listingPanel.text[0].Loc.Function != nil {
 		listp.Row(lineheight).Dynamic(1)
-		listp.Label(fmt.Sprintf("TEXT %s(SB) %s", listingPanel.text[0].Loc.Function.Name, listingPanel.text[0].Loc.File), "LC")
+		listp.Label(fmt.Sprintf("TEXT %s(SB) %s", listingPanel.text[0].Loc.Function.Name(), listingPanel.text[0].Loc.File), "LC")
 	}
 
 	for gl.Next() {

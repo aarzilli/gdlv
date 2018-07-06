@@ -143,12 +143,19 @@ func (frame *Stackframe) Var(name string) *Variable {
 // Function represents thread-scoped function information.
 type Function struct {
 	// Name is the function name.
-	Name   string `json:"name"`
+	Name_  string `json:"name"`
 	Value  uint64 `json:"value"`
 	Type   byte   `json:"type"`
 	GoType uint64 `json:"goType"`
 	// Optimized is true if the function was optimized
 	Optimized bool `json:"optimized"`
+}
+
+func (fn *Function) Name() string {
+	if fn == nil {
+		return "???"
+	}
+	return fn.Name_
 }
 
 // VariableFlags is the type of the Flags field of Variable.

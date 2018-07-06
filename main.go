@@ -690,7 +690,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 				if frames[i].Function == nil {
 					continue
 				}
-				name := frames[i].Function.Name
+				name := frames[i].Function.Name()
 				if !strings.HasPrefix(name, runtimeprefix) {
 					curFrame = i
 					break

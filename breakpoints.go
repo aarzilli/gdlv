@@ -26,7 +26,7 @@ func freezeBreakpoint(out io.Writer, bp *api.Breakpoint) {
 	fbp.Bp = *bp
 
 	locs, err := client.FindLocation(api.EvalScope{-1, 0}, fbp.Bp.FunctionName)
-	if err != nil || len(locs) != 1 || locs[0].Function == nil || locs[0].Function.Name != fbp.Bp.FunctionName {
+	if err != nil || len(locs) != 1 || locs[0].Function == nil || locs[0].Function.Name() != fbp.Bp.FunctionName {
 		fmt.Fprintf(out, "Function not found while recording breakpoint\n")
 		return
 	}
@@ -136,7 +136,7 @@ func (fbp *frozenBreakpoint) Restore(out io.Writer) {
 	}
 
 	locs, err := client.FindLocation(api.EvalScope{-1, 0}, fbp.Bp.FunctionName)
-	if err != nil || len(locs) != 1 || locs[0].Function == nil || locs[0].Function.Name != fbp.Bp.FunctionName {
+	if err != nil || len(locs) != 1 || locs[0].Function == nil || locs[0].Function.Name() != fbp.Bp.FunctionName {
 		fmt.Fprintf(out, "Could not restore breakpoint %d, function not found\n", fbp.Bp.ID)
 		return
 	}
@@ -187,7 +187,7 @@ func (fbp *frozenBreakpoint) Restore(out io.Writer) {
 		return
 	}
 
-	if bp.FunctionName != functionLoc.Function.Name {
+	if bp.FunctionName != functionLoc.Function.Name() {
 		client.ClearBreakpoint(bp.ID)
 		fmt.Fprintf(out, "Could not restore breakpoint %d (function name mismatch)\n", fbp.Bp.ID)
 	}

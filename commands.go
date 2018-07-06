@@ -824,11 +824,7 @@ func checkpoint(out io.Writer, args string) error {
 		if state.SelectedGoroutine != nil {
 			loc = state.SelectedGoroutine.CurrentLoc
 		}
-		fname := "???"
-		if loc.Function != nil {
-			fname = loc.Function.Name
-		}
-		args = fmt.Sprintf("%s() %s:%d (%#x)", fname, loc.File, loc.Line, loc.PC)
+		args = fmt.Sprintf("%s() %s:%d (%#x)", loc.Function.Name(), loc.File, loc.Line, loc.PC)
 	}
 
 	cpid, err := client.Checkpoint(args)
@@ -1140,7 +1136,7 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 	fn := th.Function
 
 	if th.Breakpoint == nil {
-		fmt.Fprintf(out, "> %s() %s:%d (PC: %#v)\n", fn.Name, ShortenFilePath(th.File), th.Line, th.PC)
+		fmt.Fprintf(out, "> %s() %s:%d (PC: %#v)\n", fn.Name(), ShortenFilePath(th.File), th.Line, th.PC)
 		if th.Function != nil && th.Function.Optimized {
 			fmt.Fprintln(out, optimizedFunctionWarning)
 		}
@@ -1165,7 +1161,7 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 	if hitCount, ok := th.Breakpoint.HitCount[strconv.Itoa(th.GoroutineID)]; ok {
 		fmt.Fprintf(out, "> %s%s(%s) %s:%d (hits goroutine(%d):%d total:%d) (PC: %#v)\n",
 			bpname,
-			fn.Name,
+			fn.Name(),
 			args,
 			ShortenFilePath(th.File),
 			th.Line,
@@ -1176,7 +1172,7 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 	} else {
 		fmt.Fprintf(out, "> %s%s(%s) %s:%d (hits total:%d) (PC: %#v)\n",
 			bpname,
-			fn.Name,
+			fn.Name(),
 			args,
 			ShortenFilePath(th.File),
 			th.Line,
@@ -1223,11 +1219,7 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 }
 
 func formatLocation(loc api.Location) string {
-	fname := ""
-	if loc.Function != nil {
-		fname = loc.Function.Name
-	}
-	return fmt.Sprintf("%s at %s:%d (%#v)", fname, ShortenFilePath(loc.File), loc.Line, loc.PC)
+	return fmt.Sprintf("%s at %s:%d (%#v)", loc.Function.Name(), ShortenFilePath(loc.File), loc.Line, loc.PC)
 }
 
 func writeGoroutineLong(w io.Writer, g *api.Goroutine, prefix string) {
@@ -1247,11 +1239,7 @@ func printStack(out io.Writer, stack []api.Stackframe, ind string) {
 	s := ind + strings.Repeat(" ", d+2+len(ind))
 
 	for i := range stack {
-		name := "(nil)"
-		if stack[i].Function != nil {
-			name = stack[i].Function.Name
-		}
-		fmt.Fprintf(out, fmtstr, ind, i, stack[i].PC, name)
+		fmt.Fprintf(out, fmtstr, ind, i, stack[i].PC, stack[i].Function.Name())
 		fmt.Fprintf(out, "%sat %s:%d\n", s, ShortenFilePath(stack[i].File), stack[i].Line)
 
 		for j := range stack[i].Arguments {
