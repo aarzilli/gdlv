@@ -923,20 +923,9 @@ func updateListingPanel(container *nucular.Window) {
 		idxw += nucular.FontWidth(style.Font, listingPanel.listing[len(listingPanel.listing)-1].idx)
 	}
 
-	if listingPanel.recenterListing {
-		listingPanel.recenterListing = false
-		for gl.Next() {
-			listp.Row(lineheight).Dynamic(1)
-			listp.Spacing(1)
-			line := listingPanel.listing[gl.Index()]
-			if line.pc || (listingPanel.pinnedLoc != nil && line.lineno == listingPanel.pinnedLoc.Line) {
-				gl.Center()
-			}
-		}
-		return
+	if !listingPanel.recenterListing {
+		gl.SkipToVisible(lineheight)
 	}
-
-	gl.SkipToVisible(lineheight)
 
 	for gl.Next() {
 		listp.Row(lineheight).Static()
@@ -950,6 +939,11 @@ func updateListingPanel(container *nucular.Window) {
 
 			cmds := listp.Commands()
 			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
+
+			if listingPanel.recenterListing {
+				gl.Center()
+				listingPanel.recenterListing = false
+			}
 		}
 
 		listp.LayoutSetWidth(starw)
