@@ -728,6 +728,10 @@ func cancelnext(out io.Writer, args string) error {
 }
 
 func interrupt(out io.Writer, args string) error {
+	if args == "eof" {
+		close(BackendServer.stdinChan)
+		return nil
+	}
 	_, err := client.Halt()
 	if err != nil {
 		return err

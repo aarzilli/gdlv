@@ -19,6 +19,9 @@ import (
 type ServerDescr struct {
 	// address of backend server
 	connectString string
+	stdinChan     chan string
+	// stdin stram to the server process
+	stdin io.WriteCloser
 	// stdout and stderr streams from server process
 	stdout, stderr io.ReadCloser
 	// server process
@@ -268,6 +271,16 @@ func (descr *ServerDescr) stderrProcess() {
 	}
 }
 
+func (descr *ServerDescr) stdinProcess() {
+	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+	for line := range descr.stdinChan {
+		scrollbackOut.Write([]byte(line))
+		descr.stdin.Write([]byte(line))
+	}
+	descr.stdinChan = nil
+	descr.stdin.Close()
+}
+
 func (descr *ServerDescr) Rebuild() {
 	sw := &editorWriter{&scrollbackEditor, true}
 	descr.buildok = true
@@ -290,6 +303,8 @@ func (descr *ServerDescr) Rebuild() {
 			}
 		}
 		cmd := exec.Command("dlv", descr.dlvargs...)
+		descr.stdinChan = make(chan string, 10)
+		descr.stdin, _ = cmd.StdinPipe()
 		descr.stdout, _ = cmd.StdoutPipe()
 		descr.stderr, _ = cmd.StderrPipe()
 		err := cmd.Start()
@@ -297,6 +312,7 @@ func (descr *ServerDescr) Rebuild() {
 			io.WriteString(sw, fmt.Sprintf("Could not start delve: %v\n", err))
 		}
 		descr.serverProcess = cmd.Process
+		go descr.stdinProcess()
 		go descr.stdoutProcess(lenient)
 		go descr.stderrProcess()
 	}

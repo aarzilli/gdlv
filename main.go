@@ -382,7 +382,7 @@ func updateCommandPanel(w *nucular.Window) {
 	w.Label(p2, "LC")
 
 	if running {
-		commandLineEditor.Flags |= nucular.EditReadOnly
+		//commandLineEditor.Flags |= nucular.EditReadOnly
 		if !commandLineEditor.Active {
 			w.Master().ActivateEditor(&commandLineEditor)
 		}
@@ -447,7 +447,7 @@ func updateCommandPanel(w *nucular.Window) {
 		historySearch = false
 		var scrollbackOut = editorWriter{&scrollbackEditor, false}
 		cmd := string(commandLineEditor.Buffer)
-		if canExecuteCmd(client, cmd) {
+		if canExecuteCmd(client, cmd) && !running {
 			if cmd == "" {
 				fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmdhistory[len(cmdhistory)-1])
 			} else {
@@ -456,6 +456,11 @@ func updateCommandPanel(w *nucular.Window) {
 			}
 			historyShown = len(cmdhistory)
 			go executeCommand(cmd)
+		} else if running && client != nil && BackendServer.stdinChan != nil {
+			select {
+			case BackendServer.stdinChan <- cmd + "\n":
+			default:
+			}
 		} else {
 			fmt.Fprintf(&scrollbackOut, "Only quit and restart available when not connected to delve\n")
 		}

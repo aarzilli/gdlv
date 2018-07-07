@@ -293,6 +293,12 @@ func commandToolbar(sw *nucular.Window) {
 	case running:
 		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(interruptIconChar, "interrupt")
+		if sw.ButtonText("EOF") {
+			doCommand("interrupt eof")
+		}
+		if sw.Input().Mouse.HoveringRect(sw.LastWidgetBounds) {
+			hovering = "EOF"
+		}
 
 	case nextInProgress:
 		sw.LayoutSetWidth(controlBtnWidth)
