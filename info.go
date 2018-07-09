@@ -950,7 +950,7 @@ func updateListingPanel(container *nucular.Window) {
 		breakpointIcon(listp, line.bp != nil, "CC", style)
 		bpbounds := listp.LastWidgetBounds
 
-		isCurrentLine := line.pc && curFrame == 0
+		isCurrentLine := line.pc && curFrame == 0 && !running && curThread >= 0
 
 		listp.LayoutSetWidth(arroww)
 		if isCurrentLine {
