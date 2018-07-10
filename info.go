@@ -105,8 +105,10 @@ const (
 	currentGoroutineLocation = "Current location"
 	userGoroutineLocation    = "User location"
 	goStatementLocation      = "Go statement location"
-	popupFlags               = nucular.WindowTitle | nucular.WindowNoScrollbar | nucular.WindowMovable | nucular.WindowBorder
-	dynamicPopupFlags        = nucular.WindowDynamic | popupFlags
+	startLocation            = "Start location"
+
+	popupFlags        = nucular.WindowTitle | nucular.WindowNoScrollbar | nucular.WindowMovable | nucular.WindowBorder
+	dynamicPopupFlags = nucular.WindowDynamic | popupFlags
 )
 
 type wrappedGoroutine struct {
@@ -114,7 +116,7 @@ type wrappedGoroutine struct {
 	atBreakpoint bool
 }
 
-var goroutineLocations = []string{currentGoroutineLocation, userGoroutineLocation, goStatementLocation}
+var goroutineLocations = []string{currentGoroutineLocation, userGoroutineLocation, goStatementLocation, startLocation}
 var goroutinesPanel = struct {
 	asyncLoad         asyncLoad
 	goroutineLocation int
@@ -303,6 +305,8 @@ func updateGoroutines(container *nucular.Window) {
 			w.SelectableLabel(formatLocation2(g.UserCurrentLoc), "LT", &selected)
 		case goStatementLocation:
 			w.SelectableLabel(formatLocation2(g.GoStatementLoc), "LT", &selected)
+		case startLocation:
+			w.SelectableLabel(formatLocation2(g.StartLoc), "LT", &selected)
 		}
 
 		if selected && curGid != g.ID && !running {
