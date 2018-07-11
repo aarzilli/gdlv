@@ -31,6 +31,8 @@ type context struct {
 	trashFrame     bool
 	autopos        image.Point
 
+	finalCmds command.Buffer
+
 	dockedWindowFocus int
 	floatWindowFocus  int
 	scrollwheelFocus  int
@@ -48,6 +50,7 @@ func contextAllCommands(ctx *context) {
 			})
 		}
 	}
+	ctx.cmds = append(ctx.cmds, ctx.finalCmds.Commands...)
 	return
 }
 
@@ -114,6 +117,7 @@ func contextBegin(ctx *context, layout *panel) {
 		w.widgets.reset()
 		w.cmds.Reset()
 	}
+	ctx.finalCmds.Reset()
 	ctx.DockedWindows.Walk(func(w *Window) *Window {
 		w.usingSub = false
 		w.curNode = w.rootNode

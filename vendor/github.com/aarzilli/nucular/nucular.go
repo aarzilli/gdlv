@@ -714,7 +714,7 @@ func (win *Window) move(delta image.Point, pos image.Point) {
 		return
 	}
 	if canDock, bounds := win.ctx.DockedWindows.Dock(nil, pos, win.ctx.Windows[0].Bounds, win.ctx.Style.Scaling); canDock {
-		win.cmds.FillRect(bounds, 0, color.RGBA{0x0, 0x0, 0x50, 0x50})
+		win.ctx.finalCmds.FillRect(bounds, 0, color.RGBA{0x0, 0x0, 0x50, 0x50})
 	}
 	win.Bounds.X = win.Bounds.X + delta.X
 	win.Bounds.X = clampInt(0, win.Bounds.X, win.ctx.Windows[0].Bounds.X+win.ctx.Windows[0].Bounds.W-FontHeight(win.ctx.Style.Font))
