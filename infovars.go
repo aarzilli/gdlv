@@ -654,12 +654,12 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 		defer func() {
 			*style = savedStyle
 		}()
-		//TODO: this doesn't work if the background is a lighter color, some kind of blend?
 		const darken = 0.75
 		for _, p := range []*color.RGBA{&style.Text.Color, &style.Tab.NodeButton.TextNormal, &style.Tab.NodeButton.TextHover, &style.Tab.NodeButton.TextActive, &style.Tab.Text} {
-			p.R = uint8(float64(p.R) * darken)
-			p.G = uint8(float64(p.G) * darken)
-			p.B = uint8(float64(p.B) * darken)
+			p.A = p.A / 2
+			p.R = p.R / 2
+			p.G = p.G / 2
+			p.B = p.B / 2
 		}
 	}
 
