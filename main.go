@@ -154,7 +154,8 @@ var listingPanel struct {
 	stale               bool
 	id                  int
 
-	stepIntoInfo stepIntoInfo
+	stepIntoInfo   stepIntoInfo
+	stepIntoFilled bool
 }
 
 var mu sync.Mutex

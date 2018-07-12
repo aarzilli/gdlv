@@ -988,7 +988,18 @@ func updateListingPanel(container *nucular.Window) {
 				}
 			}
 
+			if listp.Input().Mouse.Clicked(mouse.ButtonRight, ctxtbounds) {
+				m := listp.Input().Mouse.Buttons[mouse.ButtonRight]
+				colno := (m.ClickedPos.X - textbounds.X) / zeroWidth
+				_, colno = expandTabsEx(line.textWithTabs, colno)
+				colno++
+				listingPanel.stepIntoInfo.Config(listingPanel.file, line.lineno, colno)
+			}
+
 			if w := listp.ContextualOpen(0, image.Point{}, ctxtbounds, nil); w != nil {
+				if !listingPanel.stepIntoFilled {
+					listingPanel.stepIntoFilled = true
+				}
 				w.Row(20).Dynamic(1)
 				if line.bp != nil {
 					if w.MenuItem(label.TA("Edit breakpoint", "LC")) {
@@ -1003,11 +1014,7 @@ func updateListingPanel(container *nucular.Window) {
 					}
 				}
 				if isCurrentLine {
-					m := listp.Input().Mouse.Buttons[mouse.ButtonRight]
-					colno := (m.ClickedPos.X - textbounds.X) / zeroWidth
-					_, colno = expandTabsEx(line.textWithTabs, colno)
-					colno++
-					if listingPanel.stepIntoInfo.Config(listingPanel.file, line.lineno, colno) {
+					if listingPanel.stepIntoInfo.Valid {
 						if w.MenuItem(label.TA(listingPanel.stepIntoInfo.Msg, "LC")) {
 							go stepInto(&editorWriter{&scrollbackEditor, true}, listingPanel.stepIntoInfo.Call)
 						}
