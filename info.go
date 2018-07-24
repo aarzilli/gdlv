@@ -897,9 +897,6 @@ func breakpointIcon(w *nucular.Window, atbp bool, align label.Align, style *nsty
 }
 
 func updateListingPanel(container *nucular.Window) {
-	listingMu.Lock()
-	defer listingMu.Unlock()
-
 	if len(listingPanel.listing) == 0 {
 		updateDisassemblyPanel(container)
 		return

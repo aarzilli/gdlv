@@ -188,12 +188,10 @@ func parseArguments() (descr ServerDescr) {
 const apiServerPrefix = "API server listening at: "
 
 func parseListenString(listenstr string) string {
-	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+	var scrollbackOut = editorWriter{&scrollbackEditor, true}
 
 	if !strings.HasPrefix(listenstr, apiServerPrefix) {
-		mu.Lock()
 		fmt.Fprintf(&scrollbackOut, "Could not parse connection string: %q\n", listenstr)
-		mu.Unlock()
 		return ""
 	}
 
@@ -218,12 +216,12 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 	scan := bufio.NewScanner(descr.stdout)
 
 	copyToScrollback := func() {
-		mu.Lock()
+		wnd.Lock()
 		if silenced {
-			mu.Unlock()
+			wnd.Unlock()
 			return
 		}
-		mu.Unlock()
+		wnd.Unlock()
 		now := time.Now()
 		if now.Sub(t0) > 500*time.Millisecond {
 			t0 = now
@@ -231,9 +229,9 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 		}
 		bucket += len(scan.Text())
 		if bucket > scrollbackLowMark {
-			mu.Lock()
+			wnd.Lock()
 			silenced = true
-			mu.Unlock()
+			wnd.Unlock()
 			fmt.Fprintf(&scrollbackOut, "too much output in 500ms (%d), output silenced\n", bucket)
 			bucket = 0
 			return
@@ -341,34 +339,34 @@ func (descr *ServerDescr) connectTo() {
 		return
 	}
 
-	mu.Lock()
+	wnd.Lock()
 	running = true
 	var err error
 	client, err = rpc2.NewClient(descr.connectString, LogOutput)
 	if err != nil {
 		client = nil
 		running = false
-		mu.Unlock()
+		wnd.Unlock()
 		fmt.Fprintf(&scrollbackOut, "Could not connect: %v\n", err)
 		return
 	}
 	client.SetReturnValuesLoadConfig(&LongLoadConfig)
-	mu.Unlock()
+	wnd.Unlock()
 	if client == nil {
 		fmt.Fprintf(&scrollbackOut, "Could not connect\n")
 	}
 
 	finishRestart(&scrollbackOut, descr.atStart)
 
-	mu.Lock()
+	wnd.Lock()
 	running = false
-	mu.Unlock()
+	wnd.Unlock()
 
 	state, err := client.GetState()
 	if err == nil && state == nil {
-		mu.Lock()
+		wnd.Lock()
 		client = nil
-		mu.Unlock()
+		wnd.Unlock()
 		fmt.Fprintf(&scrollbackOut, "Could not get state, old version of delve?\n")
 	}
 

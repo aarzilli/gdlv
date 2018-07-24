@@ -58,6 +58,9 @@ type MasterWindow interface {
 
 	Walk(WindowWalkFn)
 	ResetWindows() *DockSplit
+
+	Lock()
+	Unlock()
 }
 
 type WindowWalkFn func(title string, data interface{}, docked bool, splitSize int, rect rect.Rect)
@@ -134,6 +137,14 @@ func (mw *masterWindow) Input() *Input {
 
 func (mw *masterWindow) ResetWindows() *DockSplit {
 	return mw.ctx.ResetWindows()
+}
+
+func (mw *masterWindow) Lock() {
+	mw.uilock.Lock()
+}
+
+func (mw *masterWindow) Unlock() {
+	mw.uilock.Unlock()
 }
 
 func (mw *masterWindow) main(s screen.Screen) {

@@ -473,15 +473,15 @@ func splitQuotedFields(in string) []string {
 }
 
 func pseudoCommandWrap(cmd func(io.Writer) error) {
-	mu.Lock()
+	wnd.Lock()
 	running = true
 	wnd.Changed()
-	mu.Unlock()
+	wnd.Unlock()
 	defer func() {
-		mu.Lock()
+		wnd.Lock()
 		running = false
 		wnd.Changed()
-		mu.Unlock()
+		wnd.Unlock()
 	}()
 
 	out := editorWriter{&scrollbackEditor, true}
@@ -894,8 +894,8 @@ type configWindow struct {
 func newConfigWindow() *configWindow {
 	return &configWindow{
 		selectedSubstitutionRule: -1,
-		from: nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
-		to:   nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
+		from:                     nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
+		to:                       nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditClipboard},
 	}
 }
 
@@ -1028,25 +1028,25 @@ func (cw *configWindow) Update(w *nucular.Window) {
 func scrollCommand(out io.Writer, args string) error {
 	switch args {
 	case "clear":
-		mu.Lock()
+		wnd.Lock()
 		scrollbackEditor.Buffer = scrollbackEditor.Buffer[:0]
 		scrollbackEditor.Cursor = 0
 		scrollbackEditor.CursorFollow = true
-		mu.Unlock()
+		wnd.Unlock()
 	case "silence":
-		mu.Lock()
+		wnd.Lock()
 		silenced = true
-		mu.Unlock()
+		wnd.Unlock()
 		fmt.Fprintf(out, "Inferior output silenced\n")
 	case "noise":
-		mu.Lock()
+		wnd.Lock()
 		silenced = false
-		mu.Unlock()
+		wnd.Unlock()
 		fmt.Fprintf(out, "Inferior output enabled\n")
 	default:
-		mu.Lock()
+		wnd.Lock()
 		s := silenced
-		mu.Unlock()
+		wnd.Unlock()
 		if s {
 			fmt.Fprintf(out, "Inferior output is silenced\n")
 		} else {
@@ -1263,15 +1263,15 @@ func ShortenFilePath(fullPath string) string {
 }
 
 func executeCommand(cmdstr string) {
-	mu.Lock()
+	wnd.Lock()
 	running = true
 	wnd.Changed()
-	mu.Unlock()
+	wnd.Unlock()
 	defer func() {
-		mu.Lock()
+		wnd.Lock()
 		running = false
 		wnd.Changed()
-		mu.Unlock()
+		wnd.Unlock()
 	}()
 
 	out := editorWriter{&scrollbackEditor, true}

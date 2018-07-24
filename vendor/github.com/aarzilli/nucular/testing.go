@@ -52,6 +52,12 @@ func (w *TestWindow) Changed() {
 func (w *TestWindow) Main() {
 }
 
+func (w *TestWindow) Lock() {
+}
+
+func (w *TestWindow) Unlock() {
+}
+
 func (w *TestWindow) SetStyle(style *nstyle.Style) {
 	w.ctx.Style = *style
 	w.ctx.Style.Defaults()

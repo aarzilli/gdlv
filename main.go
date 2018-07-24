@@ -158,7 +158,6 @@ var listingPanel struct {
 	stepIntoFilled bool
 }
 
-var mu sync.Mutex
 var wnd nucular.MasterWindow
 
 var running, nextInProgress bool
@@ -178,17 +177,12 @@ var frameCount int
 var LogOutput io.WriteCloser
 
 func guiUpdate(w *nucular.Window) {
-	mu.Lock()
 	df := delayFrame
 	delayFrame = false
-	mu.Unlock()
 
 	if df {
 		time.Sleep(50 * time.Millisecond)
 	}
-
-	mu.Lock()
-	defer mu.Unlock()
 
 	var scrollbackOut = editorWriter{&scrollbackEditor, false}
 	mw := w.Master()
@@ -550,7 +544,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		var err error
 		state, err = client.GetState()
 		if err != nil {
-			mu.Lock()
+			wnd.Lock()
 			curThread = -1
 			curGid = -1
 			curFrame = 0
@@ -563,15 +557,15 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 				loadListing(listingPanel.pinnedLoc, failstate)
 			}
 
-			mu.Unlock()
+			wnd.Unlock()
 			return
 		}
 	}
 
-	nextInProgress = state.NextInProgress
+	wnd.Lock()
+	defer wnd.Unlock()
 
-	mu.Lock()
-	defer mu.Unlock()
+	nextInProgress = state.NextInProgress
 
 	delayFrame = true
 
@@ -734,12 +728,7 @@ func loadDisassembly(p *asyncLoad) {
 	p.done(nil)
 }
 
-var listingMu sync.Mutex
-
 func loadListing(loc *api.Location, failstate func(string, error)) {
-	listingMu.Lock()
-	defer listingMu.Unlock()
-
 	listingPanel.listing = listingPanel.listing[:0]
 	listingPanel.recenterListing = true
 
@@ -839,8 +828,8 @@ const (
 
 func (w *editorWriter) Write(b []byte) (int, error) {
 	if w.lock {
-		mu.Lock()
-		defer mu.Unlock()
+		wnd.Lock()
+		defer wnd.Unlock()
 		defer wnd.Changed()
 	}
 	w.ed.Buffer = append(w.ed.Buffer, []rune(expandTabs(string(b)))...)
