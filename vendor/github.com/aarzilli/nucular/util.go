@@ -165,9 +165,18 @@ func FontHeight(f font.Face) int {
 }
 
 var fontWidthCache *lru.Cache
+var fontWidthCacheSize int
 
 func init() {
+	fontWidthCacheSize = 256
 	fontWidthCache, _ = lru.New(256)
+}
+
+func ChangeFontWidthCache(size int) {
+	if size > fontWidthCacheSize {
+		fontWidthCacheSize = size
+		fontWidthCache, _ = lru.New(fontWidthCacheSize)
+	}
 }
 
 type fontWidthCacheKey struct {

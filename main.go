@@ -769,6 +769,13 @@ func loadListing(loc *api.Location, failstate func(string, error)) {
 		listingPanel.listing = append(listingPanel.listing, listline{"", lineno, linetext, buf.Text(), atpc, nil})
 	}
 
+	const maxFontCacheSize = 500000
+	sz := 4*len(listingPanel.listing) + len(listingPanel.listing)/2
+	if sz > maxFontCacheSize {
+		sz = maxFontCacheSize
+	}
+	nucular.ChangeFontWidthCache(sz)
+
 	if err := buf.Err(); err != nil {
 		failstate("(reading file)", err)
 		return

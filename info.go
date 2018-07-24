@@ -919,11 +919,6 @@ func updateListingPanel(container *nucular.Window) {
 	arroww := arrowWidth + style.Text.Padding.X*2
 	starw := starWidth + style.Text.Padding.X*2
 
-	idxw := style.Text.Padding.X * 2
-	if len(listingPanel.listing) > 0 {
-		idxw += nucular.FontWidth(style.Font, listingPanel.listing[len(listingPanel.listing)-1].idx)
-	}
-
 	if !listingPanel.recenterListing {
 		gl.SkipToVisible(lineheight)
 	}
