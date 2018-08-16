@@ -21,6 +21,11 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2018-08-16
+* Highlight variable names
+* Expose starting location of goroutines
+* Miscellaneous bug fixes
+
 ## 2018-07-02
 * Support font changes
 * Sort variables by declaration line
