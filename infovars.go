@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"unicode"
 
 	"golang.org/x/image/font"
 
@@ -38,13 +39,18 @@ type Variable struct {
 	loading  bool
 	Varname  string
 
+	ShortType   string
 	DisplayName string
 	Expression  string
 
 	Children []*Variable
 }
 
-func wrapApiVariable(v *api.Variable, name, expr string) *Variable {
+func wrapApiVariableSimple(v *api.Variable) *Variable {
+	return wrapApiVariable(v, v.Name, v.Name, false)
+}
+
+func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool) *Variable {
 	r := &Variable{Variable: v}
 	r.Value = v.Value
 	r.Expression = expr
@@ -55,7 +61,7 @@ func wrapApiVariable(v *api.Variable, name, expr string) *Variable {
 		if n >= ' ' && n <= '~' {
 			r.Value = fmt.Sprintf("%s %q", v.Value, n)
 		}
-	} else if f := conf.CustomFormatters[v.Type]; f != nil {
+	} else if f := conf.CustomFormatters[v.Type]; f != nil && customFormatters {
 		f.Format(r)
 	}
 
@@ -65,9 +71,11 @@ func wrapApiVariable(v *api.Variable, name, expr string) *Variable {
 		r.DisplayName = v.Type
 	}
 
+	r.ShortType = shortenType(v.Type)
+
 	r.Varname = r.DisplayName
 
-	r.Children = wrapApiVariables(v.Children, v.Kind, 0, r.Expression)
+	r.Children = wrapApiVariables(v.Children, v.Kind, 0, r.Expression, customFormatters)
 
 	if v.Kind == reflect.Interface {
 		if len(r.Children) > 0 && r.Children[0].Kind == reflect.Ptr {
@@ -79,7 +87,7 @@ func wrapApiVariable(v *api.Variable, name, expr string) *Variable {
 	return r
 }
 
-func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr string) []*Variable {
+func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr string, customFormatters bool) []*Variable {
 	r := make([]*Variable, 0, len(vs))
 
 	const minInlineKeyValueLen = 20
@@ -97,15 +105,15 @@ func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr stri
 					keyname = fmt.Sprintf("[%s]", key.Value)
 				}
 				if keyname != "" {
-					r = append(r, wrapApiVariable(value, keyname, ""))
+					r = append(r, wrapApiVariable(value, keyname, "", customFormatters))
 					r = append(r, nil)
 					ok = true
 				}
 			}
 
 			if !ok {
-				r = append(r, wrapApiVariable(key, fmt.Sprintf("[%d key]", start+i/2), ""))
-				r = append(r, wrapApiVariable(value, fmt.Sprintf("[%d value]", start+i/2), ""))
+				r = append(r, wrapApiVariable(key, fmt.Sprintf("[%d key]", start+i/2), "", customFormatters))
+				r = append(r, wrapApiVariable(value, fmt.Sprintf("[%d value]", start+i/2), "", customFormatters))
 			}
 		}
 		return r
@@ -144,7 +152,7 @@ func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr stri
 			childName = vs[i].Name
 			childExpr = ""
 		}
-		r = append(r, wrapApiVariable(&vs[i], childName, childExpr))
+		r = append(r, wrapApiVariable(&vs[i], childName, childExpr, customFormatters))
 	}
 	return r
 }
@@ -153,6 +161,7 @@ var globalsPanel = struct {
 	asyncLoad    asyncLoad
 	filterEditor nucular.TextEditor
 	showAddr     bool
+	fullTypes    bool
 	globals      []*Variable
 }{
 	filterEditor: nucular.TextEditor{Filter: spacefilter},
@@ -162,6 +171,7 @@ var localsPanel = struct {
 	asyncLoad    asyncLoad
 	filterEditor nucular.TextEditor
 	showAddr     bool
+	fullTypes    bool
 	locals       []*Variable
 
 	expressions []Expr
@@ -183,7 +193,7 @@ type Expr struct {
 
 func loadGlobals(p *asyncLoad) {
 	globals, err := client.ListPackageVariables("", getVariableLoadConfig())
-	globalsPanel.globals = wrapApiVariables(globals, 0, 0, "")
+	globalsPanel.globals = wrapApiVariables(globals, 0, 0, "", true)
 	sort.Sort(variablesByName(globalsPanel.globals))
 	p.done(err)
 }
@@ -195,10 +205,11 @@ func updateGlobals(container *nucular.Window) {
 	}
 
 	w.MenubarBegin()
-	w.Row(varRowHeight).Static(90, 0, 100)
+	w.Row(varRowHeight).Static(90, 0, 100, 100)
 	w.Label("Filter:", "LC")
 	globalsPanel.filterEditor.Edit(w)
 	filter := string(globalsPanel.filterEditor.Buffer)
+	w.CheckboxText("Full Types", &globalsPanel.fullTypes)
 	w.CheckboxText("Address", &globalsPanel.showAddr)
 	w.MenubarEnd()
 
@@ -206,7 +217,7 @@ func updateGlobals(container *nucular.Window) {
 
 	for i := range globals {
 		if strings.Index(globals[i].Name, filter) >= 0 {
-			showVariable(w, 0, globalsPanel.showAddr, -1, globals[i])
+			showVariable(w, 0, globalsPanel.showAddr, globalsPanel.fullTypes, -1, globals[i])
 		}
 	}
 }
@@ -219,7 +230,7 @@ func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].
 
 func loadLocals(p *asyncLoad) {
 	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, getVariableLoadConfig())
-	localsPanel.locals = wrapApiVariables(args, 0, 0, "")
+	localsPanel.locals = wrapApiVariables(args, 0, 0, "", true)
 	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, getVariableLoadConfig())
 	for i := range locals {
 		v := &locals[i]
@@ -229,7 +240,7 @@ func loadLocals(p *asyncLoad) {
 			locals[i].Name = name
 		}
 	}
-	localsPanel.locals = append(localsPanel.locals, wrapApiVariables(locals, 0, 0, "")...)
+	localsPanel.locals = append(localsPanel.locals, wrapApiVariables(locals, 0, 0, "", true)...)
 
 	hasDeclLine := false
 	for i := range localsPanel.locals {
@@ -279,10 +290,11 @@ func updateLocals(container *nucular.Window) {
 	}
 
 	w.MenubarBegin()
-	w.Row(varRowHeight).Static(90, 0, 100)
+	w.Row(varRowHeight).Static(90, 0, 100, 100)
 	w.Label("Filter:", "LC")
 	localsPanel.filterEditor.Edit(w)
 	filter := string(localsPanel.filterEditor.Buffer)
+	w.CheckboxText("Full Types", &localsPanel.fullTypes)
 	w.CheckboxText("Address", &localsPanel.showAddr)
 	w.MenubarEnd()
 
@@ -296,9 +308,9 @@ func updateLocals(container *nucular.Window) {
 				} else {
 					if localsPanel.v[i] == nil {
 						w.Row(varRowHeight).Dynamic(1)
-						w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i]), "LC")
+						w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i].Expr), "LC")
 					} else {
-						showVariable(w, 0, localsPanel.showAddr, i, localsPanel.v[i])
+						showVariable(w, 0, localsPanel.showAddr, localsPanel.fullTypes, i, localsPanel.v[i])
 					}
 				}
 			}
@@ -310,7 +322,7 @@ func updateLocals(container *nucular.Window) {
 		if w.TreePush(nucular.TreeTab, "Local variables and arguments", true) {
 			for i := range locals {
 				if strings.Index(locals[i].Name, filter) >= 0 {
-					showVariable(w, 0, localsPanel.showAddr, -1, locals[i])
+					showVariable(w, 0, localsPanel.showAddr, localsPanel.fullTypes, -1, locals[i])
 				}
 			}
 			w.TreePop()
@@ -343,7 +355,7 @@ func loadOneExpr(i int) {
 		gid = localsPanel.expressions[i].pinnedGid
 		frame = findFrameOffset(localsPanel.expressions[i].pinnedGid, localsPanel.expressions[i].pinnedFrameOffset)
 		if frame < 0 {
-			localsPanel.v[i] = wrapApiVariable(&api.Variable{Name: "(pinned) " + expr, Unreadable: "could not find frame"}, "", "")
+			localsPanel.v[i] = wrapApiVariable(&api.Variable{Name: "(pinned) " + expr, Unreadable: "could not find frame"}, "", "", true)
 			return
 		}
 	}
@@ -360,7 +372,7 @@ func loadOneExpr(i int) {
 	if localsPanel.expressions[i].pinnedGid > 0 {
 		v.Name = "(pinned) " + v.Name
 	}
-	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name)
+	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name, true)
 }
 
 func exprsEditor(w *nucular.Window) {
@@ -554,7 +566,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 
 const maxVariableHeaderWidth = 4096
 
-func variableHeader(w *nucular.Window, addr bool, exprMenu int, v *Variable) bool {
+func variableHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Variable) bool {
 	style := w.Master().Style()
 
 	w.LayoutSetWidthScaled(maxVariableHeaderWidth)
@@ -582,31 +594,31 @@ func variableHeader(w *nucular.Window, addr bool, exprMenu int, v *Variable) boo
 
 		switch v.Kind {
 		case reflect.Slice:
-			print(v.Type, style.Font)
+			print(getDisplayType(v, fullTypes), style.Font)
 			print(fmt.Sprintf("(len: %d cap: %d)", v.Len, v.Cap), style.Font)
 		case reflect.Interface:
 			if len(v.Children) > 0 && v.Children[0] != nil {
-				print(fmt.Sprintf("%s (%v)", v.Type, v.Children[0].Type), style.Font)
+				print(fmt.Sprintf("%s (%v)", getDisplayType(v, fullTypes), getDisplayType(v.Children[0], fullTypes)), style.Font)
 			} else {
 				print(v.Type, style.Font)
 			}
 		default:
-			print(v.Type, style.Font)
+			print(getDisplayType(v, fullTypes), style.Font)
 		}
 	} else {
 		print(v.DisplayName, boldFace)
-		print(v.Type, style.Font)
+		print(getDisplayType(v, fullTypes), style.Font)
 		if v.Value != "" {
 			print("= "+v.Value, style.Font)
 		} else {
-			print("= "+v.SinglelineStringNoType(), style.Font)
+			print("= "+v.SinglelineString(false, fullTypes), style.Font)
 		}
 	}
 	showExprMenu(w, exprMenu, v, clipb)
 	return isopen
 }
 
-func variableNoHeader(w *nucular.Window, addr bool, exprMenu int, v *Variable, value string) {
+func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Variable, value string) {
 	style := w.Master().Style()
 	symX := style.Tab.Padding.X
 	symW := nucular.FontHeight(style.Font)
@@ -640,13 +652,20 @@ func variableNoHeader(w *nucular.Window, addr bool, exprMenu int, v *Variable, v
 		print(fmt.Sprintf("%#x", v.Addr), style.Font)
 	}
 	print(v.DisplayName, boldFace)
-	print(v.Type, style.Font)
+	print(getDisplayType(v, fullTypes), style.Font)
 	print("= "+value, style.Font)
 
 	showExprMenu(w, exprMenu, v, clipb)
 }
 
-func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Variable) {
+func getDisplayType(v *Variable, fullTypes bool) string {
+	if fullTypes {
+		return v.Type
+	}
+	return v.ShortType
+}
+
+func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu int, v *Variable) {
 	style := w.Master().Style()
 
 	if v.Flags&api.VariableShadowed != 0 || v.Unreadable != "" {
@@ -664,11 +683,11 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 	}
 
 	hdr := func() bool {
-		return variableHeader(w, addr, exprMenu, v)
+		return variableHeader(w, addr, fullTypes, exprMenu, v)
 	}
 
 	cblbl := func(fmtstr string, args ...interface{}) {
-		variableNoHeader(w, addr, exprMenu, v, fmt.Sprintf(fmtstr, args...))
+		variableNoHeader(w, addr, fullTypes, exprMenu, v, fmt.Sprintf(fmtstr, args...))
 	}
 
 	dynlbl := func(s string) {
@@ -690,12 +709,12 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 	switch v.Kind {
 	case reflect.Slice:
 		if hdr() {
-			showArrayOrSliceContents(w, depth, addr, v)
+			showArrayOrSliceContents(w, depth, addr, fullTypes, v)
 			w.TreePop()
 		}
 	case reflect.Array:
 		if hdr() {
-			showArrayOrSliceContents(w, depth, addr, v)
+			showArrayOrSliceContents(w, depth, addr, fullTypes, v)
 			w.TreePop()
 		}
 	case reflect.Ptr:
@@ -709,7 +728,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 					loadMoreStruct(v.Children[0])
 					dynlbl("Loading...")
 				} else {
-					showVariable(w, depth+1, addr, -1, v.Children[0])
+					showVariable(w, depth+1, addr, fullTypes, -1, v.Children[0])
 				}
 				w.TreePop()
 			}
@@ -727,7 +746,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 			cblbl("nil")
 		} else {
 			if hdr() {
-				showStructContents(w, depth, addr, v)
+				showStructContents(w, depth, addr, fullTypes, v)
 				w.TreePop()
 			}
 		}
@@ -737,7 +756,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 				loadMoreStruct(v)
 				dynlbl("Loading...")
 			} else {
-				showStructContents(w, depth, addr, v)
+				showStructContents(w, depth, addr, fullTypes, v)
 			}
 			w.TreePop()
 		}
@@ -746,7 +765,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 			cblbl("nil")
 		} else {
 			if hdr() {
-				showInterfaceContents(w, depth, addr, v)
+				showInterfaceContents(w, depth, addr, fullTypes, v)
 				w.TreePop()
 			}
 		}
@@ -758,7 +777,7 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 			}
 			for i := range v.Children {
 				if v.Children[i] != nil {
-					showVariable(w, depth+1, addr, -1, v.Children[i])
+					showVariable(w, depth+1, addr, fullTypes, -1, v.Children[i])
 				}
 			}
 			if len(v.Children)/2 != int(v.Len) && v.Addr != 0 {
@@ -788,13 +807,13 @@ func showVariable(w *nucular.Window, depth int, addr bool, exprMenu int, v *Vari
 	}
 }
 
-func showArrayOrSliceContents(w *nucular.Window, depth int, addr bool, v *Variable) {
+func showArrayOrSliceContents(w *nucular.Window, depth int, addr, fullTypes bool, v *Variable) {
 	if depth < 10 && !v.loading && len(v.Children) > 0 && autoloadMore(v.Children[0]) {
 		v.loading = true
 		loadMoreStruct(v)
 	}
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, -1, v.Children[i])
+		showVariable(w, depth+1, addr, fullTypes, -1, v.Children[i])
 	}
 	if len(v.Children) != int(v.Len) && v.Addr != 0 {
 		w.Row(varRowHeight).Static(moreBtnWidth)
@@ -817,13 +836,13 @@ func autoloadMore(v *Variable) bool {
 	return false
 }
 
-func showStructContents(w *nucular.Window, depth int, addr bool, v *Variable) {
+func showStructContents(w *nucular.Window, depth int, addr, fullTypes bool, v *Variable) {
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, -1, v.Children[i])
+		showVariable(w, depth+1, addr, fullTypes, -1, v.Children[i])
 	}
 }
 
-func showInterfaceContents(w *nucular.Window, depth int, addr bool, v *Variable) {
+func showInterfaceContents(w *nucular.Window, depth int, addr, fullTypes bool, v *Variable) {
 	if len(v.Children) <= 0 {
 		return
 	}
@@ -846,11 +865,11 @@ func showInterfaceContents(w *nucular.Window, depth int, addr bool, v *Variable)
 
 	switch data.Kind {
 	case reflect.Struct:
-		showStructContents(w, depth, addr, data)
+		showStructContents(w, depth, addr, fullTypes, data)
 	case reflect.Array, reflect.Slice:
-		showArrayOrSliceContents(w, depth, addr, data)
+		showArrayOrSliceContents(w, depth, addr, fullTypes, data)
 	default:
-		showVariable(w, depth+1, addr, -1, data)
+		showVariable(w, depth+1, addr, fullTypes, -1, data)
 	}
 }
 
@@ -872,7 +891,7 @@ func loadMoreMap(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children) / 2)
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children, reflect.Map, len(v.Children), v.Expression)...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children, reflect.Map, len(v.Children), v.Expression, true)...)
 			}
 			wnd.Changed()
 			additionalLoadMu.Lock()
@@ -896,7 +915,7 @@ func loadMoreArrayOrSlice(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children))
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children, v.Kind, len(v.Children), v.Expression)...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children, v.Kind, len(v.Children), v.Expression, true)...)
 			}
 			additionalLoadMu.Lock()
 			additionalLoadRunning = false
@@ -919,7 +938,7 @@ func loadMoreStruct(v *Variable) {
 				dn := v.DisplayName
 				vn := v.Varname
 				lv.Name = v.Name
-				*v = *wrapApiVariable(lv, lv.Name, v.Expression)
+				*v = *wrapApiVariable(lv, lv.Name, v.Expression, true)
 				v.Varname = vn
 				v.DisplayName = dn
 			}
@@ -978,5 +997,60 @@ func configureLoadParameters(exprMenuIdx int) func(w *nucular.Window) {
 			loadOneExpr(exprMenuIdx)
 			w.Close()
 		}
+	}
+}
+
+func shortenType(typ string) string {
+	out, ok := shortenTypeEx(typ)
+	if !ok {
+		return typ
+	}
+	return out
+}
+
+func shortenTypeEx(typ string) (string, bool) {
+	switch {
+	case strings.HasPrefix(typ, "[]"):
+		sub, ok := shortenTypeEx(typ[2:])
+		return "[]" + sub, ok
+	case strings.HasPrefix(typ, "*"):
+		sub, ok := shortenTypeEx(typ[1:])
+		return "*" + sub, ok
+	case strings.HasPrefix(typ, "map["):
+		depth := 1
+		for i := 4; i < len(typ); i++ {
+			switch typ[i] {
+			case '[':
+				depth++
+			case ']':
+				depth--
+				if depth == 0 {
+					key, keyok := shortenTypeEx(typ[4:i])
+					val, valok := shortenTypeEx(typ[i+1:])
+					return "map[" + key + "]" + val, keyok && valok
+				}
+			}
+		}
+		return "", false
+	case typ == "interface {}" || typ == "interface{}":
+		return typ, true
+	case typ == "struct {}" || typ == "struct{}":
+		return typ, true
+	default:
+		slashnum := 0
+		slash := -1
+		for i, ch := range typ {
+			if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' && ch != '.' && ch != '/' && ch != '@' && ch != '%' {
+				return "", false
+			}
+			if ch == '/' {
+				slash = i
+				slashnum++
+			}
+		}
+		if slashnum <= 1 || slash < 0 {
+			return typ, true
+		}
+		return typ[slash+1:], true
 	}
 }

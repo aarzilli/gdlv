@@ -1,4 +1,4 @@
-package api
+package main
 
 import (
 	"bytes"
@@ -14,35 +14,80 @@ const (
 	indentString = "\t"
 )
 
-// SinglelineString returns a representation of v on a single line.
-func (v *Variable) SinglelineString() string {
-	var buf bytes.Buffer
-	v.writeTo(&buf, true, false, true, "")
-	return buf.String()
+type ppFlags uint8
+
+const (
+	ppTop ppFlags = 1 << iota
+	ppNewlines
+	ppIncludeType
+	ppFullTypes
+)
+
+func (flags ppFlags) top() bool {
+	return flags&ppTop != 0
 }
 
-func (v *Variable) SinglelineStringNoType() string {
+func (flags ppFlags) newlines() bool {
+	return flags&ppNewlines != 0
+}
+
+func (flags ppFlags) includeType() bool {
+	return flags&ppIncludeType != 0
+}
+
+func (flags ppFlags) fullTypes() bool {
+	return flags&ppFullTypes != 0
+}
+
+func (flags ppFlags) negateIncludeType() ppFlags {
+	if flags.includeType() {
+		return flags & ^ppIncludeType
+	}
+	return flags | ppIncludeType
+}
+
+func (flags ppFlags) clearTop() ppFlags {
+	return flags & ^ppTop
+}
+
+func (flags ppFlags) clearNewlines() ppFlags {
+	return flags & ^ppNewlines
+}
+
+func (flags ppFlags) clearIncludeType() ppFlags {
+	return flags & ^ppIncludeType
+}
+
+// SinglelineString returns a representation of v on a single line.
+func (v *Variable) SinglelineString(includeType, fullTypes bool) string {
 	var buf bytes.Buffer
-	v.writeTo(&buf, true, false, false, "")
+	flags := ppTop
+	if includeType {
+		flags |= ppIncludeType
+	}
+	if fullTypes {
+		flags |= ppFullTypes
+	}
+	v.writeTo(&buf, flags, "")
 	return buf.String()
 }
 
 // MultilineString returns a representation of v on multiple lines.
 func (v *Variable) MultilineString(indent string) string {
 	var buf bytes.Buffer
-	v.writeTo(&buf, true, true, true, indent)
+	v.writeTo(&buf, ppTop|ppNewlines|ppIncludeType, indent)
 	return buf.String()
 }
 
-func (v *Variable) writeTo(buf io.Writer, top, newlines, includeType bool, indent string) {
+func (v *Variable) writeTo(buf io.Writer, flags ppFlags, indent string) {
 	if v.Unreadable != "" {
 		fmt.Fprintf(buf, "(unreadable %s)", v.Unreadable)
 		return
 	}
 
-	if !top && v.Addr == 0 && v.Value == "" {
-		if includeType && v.Type != "void" {
-			fmt.Fprintf(buf, "%s nil", v.Type)
+	if !flags.top() && v.Addr == 0 && v.Value == "" {
+		if flags.includeType() && v.Type != "void" {
+			fmt.Fprintf(buf, "%s nil", getDisplayType(v, flags.fullTypes()))
 		} else {
 			fmt.Fprint(buf, "nil")
 		}
@@ -51,9 +96,9 @@ func (v *Variable) writeTo(buf io.Writer, top, newlines, includeType bool, inden
 
 	switch v.Kind {
 	case reflect.Slice:
-		v.writeSliceTo(buf, newlines, includeType, indent)
+		v.writeSliceTo(buf, flags, indent)
 	case reflect.Array:
-		v.writeArrayTo(buf, newlines, includeType, indent)
+		v.writeArrayTo(buf, flags, indent)
 	case reflect.Ptr:
 		if v.Type == "" {
 			fmt.Fprint(buf, "nil")
@@ -61,15 +106,15 @@ func (v *Variable) writeTo(buf io.Writer, top, newlines, includeType bool, inden
 			fmt.Fprintf(buf, "(%s)(0x%x)", v.Type, v.Children[0].Addr)
 		} else {
 			fmt.Fprint(buf, "*")
-			v.Children[0].writeTo(buf, false, newlines, includeType, indent)
+			v.Children[0].writeTo(buf, flags.clearTop(), indent)
 		}
 	case reflect.UnsafePointer:
 		fmt.Fprintf(buf, "unsafe.Pointer(0x%x)", v.Children[0].Addr)
 	case reflect.String:
 		v.writeStringTo(buf)
 	case reflect.Chan:
-		if newlines {
-			v.writeStructTo(buf, newlines, includeType, indent)
+		if flags.newlines() {
+			v.writeStructTo(buf, flags, indent)
 		} else {
 			if len(v.Children) == 0 {
 				fmt.Fprintf(buf, "%s nil", v.Type)
@@ -78,7 +123,7 @@ func (v *Variable) writeTo(buf io.Writer, top, newlines, includeType bool, inden
 			}
 		}
 	case reflect.Struct:
-		v.writeStructTo(buf, newlines, includeType, indent)
+		v.writeStructTo(buf, flags, indent)
 	case reflect.Interface:
 		if v.Addr == 0 {
 			// an escaped interface variable that points to nil, this shouldn't
@@ -86,15 +131,15 @@ func (v *Variable) writeTo(buf io.Writer, top, newlines, includeType bool, inden
 			fmt.Fprintf(buf, "nil")
 			return
 		}
-		if includeType {
+		if flags.includeType() {
 			if v.Children[0].Kind == reflect.Invalid {
-				fmt.Fprintf(buf, "%s ", v.Type)
+				fmt.Fprintf(buf, "%s ", getDisplayType(v, flags.fullTypes()))
 				if v.Children[0].Addr == 0 {
 					fmt.Fprint(buf, "nil")
 					return
 				}
 			} else {
-				fmt.Fprintf(buf, "%s(%s) ", v.Type, v.Children[0].Type)
+				fmt.Fprintf(buf, "%s(%s) ", getDisplayType(v, flags.fullTypes()), getDisplayType(v.Children[0], flags.fullTypes()))
 			}
 		}
 		data := v.Children[0]
@@ -106,15 +151,15 @@ func (v *Variable) writeTo(buf io.Writer, top, newlines, includeType bool, inden
 			} else if data.Children[0].OnlyAddr {
 				fmt.Fprintf(buf, "0x%x", v.Children[0].Addr)
 			} else {
-				v.Children[0].writeTo(buf, false, newlines, !includeType, indent)
+				v.Children[0].writeTo(buf, flags.clearTop().negateIncludeType(), indent)
 			}
 		} else if data.OnlyAddr {
 			fmt.Fprintf(buf, "*(*%q)(0x%x)", v.Type, v.Addr)
 		} else {
-			v.Children[0].writeTo(buf, false, newlines, !includeType, indent)
+			v.Children[0].writeTo(buf, flags.clearTop().negateIncludeType(), indent)
 		}
 	case reflect.Map:
-		v.writeMapTo(buf, newlines, includeType, indent)
+		v.writeMapTo(buf, flags, indent)
 	case reflect.Func:
 		if v.Value == "" {
 			fmt.Fprint(buf, "nil")
@@ -140,35 +185,35 @@ func (v *Variable) writeStringTo(buf io.Writer) {
 	fmt.Fprintf(buf, "%q", s)
 }
 
-func (v *Variable) writeSliceTo(buf io.Writer, newlines, includeType bool, indent string) {
-	if includeType {
-		fmt.Fprintf(buf, "%s len: %d, cap: %d, ", v.Type, v.Len, v.Cap)
+func (v *Variable) writeSliceTo(buf io.Writer, flags ppFlags, indent string) {
+	if flags.includeType() {
+		fmt.Fprintf(buf, "%s len: %d, cap: %d, ", getDisplayType(v, flags.fullTypes()), v.Len, v.Cap)
 	}
 	if v.Base == 0 && len(v.Children) == 0 {
 		fmt.Fprintf(buf, "nil")
 		return
 	}
-	v.writeSliceOrArrayTo(buf, newlines, indent)
+	v.writeSliceOrArrayTo(buf, flags, indent)
 }
 
-func (v *Variable) writeArrayTo(buf io.Writer, newlines, includeType bool, indent string) {
-	if includeType {
-		fmt.Fprintf(buf, "%s ", v.Type)
+func (v *Variable) writeArrayTo(buf io.Writer, flags ppFlags, indent string) {
+	if flags.includeType() {
+		fmt.Fprintf(buf, "%s ", getDisplayType(v, flags.fullTypes()))
 	}
-	v.writeSliceOrArrayTo(buf, newlines, indent)
+	v.writeSliceOrArrayTo(buf, flags, indent)
 }
 
-func (v *Variable) writeStructTo(buf io.Writer, newlines, includeType bool, indent string) {
+func (v *Variable) writeStructTo(buf io.Writer, flags ppFlags, indent string) {
 	if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
 		fmt.Fprintf(buf, "(*%s)(0x%x)", v.Type, v.Addr)
 		return
 	}
 
-	if includeType {
-		fmt.Fprintf(buf, "%s ", v.Type)
+	if flags.includeType() {
+		fmt.Fprintf(buf, "%s ", getDisplayType(v, flags.fullTypes()))
 	}
 
-	nl := v.shouldNewlineStruct(newlines)
+	nl := v.shouldNewlineStruct(flags.newlines())
 
 	fmt.Fprint(buf, "{")
 
@@ -177,7 +222,7 @@ func (v *Variable) writeStructTo(buf io.Writer, newlines, includeType bool, inde
 			fmt.Fprintf(buf, "\n%s%s", indent, indentString)
 		}
 		fmt.Fprintf(buf, "%s: ", v.Children[i].Name)
-		v.Children[i].writeTo(buf, false, nl, true, indent+indentString)
+		v.Children[i].writeTo(buf, flags.clearTop()|ppIncludeType, indent+indentString)
 		if i != len(v.Children)-1 || nl {
 			fmt.Fprint(buf, ",")
 			if !nl {
@@ -198,30 +243,35 @@ func (v *Variable) writeStructTo(buf io.Writer, newlines, includeType bool, inde
 	fmt.Fprint(buf, "}")
 }
 
-func (v *Variable) writeMapTo(buf io.Writer, newlines, includeType bool, indent string) {
-	if includeType {
-		fmt.Fprintf(buf, "%s ", v.Type)
+func (v *Variable) writeMapTo(buf io.Writer, flags ppFlags, indent string) {
+	if flags.includeType() {
+		fmt.Fprintf(buf, "%s ", getDisplayType(v, flags.fullTypes()))
 	}
 	if v.Base == 0 && len(v.Children) == 0 {
 		fmt.Fprintf(buf, "nil")
 		return
 	}
 
-	nl := newlines && (len(v.Children) > 0)
+	nl := flags.newlines() && (len(v.Children) > 0)
 
 	fmt.Fprint(buf, "[")
 
 	for i := 0; i < len(v.Children); i += 2 {
-		key := &v.Children[i]
-		value := &v.Children[i+1]
+		key := v.Children[i]
+		value := v.Children[i+1]
 
 		if nl {
 			fmt.Fprintf(buf, "\n%s%s", indent, indentString)
 		}
 
-		key.writeTo(buf, false, false, false, indent+indentString)
-		fmt.Fprint(buf, ": ")
-		value.writeTo(buf, false, nl, false, indent+indentString)
+		if value == nil {
+			fmt.Fprintf(buf, "%s: ", key.DisplayName[1:len(key.DisplayName)-1])
+			key.writeTo(buf, flags.clearTop().clearIncludeType(), indent+indentString)
+		} else {
+			key.writeTo(buf, flags.clearTop().clearNewlines().clearIncludeType(), indent+indentString)
+			fmt.Fprint(buf, ": ")
+			value.writeTo(buf, flags.clearTop().clearIncludeType(), indent+indentString)
+		}
 		if i != len(v.Children)-1 || nl {
 			fmt.Fprint(buf, ", ")
 		}
@@ -251,7 +301,7 @@ func (v *Variable) shouldNewlineArray(newlines bool) bool {
 		return false
 	}
 
-	kind, hasptr := (&v.Children[0]).recursiveKind()
+	kind, hasptr := v.Children[0].recursiveKind()
 
 	switch kind {
 	case reflect.Slice, reflect.Array, reflect.Struct, reflect.Map, reflect.Interface:
@@ -278,7 +328,7 @@ func (v *Variable) recursiveKind() (reflect.Kind, bool) {
 		kind = v.Kind
 		if kind == reflect.Ptr {
 			hasptr = true
-			v = &(v.Children[0])
+			v = v.Children[0]
 		} else {
 			break
 		}
@@ -292,7 +342,7 @@ func (v *Variable) shouldNewlineStruct(newlines bool) bool {
 	}
 
 	for i := range v.Children {
-		kind, hasptr := (&v.Children[i]).recursiveKind()
+		kind, hasptr := v.Children[i].recursiveKind()
 
 		switch kind {
 		case reflect.Slice, reflect.Array, reflect.Struct, reflect.Map, reflect.Interface:
@@ -310,15 +360,15 @@ func (v *Variable) shouldNewlineStruct(newlines bool) bool {
 	return false
 }
 
-func (v *Variable) writeSliceOrArrayTo(buf io.Writer, newlines bool, indent string) {
-	nl := v.shouldNewlineArray(newlines)
+func (v *Variable) writeSliceOrArrayTo(buf io.Writer, flags ppFlags, indent string) {
+	nl := v.shouldNewlineArray(flags.newlines())
 	fmt.Fprint(buf, "[")
 
 	for i := range v.Children {
 		if nl {
 			fmt.Fprintf(buf, "\n%s%s", indent, indentString)
 		}
-		v.Children[i].writeTo(buf, false, nl, false, indent+indentString)
+		v.Children[i].writeTo(buf, (flags & ^ppTop) & ^ppIncludeType, indent+indentString)
 		if i != len(v.Children)-1 || nl {
 			fmt.Fprint(buf, ",")
 		}

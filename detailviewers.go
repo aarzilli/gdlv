@@ -270,7 +270,7 @@ func (sv *stringViewer) loadMore() {
 					sv.v.Width = 0
 					sv.v.Value += lv.Value
 				case reflect.Array, reflect.Slice:
-					sv.v.Children = append(sv.v.Children, wrapApiVariables(lv.Children, sv.v.Kind, len(sv.v.Children), sv.v.Expression)...)
+					sv.v.Children = append(sv.v.Children, wrapApiVariables(lv.Children, sv.v.Kind, len(sv.v.Children), sv.v.Expression, true)...)
 				}
 			}
 			additionalLoadMu.Lock()
@@ -638,7 +638,7 @@ func (c *CustomFormatter) Format(v *Variable) {
 		case reflect.String:
 			args = append(args, v.Value)
 		default:
-			args = append(args, v.SinglelineString())
+			args = append(args, wrapApiVariableSimple(v).SinglelineString(true, true))
 		}
 	}
 

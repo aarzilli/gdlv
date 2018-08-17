@@ -201,7 +201,7 @@ func (c *Commands) help(out io.Writer, args string) error {
 		}
 		switch args {
 		case "fonts":
-			fmt.Fprintln(out, `By default gdlv uses a built-in version of Droid Sans Mono.
+			fmt.Fprintf(out, `By default gdlv uses a built-in version of Droid Sans Mono.
 
 If you don't like the font or if it doesn't cover a script that you need you
 can change the font by setting the environment variables GDLV_NORMAL_FONT
@@ -748,7 +748,7 @@ func printVar(out io.Writer, args string) error {
 	if err != nil {
 		return err
 	}
-	valstr := val.MultilineString("")
+	valstr := wrapApiVariableSimple(val).MultilineString("")
 	nlcount := 0
 	for _, ch := range valstr {
 		if ch == '\n' {
@@ -1131,7 +1131,7 @@ func printReturnValues(out io.Writer, th *api.Thread) {
 	}
 	fmt.Fprintln(out, "Values returned:")
 	for _, v := range th.ReturnValues {
-		fmt.Fprintf(out, "\t%s: %s\n", v.Name, v.MultilineString("\t"))
+		fmt.Fprintf(out, "\t%s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t"))
 	}
 	fmt.Fprintln(out)
 }
@@ -1152,7 +1152,7 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 	if th.BreakpointInfo != nil && th.Breakpoint.LoadArgs != nil && *th.Breakpoint.LoadArgs == ShortLoadConfig {
 		var arg []string
 		for _, ar := range th.BreakpointInfo.Arguments {
-			arg = append(arg, ar.SinglelineString())
+			arg = append(arg, wrapApiVariableSimple(&ar).SinglelineString(true, true))
 		}
 		args = strings.Join(arg, ", ")
 	}
@@ -1198,20 +1198,20 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 		}
 
 		for _, v := range bpi.Variables {
-			fmt.Fprintf(out, "    %s: %s\n", v.Name, v.MultilineString("\t"))
+			fmt.Fprintf(out, "    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t"))
 		}
 
 		for _, v := range bpi.Locals {
 			if *bp.LoadLocals == LongLoadConfig {
-				fmt.Fprintf(out, "    %s: %s\n", v.Name, v.MultilineString("\t"))
+				fmt.Fprintf(out, "    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t"))
 			} else {
-				fmt.Fprintf(out, "    %s: %s\n", v.Name, v.SinglelineString())
+				fmt.Fprintf(out, "    %s: %s\n", v.Name, wrapApiVariableSimple(&v).SinglelineString(true, true))
 			}
 		}
 
 		if bp.LoadArgs != nil && *bp.LoadArgs == LongLoadConfig {
 			for _, v := range bpi.Arguments {
-				fmt.Fprintf(out, "    %s: %s\n", v.Name, v.MultilineString("\t"))
+				fmt.Fprintf(out, "    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t"))
 			}
 		}
 
@@ -1247,10 +1247,10 @@ func printStack(out io.Writer, stack []api.Stackframe, ind string) {
 		fmt.Fprintf(out, "%sat %s:%d\n", s, ShortenFilePath(stack[i].File), stack[i].Line)
 
 		for j := range stack[i].Arguments {
-			fmt.Fprintf(out, "%s    %s = %s\n", s, stack[i].Arguments[j].Name, stack[i].Arguments[j].SinglelineString())
+			fmt.Fprintf(out, "%s    %s = %s\n", s, stack[i].Arguments[j].Name, wrapApiVariableSimple(&stack[i].Arguments[j]).SinglelineString(true, true))
 		}
 		for j := range stack[i].Locals {
-			fmt.Fprintf(out, "%s    %s = %s\n", s, stack[i].Locals[j].Name, stack[i].Locals[j].SinglelineString())
+			fmt.Fprintf(out, "%s    %s = %s\n", s, stack[i].Locals[j].Name, wrapApiVariableSimple(&stack[i].Locals[j]).SinglelineString(true, true))
 		}
 	}
 }
