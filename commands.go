@@ -473,16 +473,8 @@ func splitQuotedFields(in string) []string {
 }
 
 func pseudoCommandWrap(cmd func(io.Writer) error) {
-	wnd.Lock()
-	running = true
 	wnd.Changed()
-	wnd.Unlock()
-	defer func() {
-		wnd.Lock()
-		running = false
-		wnd.Changed()
-		wnd.Unlock()
-	}()
+	defer wnd.Changed()
 
 	out := editorWriter{&scrollbackEditor, true}
 	err := cmd(&out)
@@ -1263,16 +1255,8 @@ func ShortenFilePath(fullPath string) string {
 }
 
 func executeCommand(cmdstr string) {
-	wnd.Lock()
-	running = true
 	wnd.Changed()
-	wnd.Unlock()
-	defer func() {
-		wnd.Lock()
-		running = false
-		wnd.Changed()
-		wnd.Unlock()
-	}()
+	defer wnd.Changed()
 
 	out := editorWriter{&scrollbackEditor, true}
 	cmdstr, args := parseCommand(cmdstr)

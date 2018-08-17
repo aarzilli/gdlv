@@ -78,7 +78,7 @@ func (l *asyncLoad) showRequest(container *nucular.Window) *nucular.Window {
 			container.Label("Connecting...", "LT")
 			return nil
 		}
-		if running {
+		if client.Running() {
 			container.Label("Running...", "LT")
 			return nil
 		}
@@ -309,7 +309,7 @@ func updateGoroutines(container *nucular.Window) {
 			w.SelectableLabel(formatLocation2(g.StartLoc), "LT", &selected)
 		}
 
-		if selected && curGid != g.ID && !running {
+		if selected && curGid != g.ID && !client.Running() {
 			go func(gid int) {
 				state, err := client.SwitchGoroutine(gid)
 				if err != nil {
@@ -371,7 +371,7 @@ func updateStacktrace(container *nucular.Window) {
 		w.SelectableLabel(fmt.Sprintf("%#0*x\n%+d", d, frame.PC, frame.FrameOffset), "LT", &selected)
 		w.LayoutFitWidth(stackPanel.id, 100)
 		w.SelectableLabel(formatLocation2(frame.Location), "LT", &selected)
-		if selected && curFrame != i && !running {
+		if selected && curFrame != i && !client.Running() {
 			curFrame = i
 			go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
 		}
@@ -422,7 +422,7 @@ func updateThreads(container *nucular.Window) {
 		loc := api.Location{thread.PC, thread.File, thread.Line, thread.Function}
 		w.SelectableLabel(formatLocation2(loc), "LT", &selected)
 
-		if selected && curThread != thread.ID && !running {
+		if selected && curThread != thread.ID && !client.Running() {
 			go func(tid int) {
 				state, err := client.SwitchThread(tid)
 				if err != nil {
@@ -517,7 +517,7 @@ func updateBreakpoints(container *nucular.Window) {
 		w.LayoutFitWidth(breakpointsPanel.id, 100)
 		w.SelectableLabel(fmt.Sprintf("%s in %s (hit count: %d)\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.TotalHitCount, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
 
-		if !running {
+		if !client.Running() {
 			if selected {
 				breakpointsPanel.selected = breakpoint.ID
 			}
@@ -753,7 +753,7 @@ func updateCheckpoints(container *nucular.Window) {
 		w.LayoutFitWidth(checkpointsPanel.id, 10)
 		w.SelectableLabel(checkpoint.Where, "LT", &selected)
 
-		if running {
+		if client.Running() {
 			continue
 		}
 
@@ -946,7 +946,7 @@ func updateListingPanel(container *nucular.Window) {
 		breakpointIcon(listp, line.bp != nil, "CC", style)
 		bpbounds := listp.LastWidgetBounds
 
-		isCurrentLine := line.pc && curFrame == 0 && !running && curThread >= 0
+		isCurrentLine := line.pc && curFrame == 0 && !client.Running() && curThread >= 0
 
 		listp.LayoutSetWidth(arroww)
 		if isCurrentLine {
@@ -968,7 +968,7 @@ func updateListingPanel(container *nucular.Window) {
 			gl.Center()
 		}
 
-		if !running {
+		if !client.Running() {
 			ctxtbounds := bpbounds
 			ctxtbounds.W = (textbounds.X + textbounds.W) - ctxtbounds.X
 

@@ -290,7 +290,7 @@ func commandToolbar(sw *nucular.Window) {
 	switch {
 	case client == nil:
 
-	case running:
+	case client.Running():
 		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(interruptIconChar, "interrupt")
 		if sw.ButtonText("EOF") {

@@ -1,14 +1,15 @@
 package rpc2
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
+	"sync"
 	"time"
 
-	"github.com/aarzilli/gdlv/internal/dlvclient/service"
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
 
@@ -17,11 +18,11 @@ type RPCClient struct {
 	addr   string
 	client *rpc.Client
 
+	mu      sync.Mutex
+	running bool
+
 	retValLoadCfg *api.LoadConfig
 }
-
-// Ensure the implementation satisfies the interface.
-var _ service.Client = &RPCClient{}
 
 // NewClient creates a new RPCClient.
 func NewClient(addr string, logFile io.Writer) (*RPCClient, error) {
@@ -37,6 +38,15 @@ func NewClient(addr string, logFile io.Writer) (*RPCClient, error) {
 	c := &RPCClient{addr: addr, client: client}
 	c.call("SetApiVersion", api.SetAPIVersionIn{2}, &api.SetAPIVersionOut{})
 	return c, nil
+}
+
+func (c *RPCClient) Running() bool {
+	if c == nil {
+		return false
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.running
 }
 
 func (c *RPCClient) ProcessPid() int {
@@ -379,6 +389,43 @@ func (c *RPCClient) SetReturnValuesLoadConfig(cfg *api.LoadConfig) {
 	c.retValLoadCfg = cfg
 }
 
+var errRunning = errors.New("running")
+
 func (c *RPCClient) call(method string, args, reply interface{}) error {
+	argsAsCmd := func() api.DebuggerCommand {
+		cmd, ok := args.(api.DebuggerCommand)
+		if !ok {
+			pcmd := args.(*api.DebuggerCommand)
+			cmd = *pcmd
+		}
+		return cmd
+	}
+	if c.Running() {
+		if method != "Command" {
+			return errRunning
+		}
+
+		cmd := argsAsCmd()
+		if cmd.Name != api.Halt {
+			return errRunning
+		}
+	} else {
+		if method == "Command" {
+			cmd := argsAsCmd()
+			switch cmd.Name {
+			case api.SwitchThread, api.SwitchGoroutine, api.Halt:
+				// those don't start the process
+			default:
+				c.mu.Lock()
+				c.running = true
+				c.mu.Unlock()
+				defer func() {
+					c.mu.Lock()
+					c.running = false
+					c.mu.Unlock()
+				}()
+			}
+		}
+	}
 	return c.client.Call("RPCServer."+method, args, reply)
 }

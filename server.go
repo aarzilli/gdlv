@@ -233,10 +233,12 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 			silenced = true
 			wnd.Unlock()
 			fmt.Fprintf(&scrollbackOut, "too much output in 500ms (%d), output silenced\n", bucket)
+			wnd.Changed()
 			bucket = 0
 			return
 		}
 		fmt.Fprintln(&scrollbackOut, scan.Text())
+		wnd.Changed()
 	}
 
 	for scan.Scan() {
@@ -340,12 +342,10 @@ func (descr *ServerDescr) connectTo() {
 	}
 
 	wnd.Lock()
-	running = true
 	var err error
 	client, err = rpc2.NewClient(descr.connectString, LogOutput)
 	if err != nil {
 		client = nil
-		running = false
 		wnd.Unlock()
 		fmt.Fprintf(&scrollbackOut, "Could not connect: %v\n", err)
 		return
@@ -357,10 +357,6 @@ func (descr *ServerDescr) connectTo() {
 	}
 
 	finishRestart(&scrollbackOut, descr.atStart)
-
-	wnd.Lock()
-	running = false
-	wnd.Unlock()
 
 	state, err := client.GetState()
 	if err == nil && state == nil {

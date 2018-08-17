@@ -18,8 +18,8 @@ import (
 	"time"
 
 	"github.com/aarzilli/gdlv/internal/assets"
-	"github.com/aarzilli/gdlv/internal/dlvclient/service"
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/rpc2"
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
@@ -160,8 +160,8 @@ var listingPanel struct {
 
 var wnd nucular.MasterWindow
 
-var running, nextInProgress bool
-var client service.Client
+var nextInProgress bool
+var client *rpc2.RPCClient
 var curThread int
 var curGid int
 var curFrame int
@@ -204,35 +204,35 @@ func guiUpdate(w *nucular.Window) {
 			mw.ActivateEditor(&commandLineEditor)
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeF5):
-			if !running && client != nil {
+			if !client.Running() && client != nil {
 				doCommand("continue")
 			}
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeF10):
 			fallthrough
 		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeRightArrow):
-			if !running && client != nil {
+			if !client.Running() && client != nil {
 				doCommand("next")
 			}
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeF11):
 			fallthrough
 		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeDownArrow):
-			if !running && client != nil {
+			if !client.Running() && client != nil {
 				doCommand("step")
 			}
 
 		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeF11):
 			fallthrough
 		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeUpArrow):
-			if !running && client != nil {
+			if !client.Running() && client != nil {
 				doCommand("stepout")
 			}
 
 		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeF5):
 			fallthrough
 		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeDeleteForward):
-			if running && client != nil {
+			if client.Running() && client != nil {
 				_, err := client.Halt()
 				if err != nil {
 					fmt.Fprintf(&scrollbackOut, "Request manual stop failed: %v\n", err)
@@ -300,7 +300,7 @@ func guiUpdate(w *nucular.Window) {
 }
 
 func currentPrompt() string {
-	if running {
+	if client.Running() {
 		return "running"
 	} else if client == nil {
 		switch {
@@ -344,7 +344,7 @@ func updateCommandPanel(w *nucular.Window) {
 	w.Row(commandLineHeight).StaticScaled(promptwidth, 0)
 	w.Label(p2, "LC")
 
-	if running {
+	if client.Running() {
 		//commandLineEditor.Flags |= nucular.EditReadOnly
 		if !commandLineEditor.Active {
 			w.Master().ActivateEditor(&commandLineEditor)
@@ -410,7 +410,7 @@ func updateCommandPanel(w *nucular.Window) {
 		historySearch = false
 		var scrollbackOut = editorWriter{&scrollbackEditor, false}
 		cmd := string(commandLineEditor.Buffer)
-		if canExecuteCmd(client, cmd) && !running {
+		if canExecuteCmd(cmd) && !client.Running() {
 			if cmd == "" {
 				fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmdhistory[len(cmdhistory)-1])
 			} else {
@@ -419,7 +419,7 @@ func updateCommandPanel(w *nucular.Window) {
 			}
 			historyShown = len(cmdhistory)
 			go executeCommand(cmd)
-		} else if running && client != nil && BackendServer.stdinChan != nil && curThread >= 0 {
+		} else if client.Running() && client != nil && BackendServer.stdinChan != nil && curThread >= 0 {
 			select {
 			case BackendServer.stdinChan <- cmd + "\n":
 			default:
@@ -447,7 +447,7 @@ func searchHistory() {
 	historyShown = -1
 }
 
-func canExecuteCmd(client service.Client, cmd string) bool {
+func canExecuteCmd(cmd string) bool {
 	if client != nil {
 		return true
 	}

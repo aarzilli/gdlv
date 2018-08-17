@@ -413,7 +413,7 @@ func addExpression(newexpr string) {
 }
 
 func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb []byte) {
-	if running {
+	if client.Running() {
 		return
 	}
 	w := parentw.ContextualOpen(0, image.Point{}, parentw.LastWidgetBounds, nil)
