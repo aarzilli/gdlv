@@ -133,7 +133,14 @@ See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a des
 	set <variable> = <value>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions. Only numerical variables and pointers can be changed.`},
-		{aliases: []string{"display", "disp", "dp"}, complete: completeVariable, cmdFn: displayVar, helpMsg: `Adds one expression to the Variables panel.`},
+		{aliases: []string{"display", "disp", "dp"}, complete: completeVariable, cmdFn: displayVar, helpMsg: `Adds one expression to the Variables panel.
+	
+	display <expr>
+`},
+		{aliases: []string{"details", "det", "dt"}, complete: completeVariable, cmdFn: detailsVar, helpMsg: `Opens details window for the specified expression.
+	
+	details <expr>
+`},
 		{aliases: []string{"layout"}, cmdFn: layoutCommand, helpMsg: `Manages window layout.
 	
 	layout <name>
@@ -758,6 +765,11 @@ func printVar(out io.Writer, args string) error {
 
 func displayVar(out io.Writer, args string) error {
 	addExpression(args)
+	return nil
+}
+
+func detailsVar(out io.Writer, args string) error {
+	newDetailViewer(wnd, args)
 	return nil
 }
 

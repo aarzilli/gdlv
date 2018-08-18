@@ -423,7 +423,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 	w.Row(20).Dynamic(1)
 	if fn := detailsAvailable(v); fn != nil {
 		if w.MenuItem(label.TA("Details", "LC")) {
-			fn(w.Master(), v)
+			fn(w.Master(), v.Expression)
 		}
 	}
 
@@ -950,7 +950,7 @@ func loadMoreStruct(v *Variable) {
 	}
 }
 
-type openDetailsWindowFn func(nucular.MasterWindow, *Variable)
+type openDetailsWindowFn func(nucular.MasterWindow, string)
 
 func detailsAvailable(v *Variable) openDetailsWindowFn {
 	if v == nil {
@@ -958,9 +958,9 @@ func detailsAvailable(v *Variable) openDetailsWindowFn {
 	}
 	switch v.Type {
 	case "string", "[]uint8", "[]int32":
-		return newStringViewer
+		return newDetailViewer
 	case "[]int", "[]int8", "[]int16", "[]int64", "[]uint", "[]uint16", "[]uint32", "[]uint64":
-		return newIntArrayViewer
+		return newDetailViewer
 	}
 	return nil
 }

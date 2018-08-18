@@ -696,6 +696,9 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 
 	wnd.Walk(func(title string, data interface{}, docked bool, splitSize int, rect rect.Rect) {
 		if asyncLoad, ok := data.(*asyncLoad); ok && asyncLoad != nil {
+			if title == "Details" && clearKind != clearNothing && clearKind != clearBreakpoint {
+				asyncLoad.clear()
+			}
 			asyncLoad.startLoad()
 		}
 	})
