@@ -363,7 +363,7 @@ func (w *masterWindow) updateLocked() {
 		t1 = time.Now()
 	}
 	nprimitives := w.draw()
-	if perfUpdate {
+	if perfUpdate && nprimitives > 0 {
 		te = time.Now()
 
 		fps := 1.0 / te.Sub(t0).Seconds()

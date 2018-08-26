@@ -283,10 +283,10 @@ func (ctx *context) restackClick(w *Window) bool {
 }
 
 var cnt = 0
-var ln, frect, brrect, frrect, ftri, circ, fcirc, txt int
+var ln, frect, frectover, brrect, frrect, ftri, circ, fcirc, txt int
 
 func (ctx *context) Draw(wimg *image.RGBA) int {
-	var txttim, tritim, brecttim, frecttim, frrecttim time.Duration
+	var txttim, tritim, brecttim, frecttim, frectovertim, frrecttim time.Duration
 	var t0 time.Time
 
 	img := wimg
@@ -331,11 +331,11 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 			if cmd.Begin.X == cmd.End.X {
 				// draw vertical line
 				r := image.Rect(cmd.Begin.X-h1, cmd.Begin.Y, cmd.Begin.X+h2, cmd.End.Y)
-				draw.Draw(img, r, colimg, r.Min, op)
+				drawFill(img, r, colimg, r.Min, op)
 			} else if cmd.Begin.Y == cmd.End.Y {
 				// draw horizontal line
 				r := image.Rect(cmd.Begin.X, cmd.Begin.Y-h1, cmd.End.X, cmd.Begin.Y+h2)
-				draw.Draw(img, r, colimg, r.Min, op)
+				drawFill(img, r, colimg, r.Min, op)
 			} else {
 				if rasterizer == nil {
 					setupRasterizer()
@@ -393,14 +393,25 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 				// only draw parts of body if this command can be optimized to a border with the next command
 
 				bordopt = true
-				cmd2 := ctx.cmds[i+1]
+				cmd2 := &ctx.cmds[i+1]
+
+				if cmd2.RectFilled.Color.A != 0xff {
+					const m = 1<<16 - 1
+					sr, sg, sb, sa := cmd2.RectFilled.Color.RGBA()
+					a := (m - sa) * 0x101
+					cmd2.RectFilled.Color.R = uint8((uint32(cmd.Color.R)*a/m + sr) >> 8)
+					cmd2.RectFilled.Color.G = uint8((uint32(cmd.Color.G)*a/m + sg) >> 8)
+					cmd2.RectFilled.Color.B = uint8((uint32(cmd.Color.B)*a/m + sb) >> 8)
+					cmd2.RectFilled.Color.A = uint8((uint32(cmd.Color.A)*a/m + sa) >> 8)
+				}
+
 				border += int(cmd2.RectFilled.Rounding)
 
 				top := image.Rect(body.Min.X, body.Min.Y, body.Max.X, body.Min.Y+border)
 				bot := image.Rect(body.Min.X, body.Max.Y-border, body.Max.X, body.Max.Y)
 
-				draw.Draw(img, top, colimg, top.Min, op)
-				draw.Draw(img, bot, colimg, bot.Min, op)
+				drawFill(img, top, colimg, top.Min, op)
+				drawFill(img, bot, colimg, bot.Min, op)
 
 				if border < int(cmd.Rounding) {
 					// wings need shrinking
@@ -414,23 +425,27 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 					xlwing := image.Rect(top.Min.X, top.Max.Y, top.Min.X+d, bot.Min.Y)
 					xrwing := image.Rect(top.Max.X-d, top.Max.Y, top.Max.X, bot.Min.Y)
 
-					draw.Draw(img, xlwing, colimg, xlwing.Min, op)
-					draw.Draw(img, xrwing, colimg, xrwing.Min, op)
+					drawFill(img, xlwing, colimg, xlwing.Min, op)
+					drawFill(img, xrwing, colimg, xrwing.Min, op)
 				}
 
 				brrect++
 			} else {
-				draw.Draw(img, body, colimg, body.Min, op)
+				drawFill(img, body, colimg, body.Min, op)
 				if cmd.Rounding == 0 {
-					frect++
+					if op == draw.Src {
+						frect++
+					} else {
+						frectover++
+					}
 				} else {
 					frrect++
 				}
 			}
 
 			if rounding {
-				draw.Draw(img, lwing, colimg, lwing.Min, op)
-				draw.Draw(img, rwing, colimg, rwing.Min, op)
+				drawFill(img, lwing, colimg, lwing.Min, op)
+				drawFill(img, rwing, colimg, rwing.Min, op)
 
 				rangle := math.Pi / 2
 
@@ -454,7 +469,15 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 					if cmd.Rounding > 0 {
 						frrecttim += time.Now().Sub(t0)
 					} else {
-						frecttim += time.Now().Sub(t0)
+						d := time.Now().Sub(t0)
+						if op == draw.Src {
+							frecttim += d
+						} else {
+							if d > 8*time.Millisecond {
+								fmt.Printf("outstanding rect")
+							}
+							frectovertim += d
+						}
 					}
 				}
 			}
@@ -529,13 +552,13 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 	}
 
 	if perfUpdate {
-		fmt.Printf("triangle: %0.4fms text: %0.4fms brect: %0.4fms frect: %0.4fms frrect %0.4f\n", tritim.Seconds()*1000, txttim.Seconds()*1000, brecttim.Seconds()*1000, frecttim.Seconds()*1000, frrecttim.Seconds()*1000)
+		fmt.Printf("triangle: %0.4fms text: %0.4fms brect: %0.4fms frect: %0.4fms frectover: %0.4fms frrect %0.4f\n", tritim.Seconds()*1000, txttim.Seconds()*1000, brecttim.Seconds()*1000, frecttim.Seconds()*1000, frectovertim.Seconds()*1000, frrecttim.Seconds()*1000)
 	}
 
 	cnt++
-	if perfUpdate && (cnt%100) == 0 {
-		fmt.Printf("ln %d, frect %d, frrect %d, brrect %d, ftri %d, circ %d, fcirc %d, txt %d\n", ln, frect, frrect, brrect, ftri, circ, fcirc, txt)
-		ln, frect, frrect, brrect, ftri, circ, fcirc, txt = 0, 0, 0, 0, 0, 0, 0, 0
+	if perfUpdate /*&& (cnt%100) == 0*/ {
+		fmt.Printf("ln %d, frect %d, frectover %d, frrect %d, brrect %d, ftri %d, circ %d, fcirc %d, txt %d\n", ln, frect, frectover, frrect, brrect, ftri, circ, fcirc, txt)
+		ln, frect, frectover, frrect, brrect, ftri, circ, fcirc, txt = 0, 0, 0, 0, 0, 0, 0, 0, 0
 	}
 
 	return len(ctx.cmds)
@@ -548,13 +571,13 @@ func borderOptimize(cmd *command.Command, cmds []command.Command, idx int) (ok b
 		return false, 0
 	}
 
-	if cmds[idx].Kind != command.RectFilledCmd {
+	if cmd.Kind != command.RectFilledCmd || cmds[idx].Kind != command.RectFilledCmd {
 		return false, 0
 	}
 
 	cmd2 := cmds[idx]
 
-	if cmd2.RectFilled.Color.A != 0xff {
+	if cmd.RectFilled.Color.A != 0xff && cmd2.RectFilled.Color.A != 0xff {
 		return false, 0
 	}
 
@@ -941,4 +964,57 @@ func percentages(bounds rect.Rect, f float64) (r [4]rect.Rect) {
 	r[3].X += r[3].W - pw
 	r[3].W = pw
 	return
+}
+
+func clip(dst *image.RGBA, r *image.Rectangle, src image.Image, sp *image.Point) {
+	orig := r.Min
+	*r = r.Intersect(dst.Bounds())
+	*r = r.Intersect(src.Bounds().Add(orig.Sub(*sp)))
+	dx := r.Min.X - orig.X
+	dy := r.Min.Y - orig.Y
+	if dx == 0 && dy == 0 {
+		return
+	}
+	sp.X += dx
+	sp.Y += dy
+}
+
+func drawFill(dst *image.RGBA, r image.Rectangle, src *image.Uniform, sp image.Point, op draw.Op) {
+	clip(dst, &r, src, &sp)
+	if r.Empty() {
+		return
+	}
+	sr, sg, sb, sa := src.RGBA()
+	switch op {
+	case draw.Over:
+		drawFillOver(dst, r, sr, sg, sb, sa)
+	case draw.Src:
+		drawFillSrc(dst, r, sr, sg, sb, sa)
+	default:
+		draw.Draw(dst, r, src, sp, op)
+	}
+}
+
+func drawFillSrc(dst *image.RGBA, r image.Rectangle, sr, sg, sb, sa uint32) {
+	sr8 := uint8(sr >> 8)
+	sg8 := uint8(sg >> 8)
+	sb8 := uint8(sb >> 8)
+	sa8 := uint8(sa >> 8)
+	// The built-in copy function is faster than a straightforward for loop to fill the destination with
+	// the color, but copy requires a slice source. We therefore use a for loop to fill the first row, and
+	// then use the first row as the slice source for the remaining rows.
+	i0 := dst.PixOffset(r.Min.X, r.Min.Y)
+	i1 := i0 + r.Dx()*4
+	for i := i0; i < i1; i += 4 {
+		dst.Pix[i+0] = sr8
+		dst.Pix[i+1] = sg8
+		dst.Pix[i+2] = sb8
+		dst.Pix[i+3] = sa8
+	}
+	firstRow := dst.Pix[i0:i1]
+	for y := r.Min.Y + 1; y < r.Max.Y; y++ {
+		i0 += dst.Stride
+		i1 += dst.Stride
+		copy(dst.Pix[i0:i1], firstRow)
+	}
 }
