@@ -688,7 +688,7 @@ func (bped *breakpointEditor) update(w *nucular.Window) {
 	w.Row(20).Static(0, 80, 80)
 	w.Spacing(1)
 	if w.ButtonText("Cancel") {
-		refreshState(refreshToSameFrame, clearBreakpoint, nil)
+		go refreshState(refreshToSameFrame, clearBreakpoint, nil)
 		w.Close()
 	}
 	if w.ButtonText("OK") {
