@@ -21,6 +21,10 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2018-08-26
+* Fixed some race conditions
+* Redesigned detail views, they are now updated while stepping through the code
+
 ## 2018-08-16
 * Highlight variable names
 * Expose starting location of goroutines
