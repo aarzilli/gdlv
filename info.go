@@ -134,7 +134,7 @@ var stackPanel = struct {
 	depth     int
 	id        int
 }{
-	depth: 20,
+	depth: 50,
 }
 
 var threadsPanel = struct {
@@ -375,6 +375,11 @@ func updateStacktrace(container *nucular.Window) {
 			curFrame = i
 			go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
 		}
+	}
+
+	if len(stack) > 0 && !stack[len(stack)-1].Bottom {
+		w.Row(posRowHeight).Dynamic(1)
+		w.Label("(truncated)", "LC")
 	}
 }
 

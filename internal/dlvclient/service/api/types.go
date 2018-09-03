@@ -123,6 +123,8 @@ type Stackframe struct {
 	FrameOffset        int64
 	FramePointerOffset int64
 
+	Bottom bool `json:"Bottom,omitempty"` // Bottom is true if this is the bottom frame of the stack
+
 	Err string
 }
 
