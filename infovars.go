@@ -189,6 +189,7 @@ type Expr struct {
 	pinnedGid                    int
 	pinnedFrameOffset            int64
 	maxArrayValues, maxStringLen int
+	traced                       bool
 }
 
 func loadGlobals(p *asyncLoad) {
@@ -263,8 +264,12 @@ func loadLocals(p *asyncLoad) {
 		varmap[varname] = d
 	}
 
+	var scrollbackOut = editorWriter{&scrollbackEditor, true}
 	for i := range localsPanel.expressions {
 		loadOneExpr(i)
+		if localsPanel.expressions[i].traced {
+			fmt.Fprintf(&scrollbackOut, "%s = %s\n", localsPanel.v[i].Name, localsPanel.v[i].SinglelineString(true, false))
+		}
 	}
 
 	for _, err := range []error{errarg, errloc} {
@@ -464,6 +469,9 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 				defer additionalLoadMu.Unlock()
 				loadOneExpr(i)
 			}(exprMenuIdx)
+		}
+		if exprMenuIdx < len(localsPanel.expressions) {
+			w.CheckboxText("Traced", &localsPanel.expressions[exprMenuIdx].traced)
 		}
 	} else if v.Expression != "" {
 		if w.MenuItem(label.TA("Add as expression", "LC")) {
