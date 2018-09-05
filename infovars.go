@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unicode"
 
 	"golang.org/x/image/font"
@@ -63,6 +64,8 @@ func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool) 
 		}
 	} else if f := conf.CustomFormatters[v.Type]; f != nil && customFormatters {
 		f.Format(r)
+	} else if v.Type == "time.Time" {
+		r.Value = formatTime(v)
 	}
 
 	if name != "" {
@@ -85,6 +88,54 @@ func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool) 
 		}
 	}
 	return r
+}
+
+func formatTime(v *api.Variable) string {
+	const (
+		timeTimeWallHasMonotonicBit uint64        = (1 << 63)                                                  // hasMonotonic bit of time.Time.wall
+		maxAddSeconds               time.Duration = (time.Duration(^uint64(0)>>1) / time.Second) * time.Second // maximum number of seconds that can be added with (time.Time).Add, measured in nanoseconds
+		wallNsecShift                             = 30                                                         // size of the nanoseconds field of time.Time.wall
+		unixTimestampOfWallEpoch                  = -2682288000                                                // number of seconds between the unix epoch and the epoch for time.Time.wall (1 jan 1885)
+	)
+
+	wallv := fieldVariable(v, "wall")
+	extv := fieldVariable(v, "ext")
+	if wallv == nil || extv == nil || wallv.Unreadable != "" || extv.Unreadable != "" || wallv.Value == "" || extv.Value == "" {
+		return v.Value
+	}
+	wall, err1 := strconv.ParseUint(wallv.Value, 10, 64)
+	ext, err2 := strconv.ParseInt(extv.Value, 10, 64)
+	if err1 != nil || err2 != nil {
+		return v.Value
+	}
+	_ = ext
+	hasMonotonic := (wall & timeTimeWallHasMonotonicBit) != 0
+	if hasMonotonic {
+		// the 33-bit field of wall holds a 33-bit unsigned wall
+		// seconds since Jan 1 year 1885, and ext holds a signed 64-bit monotonic
+		// clock reading, nanoseconds since process start
+		sec := int64(wall << 1 >> (wallNsecShift + 1)) // seconds since 1 Jan 1885
+		t := time.Unix(sec+unixTimestampOfWallEpoch, 0).UTC()
+		return fmt.Sprintf("time.Time(%s, %+d)", t.Format(time.RFC3339), ext)
+	} else {
+		// the full signed 64-bit wall seconds since Jan 1 year 1 is stored in ext
+		var t time.Time
+		for ext > int64(maxAddSeconds/time.Second) {
+			t = t.Add(maxAddSeconds)
+			ext -= int64(maxAddSeconds / time.Second)
+		}
+		t = t.Add(time.Duration(ext) * time.Second)
+		return t.Format(time.RFC3339)
+	}
+}
+
+func fieldVariable(v *api.Variable, name string) *api.Variable {
+	for i := range v.Children {
+		if v.Children[i].Name == name {
+			return &v.Children[i]
+		}
+	}
+	return nil
 }
 
 func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr string, customFormatters bool) []*Variable {

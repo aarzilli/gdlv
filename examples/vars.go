@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"runtime"
+	"time"
 )
 
 type Int int
@@ -24,10 +25,11 @@ func main() {
 	var pointarr = []Point{{1, 1}, {2, 3}, {4, 4}, {1, 5}}
 	var p = Point{1, 2}
 	var iface interface{} = &Point{1, 2}
+	t0 := time.Now()
 
 	runtime.Breakpoint()
 
-	fmt.Println(longstr, longbytearr, longrunearr, x, y, nx, ux, longintarr, f, pointarr, p, iface)
+	fmt.Println(longstr, longbytearr, longrunearr, x, y, nx, ux, longintarr, f, pointarr, p, iface, t0)
 
 	for i := 0; i < 3; i++ {
 		a := []int{1, 2, 3}
