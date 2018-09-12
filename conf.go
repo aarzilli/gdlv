@@ -31,6 +31,8 @@ type Configuration struct {
 	MaxArrayValues       int
 	MaxStringLen         int
 	SubstitutePath       []SubstitutePathRule
+	FrozenBreakpoints    map[string][]frozenBreakpoint
+	DisabledBreakpoints  map[string][]frozenBreakpoint
 }
 
 type LayoutDescr struct {
@@ -88,6 +90,16 @@ func loadConfiguration() {
 }
 
 func saveConfiguration() {
+	if BackendServer.debugid != "" {
+		if conf.FrozenBreakpoints == nil {
+			conf.FrozenBreakpoints = make(map[string][]frozenBreakpoint)
+		}
+		if conf.DisabledBreakpoints == nil {
+			conf.DisabledBreakpoints = make(map[string][]frozenBreakpoint)
+		}
+		conf.FrozenBreakpoints[BackendServer.debugid] = append(conf.FrozenBreakpoints[BackendServer.debugid][:0], FrozenBreakpoints...)
+		conf.DisabledBreakpoints[BackendServer.debugid] = append(conf.DisabledBreakpoints[BackendServer.debugid][:0], DisabledBreakpoints...)
+	}
 	fh, err := os.Create(configLoc())
 	if err != nil {
 		return

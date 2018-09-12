@@ -285,7 +285,7 @@ func updateGoroutines(container *nucular.Window) {
 		selected := curGid == g.ID
 
 		w.LayoutSetWidthScaled(starWidth + style.Text.Padding.X*2)
-		breakpointIcon(w, g.atBreakpoint, "CT", style)
+		breakpointIcon(w, g.atBreakpoint, true, "CT", style)
 
 		w.LayoutFitWidth(goroutinesPanel.id, 1)
 		w.SelectableLabel(fmt.Sprintf("%*d", d, g.ID), "LT", &selected)
@@ -499,14 +499,15 @@ func updateBreakpoints(container *nucular.Window) {
 		return
 	}
 
-	breakpoints := breakpointsPanel.breakpoints
+	style := w.Master().Style()
+	savedStyle := *style
 
-	d := 1
-	if len(breakpoints) > 0 {
-		d = digits(breakpoints[len(breakpoints)-1].ID)
+	breakpoints := make([]anyBreakpoint, 0, len(breakpointsPanel.breakpoints)+len(DisabledBreakpoints))
+	for i := range breakpointsPanel.breakpoints {
+		breakpoints = append(breakpoints, anyBreakpoint{breakpointsPanel.breakpoints[i], true})
 	}
-	if d < 3 {
-		d = 3
+	for i := range DisabledBreakpoints {
+		breakpoints = append(breakpoints, anyBreakpoint{&DisabledBreakpoints[i].Bp, false})
 	}
 
 	for _, breakpoint := range breakpoints {
@@ -514,13 +515,29 @@ func updateBreakpoints(container *nucular.Window) {
 		selected := breakpointsPanel.selected == breakpoint.ID
 		w.Row(posRowHeight).Static()
 
-		w.LayoutFitWidth(breakpointsPanel.id, 10)
-		w.SelectableLabel(fmt.Sprintf("%*d", d, breakpoint.ID), "LT", &selected)
-		bounds := w.LastWidgetBounds
-		bounds.W = w.Bounds.W
+		disableMark := ""
+		if !breakpoint.enabled {
+			disableMark = "[disabled] "
+
+			for _, p := range []*color.RGBA{&style.Text.Color, &style.Selectable.TextNormal, &style.Selectable.TextHover, &style.Selectable.TextPressed, &style.Selectable.TextPressed, &style.Selectable.TextNormalActive, &style.Selectable.TextHoverActive, &style.Selectable.TextPressedActive} {
+				darken(p)
+			}
+		}
+
+		name := breakpoint.Name
+		if name != "" {
+			name += " "
+		}
 
 		w.LayoutFitWidth(breakpointsPanel.id, 100)
-		w.SelectableLabel(fmt.Sprintf("%s in %s (hit count: %d)\nat %s:%d (%#v)", breakpoint.Name, breakpoint.FunctionName, breakpoint.TotalHitCount, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
+		w.SelectableLabel(fmt.Sprintf("%s%s%s (hit count: %d)\nat %s:%d (%#v)", disableMark, name, breakpoint.FunctionName, breakpoint.TotalHitCount, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
+
+		if !breakpoint.enabled {
+			*style = savedStyle
+		}
+
+		bounds := w.LastWidgetBounds
+		bounds.W = w.Bounds.W
 
 		if !client.Running() {
 			if selected {
@@ -530,9 +547,17 @@ func updateBreakpoints(container *nucular.Window) {
 			if w := w.ContextualOpen(0, image.Point{}, bounds, nil); w != nil {
 				breakpointsPanel.selected = breakpoint.ID
 				w.Row(20).Dynamic(1)
-				if w.MenuItem(label.TA("Edit...", "LC")) {
-					if bp := breakpointsPanelSelectedBreakpoint(); bp != nil {
-						openBreakpointEditor(w.Master(), bp)
+
+				if breakpoint.enabled {
+					if w.MenuItem(label.TA("Edit...", "LC")) {
+						openBreakpointEditor(w.Master(), breakpoint.Breakpoint)
+					}
+					if w.MenuItem(label.TA("Disable", "LC")) {
+						go disableBreakpoint(breakpoint.Breakpoint)
+					}
+				} else {
+					if w.MenuItem(label.TA("Enable", "LC")) {
+						go enableBreakpoint(breakpoint.Breakpoint)
 					}
 				}
 				if w.MenuItem(label.TA("Clear", "LC")) {
@@ -551,6 +576,7 @@ func updateBreakpoints(container *nucular.Window) {
 							}
 						}
 						FrozenBreakpoints = nil
+						DisabledBreakpoints = nil
 						refreshState(refreshToSameFrame, clearBreakpoint, nil)
 						wnd.Changed()
 					}()
@@ -558,25 +584,21 @@ func updateBreakpoints(container *nucular.Window) {
 			}
 
 			if breakpointsPanel.selected != oldselectedId {
-				if bp := breakpointsPanelSelectedBreakpoint(); bp != nil {
-					listingPanel.pinnedLoc = &api.Location{File: bp.File, Line: bp.Line, PC: bp.Addr}
-					go refreshState(refreshToSameFrame, clearNothing, nil)
-				}
+				listingPanel.pinnedLoc = &api.Location{File: breakpoint.File, Line: breakpoint.Line, PC: breakpoint.Addr}
+				go refreshState(refreshToSameFrame, clearNothing, nil)
 			}
 		}
 	}
 }
 
-func breakpointsPanelSelectedBreakpoint() *api.Breakpoint {
-	for _, bp := range breakpointsPanel.breakpoints {
-		if bp.ID == breakpointsPanel.selected {
-			return bp
+func execClearBreakpoint(id int) {
+	for i := range DisabledBreakpoints {
+		if DisabledBreakpoints[i].Bp.ID == id {
+			copy(DisabledBreakpoints[i:], DisabledBreakpoints[i+1:])
+			DisabledBreakpoints = DisabledBreakpoints[:len(DisabledBreakpoints)-1]
+			return
 		}
 	}
-	return nil
-}
-
-func execClearBreakpoint(id int) {
 	scrollbackOut := editorWriter{&scrollbackEditor, true}
 	bp, err := client.ClearBreakpoint(id)
 	if err != nil {
@@ -891,10 +913,14 @@ func abbrevFileName(path string) string {
 	return path
 }
 
-func breakpointIcon(w *nucular.Window, atbp bool, align label.Align, style *nstyle.Style) {
+func breakpointIcon(w *nucular.Window, atbp, enabledbp bool, align label.Align, style *nstyle.Style) {
 	if atbp {
 		iconFace, style.Font = style.Font, iconFace
-		w.LabelColored(breakpointIconChar, align, color.RGBA{0xff, 0x00, 0x00, 0xff})
+		c := color.RGBA{0xff, 0x00, 0x00, 0xff}
+		if !enabledbp {
+			c = color.RGBA{0x80, 0x00, 0x00, 0x80}
+		}
+		w.LabelColored(breakpointIconChar, align, c)
 		iconFace, style.Font = style.Font, iconFace
 	} else {
 		w.Spacing(1)
@@ -948,7 +974,7 @@ func updateListingPanel(container *nucular.Window) {
 		}
 
 		listp.LayoutSetWidth(starw)
-		breakpointIcon(listp, line.bp != nil, "CC", style)
+		breakpointIcon(listp, line.bp != nil, line.bpenabled, "CC", style)
 		bpbounds := listp.LastWidgetBounds
 
 		isCurrentLine := line.pc && curFrame == 0 && !client.Running() && curThread >= 0
@@ -979,7 +1005,11 @@ func updateListingPanel(container *nucular.Window) {
 
 			if listp.Input().Mouse.Clicked(mouse.ButtonMiddle, ctxtbounds) {
 				if line.bp != nil {
-					go execClearBreakpoint(line.bp.ID)
+					if line.bpenabled {
+						go disableBreakpoint(line.bp)
+					} else {
+						go enableBreakpoint(line.bp)
+					}
 				} else {
 					go listingSetBreakpoint(listingPanel.file, line.lineno)
 				}
@@ -1001,6 +1031,15 @@ func updateListingPanel(container *nucular.Window) {
 				if line.bp != nil {
 					if w.MenuItem(label.TA("Edit breakpoint", "LC")) {
 						openBreakpointEditor(w.Master(), line.bp)
+					}
+					if line.bpenabled {
+						if w.MenuItem(label.TA("Disable breakpoint", "LC")) {
+							go disableBreakpoint(line.bp)
+						}
+					} else {
+						if w.MenuItem(label.TA("Enable breakpoint", "LC")) {
+							go enableBreakpoint(line.bp)
+						}
 					}
 					if w.MenuItem(label.TA("Clear breakpoint", "LC")) {
 						go execClearBreakpoint(line.bp.ID)
@@ -1085,7 +1124,7 @@ func updateDisassemblyPanel(container *nucular.Window) {
 			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
 		}
 
-		breakpointIcon(listp, instr.Breakpoint, "CC", style)
+		breakpointIcon(listp, instr.Breakpoint, true, "CC", style)
 
 		listp.LayoutSetWidth(arroww)
 

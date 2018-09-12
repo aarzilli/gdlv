@@ -38,6 +38,7 @@ type ServerDescr struct {
 	atStart bool
 	// connection to delve failed
 	connectionFailed bool
+	debugid          string
 }
 
 var RemoveExecutable bool = true
@@ -114,6 +115,7 @@ func parseArguments() (descr ServerDescr) {
 	case "debug":
 		dir, _ := os.Getwd()
 		debugname(dir)
+		descr.debugid = dir
 		descr.buildcmd = []string{"build", "-o", descr.exe}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		args := make([]string, 0, len(os.Args[2:])+4)
@@ -123,6 +125,7 @@ func parseArguments() (descr ServerDescr) {
 
 	case "run":
 		debugname(os.Args[2])
+		descr.debugid, _ = filepath.Abs(os.Args[2])
 		descr.buildcmd = []string{"build", "-o", descr.exe}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		descr.buildcmd = append(descr.buildcmd, os.Args[2])
@@ -135,6 +138,7 @@ func parseArguments() (descr ServerDescr) {
 		if len(os.Args) < 3 {
 			usage()
 		}
+		descr.debugid, _ = filepath.Abs(os.Args[2])
 		args := make([]string, 0, len(os.Args[3:])+5)
 		args = append(args, backend, "--headless", "exec", os.Args[2], "--")
 		args = append(args, os.Args[3:]...)
@@ -143,6 +147,7 @@ func parseArguments() (descr ServerDescr) {
 	case "test":
 		dir, _ := os.Getwd()
 		debugname(dir)
+		descr.debugid = dir
 		descr.buildcmd = []string{"test"}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		descr.buildcmd = append(descr.buildcmd, "-c", "-o", descr.exe)
@@ -167,6 +172,7 @@ func parseArguments() (descr ServerDescr) {
 		if len(os.Args) < 4 {
 			usage()
 		}
+		descr.debugid, _ = filepath.Abs(os.Args[2])
 		finish(true, "--headless", "core", os.Args[2], os.Args[3])
 
 	case "replay":
@@ -176,6 +182,7 @@ func parseArguments() (descr ServerDescr) {
 		if len(os.Args) < 3 {
 			usage()
 		}
+		descr.debugid = "replay-" + os.Args[2]
 		finish(true, "--headless", "replay", os.Args[2])
 
 	default:
@@ -355,6 +362,8 @@ func (descr *ServerDescr) connectTo() {
 	if client == nil {
 		fmt.Fprintf(&scrollbackOut, "Could not connect\n")
 	}
+
+	restoreFrozenBreakpoints(&scrollbackOut)
 
 	finishRestart(&scrollbackOut, descr.atStart)
 

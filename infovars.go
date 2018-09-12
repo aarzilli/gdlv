@@ -724,6 +724,14 @@ func getDisplayType(v *Variable, fullTypes bool) string {
 	return v.ShortType
 }
 
+func darken(p *color.RGBA) {
+	const darken = 0.5
+	p.A = uint8(float64(p.A) * darken)
+	p.R = uint8(float64(p.R) * darken)
+	p.G = uint8(float64(p.G) * darken)
+	p.B = uint8(float64(p.B) * darken)
+}
+
 func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu int, v *Variable) {
 	style := w.Master().Style()
 
@@ -732,12 +740,8 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 		defer func() {
 			*style = savedStyle
 		}()
-		const darken = 0.75
 		for _, p := range []*color.RGBA{&style.Text.Color, &style.Tab.NodeButton.TextNormal, &style.Tab.NodeButton.TextHover, &style.Tab.NodeButton.TextActive, &style.Tab.Text} {
-			p.A = p.A / 2
-			p.R = p.R / 2
-			p.G = p.G / 2
-			p.B = p.B / 2
+			darken(p)
 		}
 	}
 
