@@ -216,13 +216,26 @@ func (win *Window) style() *nstyle.Window {
 }
 
 func panelBegin(ctx *context, win *Window, title string) {
-	win.usingSub = false
+	in := &ctx.Input
 	style := &ctx.Style
 	font := style.Font
-	in := &ctx.Input
+	wstyle := win.style()
+
+	// window dragging
+	if win.moving {
+		if in == nil || !in.Mouse.Down(mouse.ButtonLeft) {
+			if win.flags&windowDocked == 0 && in != nil {
+				win.ctx.DockedWindows.Dock(win, in.Mouse.Pos, win.ctx.Windows[0].Bounds, win.ctx.Style.Scaling)
+			}
+			win.moving = false
+		} else {
+			win.move(in.Mouse.Delta, in.Mouse.Pos)
+		}
+	}
+
+	win.usingSub = false
 	in.Mouse.clip = nk_null_rect
 	layout := win.layout
-	wstyle := win.style()
 
 	window_padding := wstyle.Padding
 	item_spacing := wstyle.Spacing
@@ -358,17 +371,7 @@ func panelBegin(ctx *context, win *Window, title string) {
 		dwh.Draw(&win.ctx.Style, &win.cmds)
 	}
 
-	// window dragging
-	if win.moving {
-		if in == nil || !in.Mouse.Down(mouse.ButtonLeft) {
-			if win.flags&windowDocked == 0 && in != nil {
-				win.ctx.DockedWindows.Dock(win, in.Mouse.Pos, win.ctx.Windows[0].Bounds, win.ctx.Style.Scaling)
-			}
-			win.moving = false
-		} else {
-			win.move(in.Mouse.Delta, in.Mouse.Pos)
-		}
-	} else if (win.flags&WindowMovable != 0) && win.toplevel() {
+	if (win.flags&WindowMovable != 0) && win.toplevel() {
 		var move rect.Rect
 		move.X = win.Bounds.X
 		move.Y = win.Bounds.Y
@@ -2625,7 +2628,6 @@ func (ctx *context) nonblockOpen(flags WindowFlags, body rect.Rect, header rect.
 	popup := createWindow(ctx, "")
 	popup.idx = len(ctx.Windows)
 	popup.updateFn = updateFn
-	popup.cmds.UseClipping = true
 	ctx.Windows = append(ctx.Windows, popup)
 
 	popup.Bounds = body
@@ -2664,7 +2666,6 @@ func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, s
 	}
 	ctx.Windows = append(ctx.Windows, popup)
 	ctx.dockedWindowFocus = 0
-	popup.cmds.UseClipping = true
 
 	if scale {
 		rect.X = ctx.scale(rect.X)

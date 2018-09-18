@@ -1,11 +1,13 @@
 package nucular
 
 import (
+	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"image"
 	"image/draw"
+	"image/png"
 	"io"
 	"os"
 	"sync"
@@ -31,6 +33,9 @@ import (
 //go:generate go-bindata -o internal/assets/assets.go -pkg assets DroidSansMono.ttf
 
 const perfUpdate = false
+const dumpFrame = false
+
+var frameCnt = 0
 
 var UnknownCommandErr = errors.New("unknown command")
 
@@ -313,8 +318,13 @@ func (ctx *context) processKeyEvent(e key.Event, textbuffer *bytes.Buffer) {
 }
 
 func (w *masterWindow) updater() {
+	var down bool
 	for {
-		time.Sleep(20 * time.Millisecond)
+		if down {
+			time.Sleep(10 * time.Millisecond)
+		} else {
+			time.Sleep(20 * time.Millisecond)
+		}
 		func() {
 			w.uilock.Lock()
 			defer w.uilock.Unlock()
@@ -326,7 +336,7 @@ func (w *masterWindow) updater() {
 				atomic.AddInt32(&w.ctx.changed, -1)
 				w.updateLocked()
 			} else {
-				down := false
+				down = false
 				for _, btn := range w.ctx.Input.Mouse.Buttons {
 					if btn.Down {
 						down = true
@@ -355,6 +365,10 @@ func (w *masterWindow) updateLocked() {
 	var t0, t1, te time.Time
 	if perfUpdate || w.Perf {
 		t0 = time.Now()
+	}
+
+	if dumpFrame && !perfUpdate {
+		panic("dumpFrame")
 	}
 
 	w.ctx.Update()
@@ -390,6 +404,34 @@ func (w *masterWindow) updateLocked() {
 		draw.Draw(img, bounds, image.Black, bounds.Min, draw.Src)
 		d.Dot = fixed.P(bounds.Min.X, bounds.Min.Y+w.ctx.Style.Font.Metrics().Ascent.Ceil())
 		d.DrawString(s)
+	}
+	if dumpFrame && frameCnt < 1000 && nprimitives > 0 {
+		wimg := w.wndb.RGBA()
+
+		bounds := image.Rect(w.ctx.Input.Mouse.Pos.X, w.ctx.Input.Mouse.Pos.Y, w.ctx.Input.Mouse.Pos.X+10, w.ctx.Input.Mouse.Pos.Y+10)
+
+		draw.Draw(wimg, bounds, image.White, bounds.Min, draw.Src)
+
+		if fh, err := os.Create(fmt.Sprintf("framedump/frame%03d.png", frameCnt)); err == nil {
+			png.Encode(fh, wimg)
+			fh.Close()
+		}
+
+		if fh, err := os.Create(fmt.Sprintf("framedump/frame%03d.txt", frameCnt)); err == nil {
+			wr := bufio.NewWriter(fh)
+			fps := 1.0 / te.Sub(t0).Seconds()
+			tot := time.Duration(0)
+			fmt.Fprintf(wr, "# Update %0.4fms = %0.4f updatefn + %0.4f draw (%d primitives) [max fps %0.2f]\n", te.Sub(t0).Seconds()*1000, t1.Sub(t0).Seconds()*1000, te.Sub(t1).Seconds()*1000, nprimitives, fps)
+			for i := range w.prevCmds {
+				fmt.Fprintf(wr, "%0.2fms %#v\n", w.ctx.cmdstim[i].Seconds()*1000, w.prevCmds[i])
+				tot += w.ctx.cmdstim[i]
+			}
+			fmt.Fprintf(wr, "sanity check %0.2fms\n", tot.Seconds()*1000)
+			wr.Flush()
+			fh.Close()
+		}
+
+		frameCnt++
 	}
 	if nprimitives > 0 {
 		w.wnd.Upload(w.bounds.Min, w.wndb, w.bounds)

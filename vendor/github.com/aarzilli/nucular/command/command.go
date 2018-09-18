@@ -11,15 +11,13 @@ import (
 
 // CommandBuffer is a list of drawing directives.
 type Buffer struct {
-	UseClipping bool
-	Clip        rect.Rect
-	Commands    []Command
+	Clip     rect.Rect
+	Commands []Command
 }
 
 var nk_null_rect = rect.Rect{-8192.0, -8192.0, 16384.0, 16384.0}
 
 func (buffer *Buffer) Reset() {
-	buffer.UseClipping = true
 	buffer.Clip = nk_null_rect
 	buffer.Commands = buffer.Commands[:0]
 }
@@ -27,17 +25,17 @@ func (buffer *Buffer) Reset() {
 // Represents one drawing directive.
 type Command struct {
 	rect.Rect
-	Kind CommandKind
-	Scissor Scissor
-	Line Line
-	RectFilled RectFilled
+	Kind           CommandKind
+	Line           Line
+	RectFilled     RectFilled
 	TriangleFilled TriangleFilled
-	CircleFilled CircleFilled
-	Image Image
-	Text Text
+	CircleFilled   CircleFilled
+	Image          Image
+	Text           Text
 }
 
 type CommandKind uint8
+
 const (
 	ScissorCmd CommandKind = iota
 	LineCmd
@@ -48,10 +46,6 @@ const (
 	TextCmd
 )
 
-type Scissor struct {
-	rect.Rect
-}
-
 type Line struct {
 	LineThickness uint16
 	Begin         image.Point
@@ -60,7 +54,6 @@ type Line struct {
 }
 
 type RectFilled struct {
-	//rect.Rect
 	Rounding uint16
 	Color    color.RGBA
 }
@@ -73,17 +66,14 @@ type TriangleFilled struct {
 }
 
 type CircleFilled struct {
-	//rect.Rect
 	Color color.RGBA
 }
 
 type Image struct {
-	//rect.Rect
 	Img *image.RGBA
 }
 
 type Text struct {
-	//rect.Rect
 	Face       font.Face
 	Foreground color.RGBA
 	String     string
@@ -91,7 +81,12 @@ type Text struct {
 
 func (b *Buffer) PushScissor(r rect.Rect) {
 	b.Clip = r
-	
+
+	if len(b.Commands) > 0 && b.Commands[len(b.Commands)-1].Kind == ScissorCmd {
+		b.Commands[len(b.Commands)-1].Rect = r
+		return
+	}
+
 	var cmd Command
 	cmd.Kind = ScissorCmd
 	cmd.Rect = r
@@ -113,10 +108,8 @@ func (b *Buffer) FillRect(rect rect.Rect, rounding uint16, c color.RGBA) {
 	if c.A == 0 {
 		return
 	}
-	if b.UseClipping {
-		if !rect.Intersect(&b.Clip) {
-			return
-		}
+	if !rect.Intersect(&b.Clip) {
+		return
 	}
 
 	var cmd Command
@@ -131,12 +124,10 @@ func (b *Buffer) FillCircle(r rect.Rect, c color.RGBA) {
 	if c.A == 0 {
 		return
 	}
-	if b.UseClipping {
-		if !r.Intersect(&b.Clip) {
-			return
-		}
+	if !r.Intersect(&b.Clip) {
+		return
 	}
-	
+
 	var cmd Command
 	cmd.Kind = CircleFilledCmd
 	cmd.Rect = r
@@ -148,10 +139,8 @@ func (b *Buffer) FillTriangle(p0, p1, p2 image.Point, c color.RGBA) {
 	if c.A == 0 {
 		return
 	}
-	if b.UseClipping {
-		if !b.Clip.Contains(p0) || !b.Clip.Contains(p1) || !b.Clip.Contains(p2) {
-			return
-		}
+	if !b.Clip.Contains(p0) || !b.Clip.Contains(p1) || !b.Clip.Contains(p2) {
+		return
 	}
 
 	var cmd Command
@@ -164,10 +153,8 @@ func (b *Buffer) FillTriangle(p0, p1, p2 image.Point, c color.RGBA) {
 }
 
 func (b *Buffer) DrawImage(r rect.Rect, img *image.RGBA) {
-	if b.UseClipping {
-		if !r.Intersect(&b.Clip) {
-			return
-		}
+	if !r.Intersect(&b.Clip) {
+		return
 	}
 
 	var cmd Command
@@ -181,16 +168,10 @@ func (b *Buffer) DrawText(r rect.Rect, str string, face font.Face, fg color.RGBA
 	if len(str) == 0 || (fg.A == 0) {
 		return
 	}
-	if b.UseClipping {
-		if !r.Intersect(&b.Clip) {
-			return
-		}
-	}
-
-	if len(str) == 0 {
+	if !r.Intersect(&b.Clip) {
 		return
 	}
-	
+
 	var cmd Command
 	cmd.Kind = TextCmd
 	cmd.Rect = r

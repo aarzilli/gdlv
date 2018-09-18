@@ -37,6 +37,8 @@ type context struct {
 	floatWindowFocus  int
 	scrollwheelFocus  int
 	dockedCnt         int
+
+	cmdstim []time.Duration // contains timing for all commands
 }
 
 func contextAllCommands(ctx *context) {
@@ -59,7 +61,6 @@ func (ctx *context) setupMasterWindow(layout *panel, updatefn UpdateFn) {
 	ctx.Windows[0].idx = 0
 	ctx.Windows[0].layout = layout
 	ctx.Windows[0].flags = layout.Flags | WindowNonmodal
-	ctx.Windows[0].cmds.UseClipping = true
 	ctx.Windows[0].updateFn = updatefn
 }
 
@@ -309,7 +310,16 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 		painter = &myRGBAPainter{Image: img}
 	}
 
+	if ctx.cmdstim != nil {
+		ctx.cmdstim = ctx.cmdstim[:0]
+	}
+
+	transparentBorderOptimization := false
+
 	for i := range ctx.cmds {
+		if perfUpdate {
+			t0 = time.Now()
+		}
 		icmd := &ctx.cmds[i]
 		switch icmd.Kind {
 		case command.ScissorCmd:
@@ -363,8 +373,16 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 				// first command draws the background, insure that it's always fully opaque
 				cmd.Color.A = 0xff
 			}
-			if perfUpdate {
-				t0 = time.Now()
+			if transparentBorderOptimization {
+				transparentBorderOptimization = false
+				prevcmd := ctx.cmds[i-1].RectFilled
+				const m = 1<<16 - 1
+				sr, sg, sb, sa := cmd.Color.RGBA()
+				a := (m - sa) * 0x101
+				cmd.Color.R = uint8((uint32(prevcmd.Color.R)*a/m + sr) >> 8)
+				cmd.Color.G = uint8((uint32(prevcmd.Color.G)*a/m + sg) >> 8)
+				cmd.Color.B = uint8((uint32(prevcmd.Color.B)*a/m + sb) >> 8)
+				cmd.Color.A = uint8((uint32(prevcmd.Color.A)*a/m + sa) >> 8)
 			}
 			colimg := image.NewUniform(cmd.Color)
 			op := draw.Over
@@ -393,19 +411,12 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 				// only draw parts of body if this command can be optimized to a border with the next command
 
 				bordopt = true
-				cmd2 := &ctx.cmds[i+1]
 
-				if cmd2.RectFilled.Color.A != 0xff {
-					const m = 1<<16 - 1
-					sr, sg, sb, sa := cmd2.RectFilled.Color.RGBA()
-					a := (m - sa) * 0x101
-					cmd2.RectFilled.Color.R = uint8((uint32(cmd.Color.R)*a/m + sr) >> 8)
-					cmd2.RectFilled.Color.G = uint8((uint32(cmd.Color.G)*a/m + sg) >> 8)
-					cmd2.RectFilled.Color.B = uint8((uint32(cmd.Color.B)*a/m + sb) >> 8)
-					cmd2.RectFilled.Color.A = uint8((uint32(cmd.Color.A)*a/m + sa) >> 8)
+				if ctx.cmds[i+1].RectFilled.Color.A != 0xff {
+					transparentBorderOptimization = true
 				}
 
-				border += int(cmd2.RectFilled.Rounding)
+				border += int(ctx.cmds[i+1].RectFilled.Rounding)
 
 				top := image.Rect(body.Min.X, body.Min.Y, body.Max.X, body.Min.Y+border)
 				bot := image.Rect(body.Min.X, body.Max.Y-border, body.Max.X, body.Max.Y)
@@ -484,9 +495,6 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 
 		case command.TriangleFilledCmd:
 			cmd := icmd.TriangleFilled
-			if perfUpdate {
-				t0 = time.Now()
-			}
 			if rasterizer == nil {
 				setupRasterizer()
 			}
@@ -520,9 +528,6 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 			draw.Draw(img, icmd.Rectangle(), icmd.Image.Img, image.Point{}, draw.Src)
 
 		case command.TextCmd:
-			if perfUpdate {
-				t0 = time.Now()
-			}
 			dstimg := wimg.SubImage(img.Bounds().Intersect(icmd.Rectangle())).(*image.RGBA)
 			d := font.Drawer{
 				Dst:  dstimg,
@@ -548,6 +553,10 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 			}
 		default:
 			panic(UnknownCommandErr)
+		}
+
+		if dumpFrame {
+			ctx.cmdstim = append(ctx.cmdstim, time.Since(t0))
 		}
 	}
 
