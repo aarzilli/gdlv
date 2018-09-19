@@ -102,6 +102,8 @@ func (v *Variable) writeTo(buf io.Writer, flags ppFlags, indent string) {
 	case reflect.Ptr:
 		if v.Type == "" {
 			fmt.Fprint(buf, "nil")
+		} else if len(v.Children) < 1 {
+			fmt.Fprintf(buf, "(%s)(noaddr?)", v.Type)
 		} else if v.Children[0].OnlyAddr && v.Children[0].Addr != 0 {
 			fmt.Fprintf(buf, "(%s)(0x%x)", v.Type, v.Children[0].Addr)
 		} else {
