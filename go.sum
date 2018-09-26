@@ -8,8 +8,6 @@ github.com/golang/freetype v0.0.0-20161208064710-d9be45aaf745 h1:0d9whnMsm0iklqv
 github.com/golang/freetype v0.0.0-20161208064710-d9be45aaf745/go.mod h1:E/TSTwGwJL78qG/PmXZO1EjYhfJinVAhrmmHX6Z8B9k=
 github.com/hashicorp/golang-lru v0.0.0-20160813221303-0a025b7e63ad h1:eMxs9EL0PvIGS9TTtxg4R+JxuPGav82J8rA+GFnY7po=
 github.com/hashicorp/golang-lru v0.0.0-20160813221303-0a025b7e63ad/go.mod h1:/m3WP610KZHVQ1SGc6re/UDhFvYD7pJ4Ao+sR/qLZy8=
-golang.org/x/arch v0.0.0-20170323000348-58ea1a195b1a/go.mod h1:cYlCBUl1MsqxdiKgmc4uh7TxZfWSFLOGSRR090WDxt8=
-golang.org/x/debug v0.0.0-20160621010512-fb508927b491/go.mod h1:bdN+xHe0GIjATfCHYCNOgWzrJGJ9nRN/0/xyGGdNmDE=
 golang.org/x/exp v0.0.0-20171209012058-072991165226 h1:sb67HiWk98LHu6TtgnfVTHraZYkXLgFRJlXcNahrXCc=
 golang.org/x/exp v0.0.0-20171209012058-072991165226/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
 golang.org/x/image v0.0.0-20170331233916-ce0faa1867f5 h1:Y8k2xgnl71xxKST1qLiv87kmWlHW0oAu9SaUXmIxE1s=
@@ -18,4 +16,3 @@ golang.org/x/mobile v0.0.0-20170307115833-eb9032959f05 h1:SfnKURPqpZR7R25slH48Kr
 golang.org/x/mobile v0.0.0-20170307115833-eb9032959f05/go.mod h1:z+o9i4GpDbdi3rU15maQ/Ox0txvL9dWGYEHz965HBQE=
 golang.org/x/sys v0.0.0-20170403205132-493114f68206 h1:PiMfCDWTEm269Y1NLy3hGTZhy8u68ODo3aKVipOt++E=
 golang.org/x/sys v0.0.0-20170403205132-493114f68206/go.mod h1:STP8DvDyc/dI5b8T5hshtkjS+E42TnysNCUPdjciGhY=
-rsc.io/x86 v0.0.0-20150408152126-01d8f0379593/go.mod h1:XoKl9cTpV3NLs4c94KYQSW34QKIrg3H27GeohC7BIRA=
