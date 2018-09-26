@@ -21,6 +21,12 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2018-09-26
+* Breakpoint persistence
+* pretty printing of time.Time variables
+* Notification for truncated stack traces
+* Ability to have an expression's value printed to the command window every time a continue command completes.
+
 ## 2018-08-26
 * Fixed some race conditions
 * Redesigned detail views, they are now updated while stepping through the code
