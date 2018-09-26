@@ -61,7 +61,7 @@ type Conn struct {
 	seqChan    chan uint16
 	reqChan    chan *request
 	closing    chan chan struct{}
-	
+
 	// ExtLock is a lock used whenever new extensions are initialized.
 	// It should not be used. It is exported for use in the extension
 	// sub-packages.

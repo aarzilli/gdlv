@@ -22,7 +22,7 @@ var (
 	GoVer18Beta = GoVersion{1, 8, -1, 0, 0, ""}
 )
 
-// Parse parses a go verison string
+// Parse parses a go version string
 func Parse(ver string) (GoVersion, bool) {
 	var r GoVersion
 	var err1, err2, err3 error
@@ -135,7 +135,7 @@ func (v *GoVersion) IsDevel() bool {
 
 const goVersionPrefix = "go version "
 
-// Installed runs "go verison" and parses the output
+// Installed runs "go version" and parses the output
 func Installed() (GoVersion, bool) {
 	out, err := exec.Command("go", "version").CombinedOutput()
 	if err != nil {
@@ -149,4 +149,30 @@ func Installed() (GoVersion, bool) {
 	}
 
 	return Parse(s[len(goVersionPrefix):])
+}
+
+// VersionAfterOrEqual checks that version (as returned by runtime.Version()
+// or go version) is major.minor or a later version, or a development
+// version.
+func VersionAfterOrEqual(version string, major, minor int) bool {
+	ver, _ := Parse(version)
+	if ver.IsDevel() {
+		return true
+	}
+	return ver.AfterOrEqual(GoVersion{major, minor, -1, 0, 0, ""})
+}
+
+const producerVersionPrefix = "Go cmd/compile "
+
+// ProducerAfterOrEqual checks that the DW_AT_producer version is
+// major.minor or a later version, or a development version.
+func ProducerAfterOrEqual(producer string, major, minor int) bool {
+	if strings.HasPrefix(producer, producerVersionPrefix) {
+		producer = producer[len(producerVersionPrefix):]
+	}
+	ver, _ := Parse(producer)
+	if ver.IsDevel() {
+		return true
+	}
+	return ver.AfterOrEqual(GoVersion{major, minor, -1, 0, 0, ""})
 }

@@ -1,0 +1,49 @@
+# github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802
+github.com/BurntSushi/xgb
+github.com/BurntSushi/xgb/xproto
+github.com/BurntSushi/xgb/render
+github.com/BurntSushi/xgb/shm
+# github.com/aarzilli/nucular v0.0.0-20180918124826-f3fdcc7c66c4
+github.com/aarzilli/nucular
+github.com/aarzilli/nucular/clipboard
+github.com/aarzilli/nucular/label
+github.com/aarzilli/nucular/rect
+github.com/aarzilli/nucular/style
+github.com/aarzilli/nucular/command
+github.com/aarzilli/nucular/internal/assets
+# github.com/derekparker/delve v1.1.0
+github.com/derekparker/delve/pkg/goversion
+# github.com/golang/freetype v0.0.0-20161208064710-d9be45aaf745
+github.com/golang/freetype
+github.com/golang/freetype/truetype
+github.com/golang/freetype/raster
+# github.com/hashicorp/golang-lru v0.0.0-20160813221303-0a025b7e63ad
+github.com/hashicorp/golang-lru
+github.com/hashicorp/golang-lru/simplelru
+# golang.org/x/exp v0.0.0-20171209012058-072991165226
+golang.org/x/exp/shiny/driver
+golang.org/x/exp/shiny/screen
+golang.org/x/exp/shiny/driver/gldriver
+golang.org/x/exp/shiny/driver/internal/errscreen
+golang.org/x/exp/shiny/driver/windriver
+golang.org/x/exp/shiny/driver/x11driver
+golang.org/x/exp/shiny/driver/internal/drawer
+golang.org/x/exp/shiny/driver/internal/event
+golang.org/x/exp/shiny/driver/internal/lifecycler
+golang.org/x/exp/shiny/driver/internal/win32
+golang.org/x/exp/shiny/driver/internal/x11key
+golang.org/x/exp/shiny/driver/internal/swizzle
+# golang.org/x/image v0.0.0-20170331233916-ce0faa1867f5
+golang.org/x/image/font
+golang.org/x/image/math/fixed
+golang.org/x/image/math/f64
+# golang.org/x/mobile v0.0.0-20170307115833-eb9032959f05
+golang.org/x/mobile/event/key
+golang.org/x/mobile/event/mouse
+golang.org/x/mobile/event/lifecycle
+golang.org/x/mobile/event/paint
+golang.org/x/mobile/event/size
+golang.org/x/mobile/geom
+golang.org/x/mobile/gl
+# golang.org/x/sys v0.0.0-20170403205132-493114f68206
+golang.org/x/sys/windows

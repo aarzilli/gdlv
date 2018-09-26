@@ -76,7 +76,8 @@ func readAuthority(hostname, display string) (
 			return "", nil, err
 		}
 
-		addrmatch := (family == familyWild) || (family == familyLocal && addr == hostname)
+		addrmatch := (family == familyWild) ||
+			(family == familyLocal && addr == hostname)
 		dispmatch := (disp == "") || (disp == display)
 
 		if addrmatch && dispmatch {
