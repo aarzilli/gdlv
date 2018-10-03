@@ -749,7 +749,11 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 		return variableHeader(w, addr, fullTypes, exprMenu, v)
 	}
 
-	cblbl := func(fmtstr string, args ...interface{}) {
+	cblbl := func(value string) {
+		variableNoHeader(w, addr, fullTypes, exprMenu, v, value)
+	}
+
+	cblblfmt := func(fmtstr string, args ...interface{}) {
 		variableNoHeader(w, addr, fullTypes, exprMenu, v, fmt.Sprintf(fmtstr, args...))
 	}
 
@@ -760,7 +764,7 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 
 	w.Row(varRowHeight).Static()
 	if v.Unreadable != "" {
-		cblbl("(unreadable %s)", v.Unreadable)
+		cblblfmt("(unreadable %s)", v.Unreadable)
 		return
 	}
 
@@ -797,12 +801,12 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 			}
 		}
 	case reflect.UnsafePointer:
-		cblbl("unsafe.Pointer(%#x)", v.Children[0].Addr)
+		cblblfmt("unsafe.Pointer(%#x)", v.Children[0].Addr)
 	case reflect.String:
 		if v.Len == int64(len(v.Value)) {
-			cblbl("%q", v.Value)
+			cblblfmt("%q", v.Value)
 		} else {
-			cblbl("%q...", v.Value)
+			cblblfmt("%q...", v.Value)
 		}
 	case reflect.Chan:
 		if len(v.Children) == 0 {
@@ -858,14 +862,14 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 			cblbl(v.Value)
 		}
 	case reflect.Complex64, reflect.Complex128:
-		cblbl("(%s + %si)", v.Children[0].Value, v.Children[1].Value)
+		cblblfmt("(%s + %si)", v.Children[0].Value, v.Children[1].Value)
 	case reflect.Float32, reflect.Float64:
 		cblbl(v.Value)
 	default:
 		if v.Value != "" {
 			cblbl(v.Value)
 		} else {
-			cblbl("(unknown %s)", v.Kind)
+			cblblfmt("(unknown %s)", v.Kind)
 		}
 	}
 }
