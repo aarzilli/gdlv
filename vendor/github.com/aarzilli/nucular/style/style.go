@@ -1038,6 +1038,16 @@ func FromTheme(theme Theme, scaling float64) *Style {
 	}
 }
 
+func (style *Style) Unscaled() *Style {
+	if style.unscaled == nil {
+		unscaled := &Style{}
+		*unscaled = *style
+		style.unscaled = unscaled
+	}
+
+	return style.unscaled
+}
+
 func (style *Style) Scale(scaling float64) {
 	unscaled := style.unscaled
 	if unscaled != nil {

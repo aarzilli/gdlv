@@ -6,8 +6,8 @@ Opening a Window
 
 A window can be opened with the following three lines of code:
 
- wnd := nucular.NewMasterWindow(updatefn, 0)
- wnd.SetStyle(nucular.StyleFromTheme(nucular.DarkTheme), nil, 1.0)
+ wnd := nucular.NewMasterWindow(0, "Title" updatefn)
+ wnd.SetStyle(style.FromTheme(nucular.DarkTheme, 1.0))
  wnd.Main()
 
 The first line creates the MasterWindow object and sets its flags (usually 0 is fine) and updatefn as the update function.
@@ -23,21 +23,21 @@ The update function is responsible for drawing the contents of the window as wel
 
 For example, drawing a simple text button is done with this code:
 
- if w.ButtonText("button caption", 0) {
+ if w.ButtonText("button caption") {
  	// code here only runs once every time the button is clicked
  }
 
-Widgets are laid out left to right and top to bottom, each row has a layout that can be configured calling the Layout* methods of nucular.Window. There are three main row layout modes:
+Widgets are laid out left to right and top to bottom, each row has a layout that can be configured calling the methods of nucular.rowConstructor (an instance of which can be obtained by calling the `nucular.Window.Row` or `nucular.Window.RowScaled`). There are three main row layout modes:
 
  - Static: in this mode the columns of the row have a fixed, user defined, width. This row layout can be selected calling Static or StaticScaled
 
  - Dynamic: in this mode the columns of the row have a width proportional to the total width of the window. This row layout can be selected calling Dynamic, DynamicScaled or Ratio
 
- - Space: in this mode widgets are positioned and sized arbitrarily. This row layout can be selected calling LayoutSpaceBegin or LayoutSpaceBeginRatio, once this row layout is selected widgets can be positioned using LayoutSpacePush or LayoutSpacePushRatio
+ - Space: in this mode widgets are positioned and sized arbitrarily. This row layout can be selected calling SpaceBegin or SpaceBeginRatio, once this row layout is selected widgets can be positioned using LayoutSpacePush or LayoutSpacePushRatio
 
 Scaling
 
-When calling SetStyle you can specify a scaling factor, this will be used to scale the sizes in the style argument and also all the size arguments for the Layout* functions.
+When calling SetStyle you can specify a scaling factor, this will be used to scale the sizes in the style argument and also all the size arguments for the methods of rowConstructor.
 
 Links
 

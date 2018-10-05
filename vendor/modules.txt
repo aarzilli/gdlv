@@ -1,14 +1,15 @@
-# github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802
+# github.com/BurntSushi/xgb v0.0.0-20160522221800-27f122750802
 github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/xproto
 github.com/BurntSushi/xgb/render
 github.com/BurntSushi/xgb/shm
-# github.com/aarzilli/nucular v0.0.0-20180918124826-f3fdcc7c66c4
+# github.com/aarzilli/nucular v0.0.0-20181005081711-cc306f976081
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard
 github.com/aarzilli/nucular/label
 github.com/aarzilli/nucular/rect
 github.com/aarzilli/nucular/style
+github.com/aarzilli/nucular/style-editor
 github.com/aarzilli/nucular/command
 github.com/aarzilli/nucular/internal/assets
 # github.com/derekparker/delve v1.1.0
