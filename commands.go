@@ -23,6 +23,7 @@ import (
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
+	"github.com/aarzilli/nucular/style-editor"
 )
 
 const optimizedFunctionWarning = "Warning: debugging optimized function"
@@ -910,7 +911,7 @@ func (cw *configWindow) Update(w *nucular.Window) {
 	if conf.Theme == "" {
 		conf.Theme = darkTheme
 	}
-	if w := w.Combo(label.TA(conf.Theme, "LC"), 100, nil); w != nil {
+	if w := w.Combo(label.TA(conf.Theme, "LC"), 500, nil); w != nil {
 		w.Row(20).Dynamic(1)
 		for _, theme := range themes {
 			if w.MenuItem(label.TA(theme, "LC")) {
@@ -1062,6 +1063,35 @@ func scrollCommand(out io.Writer, args string) error {
 
 func windowCommand(out io.Writer, args string) error {
 	args = strings.ToLower(strings.TrimSpace(args))
+	if args == "styled" {
+		styled.EditStyle(wnd, nucular.WindowNonmodal|nucular.WindowClosable, func(out string) {
+			fh, err := os.Create("boring-style.go")
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "error creating boring-style.go: %v", err)
+				return
+			}
+			defer fh.Close()
+			fmt.Fprintf(fh, `package main
+			
+import (
+	"image/color"
+	"image"
+
+	lbl "github.com/aarzilli/nucular/label"
+	nstyle "github.com/aarzilli/nucular/style"
+)
+
+func makeBoringStyle() *nstyle.Style {
+	style := &nstyle.Style{}
+
+%s
+	
+	return style
+}
+`, out)
+		})
+		return nil
+	}
 	foundw := ""
 	for _, w := range infoModes {
 		if strings.ToLower(w) == args {

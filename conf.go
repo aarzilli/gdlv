@@ -12,12 +12,13 @@ import (
 )
 
 const (
-	darkTheme  = "Dark theme"
-	whiteTheme = "White theme"
-	redTheme   = "Red theme"
+	darkTheme   = "Dark theme"
+	whiteTheme  = "White theme"
+	redTheme    = "Red theme"
+	boringTheme = "Pastel theme"
 )
 
-var themes = []string{darkTheme, whiteTheme, redTheme}
+var themes = []string{darkTheme, whiteTheme, redTheme, boringTheme}
 
 type Configuration struct {
 	Scaling              float64
