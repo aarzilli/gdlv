@@ -361,17 +361,6 @@ func clear(out io.Writer, args string) error {
 }
 
 func restart(out io.Writer, args string) error {
-	if client == nil {
-		go pseudoCommandWrap(doRebuild)
-		return nil
-	}
-
-	if client.Recorded() {
-		_, err := client.RestartFrom(args, false, nil)
-		refreshState(refreshToFrameZero, clearStop, nil)
-		return err
-	}
-
 	resetArgs := false
 	var newArgs []string
 	args = strings.TrimSpace(args)
@@ -384,6 +373,19 @@ func restart(out io.Writer, args string) error {
 			resetArgs = true
 			newArgs = argv
 		}
+	}
+
+	if client == nil {
+		go pseudoCommandWrap(func(w io.Writer) error {
+			return doRebuild(w, resetArgs, newArgs)
+		})
+		return nil
+	}
+
+	if client.Recorded() {
+		_, err := client.RestartFrom(args, false, nil)
+		refreshState(refreshToFrameZero, clearStop, nil)
+		return err
 	}
 
 	if BackendServer.StaleExecutable() {
@@ -411,7 +413,9 @@ func restart(out io.Writer, args string) error {
 
 			switch {
 			case yes:
-				go pseudoCommandWrap(doRebuild)
+				go pseudoCommandWrap(func(w io.Writer) error {
+					return doRebuild(w, resetArgs, newArgs)
+				})
 				w.Close()
 			case no:
 				go pseudoCommandWrap(func(w io.Writer) error {
@@ -501,7 +505,7 @@ func doRestart(out io.Writer, resetArgs bool, args []string) error {
 	return nil
 }
 
-func doRebuild(out io.Writer) error {
+func doRebuild(out io.Writer, resetArgs bool, args []string) error {
 	dorestart := BackendServer.serverProcess != nil
 	BackendServer.Rebuild()
 	if !dorestart || !BackendServer.buildok {
@@ -511,7 +515,7 @@ func doRebuild(out io.Writer) error {
 	updateFrozenBreakpoints()
 	clearFrozenBreakpoints()
 
-	discarded, err := client.Restart()
+	discarded, err := client.RestartFrom("", resetArgs, args)
 	if err != nil {
 		fmt.Fprintf(out, "error on restart\n")
 		return err
