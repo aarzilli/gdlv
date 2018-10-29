@@ -22,7 +22,7 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 # News
 
 ## 2018-10-29
-* [Pastel theme](https://raw.githubusercontent.com/aarzilli/gdlv/master/doc/screen-paste.png)
+* [Pastel theme](https://raw.githubusercontent.com/aarzilli/gdlv/master/doc/screen-pastel.png)
 
 ## 2018-09-26
 * Breakpoint persistence
