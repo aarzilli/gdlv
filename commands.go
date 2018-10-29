@@ -375,6 +375,10 @@ func restart(out io.Writer, args string) error {
 		}
 	}
 
+	if len(BackendServer.buildcmd) > 0 && (BackendServer.buildcmd[0] == "test") {
+		newArgs = addTestPrefix(newArgs)
+	}
+
 	if client == nil {
 		go pseudoCommandWrap(func(w io.Writer) error {
 			return doRebuild(w, resetArgs, newArgs)

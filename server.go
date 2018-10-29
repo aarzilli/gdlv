@@ -153,16 +153,7 @@ func parseArguments() (descr ServerDescr) {
 		descr.buildcmd = append(descr.buildcmd, "-c", "-o", descr.exe)
 		args := make([]string, 0, len(os.Args[2:])+4)
 		args = append(args, backend, "--headless", "exec", descr.exe, "--")
-		for _, arg := range os.Args[2:] {
-			switch arg {
-			case "-bench", "-benchtime", "-count", "-cover", "-covermode", "-coverpkg", "-cpu", "-parallel", "-run", "-short", "-timeout", "-v":
-				fallthrough
-			case "-benchmem", "-blockprofile", "-blockprofilerate", "-coverprofile", "-cpuprofile", "-memprofile", "-memprofilerate", "-mutexprofile", "-mutexprofilefraction", "-outputdir", "-trace":
-				args = append(args, "-test."+arg[1:])
-			default:
-				args = append(args, arg)
-			}
-		}
+		args = append(args, addTestPrefix(os.Args[2:])...)
 		finish(true, args...)
 
 	case "core":
@@ -444,4 +435,22 @@ func (descr *ServerDescr) Close() {
 	if descr.exe != "" && RemoveExecutable {
 		os.Remove(descr.exe)
 	}
+}
+
+func addTestPrefix(inputArgs []string) []string {
+	if inputArgs == nil {
+		return nil
+	}
+	args := make([]string, 0, len(inputArgs))
+	for _, arg := range inputArgs {
+		switch arg {
+		case "-bench", "-benchtime", "-count", "-cover", "-covermode", "-coverpkg", "-cpu", "-parallel", "-run", "-short", "-timeout", "-v":
+			fallthrough
+		case "-benchmem", "-blockprofile", "-blockprofilerate", "-coverprofile", "-cpuprofile", "-memprofile", "-memprofilerate", "-mutexprofile", "-mutexprofilefraction", "-outputdir", "-trace":
+			args = append(args, "-test."+arg[1:])
+		default:
+			args = append(args, arg)
+		}
+	}
+	return args
 }
