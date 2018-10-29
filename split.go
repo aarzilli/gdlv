@@ -263,6 +263,11 @@ func listingToolbar(sw *nucular.Window) {
 		showfilename = false
 	}
 
+	if listingPanel.optimized {
+		sw.LayoutFitWidth(listingPanel.id, 100)
+		sw.LabelColored(optimizedFunctionWarning, "LC", color.RGBA{0xff, 0x00, 0x00, 0xff})
+	}
+
 	if showfilename {
 		sw.LayoutSetWidthScaled(4096)
 		sw.Label(listingPanel.abbrevFile, "LC")

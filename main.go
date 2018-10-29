@@ -157,6 +157,7 @@ var listingPanel struct {
 	framePC             uint64
 	pinnedLoc           *api.Location
 	stale               bool
+	optimized           bool
 	id                  int
 
 	stepIntoInfo   stepIntoInfo
@@ -768,6 +769,11 @@ func loadListing(loc *api.Location, failstate func(string, error)) {
 	fi, _ := fh.Stat()
 	listingPanel.stale = fi.ModTime().After(lastModExe)
 
+	listingPanel.optimized = false
+	if loc.Function != nil && loc.Function.Optimized {
+		listingPanel.optimized = true
+	}
+
 	buf := bufio.NewScanner(fh)
 	lineno := 0
 	for buf.Scan() {
@@ -828,12 +834,12 @@ func applyBreakpoints(failstate func(string, error)) {
 func currentLocation(state *api.DebuggerState) *api.Location {
 	if state.SelectedGoroutine != nil {
 		if state.CurrentThread != nil && state.SelectedGoroutine.ThreadID == state.CurrentThread.ID {
-			return &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
+			return &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC, Function: state.CurrentThread.Function}
 		} else {
 			return &state.SelectedGoroutine.CurrentLoc
 		}
 	} else if state.CurrentThread != nil {
-		return &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC}
+		return &api.Location{File: state.CurrentThread.File, Line: state.CurrentThread.Line, PC: state.CurrentThread.PC, Function: state.CurrentThread.Function}
 	}
 
 	return nil
