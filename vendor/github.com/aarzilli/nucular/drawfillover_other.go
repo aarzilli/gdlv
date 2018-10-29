@@ -7,7 +7,6 @@ import (
 )
 
 func drawFillOver(dst *image.RGBA, r image.Rectangle, sr, sg, sb, sa uint32) {
-	fmt.Printf("fucked up!\n")
 	const m = 1<<16 - 1
 	// The 0x101 is here for the same reason as in drawRGBA.
 	a := (m - sa) * 0x101

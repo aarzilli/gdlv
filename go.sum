@@ -2,6 +2,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522221800-27f122750802 h1:otE7gFP0KwnPTKtM
 github.com/BurntSushi/xgb v0.0.0-20160522221800-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/aarzilli/nucular v0.0.0-20181005081711-cc306f976081 h1:sOdU/AthCcFoPuSeSYg9lLLfD+T61EjA1WlN3vx/ytI=
 github.com/aarzilli/nucular v0.0.0-20181005081711-cc306f976081/go.mod h1:rh/rFeChsox144sAUJaD7obyj+JFIUqag6QnvRyAZJQ=
+github.com/aarzilli/nucular v0.0.0-20181028070442-2dd10d21c9d4 h1:tonnPWPfA0M3eYfo6+xcx+qHp8utzsA5JWqv6dfKiSM=
+github.com/aarzilli/nucular v0.0.0-20181028070442-2dd10d21c9d4/go.mod h1:rh/rFeChsox144sAUJaD7obyj+JFIUqag6QnvRyAZJQ=
 github.com/derekparker/delve v1.1.0 h1:icd65nMp7s2HiLz6y/6RCVXBdoED3xxYLwX09EMaRCc=
 github.com/derekparker/delve v1.1.0/go.mod h1:pMSZMfp0Nhbm8qdZJkuE/yPGOkLpGXLS1I4poXQpuJU=
 github.com/golang/freetype v0.0.0-20161208064710-d9be45aaf745 h1:0d9whnMsm0iklqvoBXNEgHPt8pkXdfDplBAswA/F8YA=

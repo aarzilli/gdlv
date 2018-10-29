@@ -1,7 +1,7 @@
 module github.com/aarzilli/gdlv
 
 require (
-	github.com/aarzilli/nucular v0.0.0-20181005081711-cc306f976081
+	github.com/aarzilli/nucular v0.0.0-20181028070442-2dd10d21c9d4
 	github.com/derekparker/delve v1.1.0
 	github.com/golang/freetype v0.0.0-20161208064710-d9be45aaf745
 	golang.org/x/image v0.0.0-20170331233916-ce0faa1867f5

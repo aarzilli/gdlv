@@ -6,8 +6,8 @@ Opening a Window
 
 A window can be opened with the following three lines of code:
 
- wnd := nucular.NewMasterWindow(0, "Title" updatefn)
- wnd.SetStyle(style.FromTheme(nucular.DarkTheme, 1.0))
+ wnd := nucular.NewMasterWindow(0, "Title", updatefn)
+ wnd.SetStyle(style.FromTheme(style.DarkTheme, 1.0))
  wnd.Main()
 
 The first line creates the MasterWindow object and sets its flags (usually 0 is fine) and updatefn as the update function.

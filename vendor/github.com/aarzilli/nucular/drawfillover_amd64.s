@@ -75,3 +75,18 @@ column_loop_end:
 row_loop_end:
 	
 	RET
+
+TEXT ·getCPUID1(SB),$0
+	MOVQ $1, AX
+	CPUID
+	MOVD DX, ret+0(FP)
+	MOVD CX, ret+4(FP)
+	RET
+
+TEXT ·getCPUID70(SB),$0
+	MOVQ $7, AX
+	MOVQ $0, CX
+	CPUID
+	MOVD BX, ret+0(FP)
+	MOVD CX, ret+4(FP)
+	RET
