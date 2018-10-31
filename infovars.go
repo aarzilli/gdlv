@@ -237,8 +237,6 @@ var localsPanel = struct {
 
 type Expr struct {
 	Expr                         string
-	pinnedGid                    int
-	pinnedFrameOffset            int64
 	maxArrayValues, maxStringLen int
 	traced                       bool
 }
@@ -390,44 +388,16 @@ func isPinned(expr string) bool {
 	return expr[0] == '['
 }
 
-func findFrameOffset(gid int, frameOffset int64) (frame int) {
-	frames, err := client.Stacktrace(gid, 100, nil)
-	if err != nil {
-		return -1
-	}
-
-	for i := range frames {
-		if frames[i].FrameOffset == frameOffset {
-			return i
-		}
-	}
-	return -1
-}
-
 func loadOneExpr(i int) {
-	expr := localsPanel.expressions[i].Expr
-	gid, frame := curGid, curFrame
-	if localsPanel.expressions[i].pinnedGid > 0 {
-		gid = localsPanel.expressions[i].pinnedGid
-		frame = findFrameOffset(localsPanel.expressions[i].pinnedGid, localsPanel.expressions[i].pinnedFrameOffset)
-		if frame < 0 {
-			localsPanel.v[i] = wrapApiVariable(&api.Variable{Name: "(pinned) " + expr, Unreadable: "could not find frame"}, "", "", true)
-			return
-		}
-	}
 	cfg := getVariableLoadConfig()
 	if localsPanel.expressions[i].maxArrayValues > 0 {
 		cfg.MaxArrayValues = localsPanel.expressions[i].maxArrayValues
 		cfg.MaxStringLen = localsPanel.expressions[i].maxStringLen
 	}
-	v, err := client.EvalVariable(api.EvalScope{gid, frame}, expr, cfg)
-	if err != nil {
-		v = &api.Variable{Unreadable: err.Error()}
-	}
-	v.Name = expr
-	if localsPanel.expressions[i].pinnedGid > 0 {
-		v.Name = "(pinned) " + v.Name
-	}
+
+	v := evalScopedExpr(localsPanel.expressions[i].Expr, cfg)
+	v.Name = localsPanel.expressions[i].Expr
+
 	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name, true)
 }
 
@@ -488,7 +458,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 	}
 
 	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
-		pinned := localsPanel.expressions[exprMenuIdx].pinnedGid > 0
+		pinned := exprIsScoped(localsPanel.expressions[exprMenuIdx].Expr)
 		if w.MenuItem(label.TA("Edit expression", "LC")) {
 			localsPanel.selected = exprMenuIdx
 			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected].Expr)
@@ -510,10 +480,12 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 		if w.CheckboxText("Pin to frame", &pinned) {
 			if pinned && curFrame < len(stackPanel.stack) {
-				localsPanel.expressions[exprMenuIdx].pinnedGid = curGid
-				localsPanel.expressions[exprMenuIdx].pinnedFrameOffset = stackPanel.stack[curFrame].FrameOffset
+				localsPanel.expressions[exprMenuIdx].Expr = fmt.Sprintf("@g%df%d %s", curGid, stackPanel.stack[curFrame].FrameOffset, localsPanel.expressions[exprMenuIdx].Expr)
 			} else {
-				localsPanel.expressions[exprMenuIdx].pinnedGid = 0
+				se := ParseScopedExpr(localsPanel.expressions[exprMenuIdx].Expr)
+				if se.Kind != InvalidScopeExpr {
+					localsPanel.expressions[exprMenuIdx].Expr = se.EvalExpr
+				}
 			}
 			go func(i int) {
 				additionalLoadMu.Lock()

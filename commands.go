@@ -121,9 +121,10 @@ Option -first will step into the first function call of the line, -last will ste
 		{aliases: []string{"interrupt"}, cmdFn: interrupt, helpMsg: "interrupts execution."},
 		{aliases: []string{"print", "p"}, complete: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
 
-	print <expression>
+	print [@<scope-expr>] <expression>
 
-See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.`},
+See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.
+Type 'help scope-expr' for a description of <scope-expr>.`},
 		{aliases: []string{"list", "ls"}, complete: completeLocation, cmdFn: listCommand, helpMsg: `Show source code.
 		
 			list <linespec>
@@ -136,8 +137,10 @@ See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a des
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions. Only numerical variables and pointers can be changed.`},
 		{aliases: []string{"display", "disp", "dp"}, complete: completeVariable, cmdFn: displayVar, helpMsg: `Adds one expression to the Variables panel.
 	
-	display <expr>
-`},
+	display [@<scope-expr>] <expr>
+
+See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.
+Type 'help scope-expr' for a description of <scope-expr>.`},
 		{aliases: []string{"details", "det", "dt"}, complete: completeVariable, cmdFn: detailsVar, helpMsg: `Opens details window for the specified expression.
 	
 	details <expr>
@@ -198,6 +201,27 @@ func nullCommand(out io.Writer, args string) error {
 }
 
 func (c *Commands) help(out io.Writer, args string) error {
+	if args == "scope-expr" {
+		fmt.Fprintf(out, `A scope expression can be used as the first argument of the 'print' and 'display' commands to describe the scope in which an expression should be evaluated. For example in:
+		
+print @g2f8 a+1
+
+The text "@g2f8" is a scope expression describing that the expression "a+1" should be executed in the 8th frame (f8) of goroutine 2 (g2).
+
+A scope expression always starts with an '@' character and should contain either a goroutine specifier, a frame specifier or both.
+
+A goroutine specifier is a positive integer following the character 'g'. The integer can be specified in decimal or in hexadecimal, following a '0x' prefix.
+
+There are three kinds of frame specifiers:
+
+1. The character 'f' followed by a positive integer specifies the frame number in which the expression should be evaluated. 'f0' specifies the topmost stack frame, 'f1' specifies the caller frame, etc.
+
+2. The character 'f' followed by a negative integer specifies the frame offset for the frame in which the expression should be evaluated. Gdlv will look in the topmost 100 frames for a frame with the same offset as the one specified.
+
+3. The character 'f' followed by a regular expression delimited by the character '/'. This specifies that the expression should be evaluated in the first frame that's executing a function whose name matches the regular expression.`)
+		return nil
+	}
+
 	if args != "" {
 		for _, cmd := range c.cmds {
 			for _, alias := range cmd.aliases {
@@ -752,10 +776,7 @@ func printVar(out io.Writer, args string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("not enough arguments")
 	}
-	val, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, args, getVariableLoadConfig())
-	if err != nil {
-		return err
-	}
+	val := evalScopedExpr(args, getVariableLoadConfig())
 	valstr := wrapApiVariableSimple(val).MultilineString("")
 	nlcount := 0
 	for _, ch := range valstr {
