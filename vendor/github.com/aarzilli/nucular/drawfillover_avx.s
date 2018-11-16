@@ -1,3 +1,5 @@
+//+build amd64,go1.10
+
 #include "textflag.h"
 
 GLOBL drawFillOver_SIMD_shufflemap<>(SB), (NOPTR+RODATA), $4

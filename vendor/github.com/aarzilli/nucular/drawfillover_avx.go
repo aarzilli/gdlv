@@ -1,3 +1,5 @@
+//+build amd64,go1.10
+
 package nucular
 
 import (

@@ -4,6 +4,8 @@ github.com/aarzilli/nucular v0.0.0-20181005081711-cc306f976081 h1:sOdU/AthCcFoPu
 github.com/aarzilli/nucular v0.0.0-20181005081711-cc306f976081/go.mod h1:rh/rFeChsox144sAUJaD7obyj+JFIUqag6QnvRyAZJQ=
 github.com/aarzilli/nucular v0.0.0-20181028070442-2dd10d21c9d4 h1:tonnPWPfA0M3eYfo6+xcx+qHp8utzsA5JWqv6dfKiSM=
 github.com/aarzilli/nucular v0.0.0-20181028070442-2dd10d21c9d4/go.mod h1:rh/rFeChsox144sAUJaD7obyj+JFIUqag6QnvRyAZJQ=
+github.com/aarzilli/nucular v0.0.0-20181109102216-9506b152e919 h1:L6GLdaNJms9+me+FvePYBEC8d6HZxc4xcBnvS74AuZk=
+github.com/aarzilli/nucular v0.0.0-20181109102216-9506b152e919/go.mod h1:rh/rFeChsox144sAUJaD7obyj+JFIUqag6QnvRyAZJQ=
 github.com/derekparker/delve v1.1.0 h1:icd65nMp7s2HiLz6y/6RCVXBdoED3xxYLwX09EMaRCc=
 github.com/derekparker/delve v1.1.0/go.mod h1:pMSZMfp0Nhbm8qdZJkuE/yPGOkLpGXLS1I4poXQpuJU=
 github.com/golang/freetype v0.0.0-20161208064710-d9be45aaf745 h1:0d9whnMsm0iklqvoBXNEgHPt8pkXdfDplBAswA/F8YA=
