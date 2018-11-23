@@ -21,6 +21,10 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2018-11-23
+* Fix build on go1.9
+* New, extended, syntax for pinning expressions `dp @f/somefunc/ a` will evaluate `a` in the first frame calling `somefunc`.
+
 ## 2018-10-29
 * [Pastel theme](https://raw.githubusercontent.com/aarzilli/gdlv/master/doc/screen-pastel.png)
 
