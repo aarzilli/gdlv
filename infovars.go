@@ -279,9 +279,9 @@ func (vars variablesByName) Swap(i, j int)      { vars[i], vars[j] = vars[j], va
 func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].Name }
 
 func loadLocals(p *asyncLoad) {
-	args, errloc := client.ListFunctionArgs(api.EvalScope{curGid, curFrame}, getVariableLoadConfig())
+	args, errloc := client.ListFunctionArgs(currentEvalScope(), getVariableLoadConfig())
 	localsPanel.locals = wrapApiVariables(args, 0, 0, "", true)
-	locals, errarg := client.ListLocalVariables(api.EvalScope{curGid, curFrame}, getVariableLoadConfig())
+	locals, errarg := client.ListLocalVariables(currentEvalScope(), getVariableLoadConfig())
 	for i := range locals {
 		v := &locals[i]
 		if v.Kind == reflect.Ptr && len(v.Name) > 1 && v.Name[0] == '&' && len(v.Children) > 0 {
@@ -480,7 +480,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 		if w.CheckboxText("Pin to frame", &pinned) {
 			if pinned && curFrame < len(stackPanel.stack) {
-				localsPanel.expressions[exprMenuIdx].Expr = fmt.Sprintf("@g%df%d %s", curGid, stackPanel.stack[curFrame].FrameOffset, localsPanel.expressions[exprMenuIdx].Expr)
+				localsPanel.expressions[exprMenuIdx].Expr = fmt.Sprintf("@g%df%dd%d %s", curGid, stackPanel.stack[curFrame].FrameOffset, curDeferredCall, localsPanel.expressions[exprMenuIdx].Expr)
 			} else {
 				se := ParseScopedExpr(localsPanel.expressions[exprMenuIdx].Expr)
 				if se.Kind != InvalidScopeExpr {
@@ -505,7 +505,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 
 	if v.Kind == reflect.Func {
 		if w.MenuItem(label.TA("Go to definition", "LC")) {
-			locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, fmt.Sprintf("*%#x", v.Base))
+			locs, err := client.FindLocation(currentEvalScope(), fmt.Sprintf("*%#x", v.Base))
 			if err == nil && len(locs) == 1 {
 				listingPanel.pinnedLoc = &locs[0]
 				go refreshState(refreshToSameFrame, clearNothing, nil)
@@ -923,7 +923,7 @@ func loadMoreMap(v *Variable) {
 		additionalLoadRunning = true
 		go func() {
 			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", v.Type, v.Addr, len(v.Children)/2)
-			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongArrayLoadConfig)
+			lv, err := client.EvalVariable(currentEvalScope(), expr, LongArrayLoadConfig)
 			if err != nil {
 				out := editorWriter{&scrollbackEditor, true}
 				fmt.Fprintf(&out, "Error loading array contents %s: %v\n", expr, err)
@@ -947,7 +947,7 @@ func loadMoreArrayOrSlice(v *Variable) {
 		additionalLoadRunning = true
 		go func() {
 			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", v.Type, v.Addr, len(v.Children))
-			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongArrayLoadConfig)
+			lv, err := client.EvalVariable(currentEvalScope(), expr, LongArrayLoadConfig)
 			if err != nil {
 				out := editorWriter{&scrollbackEditor, true}
 				fmt.Fprintf(&out, "Error loading array contents %s: %v\n", expr, err)
@@ -970,7 +970,7 @@ func loadMoreStruct(v *Variable) {
 	if !additionalLoadRunning {
 		additionalLoadRunning = true
 		go func() {
-			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, fmt.Sprintf("*(*%q)(%#x)", v.Type, v.Addr), getVariableLoadConfig())
+			lv, err := client.EvalVariable(currentEvalScope(), fmt.Sprintf("*(*%q)(%#x)", v.Type, v.Addr), getVariableLoadConfig())
 			if err != nil {
 				v.Unreadable = err.Error()
 			} else {

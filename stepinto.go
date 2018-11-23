@@ -232,7 +232,7 @@ func stepIntoList(loc api.Location) []stepIntoCall {
 		return nil
 	}
 
-	text, err := client.DisassemblePC(api.EvalScope{curGid, curFrame}, loc.PC, api.IntelFlavour)
+	text, err := client.DisassemblePC(currentEvalScope(), loc.PC, api.IntelFlavour)
 	if err != nil {
 		return nil
 	}

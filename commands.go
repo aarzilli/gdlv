@@ -312,7 +312,7 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 	}
 
 	requestedBp.Tracepoint = tracepoint
-	locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, locspec)
+	locs, err := client.FindLocation(currentEvalScope(), locspec)
 	if err != nil {
 		if requestedBp.Name == "" {
 			return err
@@ -320,7 +320,7 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 		requestedBp.Name = ""
 		locspec = argstr
 		var err2 error
-		locs, err2 = client.FindLocation(api.EvalScope{curGid, curFrame}, locspec)
+		locs, err2 = client.FindLocation(currentEvalScope(), locspec)
 		if err2 != nil {
 			return err
 		}
@@ -687,7 +687,7 @@ func stepIntoFirst(out io.Writer) error {
 }
 
 func stepInto(out io.Writer, sic stepIntoCall) error {
-	stack, err := client.Stacktrace(curGid, 1, nil)
+	stack, err := client.Stacktrace(curGid, 1, false, nil)
 	if err != nil {
 		return err
 	}
@@ -804,7 +804,7 @@ func detailsVar(out io.Writer, args string) error {
 }
 
 func listCommand(out io.Writer, args string) error {
-	locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, args)
+	locs, err := client.FindLocation(currentEvalScope(), args)
 	if err != nil {
 		return err
 	}
@@ -837,7 +837,7 @@ func setVar(out io.Writer, args string) error {
 
 	lexpr := args[:el[0].Pos.Offset]
 	rexpr := args[el[0].Pos.Offset+1:]
-	return client.SetVariable(api.EvalScope{curGid, curFrame}, lexpr, rexpr)
+	return client.SetVariable(currentEvalScope(), lexpr, rexpr)
 }
 
 // ExitRequestError is returned when the user

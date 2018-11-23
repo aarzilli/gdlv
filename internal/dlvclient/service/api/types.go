@@ -123,9 +123,19 @@ type Stackframe struct {
 	FrameOffset        int64
 	FramePointerOffset int64
 
+	Defers []Defer
+
 	Bottom bool `json:"Bottom,omitempty"` // Bottom is true if this is the bottom frame of the stack
 
 	Err string
+}
+
+// Defer describes a deferred function.
+type Defer struct {
+	DeferredLoc Location // deferred function
+	DeferLoc    Location // location of the defer statement
+	SP          uint64   // value of SP when the function was deferred
+	Unreadable  string
 }
 
 func (frame *Stackframe) Var(name string) *Variable {
@@ -283,8 +293,9 @@ type BreakpointInfo struct {
 }
 
 type EvalScope struct {
-	GoroutineID int
-	Frame       int
+	GoroutineID  int
+	Frame        int
+	DeferredCall int
 }
 
 const (

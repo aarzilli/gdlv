@@ -10,7 +10,6 @@ import (
 	"reflect"
 	"sync"
 
-	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/rect"
 )
@@ -144,7 +143,7 @@ func (fw *findElementWindowSingleton) search(cancel chan struct{}, n int, strexp
 		var buf bytes.Buffer
 		printer.Fprint(&buf, token.NewFileSet(), expr)
 
-		ret, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, buf.String(), LongLoadConfig)
+		ret, err := client.EvalVariable(currentEvalScope(), buf.String(), LongLoadConfig)
 		if err != nil {
 			fmt.Fprintf(&out, "error evaluating expression %q: %v", buf.String(), err)
 			return

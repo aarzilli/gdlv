@@ -67,7 +67,7 @@ func (dv *detailViewer) load(p *asyncLoad) {
 	expr := string(dv.exprEd.Buffer)
 	dv.v = nil
 	dv.loadErr = nil
-	v, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, api.LoadConfig{false, 0, dv.len, dv.len, -1})
+	v, err := client.EvalVariable(currentEvalScope(), expr, api.LoadConfig{false, 0, dv.len, dv.len, -1})
 	if err != nil {
 		dv.loadErr = err
 		if p != nil {
@@ -345,7 +345,7 @@ func (dv *detailViewer) loadMore() {
 		additionalLoadRunning = true
 		go func() {
 			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", dv.v.RealType, dv.v.Addr, dv.length())
-			lv, err := client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongArrayLoadConfig)
+			lv, err := client.EvalVariable(currentEvalScope(), expr, LongArrayLoadConfig)
 			if err != nil {
 				out := editorWriter{&scrollbackEditor, true}
 				fmt.Fprintf(&out, "Error loading string contents %s: %v\n", expr, err)
@@ -633,7 +633,7 @@ func (c *CustomFormatter) Format(v *Variable) {
 			printer.Fprint(&buf, token.NewFileSet(), argexpr[i])
 			expr := buf.String()
 
-			vars[i], errors[i] = client.EvalVariable(api.EvalScope{curGid, curFrame}, expr, LongLoadConfig)
+			vars[i], errors[i] = client.EvalVariable(currentEvalScope(), expr, LongLoadConfig)
 		}
 	}
 

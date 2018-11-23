@@ -171,6 +171,7 @@ var client *rpc2.RPCClient
 var curThread int
 var curGid int
 var curFrame int
+var curDeferredCall int
 var curPC uint64
 var lastModExe time.Time
 
@@ -322,6 +323,8 @@ func currentPrompt() string {
 			return "dlv>"
 		} else if curGid < 0 {
 			return fmt.Sprintf("thread %d:%d>", curThread, curFrame)
+		} else if curDeferredCall > 0 {
+			return fmt.Sprintf("deferred call %d:%d:%d>", curGid, curFrame, curDeferredCall)
 		} else {
 			return fmt.Sprintf("goroutine %d:%d>", curGid, curFrame)
 		}
@@ -554,6 +557,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 			curThread = -1
 			curGid = -1
 			curFrame = 0
+			curDeferredCall = 0
 			if !strings.Contains(err.Error(), " has exited with status ") {
 				failstate("GetState()", err)
 			}
@@ -580,6 +584,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 	} else {
 		curThread = -1
 		curFrame = 0
+		curDeferredCall = 0
 	}
 	if state.SelectedGoroutine != nil && state.SelectedGoroutine.ID > 0 {
 		curGid = state.SelectedGoroutine.ID
@@ -632,26 +637,41 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		switch toframe {
 		case refreshToFrameZero:
 			curFrame = 0
+			curDeferredCall = 0
 			loc = currentLocation(state)
 
 		case refreshToSameFrame:
-			frames, err := client.Stacktrace(curGid, curFrame+1, nil)
+			frames, err := client.Stacktrace(curGid, curFrame+1, true, nil)
 			if err != nil {
 				curFrame = 0
+				curDeferredCall = 0
 				failstate("Stacktrace()", err)
 				return
 			}
 			if curFrame >= len(frames) {
 				curFrame = 0
+				curDeferredCall = 0
 			}
 			if curFrame < len(frames) {
-				loc = &frames[curFrame].Location
+				if curDeferredCall-1 >= len(frames[curFrame].Defers) {
+					curDeferredCall = 0
+				}
+				if curDeferredCall <= 0 {
+					loc = &frames[curFrame].Location
+				} else if curDeferredCall-1 < len(frames[curFrame].Defers) {
+					if stackPanel.showDeferPos {
+						loc = &frames[curFrame].Defers[curDeferredCall-1].DeferLoc
+					} else {
+						loc = &frames[curFrame].Defers[curDeferredCall-1].DeferredLoc
+					}
+				}
 			}
 
 		case refreshToUserFrame:
 			const runtimeprefix = "runtime."
 			curFrame = 0
-			frames, err := client.Stacktrace(curGid, 20, nil)
+			curDeferredCall = 0
+			frames, err := client.Stacktrace(curGid, 20, false, nil)
 			if err != nil {
 				failstate("Stacktrace()", err)
 				return
@@ -667,12 +687,14 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 				name := frames[i].Function.Name()
 				if !strings.HasPrefix(name, runtimeprefix) {
 					curFrame = i
+					curDeferredCall = 0
 					break
 				}
 				if len(name) > len(runtimeprefix) {
 					ch := name[len(runtimeprefix)]
 					if ch >= 'A' && ch <= 'Z' {
 						curFrame = i
+						curDeferredCall = 0
 						break
 					}
 				}
@@ -722,7 +744,7 @@ func loadDisassembly(p *asyncLoad) {
 		flavour = api.GNUFlavour
 	}
 	if loc.PC != 0 {
-		text, err := client.DisassemblePC(api.EvalScope{curGid, curFrame}, loc.PC, flavour)
+		text, err := client.DisassemblePC(currentEvalScope(), loc.PC, flavour)
 		if err != nil {
 			p.done(err)
 			return
@@ -843,6 +865,10 @@ func currentLocation(state *api.DebuggerState) *api.Location {
 	}
 
 	return nil
+}
+
+func currentEvalScope() api.EvalScope {
+	return api.EvalScope{curGid, curFrame, curDeferredCall}
 }
 
 type editorWriter struct {

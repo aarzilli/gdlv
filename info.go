@@ -129,10 +129,11 @@ var goroutinesPanel = struct {
 }
 
 var stackPanel = struct {
-	asyncLoad asyncLoad
-	stack     []api.Stackframe
-	depth     int
-	id        int
+	asyncLoad    asyncLoad
+	stack        []api.Stackframe
+	depth        int
+	showDeferPos bool
+	id           int
 }{
 	depth: 50,
 }
@@ -329,7 +330,7 @@ func updateGoroutines(container *nucular.Window) {
 
 func loadStacktrace(p *asyncLoad) {
 	var err error
-	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, nil)
+	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, true, nil)
 	stackPanel.id++
 	p.done(err)
 }
@@ -370,9 +371,14 @@ func updateStacktrace(container *nucular.Window) {
 		w.LayoutFitWidth(stackPanel.id, 1)
 		w.SelectableLabel(fmt.Sprintf("%#0*x\n%+d", d, frame.PC, frame.FrameOffset), "LT", &selected)
 		w.LayoutFitWidth(stackPanel.id, 100)
-		w.SelectableLabel(formatLocation2(frame.Location), "LT", &selected)
-		if selected && curFrame != i && !client.Running() {
+		prevSelected := selected
+		clicked := w.SelectableLabel(formatLocation2(frame.Location), "LT", &selected)
+		if clicked && prevSelected && !selected {
+			selected = true
+		}
+		if selected && clicked && !client.Running() {
 			curFrame = i
+			curDeferredCall = 0
 			go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
 		}
 	}
@@ -803,6 +809,69 @@ func updateCheckpoints(container *nucular.Window) {
 	}
 }
 
+func updateDeferredCalls(container *nucular.Window) {
+	w := stackPanel.asyncLoad.showRequest(container)
+	if w == nil {
+		return
+	}
+
+	w.MenubarBegin()
+	w.Row(20).Static(120)
+	combosel := 0
+	if stackPanel.showDeferPos {
+		combosel = 1
+	}
+	combosel = w.ComboSimple([]string{"Deferred function location", "Deferred call location"}, combosel, 20)
+	stackPanel.showDeferPos = (combosel != 0)
+	w.MenubarEnd()
+
+	stack := stackPanel.stack
+
+	if curFrame >= len(stack) {
+		return
+	}
+
+	maxpc := uint64(0)
+	for _, deferredCall := range stack[curFrame].Defers {
+		pc := deferredCall.DeferredLoc.PC
+		if stackPanel.showDeferPos {
+			pc = deferredCall.DeferLoc.PC
+		}
+		if pc > maxpc {
+			maxpc = pc
+		}
+	}
+
+	didx := digits(len(stack[curFrame].Defers))
+	d := hexdigits(maxpc)
+
+	for i, deferredCall := range stack[curFrame].Defers {
+		loc := deferredCall.DeferredLoc
+		if stackPanel.showDeferPos {
+			loc = deferredCall.DeferLoc
+		}
+
+		selected := curDeferredCall-1 == i
+		w.Row(posRowHeight).Static()
+		w.LayoutFitWidth(stackPanel.id, 1)
+		w.SelectableLabel(fmt.Sprintf("%*d", didx, i+1), "LT", &selected)
+		w.LayoutFitWidth(stackPanel.id, 1)
+		w.SelectableLabel(fmt.Sprintf("%#0*x", d, loc.PC), "LT", &selected)
+		w.LayoutFitWidth(stackPanel.id, 1)
+		var locstr string
+		if deferredCall.Unreadable == "" {
+			locstr = formatLocation2(loc)
+		} else {
+			locstr = deferredCall.Unreadable
+		}
+		clicked := w.SelectableLabel(locstr, "LT", &selected)
+		if selected && clicked && !client.Running() {
+			curDeferredCall = i + 1
+			go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
+		}
+	}
+}
+
 func (p *stringSlicePanel) update(container *nucular.Window) {
 	if p.filterEditor.Filter == nil {
 		p.filterEditor.Filter = spacefilter
@@ -841,7 +910,7 @@ func (p *stringSlicePanel) update(container *nucular.Window) {
 
 func funcInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int) {
 	if clicked {
-		locs, err := client.FindLocation(api.EvalScope{curGid, curFrame}, p.slice[p.selected])
+		locs, err := client.FindLocation(currentEvalScope(), p.slice[p.selected])
 		if err == nil && len(locs) == 1 {
 			listingPanel.pinnedLoc = &locs[0]
 			go refreshState(refreshToSameFrame, clearNothing, nil)
@@ -977,7 +1046,7 @@ func updateListingPanel(container *nucular.Window) {
 		breakpointIcon(listp, line.bp != nil, line.bpenabled, "CC", style)
 		bpbounds := listp.LastWidgetBounds
 
-		isCurrentLine := line.pc && curFrame == 0 && !client.Running() && curThread >= 0
+		isCurrentLine := line.pc && curFrame == 0 && curDeferredCall == 0 && !client.Running() && curThread >= 0
 
 		listp.LayoutSetWidth(arroww)
 		if isCurrentLine {

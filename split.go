@@ -17,20 +17,21 @@ import (
 )
 
 const (
-	infoCommand     = "Command"
-	infoListing     = "Listing"
-	infoDisassembly = "Disassembly"
-	infoGoroutines  = "Goroutines"
-	infoStacktrace  = "Stacktrace"
-	infoLocals      = "Variables"
-	infoGlobal      = "Globals"
-	infoBps         = "Breakpoints"
-	infoThreads     = "Threads"
-	infoRegisters   = "Registers"
-	infoSources     = "Sources"
-	infoFuncs       = "Functions"
-	infoTypes       = "Types"
-	infoCheckpoints = "Checkpoints"
+	infoCommand       = "Command"
+	infoListing       = "Listing"
+	infoDisassembly   = "Disassembly"
+	infoGoroutines    = "Goroutines"
+	infoStacktrace    = "Stacktrace"
+	infoLocals        = "Variables"
+	infoGlobal        = "Globals"
+	infoBps           = "Breakpoints"
+	infoThreads       = "Threads"
+	infoRegisters     = "Registers"
+	infoSources       = "Sources"
+	infoFuncs         = "Functions"
+	infoTypes         = "Types"
+	infoCheckpoints   = "Checkpoints"
+	infoDeferredCalls = "DeferredCalls"
 )
 
 type infoPanel struct {
@@ -42,7 +43,7 @@ type infoPanel struct {
 var infoNameToPanel map[string]infoPanel
 
 var infoModes = []string{
-	infoCommand, infoListing, infoDisassembly, infoGoroutines, infoStacktrace, infoLocals, infoGlobal, infoBps, infoThreads, infoRegisters, infoSources, infoFuncs, infoTypes, infoCheckpoints,
+	infoCommand, infoListing, infoDisassembly, infoGoroutines, infoStacktrace, infoLocals, infoGlobal, infoBps, infoThreads, infoRegisters, infoSources, infoFuncs, infoTypes, infoCheckpoints, infoDeferredCalls,
 }
 
 var codeToInfoMode = map[byte]string{
@@ -60,6 +61,7 @@ var codeToInfoMode = map[byte]string{
 	't': infoTypes,
 	'T': infoThreads,
 	'k': infoCheckpoints,
+	'd': infoDeferredCalls,
 }
 
 var infoModeToCode = map[string]byte{}
@@ -81,6 +83,7 @@ func init() {
 	infoNameToPanel[infoFuncs] = infoPanel{funcsPanel.update, nucular.WindowNoScrollbar, nil}
 	infoNameToPanel[infoTypes] = infoPanel{typesPanel.update, nucular.WindowNoScrollbar, nil}
 	infoNameToPanel[infoCheckpoints] = infoPanel{updateCheckpoints, 0, &checkpointsPanel.asyncLoad}
+	infoNameToPanel[infoDeferredCalls] = infoPanel{updateDeferredCalls, 0, &stackPanel.asyncLoad}
 
 	for k, v := range codeToInfoMode {
 		infoModeToCode[v] = k

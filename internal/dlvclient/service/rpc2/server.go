@@ -64,10 +64,11 @@ type GetBreakpointOut struct {
 }
 
 type StacktraceIn struct {
-	Id    int
-	Depth int
-	Full  bool
-	Cfg   *api.LoadConfig
+	Id     int
+	Depth  int
+	Full   bool
+	Defers bool // read deferred functions
+	Cfg    *api.LoadConfig
 }
 
 type StacktraceOut struct {

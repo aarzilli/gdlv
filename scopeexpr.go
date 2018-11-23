@@ -11,12 +11,15 @@ import (
 
 // ScopedExpr represents an expression to be evaluated in a specified scope.
 type ScopedExpr struct {
-	Kind     ScopeExprKind
-	Gid      int            // goroutine id (-1 for current goroutine)
-	Fid      int            // frame id (-1 for current goroutine)
-	Foff     int            // frame offset (will search for this specified frame offset or return an error otherwise)
-	Fre      *regexp.Regexp // frame regular expression (will search for a frame in a function matching this regular expression)
-	EvalExpr string         // expression to evaluate
+	Kind ScopeExprKind
+	Gid  int            // goroutine id (-1 for current goroutine)
+	Fid  int            // frame id (-1 for current goroutine)
+	Foff int            // frame offset (will search for this specified frame offset or return an error otherwise)
+	Fre  *regexp.Regexp // frame regular expression (will search for a frame in a function matching this regular expression)
+
+	DeferredCall int // deferred call index
+
+	EvalExpr string // expression to evaluate
 }
 
 type ScopeExprKind uint8
@@ -34,7 +37,7 @@ func ParseScopedExpr(in string) ScopedExpr {
 			continue
 		}
 		if ch != '@' {
-			return ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, EvalExpr: in}
+			return ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, DeferredCall: -1, EvalExpr: in}
 		} else {
 			in = in[i:]
 			break
@@ -47,11 +50,14 @@ func ParseScopedExpr(in string) ScopedExpr {
 
 	in = in[1:]
 
-	r := ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1}
+	r := ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, DeferredCall: 0}
 	first := true
-	gseen, fseen := false, false
+	var gseen, fseen, dseen bool
 
 	for {
+		if len(in) == 0 {
+			return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no expression"}
+		}
 		switch in[0] {
 		case 'g':
 			in = in[1:]
@@ -94,6 +100,21 @@ func ParseScopedExpr(in string) ScopedExpr {
 					r.Fid = -1
 					r.Kind = FrameOffsetScopeExpr
 				}
+			}
+
+		case 'd':
+			in = in[1:]
+			if dseen || len(in) == 0 {
+				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no argument for 'd'"}
+			}
+			dseen = true
+			var ok bool
+			in, r.DeferredCall, ok = scopeReadNumber(in)
+			if !ok {
+				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid argument for 'd'"}
+			}
+			if r.DeferredCall < 0 {
+				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid (negative) argument for 'd'"}
 			}
 
 		case ' ':
@@ -210,45 +231,43 @@ func exprIsScoped(expr string) bool {
 func evalScopedExpr(expr string, cfg api.LoadConfig) *api.Variable {
 	se := ParseScopedExpr(expr)
 
-	var gid, frame int
+	var gid, frame, deferredCall int
+
+	gid = se.Gid
+	if gid < 0 {
+		gid = curGid
+	}
 
 	switch se.Kind {
 	case InvalidScopeExpr:
 		return &api.Variable{Name: expr, Unreadable: "syntax error: " + se.EvalExpr}
 
 	case NormalScopeExpr:
-		gid = se.Gid
-		if gid < 0 {
-			gid = curGid
-		}
 		frame = se.Fid
 		if frame < 0 {
 			frame = curFrame
 		}
 
 	case FrameOffsetScopeExpr:
-		gid = se.Gid
-		if gid < 0 {
-			gid = curGid
-		}
 		frame = findFrameOffset(gid, int64(se.Foff), nil)
 
 	case FrameRegexScopeExpr:
-		gid = se.Gid
-		if gid < 0 {
-			gid = curGid
-		}
 		frame = findFrameOffset(gid, 0, se.Fre)
 
 	default:
 		panic("unknown kind")
 	}
 
+	deferredCall = se.DeferredCall
+	if deferredCall < 0 {
+		deferredCall = curDeferredCall
+	}
+
 	if frame < 0 {
 		return &api.Variable{Name: expr, Unreadable: "could not find specified frame"}
 	}
 
-	v, err := client.EvalVariable(api.EvalScope{gid, frame}, se.EvalExpr, cfg)
+	v, err := client.EvalVariable(api.EvalScope{gid, frame, deferredCall}, se.EvalExpr, cfg)
 	if err != nil {
 		return &api.Variable{Name: expr, Unreadable: err.Error()}
 	}
@@ -256,7 +275,7 @@ func evalScopedExpr(expr string, cfg api.LoadConfig) *api.Variable {
 }
 
 func findFrameOffset(gid int, frameOffset int64, rx *regexp.Regexp) (frame int) {
-	frames, err := client.Stacktrace(gid, 100, nil)
+	frames, err := client.Stacktrace(gid, 100, false, nil)
 	if err != nil {
 		return -1
 	}
