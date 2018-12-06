@@ -123,9 +123,11 @@ var goroutinesPanel = struct {
 	goroutines        []wrappedGoroutine
 	onlyStopped       bool
 	id                int
+	limit             int
 }{
 	goroutineLocation: 1,
 	goroutines:        make([]wrappedGoroutine, 0, 10),
+	limit:             100,
 }
 
 var stackPanel = struct {
@@ -211,7 +213,11 @@ func (gs goroutinesByID) Swap(i, j int) {
 func (gs goroutinesByID) Less(i, j int) bool { return gs[i].ID < gs[j].ID }
 
 func loadGoroutines(p *asyncLoad) {
-	gs, err := client.ListGoroutines()
+	lim := goroutinesPanel.limit
+	if lim == 0 {
+		lim = 100
+	}
+	gs, err := client.ListGoroutines(0, lim)
 	if err != nil {
 		p.done(err)
 		return
@@ -259,7 +265,8 @@ func updateGoroutines(container *nucular.Window) {
 	goroutines := goroutinesPanel.goroutines
 
 	w.MenubarBegin()
-	w.Row(20).Static(180, 240)
+	w.Row(20).Static(130, 180, 240)
+	w.PropertyInt("Limit:", 1, &goroutinesPanel.limit, 1000000000, 1, 1)
 	goroutinesPanel.goroutineLocation = w.ComboSimple(goroutineLocations, goroutinesPanel.goroutineLocation, 22)
 	w.CheckboxText("Only stopped at breakpoint", &goroutinesPanel.onlyStopped)
 	w.MenubarEnd()

@@ -312,9 +312,9 @@ func (c *RPCClient) ListFunctionArgs(scope api.EvalScope, cfg api.LoadConfig) ([
 	return out.Args, err
 }
 
-func (c *RPCClient) ListGoroutines() ([]*api.Goroutine, error) {
+func (c *RPCClient) ListGoroutines(start, count int) ([]*api.Goroutine, error) {
 	var out ListGoroutinesOut
-	err := c.call("ListGoroutines", ListGoroutinesIn{}, &out)
+	err := c.call("ListGoroutines", ListGoroutinesIn{Start: start, Count: count}, &out)
 	return out.Goroutines, err
 }
 

@@ -208,10 +208,13 @@ type ListTypesOut struct {
 }
 
 type ListGoroutinesIn struct {
+	Start int
+	Count int
 }
 
 type ListGoroutinesOut struct {
 	Goroutines []*api.Goroutine
+	Nextg      int
 }
 
 type AttachedToExistingProcessIn struct {
