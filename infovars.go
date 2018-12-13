@@ -254,6 +254,9 @@ func updateGlobals(container *nucular.Window) {
 		return
 	}
 
+	additionalLoadMu.Lock()
+	defer additionalLoadMu.Unlock()
+
 	w.MenubarBegin()
 	w.Row(varRowHeight).Static(90, 0, 100, 100)
 	w.Label("Filter:", "LC")
@@ -342,6 +345,9 @@ func updateLocals(container *nucular.Window) {
 	if w == nil {
 		return
 	}
+
+	additionalLoadMu.Lock()
+	defer additionalLoadMu.Unlock()
 
 	w.MenubarBegin()
 	w.Row(varRowHeight).Static(90, 0, 100, 100)
@@ -916,9 +922,6 @@ var additionalLoadMu sync.Mutex
 var additionalLoadRunning bool
 
 func loadMoreMap(v *Variable) {
-	additionalLoadMu.Lock()
-	defer additionalLoadMu.Unlock()
-
 	if !additionalLoadRunning {
 		additionalLoadRunning = true
 		go func() {
@@ -941,8 +944,6 @@ func loadMoreMap(v *Variable) {
 }
 
 func loadMoreArrayOrSlice(v *Variable) {
-	additionalLoadMu.Lock()
-	defer additionalLoadMu.Unlock()
 	if !additionalLoadRunning {
 		additionalLoadRunning = true
 		go func() {
@@ -965,8 +966,6 @@ func loadMoreArrayOrSlice(v *Variable) {
 }
 
 func loadMoreStruct(v *Variable) {
-	additionalLoadMu.Lock()
-	defer additionalLoadMu.Unlock()
 	if !additionalLoadRunning {
 		additionalLoadRunning = true
 		go func() {
