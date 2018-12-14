@@ -18,7 +18,7 @@ const (
 	boringTheme = "Pastel theme"
 )
 
-var themes = []string{darkTheme, whiteTheme, redTheme, boringTheme}
+var themes = []string{boringTheme, darkTheme, whiteTheme, redTheme}
 
 type Configuration struct {
 	Scaling              float64

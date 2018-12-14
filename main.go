@@ -60,16 +60,16 @@ func setupStyle() {
 	switch conf.Theme {
 	default:
 		fallthrough
+	case boringTheme:
+		style := makeBoringStyle()
+		style.Scale(conf.Scaling)
+		wnd.SetStyle(style)
 	case darkTheme:
 		wnd.SetStyle(nstyle.FromTheme(nstyle.DarkTheme, conf.Scaling))
 	case whiteTheme:
 		wnd.SetStyle(nstyle.FromTheme(nstyle.WhiteTheme, conf.Scaling))
 	case redTheme:
 		wnd.SetStyle(nstyle.FromTable(redThemeTable, conf.Scaling))
-	case boringTheme:
-		style := makeBoringStyle()
-		style.Scale(conf.Scaling)
-		wnd.SetStyle(style)
 	}
 
 	fontInit.Do(func() {
