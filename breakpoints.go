@@ -105,11 +105,11 @@ func clearFrozenBreakpoints() {
 
 func restoreFrozenBreakpoints(out io.Writer) {
 	// Restore frozen breakpoints
-	for _, fbp := range FrozenBreakpoints {
-		fbp.Restore(out, true)
+	for i := range FrozenBreakpoints {
+		FrozenBreakpoints[i].Restore(out, true)
 	}
-	for _, fbp := range DisabledBreakpoints {
-		fbp.Restore(out, false)
+	for i := range DisabledBreakpoints {
+		DisabledBreakpoints[i].Restore(out, false)
 	}
 
 	// Re-freeze breakpoints
