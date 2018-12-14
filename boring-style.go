@@ -590,7 +590,7 @@ func makeBoringStyle() *nstyle.Style {
 	style.NormalWindow.Header.Hover.Type = nstyle.ItemColor
 	style.NormalWindow.Header.Hover.Data.Color = color.RGBA{55, 94, 171, 255}
 	style.NormalWindow.Header.Active.Type = nstyle.ItemColor
-	style.NormalWindow.Header.Active.Data.Color = color.RGBA{55, 94, 171, 255}
+	style.NormalWindow.Header.Active.Data.Color = color.RGBA{0x2e, 0x46, 0xf8, 0xff}
 	style.NormalWindow.Header.CloseButton.Normal.Type = nstyle.ItemColor
 	style.NormalWindow.Header.CloseButton.Normal.Data.Color = color.RGBA{55, 94, 171, 255}
 	style.NormalWindow.Header.CloseButton.Hover.Type = nstyle.ItemColor
