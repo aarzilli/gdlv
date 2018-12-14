@@ -21,6 +21,12 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2018-12-14
+* Deferred calls view.
+* Limit number of goroutines that are loaded (improves performance when debugging programs with tens of thousands of goroutines while the goroutines window is opened).
+* Make pastel theme the default theme.
+* Fixed bug handling disabled breakpoints.
+
 ## 2018-11-23
 * Fix build on go1.9
 * New, extended, syntax for pinning expressions `dp @f/somefunc/ a` will evaluate `a` in the first frame calling `somefunc`.
