@@ -55,6 +55,7 @@ type ColorTable struct {
 	ColorText                  color.RGBA
 	ColorWindow                color.RGBA
 	ColorHeader                color.RGBA
+	ColorHeaderFocused         color.RGBA
 	ColorBorder                color.RGBA
 	ColorButton                color.RGBA
 	ColorButtonHover           color.RGBA
@@ -373,7 +374,7 @@ type Window struct {
 	MinSize         image.Point
 }
 
-var defaultThemeTable = ColorTable{color.RGBA{175, 175, 175, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{65, 65, 65, 255}, color.RGBA{50, 50, 50, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{35, 35, 35, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{35, 35, 35, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{175, 175, 175, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{255, 0, 0, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{40, 40, 40, 255}}
+var defaultThemeTable = ColorTable{color.RGBA{175, 175, 175, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{65, 65, 65, 255}, color.RGBA{50, 50, 50, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{35, 35, 35, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{35, 35, 35, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{38, 38, 38, 255}, color.RGBA{175, 175, 175, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{45, 45, 45, 255}, color.RGBA{255, 0, 0, 255}, color.RGBA{40, 40, 40, 255}, color.RGBA{100, 100, 100, 255}, color.RGBA{120, 120, 120, 255}, color.RGBA{150, 150, 150, 255}, color.RGBA{40, 40, 40, 255}}
 
 func FromTable(table ColorTable, scaling float64) *Style {
 	var text *Text
@@ -808,7 +809,7 @@ func FromTable(table ColorTable, scaling float64) *Style {
 	win.Header.MaximizeSymbol = label.SymbolPlus
 	win.Header.Normal = MakeItemColor(table.ColorHeader)
 	win.Header.Hover = MakeItemColor(table.ColorHeader)
-	win.Header.Active = MakeItemColor(table.ColorHeader)
+	win.Header.Active = MakeItemColor(table.ColorHeaderFocused)
 	win.Header.LabelNormal = table.ColorText
 	win.Header.LabelHover = table.ColorText
 	win.Header.LabelActive = table.ColorText
@@ -822,7 +823,7 @@ func FromTable(table ColorTable, scaling float64) *Style {
 	*button = Button{}
 	button.Normal = MakeItemColor(table.ColorHeader)
 	button.Hover = MakeItemColor(table.ColorHeader)
-	button.Active = MakeItemColor(table.ColorHeader)
+	button.Active = MakeItemColor(table.ColorHeaderFocused)
 	button.BorderColor = color.RGBA{0, 0, 0, 0}
 	button.TextBackground = table.ColorHeader
 	button.TextNormal = table.ColorText
@@ -842,7 +843,7 @@ func FromTable(table ColorTable, scaling float64) *Style {
 	*button = Button{}
 	button.Normal = MakeItemColor(table.ColorHeader)
 	button.Hover = MakeItemColor(table.ColorHeader)
-	button.Active = MakeItemColor(table.ColorHeader)
+	button.Active = MakeItemColor(table.ColorHeaderFocused)
 	button.BorderColor = color.RGBA{0, 0, 0, 0}
 	button.TextBackground = table.ColorHeader
 	button.TextNormal = table.ColorText
@@ -934,6 +935,7 @@ var whiteThemeTable = ColorTable{
 	ColorText:                  color.RGBA{70, 70, 70, 255},
 	ColorWindow:                color.RGBA{175, 175, 175, 255},
 	ColorHeader:                color.RGBA{175, 175, 175, 255},
+	ColorHeaderFocused:         color.RGBA{0xc3, 0x9a, 0x9a, 255},
 	ColorBorder:                color.RGBA{0, 0, 0, 255},
 	ColorButton:                color.RGBA{185, 185, 185, 255},
 	ColorButtonHover:           color.RGBA{170, 170, 170, 255},
@@ -965,6 +967,7 @@ var redThemeTable = ColorTable{
 	ColorText:                  color.RGBA{190, 190, 190, 255},
 	ColorWindow:                color.RGBA{30, 33, 40, 215},
 	ColorHeader:                color.RGBA{181, 45, 69, 220},
+	ColorHeaderFocused:         color.RGBA{0xb5, 0x0c, 0x2c, 0xdc},
 	ColorBorder:                color.RGBA{51, 55, 67, 255},
 	ColorButton:                color.RGBA{181, 45, 69, 255},
 	ColorButtonHover:           color.RGBA{190, 50, 70, 255},
@@ -996,6 +999,7 @@ var darkThemeTable = ColorTable{
 	ColorText:                  color.RGBA{210, 210, 210, 255},
 	ColorWindow:                color.RGBA{57, 67, 71, 255},
 	ColorHeader:                color.RGBA{51, 51, 56, 220},
+	ColorHeaderFocused:         color.RGBA{0x29, 0x29, 0x37, 0xdc},
 	ColorBorder:                color.RGBA{46, 46, 46, 255},
 	ColorButton:                color.RGBA{48, 83, 111, 255},
 	ColorButtonHover:           color.RGBA{58, 93, 121, 255},

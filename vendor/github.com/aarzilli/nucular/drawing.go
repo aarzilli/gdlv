@@ -71,11 +71,12 @@ func drawSymbol(out *command.Buffer, type_ label.SymbolType, content rect.Rect, 
 type drawableWindowHeader struct {
 	Header  rect.Rect
 	Label   rect.Rect
-	Hovered bool
+	Hovered bool // titlebar is hovered
+	Focused bool // window has focus
 	Title   string
 
 	Dynamic       bool
-	HeaderActive  bool
+	HeaderActive  bool // should display titlebar
 	Bounds        rect.Rect
 	RowHeight     int
 	LayoutWidth   int
@@ -108,12 +109,19 @@ func (dwh *drawableWindowHeader) Draw(z *nstyle.Style, out *command.Buffer) {
 		var text textWidget
 
 		/* select correct header background and text color */
-		if dwh.Hovered {
-			background = &style.Header.Hover
-			text.Text = style.Header.LabelHover
-		} else {
+		switch {
+		case dwh.Focused:
 			background = &style.Header.Active
 			text.Text = style.Header.LabelActive
+		case dwh.Hovered:
+			background = &style.Header.Hover
+			text.Text = style.Header.LabelHover
+		default:
+			background = &style.Header.Normal
+			text.Text = style.Header.LabelNormal
+		}
+		if dwh.Hovered {
+		} else {
 		}
 
 		/* draw header background */

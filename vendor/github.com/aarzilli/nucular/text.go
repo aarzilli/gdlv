@@ -150,6 +150,8 @@ type TextEditor struct {
 
 	Maxlen int
 
+	PasswordChar rune // if non-zero all characters are displayed like this character
+
 	Initialized            bool
 	Active                 bool
 	InsertMode             bool
@@ -168,6 +170,8 @@ type TextEditor struct {
 	trueSelectStart int
 
 	needle []rune
+
+	password []rune // support buffer for drawing PasswordChar!=0 fields
 }
 
 type drawchunk struct {
@@ -663,6 +667,11 @@ func (edit *TextEditor) Text(text []rune) {
 			break
 		}
 
+		/* can't add tab in single-line mode */
+		if text[i] == '\t' && edit.SingleLine {
+			break
+		}
+
 		/* filter incoming text */
 		if edit.Filter != nil && !edit.Filter(text[i]) {
 			continue
@@ -1122,6 +1131,29 @@ func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, po
 	d := font.Drawer{Face: f}
 
 	tabsz := d.MeasureString(" ").Ceil() * tabSizeInSpaces
+	pwsz := d.MeasureString("*").Ceil()
+
+	measureText := func(start, end int) int {
+		if edit.PasswordChar != 0 {
+			return pwsz * (end - start)
+		}
+		// XXX calculating text width here is slow figure out why
+		return d.MeasureString(string(text[start:end])).Ceil()
+	}
+
+	getText := func(start, end int) string {
+		if edit.PasswordChar != 0 {
+			n := end - start
+			if n >= len(edit.password) {
+				edit.password = make([]rune, n)
+				for i := range edit.password {
+					edit.password[i] = edit.PasswordChar
+				}
+			}
+			return string(edit.password[:n])
+		}
+		return string(text[start:end])
+	}
 
 	flushLine := func(index int) rect.Rect {
 		// new line sepeator so draw previous line
@@ -1133,13 +1165,12 @@ func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, po
 
 		if is_selected { // selection needs to draw different background color
 			if index == len(text) || (index == start && start == 0) {
-				// XXX calculating text width here is slow figure out why
-				lblrect.W = d.MeasureString(string(text[start:index])).Ceil()
+				lblrect.W = measureText(start, index)
 			}
 			out.FillRect(lblrect, 0, background)
 		}
 		edit.drawchunks = append(edit.drawchunks, drawchunk{lblrect, start + textOffset, index + textOffset})
-		widgetText(out, lblrect, string(text[start:index]), &txt, "LC", f)
+		widgetText(out, lblrect, getText(start, index), &txt, "LC", f)
 
 		pos_x = x_margin
 
@@ -1150,7 +1181,7 @@ func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, po
 		var lblrect rect.Rect
 		lblrect.Y = pos_y + line_offset
 		lblrect.H = row_height
-		lblrect.W = d.MeasureString(string(text[start:index])).Ceil()
+		lblrect.W = measureText(start, index)
 		lblrect.X = pos_x
 
 		lblrect.W = int(math.Floor(float64(lblrect.X+lblrect.W-x_margin)/float64(tabsz))+1)*tabsz + x_margin - lblrect.X
@@ -1159,7 +1190,7 @@ func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, po
 			out.FillRect(lblrect, 0, background)
 		}
 		edit.drawchunks = append(edit.drawchunks, drawchunk{lblrect, start + textOffset, index + textOffset})
-		widgetText(out, lblrect, string(text[start:index]), &txt, "LC", f)
+		widgetText(out, lblrect, getText(start, index), &txt, "LC", f)
 
 		pos_x += lblrect.W
 
@@ -1171,7 +1202,6 @@ func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, po
 		case '\t':
 			flushTab(index)
 			start = index + 1
-
 		case '\n':
 			flushLine(index)
 			line_count++
@@ -1189,7 +1219,7 @@ func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, po
 
 	// draw last line
 	lblrect := flushLine(len(text))
-	lblrect.W = d.MeasureString(string(text[start:])).Ceil()
+	lblrect.W = measureText(start, len(text))
 
 	return image.Point{lblrect.X + lblrect.W, lblrect.Y}
 }
@@ -1575,7 +1605,6 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 			cursor.Y = area.Y + cursor_pos.Y + row_height/2.0 - cursor.H/2.0
 			cursor.Y -= edit.Scrollbar.Y
 			out.FillRect(cursor, 0, cursor_color)
-
 		}
 
 		/* no selection so just draw the complete text */

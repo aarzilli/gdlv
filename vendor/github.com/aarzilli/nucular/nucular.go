@@ -301,18 +301,17 @@ func panelBegin(ctx *context, win *Window, title string) {
 	layout.Height -= layout.FooterH
 
 	/* window header */
-	header_active := (win.idx != 0) && (win.flags&WindowTitle != 0)
 
 	var dwh drawableWindowHeader
 	dwh.Dynamic = layout.Flags&WindowDynamic != 0
 	dwh.Bounds = layout.Bounds
-	dwh.HeaderActive = header_active
+	dwh.HeaderActive = (win.idx != 0) && (win.flags&WindowTitle != 0)
 	dwh.LayoutWidth = layout.Width
 	dwh.Style = win.style()
 
 	var closeButton rect.Rect
 
-	if header_active {
+	if dwh.HeaderActive {
 		/* calculate header bounds */
 		dwh.Header.X = layout.Bounds.X
 		dwh.Header.Y = layout.Bounds.Y
@@ -331,6 +330,7 @@ func panelBegin(ctx *context, win *Window, title string) {
 		layout.Height -= layout.FooterH
 
 		dwh.Hovered = ctx.Input.Mouse.HoveringRect(dwh.Header)
+		dwh.Focused = win.toplevel()
 
 		/* window header title */
 		t := FontWidth(font, title)
