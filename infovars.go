@@ -295,16 +295,7 @@ func loadLocals(p *asyncLoad) {
 	}
 	localsPanel.locals = append(localsPanel.locals, wrapApiVariables(locals, 0, 0, "", true)...)
 
-	hasDeclLine := false
-	for i := range localsPanel.locals {
-		if localsPanel.locals[i].DeclLine != 0 {
-			hasDeclLine = true
-		}
-	}
-
-	if hasDeclLine {
-		sort.Slice(localsPanel.locals, func(i, j int) bool { return localsPanel.locals[i].DeclLine < localsPanel.locals[j].DeclLine })
-	}
+	sort.SliceStable(localsPanel.locals, func(i, j int) bool { return localsPanel.locals[i].DeclLine < localsPanel.locals[j].DeclLine })
 
 	varmap := map[string]int{}
 
