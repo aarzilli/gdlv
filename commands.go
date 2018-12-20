@@ -938,7 +938,7 @@ func (cw *configWindow) Update(w *nucular.Window) {
 	w.Row(20).Static(col1, 200)
 	w.Label("Theme:", "LC")
 	if conf.Theme == "" {
-		conf.Theme = themes[0]
+		conf.Theme = darkTheme
 	}
 	if w := w.Combo(label.TA(conf.Theme, "LC"), 500, nil); w != nil {
 		w.Row(20).Dynamic(1)
