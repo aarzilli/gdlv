@@ -916,9 +916,9 @@ func usage() {
 	gdlv test <testflags...>
 	gdlv attach <pid> [path to executable]
 	gdlv core <executable> <core file>
-	gdlv reply <trace directory>
+	gdlv replay <trace directory>
 	
-All commands except "core" and "reply" can be prefixed with the name of a backend, for example:
+All commands except "core" and "replay" can be prefixed with the name of a backend, for example:
 
 	gdlv rr:run <program file> <program's arguments...>
 	
