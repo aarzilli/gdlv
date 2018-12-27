@@ -404,24 +404,17 @@ func exprsEditor(w *nucular.Window) {
 	if active&nucular.EditCommitted == 0 {
 		return
 	}
-
-	newexpr := string(localsPanel.ed.Buffer)
-	localsPanel.ed.Buffer = localsPanel.ed.Buffer[:0]
-	localsPanel.ed.Cursor = 0
-	localsPanel.ed.Active = true
-	localsPanel.ed.CursorFollow = true
-
 	if localsPanel.selected < 0 {
-		addExpression(newexpr)
-	} else {
-		localsPanel.expressions[localsPanel.selected].Expr = newexpr
-		go func(i int) {
-			additionalLoadMu.Lock()
-			defer additionalLoadMu.Unlock()
-			loadOneExpr(i)
-		}(localsPanel.selected)
-		localsPanel.selected = -1
+		return
 	}
+
+	localsPanel.expressions[localsPanel.selected].Expr = string(localsPanel.ed.Buffer)
+	go func(i int) {
+		additionalLoadMu.Lock()
+		defer additionalLoadMu.Unlock()
+		loadOneExpr(i)
+	}(localsPanel.selected)
+	localsPanel.selected = -1
 }
 
 func addExpression(newexpr string) {
@@ -460,6 +453,8 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 			localsPanel.selected = exprMenuIdx
 			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected].Expr)
 			localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
+			localsPanel.ed.SelectStart = 0
+			localsPanel.ed.SelectEnd = localsPanel.ed.Cursor
 			localsPanel.ed.CursorFollow = true
 			localsPanel.ed.Active = true
 			commandLineEditor.Active = false

@@ -3,7 +3,7 @@ github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/xproto
 github.com/BurntSushi/xgb/render
 github.com/BurntSushi/xgb/shm
-# github.com/aarzilli/nucular v0.0.0-20181214170056-90d19e69423b
+# github.com/aarzilli/nucular v0.0.0-20181227101716-d1a942545d6d
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard
 github.com/aarzilli/nucular/label

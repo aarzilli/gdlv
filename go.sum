@@ -8,6 +8,10 @@ github.com/aarzilli/nucular v0.0.0-20181109102216-9506b152e919 h1:L6GLdaNJms9+me
 github.com/aarzilli/nucular v0.0.0-20181109102216-9506b152e919/go.mod h1:rh/rFeChsox144sAUJaD7obyj+JFIUqag6QnvRyAZJQ=
 github.com/aarzilli/nucular v0.0.0-20181214170056-90d19e69423b h1:utdV7CGPqAx4fx91wxeUrvaYOYmxiWg/Y3qUzQqWEac=
 github.com/aarzilli/nucular v0.0.0-20181214170056-90d19e69423b/go.mod h1:rh/rFeChsox144sAUJaD7obyj+JFIUqag6QnvRyAZJQ=
+github.com/aarzilli/nucular v0.0.0-20181227101716-d1a942545d6d h1:BLhrKkQNOBeRDRJdevy7tE7ca2+sp3daQ6xG7vagEzg=
+github.com/aarzilli/nucular v0.0.0-20181227101716-d1a942545d6d/go.mod h1:rh/rFeChsox144sAUJaD7obyj+JFIUqag6QnvRyAZJQ=
+github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e h1:fY5BOSpyZCqRo5OhCuC+XN+r/bBCmeuuJtjz+bCNIf8=
+github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/derekparker/delve v1.1.0 h1:icd65nMp7s2HiLz6y/6RCVXBdoED3xxYLwX09EMaRCc=
 github.com/derekparker/delve v1.1.0/go.mod h1:pMSZMfp0Nhbm8qdZJkuE/yPGOkLpGXLS1I4poXQpuJU=
 github.com/golang/freetype v0.0.0-20161208064710-d9be45aaf745 h1:0d9whnMsm0iklqvoBXNEgHPt8pkXdfDplBAswA/F8YA=

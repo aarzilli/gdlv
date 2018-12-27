@@ -139,6 +139,7 @@ func contextEnd(ctx *context) {
 }
 
 func (ctx *context) Reset() {
+	prevNumWindows := len(ctx.Windows)
 	for i := 0; i < len(ctx.Windows); i++ {
 		if ctx.Windows[i].close {
 			if i != len(ctx.Windows)-1 {
@@ -150,6 +151,21 @@ func (ctx *context) Reset() {
 	}
 	for i := range ctx.Windows {
 		ctx.Windows[i].idx = i
+	}
+	if prevNumWindows == 2 && len(ctx.Windows) == 1 && ctx.Input.Mouse.valid {
+		ctx.DockedWindows.Walk(func(w *Window) *Window {
+			if w.flags&windowDocked == 0 {
+				return w
+			}
+			for _, b := range []mouse.Button{mouse.ButtonLeft, mouse.ButtonRight, mouse.ButtonMiddle} {
+				btn := ctx.Input.Mouse.Buttons[b]
+				if btn.Clicked && w.Bounds.Contains(btn.ClickedPos) {
+					ctx.dockedWindowFocus = w.idx
+					return w
+				}
+			}
+			return w
+		})
 	}
 	ctx.activateEditor = nil
 	in := &ctx.Input
