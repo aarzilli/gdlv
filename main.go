@@ -175,8 +175,7 @@ var curDeferredCall int
 var curPC uint64
 var lastModExe time.Time
 
-var silenced bool
-var scrollbackEditor, commandLineEditor nucular.TextEditor
+var commandLineEditor nucular.TextEditor
 
 var delayFrame bool
 var frameCount int
@@ -340,6 +339,7 @@ func updateCommandPanel(w *nucular.Window) {
 
 	w.Row(0).Dynamic(1)
 	scrollbackEditor.Edit(w)
+	scrollbackEditorRect = w.LastWidgetBounds
 
 	p := currentPrompt()
 	p2 := p
@@ -869,42 +869,6 @@ func currentLocation(state *api.DebuggerState) *api.Location {
 
 func currentEvalScope() api.EvalScope {
 	return api.EvalScope{curGid, curFrame, curDeferredCall}
-}
-
-type editorWriter struct {
-	ed   *nucular.TextEditor
-	lock bool
-}
-
-const (
-	scrollbackHighMark = 8 * 1024
-	scrollbackLowMark  = 4 * 1024
-)
-
-func (w *editorWriter) Write(b []byte) (int, error) {
-	if w.lock {
-		wnd.Lock()
-		defer wnd.Unlock()
-		defer wnd.Changed()
-	}
-	w.ed.Buffer = append(w.ed.Buffer, []rune(expandTabs(string(b)))...)
-	if len(w.ed.Buffer) > scrollbackHighMark {
-		copy(w.ed.Buffer, w.ed.Buffer[scrollbackLowMark:])
-		w.ed.Buffer = w.ed.Buffer[:len(w.ed.Buffer)-scrollbackLowMark]
-		w.ed.Cursor = len(w.ed.Buffer) - 256
-	}
-	oldcursor := w.ed.Cursor
-	for w.ed.Cursor = len(w.ed.Buffer) - 2; w.ed.Cursor > oldcursor; w.ed.Cursor-- {
-		if w.ed.Buffer[w.ed.Cursor] == '\n' {
-			break
-		}
-	}
-	if w.ed.Cursor > 0 {
-		w.ed.Cursor++
-	}
-	w.ed.CursorFollow = true
-	w.ed.Redraw = true
-	return len(b), nil
 }
 
 func usage() {
