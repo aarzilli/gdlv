@@ -136,6 +136,7 @@ var stackPanel = struct {
 	depth        int
 	showDeferPos bool
 	id           int
+	deferID      int
 }{
 	depth: 50,
 }
@@ -339,6 +340,7 @@ func loadStacktrace(p *asyncLoad) {
 	var err error
 	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, true, nil)
 	stackPanel.id++
+	stackPanel.deferID++
 	p.done(err)
 }
 
@@ -385,6 +387,7 @@ func updateStacktrace(container *nucular.Window) {
 		}
 		if selected && clicked && !client.Running() {
 			curFrame = i
+			stackPanel.deferID++
 			curDeferredCall = 0
 			go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
 		}
@@ -860,11 +863,11 @@ func updateDeferredCalls(container *nucular.Window) {
 
 		selected := curDeferredCall-1 == i
 		w.Row(posRowHeight).Static()
-		w.LayoutFitWidth(stackPanel.id, 1)
+		w.LayoutFitWidth(stackPanel.deferID, 1)
 		w.SelectableLabel(fmt.Sprintf("%*d", didx, i+1), "LT", &selected)
-		w.LayoutFitWidth(stackPanel.id, 1)
+		w.LayoutFitWidth(stackPanel.deferID, 1)
 		w.SelectableLabel(fmt.Sprintf("%#0*x", d, loc.PC), "LT", &selected)
-		w.LayoutFitWidth(stackPanel.id, 1)
+		w.LayoutFitWidth(stackPanel.deferID, 1)
 		var locstr string
 		if deferredCall.Unreadable == "" {
 			locstr = formatLocation2(loc)
