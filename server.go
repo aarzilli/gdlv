@@ -429,9 +429,6 @@ func loadProgramInfo(out io.Writer) {
 }
 
 func (descr *ServerDescr) Close() {
-	if descr.serverProcess != nil {
-		descr.serverProcess.Signal(os.Interrupt)
-	}
 	if descr.exe != "" && RemoveExecutable {
 		os.Remove(descr.exe)
 	}
