@@ -951,6 +951,9 @@ func (cw *configWindow) Update(w *nucular.Window) {
 	}
 
 	w.Row(20).Static(col1, 150)
+	w.Label("Startup function:", "LC")
+	stringCombo(w, []string{"main.main", "runtime.main"}, &conf.StartupFunc)
+
 	w.Label("Disassembly Flavor:", "LC")
 	disassfl := []string{"Intel", "GNU"}
 	conf.DisassemblyFlavour = w.ComboSimple(disassfl, conf.DisassemblyFlavour, 20)
@@ -978,18 +981,7 @@ func (cw *configWindow) Update(w *nucular.Window) {
 	w.LayoutFitWidth(0, 100)
 	w.Label("Default step behavior:", "LC")
 	w.LayoutSetWidth(200)
-	stepBehaviours := []string{"-first", "-last"}
-	stepBehaviourIdx := 0
-	for i := range stepBehaviours {
-		if conf.DefaultStepBehaviour == stepBehaviours[i] {
-			stepBehaviourIdx = i
-			break
-		}
-	}
-	i := w.ComboSimple(stepBehaviours, stepBehaviourIdx, 20)
-	if i >= 0 {
-		conf.DefaultStepBehaviour = stepBehaviours[i]
-	}
+	stringCombo(w, []string{"-first", "-last"}, &conf.DefaultStepBehaviour)
 
 	if conf.MaxArrayValues == 0 {
 		conf.MaxArrayValues = LongLoadConfig.MaxArrayValues
@@ -1055,6 +1047,21 @@ func (cw *configWindow) Update(w *nucular.Window) {
 		saveConfiguration()
 		w.Close()
 	}
+}
+
+func stringCombo(w *nucular.Window, values []string, value *string) {
+	i0 := 0
+	for i := range values {
+		if values[i] == *value {
+			i0 = i
+			break
+		}
+	}
+	i := w.ComboSimple(values, i0, 20)
+	if i >= 0 {
+		*value = values[i]
+	}
+
 }
 
 func scrollCommand(out io.Writer, args string) error {

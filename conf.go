@@ -25,6 +25,7 @@ type Configuration struct {
 	Theme                string
 	StopOnNextBreakpoint bool
 	DisassemblyFlavour   int
+	StartupFunc          string
 	DefaultStepBehaviour string
 	Layouts              map[string]LayoutDescr
 	CustomFormatters     map[string]*CustomFormatter

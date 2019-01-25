@@ -370,7 +370,11 @@ func (descr *ServerDescr) connectTo() {
 }
 
 func continueToRuntimeMain() {
-	bp, err := client.CreateBreakpoint(&api.Breakpoint{FunctionName: "runtime.main", Line: -1})
+	startupfn := conf.StartupFunc
+	if startupfn == "" {
+		startupfn = "main.main"
+	}
+	bp, err := client.CreateBreakpoint(&api.Breakpoint{FunctionName: startupfn, Line: -1})
 	if err != nil {
 		return
 	}
