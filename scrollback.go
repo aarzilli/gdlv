@@ -27,15 +27,7 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 		defer wnd.Changed()
 	}
 
-	ncols := -1
-	if spaceWidth > 0 && scrollbackEditorRect.W > 0 {
-		ncols = (scrollbackEditorRect.W / spaceWidth) - 1
-		if ncols < 80 {
-			ncols = 80
-		}
-	}
-
-	w.ed.Buffer = autowrappend(w.ed.Buffer, []rune(expandTabs(string(b))), ncols)
+	w.ed.Buffer = autowrappend(w.ed.Buffer, []rune(expandTabs(string(b))), 260)
 	if len(w.ed.Buffer) > scrollbackHighMark {
 		copy(w.ed.Buffer, w.ed.Buffer[scrollbackLowMark:])
 		w.ed.Buffer = w.ed.Buffer[:len(w.ed.Buffer)-scrollbackLowMark]
