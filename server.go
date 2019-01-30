@@ -376,7 +376,9 @@ func continueToRuntimeMain() {
 	}
 	bp, err := client.CreateBreakpoint(&api.Breakpoint{FunctionName: startupfn, Line: -1})
 	if err != nil {
-		return
+		if !strings.HasPrefix(err.Error(), "Breakpoint exists at ") {
+			return
+		}
 	}
 	defer client.ClearBreakpoint(bp.ID)
 
