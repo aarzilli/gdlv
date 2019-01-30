@@ -593,6 +593,7 @@ func updateBreakpoints(container *nucular.Window) {
 						}
 						FrozenBreakpoints = nil
 						DisabledBreakpoints = nil
+						saveConfiguration()
 						refreshState(refreshToSameFrame, clearBreakpoint, nil)
 						wnd.Changed()
 					}()
