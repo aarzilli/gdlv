@@ -1170,6 +1170,13 @@ func formatBreakpointLocation(bp *api.Breakpoint) string {
 }
 
 func printcontext(out io.Writer, state *api.DebuggerState) error {
+	if LogOutputNice != nil {
+		logf("Threads:\n")
+		for i := range state.Threads {
+			fmt.Fprintf(LogOutputNice, "\tcurrent:%v id:%d gid:%d breakpoint:%#v\n", state.Threads[i].ID == state.CurrentThread.ID, state.Threads[i].ID, state.Threads[i].GoroutineID, state.Threads[i].Breakpoint)
+		}
+	}
+
 	for i := range state.Threads {
 		if (state.CurrentThread != nil) && (state.Threads[i].ID == state.CurrentThread.ID) {
 			continue
@@ -1334,6 +1341,8 @@ func executeCommand(cmdstr string) {
 	wnd.Changed()
 	defer wnd.Changed()
 
+	logf("Command: %s", cmdstr)
+
 	out := editorWriter{&scrollbackEditor, true}
 	cmdstr, args := parseCommand(cmdstr)
 	if err := cmds.Call(cmdstr, args, &out); err != nil {
@@ -1347,6 +1356,7 @@ func executeCommand(cmdstr string) {
 				}
 				wnd.Close()
 			}
+			return
 		}
 		// The type information gets lost in serialization / de-serialization,
 		// so we do a string compare on the error message to see if the process

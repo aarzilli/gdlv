@@ -6,13 +6,11 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"math"
 	"os"
 	"runtime"
 	"runtime/pprof"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -179,8 +177,6 @@ var commandLineEditor nucular.TextEditor
 
 var delayFrame bool
 var frameCount int
-
-var LogOutput io.WriteCloser
 
 func guiUpdate(w *nucular.Window) {
 	df := delayFrame
@@ -891,10 +887,6 @@ Executes "gdlv run" using mozilla rr has a backend.
 	os.Exit(1)
 }
 
-func replacepid(in string) string {
-	return strings.Replace(in, "%p", strconv.Itoa(os.Getpid()), -1)
-}
-
 func main() {
 	if runtime.GOOS == "linux" && os.Getenv("DISPLAY") == "" {
 		fmt.Fprintf(os.Stderr, "DISPLAY not set\n")
@@ -911,19 +903,15 @@ func main() {
 		}
 	}
 
-	if os.Getenv("GDLVLOG") != "" {
-		logfile := replacepid(os.Getenv("GDLVLOG"))
-		fh, err := os.Create(logfile)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "error opening log %v\n", err)
-		} else {
-			LogOutput = fh
-			defer func() {
-				LogOutput.Close()
-				os.Remove(logfile)
-			}()
-		}
+	setupLog()
+	if LogOutputNice != nil {
+		defer LogOutputNice.Close()
 	}
+	if LogOutputRpc != nil {
+		defer LogOutputRpc.Close()
+	}
+
+	logf("Command line: %s", strings.Join(os.Args, " "))
 
 	BackendServer = parseArguments()
 

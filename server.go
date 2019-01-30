@@ -341,7 +341,7 @@ func (descr *ServerDescr) connectTo() {
 
 	wnd.Lock()
 	var err error
-	client, err = rpc2.NewClient(descr.connectString, LogOutput)
+	client, err = rpc2.NewClient(descr.connectString, LogOutputRpc)
 	if err != nil {
 		client = nil
 		wnd.Unlock()

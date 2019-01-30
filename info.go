@@ -3,6 +3,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"image"
 	"image/color"
@@ -253,6 +254,14 @@ func loadGoroutines(p *asyncLoad) {
 		goroutinesPanel.goroutines = append(goroutinesPanel.goroutines, wrappedGoroutine{*g, atbp})
 	}
 
+	if LogOutputNice != nil {
+		logf("Goroutines:\n")
+		for i := range goroutinesPanel.goroutines {
+			g := goroutinesPanel.goroutines[i]
+			fmt.Fprintf(LogOutputNice, "\t%d %#x in %s %s:%d\n", g.ID, g.UserCurrentLoc.Function.Name(), g.UserCurrentLoc.File, g.UserCurrentLoc.Line)
+		}
+	}
+
 	p.done(nil)
 }
 
@@ -341,6 +350,13 @@ func loadStacktrace(p *asyncLoad) {
 	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, true, nil)
 	stackPanel.id++
 	stackPanel.deferID++
+	if LogOutputNice != nil {
+		logf("Stack (%d %d):\n", curGid, curThread)
+		for i := range stackPanel.stack {
+			frame := &stackPanel.stack[i]
+			fmt.Fprintf(LogOutputNice, "\t%#x %#x %s in %s:%d\n", frame.PC, frame.FrameOffset, frame.Function.Name(), frame.File, frame.Line)
+		}
+	}
 	p.done(err)
 }
 
@@ -1079,6 +1095,7 @@ func updateListingPanel(container *nucular.Window) {
 			gl.Center()
 		}
 
+		// Contextual Menu
 		if !client.Running() {
 			ctxtbounds := bpbounds
 			ctxtbounds.W = (textbounds.X + textbounds.W) - ctxtbounds.X
@@ -1141,6 +1158,23 @@ func updateListingPanel(container *nucular.Window) {
 					}
 				}
 			}
+		}
+
+		// Breakpoint Info
+		if line.bp != nil && (line.bp.Cond != "" || len(line.bp.Variables) > 0) {
+			//TODO: display extra line with breakpoint info
+			listp.Row(lineheight).Static(0)
+			bpcolor := style.Text.Color
+			darken(&bpcolor)
+			var bpinfo bytes.Buffer
+			fmt.Fprintf(&bpinfo, "// ")
+			if line.bp.Cond != "" {
+				fmt.Fprintf(&bpinfo, "when %s ", line.bp.Cond)
+			}
+			if len(line.bp.Variables) > 0 {
+				fmt.Fprintf(&bpinfo, "print %s", strings.Join(line.bp.Variables, "; "))
+			}
+			listp.LabelColored(bpinfo.String(), "LC", bpcolor)
 		}
 	}
 }

@@ -27,6 +27,8 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 		defer wnd.Changed()
 	}
 
+	logf("Output: %s", string(b))
+
 	w.ed.Buffer = autowrappend(w.ed.Buffer, []rune(expandTabs(string(b))), 260)
 	if len(w.ed.Buffer) > scrollbackHighMark {
 		copy(w.ed.Buffer, w.ed.Buffer[scrollbackLowMark:])

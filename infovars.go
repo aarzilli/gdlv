@@ -315,6 +315,16 @@ func loadLocals(p *asyncLoad) {
 		}
 	}
 
+	if LogOutputNice != nil {
+		logf("Local variables (%#v):\n", currentEvalScope())
+		for i := range localsPanel.locals {
+			fmt.Fprintf(LogOutputNice, "\t%s = %s\n", localsPanel.locals[i].Name, localsPanel.locals[i].MultilineString("\t"))
+		}
+		for i := range localsPanel.v {
+			fmt.Fprintf(LogOutputNice, "\t%s = %s\n", localsPanel.v[i].Name, localsPanel.v[i].MultilineString("\t"))
+		}
+	}
+
 	for _, err := range []error{errarg, errloc} {
 		if err != nil {
 			p.done(err)
