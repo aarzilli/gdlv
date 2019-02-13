@@ -867,24 +867,83 @@ func currentEvalScope() api.EvalScope {
 	return api.EvalScope{curGid, curFrame, curDeferredCall}
 }
 
-func usage() {
+func usage(err string) {
+	if err != "" {
+		if err[len(err)-1] != '\n' {
+			err += "\n"
+		}
+		fmt.Fprintf(os.Stderr, err)
+	}
 	fmt.Fprintf(os.Stderr, `Usage:
-	gdlv connect <address>
-	gdlv debug <program's arguments...>
-	gdlv run <program file> <program's arguments...>
-	gdlv exec <executable> <program's arguments...>
-	gdlv test <testflags...>
-	gdlv attach <pid> [path to executable]
-	gdlv core <executable> <core file>
-	gdlv replay <trace directory>
+	gdlv [options] connect <address>
+	gdlv [options] debug <program's arguments...>
+	gdlv [options] run <program file> <program's arguments...>
+	gdlv [options] exec <executable> <program's arguments...>
+	gdlv [options] test <testflags...>
+	gdlv [options] attach <pid> [path to executable]
+	gdlv [options] core <executable> <core file>
+	gdlv [options] replay <trace directory>
 	
 All commands except "core" and "replay" can be prefixed with the name of a backend, for example:
 
 	gdlv rr:run <program file> <program's arguments...>
 	
 Executes "gdlv run" using mozilla rr has a backend.
+
+Options must appear before the command and include:
+
+	-d <dir>	builds inside the specified directory instead of the current directory (for debug and test)
 `)
 	os.Exit(1)
+}
+
+func parseOptions(args []string) commandLineOptions {
+	var opts commandLineOptions
+
+	i := 1
+
+optionsLoop:
+	for i < len(args) {
+		switch args[i] {
+		case "-d":
+			i++
+			if i >= len(args) {
+				usage("wrong number of arguments after -d")
+			}
+			opts.buildDir = args[i]
+			i++
+		default:
+			break optionsLoop
+		}
+	}
+
+	if i >= len(args) {
+		usage("wrong number of arguments, expected a command")
+	}
+
+	opts.cmd = args[i]
+	opts.cmdArgs = args[i+1:]
+
+	opts.defaultBackend = true
+	const defaultBackend = "--backend=default"
+	opts.backend = defaultBackend
+	if colon := strings.Index(opts.cmd, ":"); colon >= 0 {
+		if opts.cmd[:colon] == "rr" {
+			opts.defaultBackend = false
+		}
+		opts.backend = "--backend=" + opts.cmd[:colon]
+		opts.cmd = opts.cmd[colon+1:]
+	}
+
+	return opts
+}
+
+type commandLineOptions struct {
+	cmd            string
+	cmdArgs        []string
+	backend        string
+	defaultBackend bool
+	buildDir       string
 }
 
 func main() {

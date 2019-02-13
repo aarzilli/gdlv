@@ -28,6 +28,8 @@ type ServerDescr struct {
 	serverProcess *os.Process
 	// arguments for 'go' used to build the executable
 	buildcmd []string
+	// directory where the 'go' command to build the executable should be run
+	builddir string
 	// executable file (if we did the build)
 	exe string
 	// last build was successful
@@ -68,13 +70,9 @@ func parseArguments() (descr ServerDescr) {
 		descr.dlvargs = args
 	}
 
-	if len(os.Args) < 2 {
-		usage()
-	}
-
 	os.Setenv("CGO_CFLAGS", "-O0 -g")
 
-	cmd := os.Args[1]
+	opts := parseOptions(os.Args)
 
 	optflags := []string{"-gcflags", "-N -l"}
 	ver, _ := goversion.Installed()
@@ -85,99 +83,121 @@ func parseArguments() (descr ServerDescr) {
 		optflags = []string{"-gcflags", "-N -l", "-a"}
 	}
 
-	const defaultBackend = "--backend=default"
-	backend := defaultBackend
-	if colon := strings.Index(cmd, ":"); colon >= 0 {
-		if cmd[:colon] == "rr" {
-			RemoveExecutable = false
-		}
-		backend = "--backend=" + cmd[:colon]
-		cmd = cmd[colon+1:]
+	if !opts.defaultBackend {
+		RemoveExecutable = false
 	}
 
-	switch cmd {
+	switch opts.cmd {
 	case "connect":
-		if len(os.Args) != 3 {
-			usage()
+		if len(opts.cmdArgs) != 1 {
+			usage("wrong number of arguments")
 		}
-		descr.connectString = os.Args[2]
+		if opts.buildDir != "" {
+			usage("can not use -d with 'connect'")
+		}
+		descr.connectString = opts.cmdArgs[0]
 
 	case "attach":
-		switch len(os.Args) {
-		case 3:
-			finish(false, backend, "--headless", "attach", os.Args[2])
-		case 4:
-			finish(false, backend, "--headless", "attach", os.Args[2], os.Args[3])
+		if opts.buildDir != "" {
+			usage("can not use -d with 'attach'")
+		}
+		switch len(opts.cmdArgs) {
+		case 1:
+			finish(false, opts.backend, "--headless", "attach", opts.cmdArgs[0])
+		case 2:
+			finish(false, opts.backend, "--headless", "attach", opts.cmdArgs[0], opts.cmdArgs[1])
 		default:
-			usage()
+			usage("wrong number of arguments")
 		}
 
 	case "debug":
-		dir, _ := os.Getwd()
+		dir := opts.buildDir
+		if dir == "" {
+			dir, _ = os.Getwd()
+		}
 		debugname(dir)
+		descr.builddir = opts.buildDir
 		descr.debugid = dir
 		descr.buildcmd = []string{"build", "-o", descr.exe}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
-		args := make([]string, 0, len(os.Args[2:])+4)
-		args = append(args, backend, "--headless", "exec", descr.exe, "--")
-		args = append(args, os.Args[2:]...)
+		args := make([]string, 0, len(opts.cmdArgs)+4)
+		args = append(args, opts.backend, "--headless", "exec", descr.exe, "--")
+		args = append(args, opts.cmdArgs...)
 		finish(true, args...)
 
 	case "run":
-		debugname(os.Args[2])
-		descr.debugid, _ = filepath.Abs(os.Args[2])
+		if len(opts.cmdArgs) < 1 {
+			usage("wrong number of arguments")
+		}
+		if opts.buildDir != "" {
+			usage("can not use -d with 'run'")
+		}
+		debugname(opts.cmdArgs[0])
+		descr.debugid, _ = filepath.Abs(opts.cmdArgs[0])
 		descr.buildcmd = []string{"build", "-o", descr.exe}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
-		descr.buildcmd = append(descr.buildcmd, os.Args[2])
-		args := make([]string, 0, len(os.Args[3:])+4)
-		args = append(args, backend, "--headless", "exec", descr.exe, "--")
-		args = append(args, os.Args[3:]...)
+		descr.buildcmd = append(descr.buildcmd, opts.cmdArgs[0])
+		args := make([]string, 0, len(opts.cmdArgs[1:])+4)
+		args = append(args, opts.backend, "--headless", "exec", descr.exe, "--")
+		args = append(args, opts.cmdArgs[1:]...)
 		finish(true, args...)
 
 	case "exec":
-		if len(os.Args) < 3 {
-			usage()
+		if len(opts.cmdArgs) < 1 {
+			usage("wrong number of arguments")
 		}
-		descr.debugid, _ = filepath.Abs(os.Args[2])
-		args := make([]string, 0, len(os.Args[3:])+5)
-		args = append(args, backend, "--headless", "exec", os.Args[2], "--")
-		args = append(args, os.Args[3:]...)
+		if opts.buildDir != "" {
+			usage("can not use -d with 'exec'")
+		}
+		descr.debugid, _ = filepath.Abs(opts.cmdArgs[0])
+		args := make([]string, 0, len(opts.cmdArgs[1:])+5)
+		args = append(args, opts.backend, "--headless", "exec", opts.cmdArgs[0], "--")
+		args = append(args, opts.cmdArgs[1:]...)
 		finish(true, args...)
 
 	case "test":
-		dir, _ := os.Getwd()
+		dir := opts.buildDir
+		if dir == "" {
+			dir, _ = os.Getwd()
+		}
 		debugname(dir)
 		descr.debugid = dir
 		descr.buildcmd = []string{"test"}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		descr.buildcmd = append(descr.buildcmd, "-c", "-o", descr.exe)
-		args := make([]string, 0, len(os.Args[2:])+4)
-		args = append(args, backend, "--headless", "exec", descr.exe, "--")
-		args = append(args, addTestPrefix(os.Args[2:])...)
+		args := make([]string, 0, len(opts.cmdArgs)+4)
+		args = append(args, opts.backend, "--headless", "exec", descr.exe, "--")
+		args = append(args, addTestPrefix(opts.cmdArgs)...)
 		finish(true, args...)
 
 	case "core":
-		if backend != defaultBackend {
-			usage()
+		if !opts.defaultBackend {
+			usage("invalid backend for 'core' command")
 		}
-		if len(os.Args) < 4 {
-			usage()
+		if len(opts.cmdArgs) < 2 {
+			usage("wrong number of arguments")
 		}
-		descr.debugid, _ = filepath.Abs(os.Args[2])
-		finish(true, "--headless", "core", os.Args[2], os.Args[3])
+		if opts.buildDir != "" {
+			usage("can not use -d with 'core'")
+		}
+		descr.debugid, _ = filepath.Abs(opts.cmdArgs[0])
+		finish(true, "--headless", "core", opts.cmdArgs[0], opts.cmdArgs[1])
 
 	case "replay":
-		if backend != defaultBackend {
-			usage()
+		if !opts.defaultBackend {
+			usage("invalid backend for 'replay' command")
 		}
-		if len(os.Args) < 3 {
-			usage()
+		if len(opts.cmdArgs) < 1 {
+			usage("wrong number of arguments")
 		}
-		descr.debugid = "replay-" + os.Args[2]
-		finish(true, "--headless", "replay", os.Args[2])
+		if opts.buildDir != "" {
+			usage("can not use -d with 'replay'")
+		}
+		descr.debugid = "replay-" + opts.cmdArgs[0]
+		finish(true, "--headless", "replay", opts.cmdArgs[0])
 
 	default:
-		usage()
+		usage(fmt.Sprintf("unknown command %q", opts.cmd))
 	}
 
 	return
@@ -284,7 +304,9 @@ func (descr *ServerDescr) Rebuild() {
 	descr.buildok = true
 	if descr.buildcmd != nil {
 		fmt.Fprintf(sw, "Compiling...")
-		out, err := exec.Command("go", descr.buildcmd...).CombinedOutput()
+		cmd := exec.Command("go", descr.buildcmd...)
+		cmd.Dir = descr.builddir
+		out, err := cmd.CombinedOutput()
 		fmt.Fprintf(sw, "done\n")
 		s := string(out)
 		if err != nil {
