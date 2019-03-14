@@ -60,9 +60,11 @@ func parseArguments() (descr ServerDescr) {
 		fh, err := ioutil.TempFile(os.TempDir(), template)
 		if err != nil {
 			descr.exe = fmt.Sprintf("%s/gdlv-debug", os.TempDir())
+			return
 		}
-		defer fh.Close()
 		descr.exe = fh.Name()
+		fh.Close()
+		os.Remove(descr.exe)
 	}
 
 	finish := func(atStart bool, args ...string) {
