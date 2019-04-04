@@ -330,6 +330,9 @@ func (v *Variable) recursiveKind() (reflect.Kind, bool) {
 		kind = v.Kind
 		if kind == reflect.Ptr {
 			hasptr = true
+			if len(v.Children) <= 0 {
+				return reflect.Ptr, true
+			}
 			v = v.Children[0]
 		} else {
 			break
