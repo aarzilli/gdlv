@@ -589,35 +589,89 @@ func rewind(out io.Writer, args string) error {
 	return nil
 }
 
+type continueAction uint8
+
+const (
+	continueActionIgnoreThis continueAction = iota
+	continueActionIgnoreAll
+	continueActionStopAndCancel
+	continueActionStopWithoutCancel
+)
+
 func continueUntilCompleteNext(out io.Writer, state *api.DebuggerState, op string, bp *api.Breakpoint) error {
+	ignoreAll := false
 	if !state.NextInProgress {
-		refreshState(refreshToFrameZero, clearStop, state)
-		return nil
+		goto continueCompleted
 	}
+continueLoop:
 	for {
 		stateChan := client.Continue()
-		var state *api.DebuggerState
 		for state = range stateChan {
 			if state.Err != nil {
-				refreshState(refreshToFrameZero, clearStop, state)
-				return state.Err
+				break continueLoop
 			}
 			printcontext(out, state)
 		}
 		if bp != nil {
 			for _, th := range state.Threads {
 				if th.Breakpoint != nil && th.Breakpoint.ID == bp.ID {
-					refreshState(refreshToFrameZero, clearStop, state)
-					return nil
+					break continueLoop
 				}
 			}
 		}
 		if !state.NextInProgress || conf.StopOnNextBreakpoint {
-			refreshState(refreshToFrameZero, clearStop, state)
-			return nil
+			break continueLoop
 		}
+
+		if ignoreAll {
+			fmt.Fprintf(out, "    breakpoint hit during %s, continuing...\n", op)
+			continue
+		}
+
+		answerChan := make(chan continueAction)
+		wnd.PopupOpen("Configuration", dynamicPopupFlags, rect.Rect{100, 100, 600, 700}, true, func(w *nucular.Window) {
+			w.Row(20).Dynamic(1)
+			w.Label(fmt.Sprintf("Another goroutine hit a breakpoint before '%s' finished.", op), "LC")
+			w.Label(fmt.Sprintf("You can either chose to ignore other breakpoints and finish '%s' or to stop here.", op), "LC")
+			w.Row(80).Dynamic(1)
+			w.LabelWrap(fmt.Sprintf("If you chose to stop here you can either cancel '%s' or suspend it; if you chose  to suspend it you won't be able to 'step', 'next' or 'stepout' until you either     cancel it or complete it.", op))
+
+			w.Row(30).Dynamic(1)
+			if w.ButtonText(fmt.Sprintf("continue '%s', ignore this breakpoint", op)) {
+				answerChan <- continueActionIgnoreThis
+				w.Close()
+			}
+			if w.ButtonText(fmt.Sprintf("continue '%s', ignore any other breakpoints", op)) {
+				answerChan <- continueActionIgnoreAll
+				w.Close()
+			}
+			if w.ButtonText(fmt.Sprintf("stop here, cancel '%s'", op)) {
+				answerChan <- continueActionStopAndCancel
+				w.Close()
+			}
+			if w.ButtonText(fmt.Sprintf("stop here, do not cancel '%s'", op)) {
+				answerChan <- continueActionStopWithoutCancel
+				w.Close()
+			}
+		})
+		switch <-answerChan {
+		case continueActionIgnoreThis:
+			// nothing to do
+		case continueActionIgnoreAll:
+			ignoreAll = true
+		case continueActionStopAndCancel:
+			client.CancelNext()
+			break continueLoop
+		case continueActionStopWithoutCancel:
+			break continueLoop
+		}
+
 		fmt.Fprintf(out, "    breakpoint hit during %s, continuing...\n", op)
 	}
+
+continueCompleted:
+	refreshState(refreshToFrameZero, clearStop, state)
+	return nil
 }
 
 func step(out io.Writer, args string) error {
@@ -962,7 +1016,7 @@ func (cw *configWindow) Update(w *nucular.Window) {
 	w.Label("When a breakpoint is hit during next/step/stepout gdlv should:", "LC")
 	w.Row(20).Static(col1, 200)
 	w.Spacing(1)
-	breakb := []string{"Automatically continue", "Stop"}
+	breakb := []string{"Ask what to do", "Stop"}
 	breakbLbl := breakb[0]
 	if conf.StopOnNextBreakpoint {
 		breakbLbl = breakb[1]
