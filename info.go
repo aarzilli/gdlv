@@ -296,10 +296,10 @@ func updateGoroutines(container *nucular.Window) {
 	dthread := digits(maxthreadid)
 
 	for _, g := range goroutines {
-		w.Row(posRowHeight).Static()
 		if goroutinesPanel.onlyStopped && !g.atBreakpoint {
 			continue
 		}
+		w.Row(posRowHeight).Static()
 		selected := curGid == g.ID
 
 		w.LayoutSetWidthScaled(starWidth + style.Text.Padding.X*2)
