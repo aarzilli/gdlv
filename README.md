@@ -21,6 +21,10 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2019-05-11
+* Start from main.main instead of runtime.main.
+* Better interface when concurrent breakpoints happen during next, step or stepout.
+
 ## 2018-12-14
 * Deferred calls view.
 * Limit number of goroutines that are loaded (improves performance when debugging programs with tens of thousands of goroutines while the goroutines window is opened).
