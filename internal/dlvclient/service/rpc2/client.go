@@ -385,6 +385,12 @@ func (c *RPCClient) ClearCheckpoint(id int) error {
 	return err
 }
 
+func (c *RPCClient) Ancestors(goroutineID int, numAncestors int, depth int) ([]api.Ancestor, error) {
+	var out AncestorsOut
+	err := c.call("Ancestors", AncestorsIn{goroutineID, numAncestors, depth}, &out)
+	return out.Ancestors, err
+}
+
 func (c *RPCClient) SetReturnValuesLoadConfig(cfg *api.LoadConfig) {
 	c.retValLoadCfg = cfg
 }

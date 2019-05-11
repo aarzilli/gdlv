@@ -272,3 +272,13 @@ type ClearCheckpointIn struct {
 
 type ClearCheckpointOut struct {
 }
+
+type AncestorsIn struct {
+	GoroutineID  int
+	NumAncestors int
+	Depth        int
+}
+
+type AncestorsOut struct {
+	Ancestors []api.Ancestor
+}

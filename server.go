@@ -72,7 +72,12 @@ func parseArguments() (descr ServerDescr) {
 		descr.dlvargs = args
 	}
 
-	os.Setenv("CGO_CFLAGS", "-O0 -g")
+	if os.Getenv("CGO_CFLAGS") == "" {
+		os.Setenv("CGO_CFLAGS", "-O0 -g")
+	}
+	if os.Getenv("GODEBUG") == "" {
+		os.Setenv("GODEBUG", fmt.Sprintf("tracebackancestors=%d", NumAncestors))
+	}
 
 	opts := parseOptions(os.Args)
 

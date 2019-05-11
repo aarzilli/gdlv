@@ -391,3 +391,11 @@ type Checkpoint struct {
 	When  string
 	Where string
 }
+
+// Ancestor represents a goroutine ancestor
+type Ancestor struct {
+	ID    int64
+	Stack []Stackframe
+
+	Unreadable string
+}

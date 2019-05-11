@@ -134,6 +134,7 @@ var goroutinesPanel = struct {
 var stackPanel = struct {
 	asyncLoad    asyncLoad
 	stack        []api.Stackframe
+	ancestors    []api.Ancestor
 	depth        int
 	showDeferPos bool
 	id           int
@@ -345,11 +346,14 @@ func updateGoroutines(container *nucular.Window) {
 	}
 }
 
+const NumAncestors = 5
+
 func loadStacktrace(p *asyncLoad) {
-	var err error
-	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, true, nil)
 	stackPanel.id++
 	stackPanel.deferID++
+
+	var err error
+	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, true, nil)
 	if LogOutputNice != nil {
 		logf("Stack (%d %d):\n", curGid, curThread)
 		for i := range stackPanel.stack {
@@ -357,6 +361,15 @@ func loadStacktrace(p *asyncLoad) {
 			fmt.Fprintf(LogOutputNice, "\t%#x %#x %s in %s:%d\n", frame.PC, frame.FrameOffset, frame.Function.Name(), frame.File, frame.Line)
 		}
 	}
+
+	stackPanel.ancestors = stackPanel.ancestors[:0]
+
+	if err != nil {
+		p.done(err)
+		return
+	}
+
+	stackPanel.ancestors, err = client.Ancestors(curGid, NumAncestors, stackPanel.depth)
 	p.done(err)
 }
 
@@ -388,16 +401,22 @@ func updateStacktrace(container *nucular.Window) {
 	didx := digits(len(stack))
 	d := hexdigits(maxpc)
 
-	for i, frame := range stack {
+	showFrame := func(frame api.Stackframe, i int, sl func(string) bool) bool {
 		w.Row(posRowHeight).Static()
-		selected := curFrame == i
 		w.LayoutFitWidth(stackPanel.id, 1)
-		w.SelectableLabel(fmt.Sprintf("%*d", didx, i), "LT", &selected)
+		sl(fmt.Sprintf("%*d", didx, i))
 		w.LayoutFitWidth(stackPanel.id, 1)
-		w.SelectableLabel(fmt.Sprintf("%#0*x\n%+d", d, frame.PC, frame.FrameOffset), "LT", &selected)
+		sl(fmt.Sprintf("%#0*x\n%+d", d, frame.PC, frame.FrameOffset))
 		w.LayoutFitWidth(stackPanel.id, 100)
+		return sl(formatLocation2(frame.Location))
+	}
+
+	for i, frame := range stack {
+		selected := curFrame == i
 		prevSelected := selected
-		clicked := w.SelectableLabel(formatLocation2(frame.Location), "LT", &selected)
+		clicked := showFrame(frame, i, func(lbl string) bool {
+			return w.SelectableLabel(lbl, "LT", &selected)
+		})
 		if clicked && prevSelected && !selected {
 			selected = true
 		}
@@ -412,6 +431,31 @@ func updateStacktrace(container *nucular.Window) {
 	if len(stack) > 0 && !stack[len(stack)-1].Bottom {
 		w.Row(posRowHeight).Dynamic(1)
 		w.Label("(truncated)", "LC")
+	}
+
+	for i := range stackPanel.ancestors {
+		a := &stackPanel.ancestors[i]
+
+		w.Row(posRowHeight).Static()
+		w.LayoutFitWidth(stackPanel.id, 1)
+		w.Spacing(1)
+		w.LayoutFitWidth(stackPanel.id, 1)
+		w.Spacing(1)
+		w.LayoutFitWidth(stackPanel.id, 100)
+
+		if a.Unreadable != "" {
+			w.Label(fmt.Sprintf("Unreadable ancestor: %s", a.Unreadable), "LT")
+			continue
+		}
+
+		w.Label(fmt.Sprintf("Created by Goroutine %d", a.ID), "LT")
+
+		for i := range a.Stack {
+			showFrame(a.Stack[i], i, func(lbl string) bool {
+				w.Label(lbl, "LT")
+				return false
+			})
+		}
 	}
 }
 
