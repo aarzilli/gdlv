@@ -369,8 +369,8 @@ func loadStacktrace(p *asyncLoad) {
 		return
 	}
 
-	stackPanel.ancestors, err = client.Ancestors(curGid, NumAncestors, stackPanel.depth)
-	p.done(err)
+	stackPanel.ancestors, _ = client.Ancestors(curGid, NumAncestors, stackPanel.depth)
+	p.done(nil)
 }
 
 func updateStacktrace(container *nucular.Window) {
