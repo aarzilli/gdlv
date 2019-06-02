@@ -693,7 +693,9 @@ func panelEnd(ctx *context, window *Window) {
 
 	/* helper to make sure you have a 'nk_tree_push'
 	 * for every 'nk_tree_pop' */
-	assert(layout.Row.TreeDepth == 0)
+	if layout.Row.TreeDepth != 0 {
+		panic("Some TreePush not closed by TreePop")
+	}
 }
 
 // MenubarBegin adds a menubar to the current window.
@@ -955,7 +957,7 @@ func layoutWidgetSpace(bounds *rect.Rect, ctx *context, win *Window, modify bool
 		}
 
 	default:
-		assert(false)
+		panic("internal error unknown layout")
 	}
 
 	/* set the bounds of the newly allocated widget */
@@ -1502,7 +1504,9 @@ func (win *Window) TreePop() {
 	panel_padding := win.style().Padding
 	layout.AtX -= panel_padding.X + win.ctx.Style.Tab.Indent
 	layout.Width += panel_padding.X + win.ctx.Style.Tab.Indent
-	assert(layout.Row.TreeDepth != 0)
+	if layout.Row.TreeDepth == 0 {
+		panic("TreePop called without opened tree nodes")
+	}
 	win.curNode = win.curNode.Parent
 	layout.Row.TreeDepth--
 }
@@ -2485,7 +2489,7 @@ func (win *Window) doProperty(property rect.Rect, name string, text string, filt
 
 	ws := win.widgets.PrevState(property)
 	oldws := ws
-	if ws == nstyle.WidgetStateActive {
+	if ws == nstyle.WidgetStateActive && win.editor != nil {
 		ed = win.editor
 	} else {
 		ed = &TextEditor{}
@@ -2643,18 +2647,6 @@ func (ctx *context) nonblockOpen(flags WindowFlags, body rect.Rect, header rect.
 		popup.specialPanelBegin()
 	}
 	return popup
-}
-
-// Opens a popup window inside win. Will return true until the
-// popup window is closed.
-// The contents of the popup window will be updated by updateFn
-func (mw *masterWindow) PopupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn) {
-	go func() {
-		mw.uilock.Lock()
-		defer mw.uilock.Unlock()
-		mw.ctx.popupOpen(title, flags, rect, scale, updateFn)
-		mw.Changed()
-	}()
 }
 
 func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn) {

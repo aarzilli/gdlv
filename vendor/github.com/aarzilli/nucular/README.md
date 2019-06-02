@@ -3,6 +3,8 @@ Source port to go of an early version of [nuklear](https://github.com/vurtun/nuk
 
 :warning: Subject to backwards incompatible changes. :warning:
 
+:warning: Feature requests unaccompanied by an implementation will not be serviced. :warning:
+
 ## Documentation
 
 See [godoc](https://godoc.org/github.com/aarzilli/nucular), `_examples/simple/main.go` and `_examples/overview/main.go` for single window examples, `_examples/demo/demo.go` for a multi-window example, and [gdlv](http://github.com/aarzilli/gdlv) for a more complex application built using nucular.

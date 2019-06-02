@@ -172,6 +172,9 @@ var curFrame int
 var curDeferredCall int
 var curPC uint64
 var lastModExe time.Time
+var scriptRunning bool
+var starlarkMode chan string
+var starlarkPrompt string
 
 var commandLineEditor nucular.TextEditor
 
@@ -314,14 +317,18 @@ func currentPrompt() string {
 			return "connecting"
 		}
 	} else {
+		pmpt := ">"
+		if starlarkMode != nil {
+			pmpt = starlarkPrompt
+		}
 		if curThread < 0 {
-			return "dlv>"
+			return fmt.Sprintf("dlv%s", pmpt)
 		} else if curGid < 0 {
-			return fmt.Sprintf("thread %d:%d>", curThread, curFrame)
+			return fmt.Sprintf("thread %d:%d%s", curThread, curFrame, pmpt)
 		} else if curDeferredCall > 0 {
-			return fmt.Sprintf("deferred call %d:%d:%d>", curGid, curFrame, curDeferredCall)
+			return fmt.Sprintf("deferred call %d:%d:%d%s", curGid, curFrame, curDeferredCall, pmpt)
 		} else {
-			return fmt.Sprintf("goroutine %d:%d>", curGid, curFrame)
+			return fmt.Sprintf("goroutine %d:%d%s", curGid, curFrame, pmpt)
 		}
 	}
 }
@@ -415,7 +422,13 @@ func updateCommandPanel(w *nucular.Window) {
 		historySearch = false
 		var scrollbackOut = editorWriter{&scrollbackEditor, false}
 		cmd := string(commandLineEditor.Buffer)
-		if canExecuteCmd(cmd) && !client.Running() {
+		if scriptRunning {
+			fmt.Fprintf(&scrollbackOut, "a script is running\n")
+		} else if starlarkMode != nil {
+			cmdhistory = append(cmdhistory, cmd)
+			fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmd)
+			starlarkMode <- cmd
+		} else if canExecuteCmd(cmd) && !client.Running() {
 			if cmd == "" {
 				fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmdhistory[len(cmdhistory)-1])
 			} else {
@@ -997,6 +1010,8 @@ under certain conditions; see COPYING for details.
 `)
 
 	cmds = DebugCommands()
+
+	executeInit()
 
 	go BackendServer.Start()
 

@@ -10,6 +10,8 @@
 #include <GLES2/gl2.h>
 #elif os_linux
 #include <GLES3/gl3.h> // install on Ubuntu with: sudo apt-get install libegl1-mesa-dev libgles2-mesa-dev libx11-dev
+#elif os_openbsd
+#include <GLES3/gl3.h>
 #endif
 
 #ifdef os_ios
@@ -41,6 +43,7 @@ typedef enum {
 	glfnBindFramebuffer,
 	glfnBindRenderbuffer,
 	glfnBindTexture,
+	glfnBindVertexArray,
 	glfnBlendColor,
 	glfnBlendEquation,
 	glfnBlendEquationSeparate,
@@ -68,6 +71,7 @@ typedef enum {
 	glfnDeleteRenderbuffer,
 	glfnDeleteShader,
 	glfnDeleteTexture,
+	glfnDeleteVertexArray,
 	glfnDepthFunc,
 	glfnDepthRangef,
 	glfnDepthMask,
@@ -87,6 +91,7 @@ typedef enum {
 	glfnGenFramebuffer,
 	glfnGenRenderbuffer,
 	glfnGenTexture,
+	glfnGenVertexArray,
 	glfnGenerateMipmap,
 	glfnGetActiveAttrib,
 	glfnGetActiveUniform,

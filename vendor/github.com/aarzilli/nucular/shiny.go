@@ -1,28 +1,21 @@
+// +build linux,!android,!nucular_mobile darwin,!nucular_mobile windows,!nucular_mobile
+
 package nucular
 
 import (
-	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"image"
-	"image/draw"
-	"image/png"
-	"io"
 	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/aarzilli/nucular/clipboard"
-	"github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/rect"
-	nstyle "github.com/aarzilli/nucular/style"
 
 	"golang.org/x/exp/shiny/driver"
 	"golang.org/x/exp/shiny/screen"
-	"golang.org/x/image/font"
-	"golang.org/x/image/math/fixed"
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/lifecycle"
 	"golang.org/x/mobile/event/mouse"
@@ -32,45 +25,12 @@ import (
 
 //go:generate go-bindata -o internal/assets/assets.go -pkg assets DroidSansMono.ttf
 
-const perfUpdate = false
-const dumpFrame = false
-
-var frameCnt = 0
-
-var UnknownCommandErr = errors.New("unknown command")
-
 var clipboardStarted bool = false
 var clipboardMu sync.Mutex
 
-type MasterWindow interface {
-	context() *context
-
-	Main()
-	Changed()
-	Close()
-	Closed() bool
-	ActivateEditor(ed *TextEditor)
-
-	Style() *nstyle.Style
-	SetStyle(*nstyle.Style)
-
-	GetPerf() bool
-	SetPerf(bool)
-
-	Input() *Input
-
-	PopupOpen(title string, flags WindowFlags, rect rect.Rect, scale bool, updateFn UpdateFn)
-
-	Walk(WindowWalkFn)
-	ResetWindows() *DockSplit
-
-	Lock()
-	Unlock()
-}
-
-type WindowWalkFn func(title string, data interface{}, docked bool, splitSize int, rect rect.Rect)
-
 type masterWindow struct {
+	masterWindowCommon
+
 	Title  string
 	screen screen.Screen
 	wnd    screen.Window
@@ -79,32 +39,22 @@ type masterWindow struct {
 
 	initialSize image.Point
 
-	// show performance counters
-	Perf bool
 	// window is focused
 	Focus bool
 
-	ctx        *context
-	layout     panel
-	prevCmds   []command.Command
 	textbuffer bytes.Buffer
 
-	uilock      sync.Mutex
 	closing     bool
 	focusedOnce bool
-}
-
-func NewMasterWindow(flags WindowFlags, title string, updatefn UpdateFn) MasterWindow {
-	return NewMasterWindowSize(flags, title, image.Point{640, 480}, updatefn)
 }
 
 // Creates new master window
 func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, updatefn UpdateFn) MasterWindow {
 	ctx := &context{}
-	ctx.Input.Mouse.valid = true
-	ctx.DockedWindows.Split.MinSize = 40
-	wnd := &masterWindow{ctx: ctx}
-	wnd.layout.Flags = flags
+	wnd := &masterWindow{}
+
+	wnd.masterWindowCommonInit(ctx, flags, updatefn, wnd)
+
 	wnd.Title = title
 	wnd.initialSize = sz
 
@@ -115,33 +65,12 @@ func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, update
 	}
 	clipboardMu.Unlock()
 
-	ctx.setupMasterWindow(&wnd.layout, updatefn)
-	ctx.mw = wnd
-
-	wnd.SetStyle(nstyle.FromTheme(nstyle.DefaultTheme, 1.0))
-
 	return wnd
 }
 
 // Shows window, runs event loop
 func (mw *masterWindow) Main() {
 	driver.Main(mw.main)
-}
-
-func (mw *masterWindow) context() *context {
-	return mw.ctx
-}
-
-func (mw *masterWindow) Walk(fn WindowWalkFn) {
-	mw.ctx.Walk(fn)
-}
-
-func (mw *masterWindow) Input() *Input {
-	return &mw.ctx.Input
-}
-
-func (mw *masterWindow) ResetWindows() *DockSplit {
-	return mw.ctx.ResetWindows()
 }
 
 func (mw *masterWindow) Lock() {
@@ -277,46 +206,6 @@ func (w *masterWindow) handleEventLocked(ei interface{}) bool {
 	return true
 }
 
-func (ctx *context) processKeyEvent(e key.Event, textbuffer *bytes.Buffer) {
-	if e.Direction == key.DirRelease {
-		return
-	}
-
-	evinNotext := func() {
-		for _, k := range ctx.Input.Keyboard.Keys {
-			if k.Code == e.Code {
-				k.Modifiers |= e.Modifiers
-				return
-			}
-		}
-		ctx.Input.Keyboard.Keys = append(ctx.Input.Keyboard.Keys, e)
-	}
-	evinText := func() {
-		if e.Modifiers == 0 || e.Modifiers == key.ModShift {
-			io.WriteString(textbuffer, string(e.Rune))
-		}
-
-		evinNotext()
-	}
-
-	switch {
-	case e.Code == key.CodeUnknown:
-		if e.Rune > 0 {
-			evinText()
-		}
-	case (e.Code >= key.CodeA && e.Code <= key.Code0) || e.Code == key.CodeSpacebar || e.Code == key.CodeHyphenMinus || e.Code == key.CodeEqualSign || e.Code == key.CodeLeftSquareBracket || e.Code == key.CodeRightSquareBracket || e.Code == key.CodeBackslash || e.Code == key.CodeSemicolon || e.Code == key.CodeApostrophe || e.Code == key.CodeGraveAccent || e.Code == key.CodeComma || e.Code == key.CodeFullStop || e.Code == key.CodeSlash || (e.Code >= key.CodeKeypadSlash && e.Code <= key.CodeKeypadPlusSign) || (e.Code >= key.CodeKeypad1 && e.Code <= key.CodeKeypadEqualSign):
-		evinText()
-	case e.Code == key.CodeTab:
-		e.Rune = '\t'
-		evinText()
-	case e.Code == key.CodeReturnEnter || e.Code == key.CodeKeypadEnter:
-		e.Rune = '\n'
-		evinText()
-	default:
-		evinNotext()
-	}
-}
-
 func (w *masterWindow) updater() {
 	var down bool
 	for {
@@ -350,11 +239,6 @@ func (w *masterWindow) updater() {
 	}
 }
 
-// Forces an update of the window.
-func (mw *masterWindow) Changed() {
-	atomic.AddInt32(&mw.ctx.changed, 1)
-}
-
 func (w *masterWindow) updateLocked() {
 	w.ctx.Windows[0].Bounds = rect.FromRectangle(w.bounds)
 	in := &w.ctx.Input
@@ -386,52 +270,10 @@ func (w *masterWindow) updateLocked() {
 	}
 	if w.Perf && nprimitives > 0 {
 		te = time.Now()
-
-		fps := 1.0 / te.Sub(t0).Seconds()
-
-		s := fmt.Sprintf("%0.4fms + %0.4fms (%0.2f)", t1.Sub(t0).Seconds()*1000, te.Sub(t1).Seconds()*1000, fps)
-		img := w.wndb.RGBA()
-		d := font.Drawer{
-			Dst:  img,
-			Src:  image.White,
-			Face: w.ctx.Style.Font}
-
-		width := d.MeasureString(s).Ceil()
-
-		bounds := w.bounds
-		bounds.Min.X = bounds.Max.X - width
-		bounds.Min.Y = bounds.Max.Y - (w.ctx.Style.Font.Metrics().Ascent + w.ctx.Style.Font.Metrics().Descent).Ceil()
-		draw.Draw(img, bounds, image.Black, bounds.Min, draw.Src)
-		d.Dot = fixed.P(bounds.Min.X, bounds.Min.Y+w.ctx.Style.Font.Metrics().Ascent.Ceil())
-		d.DrawString(s)
+		w.drawPerfCounter(w.wndb.RGBA(), w.bounds, t0, t1, te)
 	}
 	if dumpFrame && frameCnt < 1000 && nprimitives > 0 {
-		wimg := w.wndb.RGBA()
-
-		bounds := image.Rect(w.ctx.Input.Mouse.Pos.X, w.ctx.Input.Mouse.Pos.Y, w.ctx.Input.Mouse.Pos.X+10, w.ctx.Input.Mouse.Pos.Y+10)
-
-		draw.Draw(wimg, bounds, image.White, bounds.Min, draw.Src)
-
-		if fh, err := os.Create(fmt.Sprintf("framedump/frame%03d.png", frameCnt)); err == nil {
-			png.Encode(fh, wimg)
-			fh.Close()
-		}
-
-		if fh, err := os.Create(fmt.Sprintf("framedump/frame%03d.txt", frameCnt)); err == nil {
-			wr := bufio.NewWriter(fh)
-			fps := 1.0 / te.Sub(t0).Seconds()
-			tot := time.Duration(0)
-			fmt.Fprintf(wr, "# Update %0.4fms = %0.4f updatefn + %0.4f draw (%d primitives) [max fps %0.2f]\n", te.Sub(t0).Seconds()*1000, t1.Sub(t0).Seconds()*1000, te.Sub(t1).Seconds()*1000, nprimitives, fps)
-			for i := range w.prevCmds {
-				fmt.Fprintf(wr, "%0.2fms %#v\n", w.ctx.cmdstim[i].Seconds()*1000, w.prevCmds[i])
-				tot += w.ctx.cmdstim[i]
-			}
-			fmt.Fprintf(wr, "sanity check %0.2fms\n", tot.Seconds()*1000)
-			wr.Flush()
-			fh.Close()
-		}
-
-		frameCnt++
+		w.dumpFrame(w.wndb.RGBA(), t0, t1, te, nprimitives)
 	}
 	if nprimitives > 0 {
 		w.wnd.Upload(w.bounds.Min, w.wndb, w.bounds)
@@ -449,9 +291,7 @@ func (w *masterWindow) closeLocked() {
 
 // Programmatically closes window.
 func (mw *masterWindow) Close() {
-	mw.uilock.Lock()
-	defer mw.uilock.Unlock()
-	mw.closeLocked()
+	mw.wnd.Send(lifecycle.Event{From: lifecycle.StageAlive, To: lifecycle.StageDead})
 }
 
 // Returns true if the window is closed.
@@ -473,98 +313,11 @@ func (w *masterWindow) setupBuffer(sz image.Point) {
 }
 
 func (w *masterWindow) draw() int {
-	wimg := w.wndb.RGBA()
-
-	contextAllCommands(w.ctx)
-	w.ctx.Reset()
-
-	if !w.drawChanged(w.ctx.cmds) {
+	if !w.drawChanged() {
 		return 0
 	}
 
 	w.prevCmds = append(w.prevCmds[:0], w.ctx.cmds...)
 
-	return w.ctx.Draw(wimg)
-}
-
-// compares cmds to the last draw frame, returns true if there is a change
-func (w *masterWindow) drawChanged(cmds []command.Command) bool {
-	if len(cmds) != len(w.prevCmds) {
-		return true
-	}
-
-	for i := range cmds {
-		if cmds[i].Kind != w.prevCmds[i].Kind {
-			return true
-		}
-
-		cmd := &cmds[i]
-		pcmd := &w.prevCmds[i]
-
-		switch cmds[i].Kind {
-		case command.ScissorCmd:
-			if *pcmd != *cmd {
-				return true
-			}
-
-		case command.LineCmd:
-			if *pcmd != *cmd {
-				return true
-			}
-
-		case command.RectFilledCmd:
-			if i == 0 {
-				cmd.RectFilled.Color.A = 0xff
-			}
-			if *pcmd != *cmd {
-				return true
-			}
-
-		case command.TriangleFilledCmd:
-			if *pcmd != *cmd {
-				return true
-			}
-
-		case command.CircleFilledCmd:
-			if *pcmd != *cmd {
-				return true
-			}
-
-		case command.ImageCmd:
-			if *pcmd != *cmd {
-				return true
-			}
-
-		case command.TextCmd:
-			if *pcmd != *cmd {
-				return true
-			}
-
-		default:
-			panic(UnknownCommandErr)
-		}
-	}
-
-	return false
-}
-
-func (mw *masterWindow) ActivateEditor(ed *TextEditor) {
-	mw.ctx.activateEditor = ed
-}
-
-func (mw *masterWindow) Style() *nstyle.Style {
-	return &mw.ctx.Style
-}
-
-func (mw *masterWindow) SetStyle(style *nstyle.Style) {
-	mw.ctx.Style = *style
-	mw.ctx.Style.Defaults()
-}
-
-func (mw *masterWindow) GetPerf() bool {
-	return mw.Perf
-}
-
-func (mw *masterWindow) SetPerf(perf bool) {
-	mw.Perf = perf
+	return w.ctx.Draw(w.wndb.RGBA())
 }

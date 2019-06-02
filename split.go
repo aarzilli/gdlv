@@ -298,6 +298,12 @@ func commandToolbar(sw *nucular.Window) {
 	switch {
 	case client == nil:
 
+	case scriptRunning:
+		sw.LayoutSetWidth(100)
+		if sw.ButtonText("stop script") {
+			StarlarkEnv.Cancel()
+		}
+
 	case client.Running():
 		sw.LayoutSetWidth(controlBtnWidth)
 		cmdbtn(interruptIconChar, "interrupt")

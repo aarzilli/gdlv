@@ -9,7 +9,7 @@
 package gldriver
 
 /*
-#cgo CFLAGS: -x objective-c
+#cgo CFLAGS: -x objective-c -DGL_SILENCE_DEPRECATION
 #cgo LDFLAGS: -framework Cocoa -framework OpenGL
 #include <OpenGL/gl3.h>
 #import <Carbon/Carbon.h> // for HIToolbox/Events.h

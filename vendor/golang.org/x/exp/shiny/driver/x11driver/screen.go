@@ -33,6 +33,8 @@ type screenImpl struct {
 	xsi     *xproto.ScreenInfo
 	keysyms x11key.KeysymTable
 
+	numLockMod uint16
+
 	atomNETWMName      xproto.Atom
 	atomUTF8String     xproto.Atom
 	atomWMDeleteWindow xproto.Atom
@@ -482,6 +484,21 @@ func (s *screenImpl) initKeyboardMapping() error {
 	for i := keyLo; i <= keyHi; i++ {
 		s.keysyms[i][0] = uint32(km.Keysyms[(i-keyLo)*n+0])
 		s.keysyms[i][1] = uint32(km.Keysyms[(i-keyLo)*n+1])
+	}
+
+	// Figure out which modifier is the numlock modifier (see chapter 12.7 of the XLib Manual).
+	mm, err := xproto.GetModifierMapping(s.xc).Reply()
+	if err != nil {
+		return err
+	}
+	for modifier := 0; modifier < 8; modifier++ {
+		for i := 0; i < int(mm.KeycodesPerModifier); i++ {
+			const xkNumLock = 0xff7f // XK_Num_Lock from /usr/include/X11/keysymdef.h.
+			if s.keysyms[mm.Keycodes[modifier*int(mm.KeycodesPerModifier)+i]][0] == xkNumLock {
+				s.numLockMod = 1 << uint(modifier)
+				break
+			}
+		}
 	}
 	return nil
 }

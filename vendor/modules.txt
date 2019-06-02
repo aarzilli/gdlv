@@ -3,7 +3,7 @@ github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/xproto
 github.com/BurntSushi/xgb/render
 github.com/BurntSushi/xgb/shm
-# github.com/aarzilli/nucular v0.0.0-20181227101716-d1a942545d6d
+# github.com/aarzilli/nucular v0.0.0-20190520165901-2ca4109375f4
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard
 github.com/aarzilli/nucular/label
@@ -21,7 +21,13 @@ github.com/golang/freetype/raster
 # github.com/hashicorp/golang-lru v0.0.0-20160813221303-0a025b7e63ad
 github.com/hashicorp/golang-lru
 github.com/hashicorp/golang-lru/simplelru
-# golang.org/x/exp v0.0.0-20171209012058-072991165226
+# go.starlark.net v0.0.0-20190528202925-30ae18b8564f
+go.starlark.net/resolve
+go.starlark.net/starlark
+go.starlark.net/syntax
+go.starlark.net/internal/spell
+go.starlark.net/internal/compile
+# golang.org/x/exp v0.0.0-20190510132918-efd6b22b2522
 golang.org/x/exp/shiny/driver
 golang.org/x/exp/shiny/screen
 golang.org/x/exp/shiny/driver/gldriver
@@ -34,17 +40,23 @@ golang.org/x/exp/shiny/driver/internal/lifecycler
 golang.org/x/exp/shiny/driver/internal/win32
 golang.org/x/exp/shiny/driver/internal/x11key
 golang.org/x/exp/shiny/driver/internal/swizzle
-# golang.org/x/image v0.0.0-20170331233916-ce0faa1867f5
+# golang.org/x/image v0.0.0-20190227222117-0694c2d4d067
 golang.org/x/image/font
 golang.org/x/image/math/fixed
 golang.org/x/image/math/f64
-# golang.org/x/mobile v0.0.0-20170307115833-eb9032959f05
+# golang.org/x/mobile v0.0.0-20190318164015-6bd122906c08
 golang.org/x/mobile/event/key
 golang.org/x/mobile/event/mouse
+golang.org/x/mobile/app
 golang.org/x/mobile/event/lifecycle
 golang.org/x/mobile/event/paint
 golang.org/x/mobile/event/size
-golang.org/x/mobile/geom
+golang.org/x/mobile/event/touch
+golang.org/x/mobile/exp/f32
+golang.org/x/mobile/exp/gl/glutil
 golang.org/x/mobile/gl
-# golang.org/x/sys v0.0.0-20170403205132-493114f68206
+golang.org/x/mobile/app/internal/callfn
+golang.org/x/mobile/geom
+golang.org/x/mobile/internal/mobileinit
+# golang.org/x/sys v0.0.0-20190312061237-fead79001313
 golang.org/x/sys/windows

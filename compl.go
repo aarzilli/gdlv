@@ -4,6 +4,8 @@ package main
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 )
@@ -149,6 +151,46 @@ func completeWindow() {
 		cm.add(strings.ToLower(w))
 	}
 	cm.finish()
+}
+
+func completeFilesystem() {
+	word := expandTilde(lastWord([]rune{' '}))
+	dir := filepath.Dir(word)
+	dh, err := os.Open(dir)
+	if err != nil {
+		return
+	}
+	fis, err := dh.Readdir(-1)
+	dh.Close()
+	if err != nil {
+		return
+	}
+	compl := make([]string, 0, len(fis))
+	for _, fi := range fis {
+		switch n := fi.Name(); n {
+		case ".", "..":
+		default:
+			n := filepath.Join(dir, n)
+			if fi.IsDir() {
+				n = n + "/"
+			}
+			compl = append(compl, n)
+		}
+	}
+	completeWord(word, compl)
+}
+
+func expandTilde(path string) string {
+	if len(path) < 2 {
+		return path
+	}
+	if path[0] == '~' && path[1] == '/' {
+		homedir := os.Getenv("HOME")
+		if homedir != "" {
+			return homedir + path[1:]
+		}
+	}
+	return path
 }
 
 type completeMachine struct {

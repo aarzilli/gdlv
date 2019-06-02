@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build linux darwin windows
+// +build linux darwin windows openbsd
 // +build !gldebug
 
 package gl
@@ -86,6 +86,15 @@ func (ctx *context) BindTexture(target Enum, t Texture) {
 			fn: glfnBindTexture,
 			a0: target.c(),
 			a1: t.c(),
+		},
+	})
+}
+
+func (ctx *context) BindVertexArray(va VertexArray) {
+	ctx.enqueue(call{
+		args: fnargs{
+			fn: glfnBindVertexArray,
+			a0: va.c(),
 		},
 	})
 }
@@ -380,6 +389,15 @@ func (ctx *context) CreateTexture() Texture {
 	}))}
 }
 
+func (ctx *context) CreateVertexArray() VertexArray {
+	return VertexArray{Value: uint32(ctx.enqueue(call{
+		args: fnargs{
+			fn: glfnGenVertexArray,
+		},
+		blocking: true,
+	}))}
+}
+
 func (ctx *context) CullFace(mode Enum) {
 	ctx.enqueue(call{
 		args: fnargs{
@@ -393,7 +411,7 @@ func (ctx *context) DeleteBuffer(v Buffer) {
 	ctx.enqueue(call{
 		args: fnargs{
 			fn: glfnDeleteBuffer,
-			a0: uintptr(v.Value),
+			a0: v.c(),
 		},
 	})
 }
@@ -402,7 +420,7 @@ func (ctx *context) DeleteFramebuffer(v Framebuffer) {
 	ctx.enqueue(call{
 		args: fnargs{
 			fn: glfnDeleteFramebuffer,
-			a0: uintptr(v.Value),
+			a0: v.c(),
 		},
 	})
 }
@@ -438,6 +456,15 @@ func (ctx *context) DeleteTexture(v Texture) {
 	ctx.enqueue(call{
 		args: fnargs{
 			fn: glfnDeleteTexture,
+			a0: v.c(),
+		},
+	})
+}
+
+func (ctx *context) DeleteVertexArray(v VertexArray) {
+	ctx.enqueue(call{
+		args: fnargs{
+			fn: glfnDeleteVertexArray,
 			a0: v.c(),
 		},
 	})
@@ -1230,7 +1257,7 @@ func (ctx *context) StencilOpSeparate(face, sfail, dpfail, dppass Enum) {
 	})
 }
 
-func (ctx *context) TexImage2D(target Enum, level int, width, height int, format Enum, ty Enum, data []byte) {
+func (ctx *context) TexImage2D(target Enum, level int, internalFormat int, width, height int, format Enum, ty Enum, data []byte) {
 	// It is common to pass TexImage2D a nil data, indicating that a
 	// bound GL buffer is being used as the source. In that case, it
 	// is not necessary to block.
@@ -1245,7 +1272,7 @@ func (ctx *context) TexImage2D(target Enum, level int, width, height int, format
 			// TODO(crawshaw): GLES3 offset for PIXEL_UNPACK_BUFFER and PIXEL_PACK_BUFFER.
 			a0: target.c(),
 			a1: uintptr(level),
-			a2: uintptr(format),
+			a2: uintptr(internalFormat),
 			a3: uintptr(width),
 			a4: uintptr(height),
 			a5: format.c(),

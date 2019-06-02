@@ -435,3 +435,7 @@ func (c *RPCClient) call(method string, args, reply interface{}) error {
 	}
 	return c.client.Call("RPCServer."+method, args, reply)
 }
+
+func (c *RPCClient) CallAPI(method string, args, reply interface{}) error {
+	return c.call(method, args, reply)
+}

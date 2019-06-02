@@ -184,6 +184,12 @@ Shortcuts:
 	Alt-8	Goroutines window
 	Alt-9	Threads Window
 `},
+		{aliases: []string{"source"}, cmdFn: sourceCommand, complete: completeFilesystem, helpMsg: `Executes a starlark script
+	
+	source <path>
+
+If path is a single '-' character an interactive starlark interpreter will start instead. Type 'exit' to exit.
+See documentation in doc/starlark.md.`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -389,7 +395,7 @@ func restart(out io.Writer, args string) error {
 	var newArgs []string
 	args = strings.TrimSpace(args)
 	if args != "" {
-		argv := splitQuotedFields(args)
+		argv := splitQuotedFields(args, '\'')
 		if len(argv) > 0 {
 			if argv[0] == "--" {
 				argv = argv[1:]
@@ -458,7 +464,7 @@ func restart(out io.Writer, args string) error {
 	return doRestart(out, resetArgs, newArgs)
 }
 
-func splitQuotedFields(in string) []string {
+func splitQuotedFields(in string, quote rune) []string {
 	type stateEnum int
 	const (
 		inSpace stateEnum = iota
@@ -473,7 +479,7 @@ func splitQuotedFields(in string) []string {
 	for _, ch := range in {
 		switch state {
 		case inSpace:
-			if ch == '\'' {
+			if ch == quote {
 				state = inQuote
 			} else if !unicode.IsSpace(ch) {
 				buf.WriteRune(ch)
@@ -481,7 +487,7 @@ func splitQuotedFields(in string) []string {
 			}
 
 		case inField:
-			if ch == '\'' {
+			if ch == quote {
 				state = inQuote
 			} else if unicode.IsSpace(ch) {
 				r = append(r, buf.String())
@@ -491,7 +497,7 @@ func splitQuotedFields(in string) []string {
 			}
 
 		case inQuote:
-			if ch == '\'' {
+			if ch == quote {
 				state = inField
 			} else if ch == '\\' {
 				state = inQuoteEscaped
@@ -968,9 +974,42 @@ func layoutCommand(out io.Writer, args string) error {
 }
 
 func configCommand(out io.Writer, args string) error {
+	const aliasPrefix = "alias "
+	if strings.HasPrefix(args, aliasPrefix) {
+		return configureSetAlias(strings.TrimSpace(args[len(aliasPrefix):]))
+	}
 	cw := newConfigWindow()
 	wnd.PopupOpen("Configuration", dynamicPopupFlags, rect.Rect{100, 100, 600, 700}, true, cw.Update)
 	return nil
+}
+
+func configureSetAlias(rest string) error {
+	argv := splitQuotedFields(rest, '"')
+	switch len(argv) {
+	case 1: // delete alias rule
+		for i := range cmds.cmds {
+			cmd := &cmds.cmds[i]
+			for i := range cmd.aliases {
+				if cmd.aliases[i] == argv[0] {
+					cmd.aliases = append(cmd.aliases[:i], cmd.aliases[i+1:]...)
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("could not find command %q", argv[0])
+	case 2: // add alias rule
+		alias, cmd := argv[1], argv[0]
+		for i := range cmds.cmds {
+			for _, ka := range cmds.cmds[i].aliases {
+				if ka == cmd {
+					cmds.cmds[i].aliases = append(cmds.cmds[i].aliases, alias)
+					return nil
+				}
+			}
+		}
+		return fmt.Errorf("could not find command %q", cmd)
+	}
+	return fmt.Errorf("wrong number of arguments")
 }
 
 type configWindow struct {
@@ -1198,6 +1237,43 @@ func makeBoringStyle() *nstyle.Style {
 		return nil
 	}
 	return fmt.Errorf("unknown window kind %q", args)
+}
+
+func sourceCommand(out io.Writer, args string) error {
+	defer refreshState(refreshToFrameZero, clearStop, nil)
+
+	scriptRunning = true
+	wnd.Changed()
+	defer func() {
+		scriptRunning = false
+		wnd.Changed()
+	}()
+
+	if len(args) == 0 {
+		return fmt.Errorf("wrong number of arguments: source <filename>")
+	}
+
+	if args == "-" {
+		starlarkMode = make(chan string)
+		promptChan := make(chan string)
+		go func() {
+			for pmpt := range promptChan {
+				wnd.Lock()
+				starlarkPrompt = pmpt
+				wnd.Unlock()
+				wnd.Changed()
+			}
+			wnd.Lock()
+			starlarkMode = nil
+			wnd.Unlock()
+			wnd.Changed()
+		}()
+		go StarlarkEnv.REPL(out, starlarkMode, promptChan)
+		return nil
+	}
+
+	_, err := StarlarkEnv.Execute(out, expandTilde(args), nil, "main", nil)
+	return err
 }
 
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
@@ -1472,7 +1548,9 @@ func (c *Commands) Find(cmdstr string) cmdfunc {
 		}
 	}
 
-	return noCmdAvailable
+	return func(out io.Writer, argstr string) error {
+		return fmt.Errorf("command %q not available", cmdstr)
+	}
 }
 
 func (c *Commands) Call(cmdstr, args string, out io.Writer) error {

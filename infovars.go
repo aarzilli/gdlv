@@ -10,7 +10,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode"
 
 	"golang.org/x/image/font"
 
@@ -21,6 +20,7 @@ import (
 	nstyle "github.com/aarzilli/nucular/style"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
+	"github.com/aarzilli/gdlv/internal/prettyprint"
 )
 
 type numberMode int
@@ -45,6 +45,16 @@ type Variable struct {
 	Expression  string
 
 	Children []*Variable
+}
+
+// SinglelineString returns a representation of v on a single line.
+func (v *Variable) SinglelineString(includeType, fullTypes bool) string {
+	return prettyprint.Singleline(v.Variable, includeType, fullTypes)
+}
+
+// MultilineString returns a representation of v on multiple lines.
+func (v *Variable) MultilineString(indent string) string {
+	return prettyprint.Multiline(v.Variable, indent)
 }
 
 func wrapApiVariableSimple(v *api.Variable) *Variable {
@@ -74,7 +84,7 @@ func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool) 
 		r.DisplayName = v.Type
 	}
 
-	r.ShortType = shortenType(v.Type)
+	r.ShortType = prettyprint.ShortenType(v.Type)
 
 	r.Varname = r.DisplayName
 
@@ -156,6 +166,7 @@ func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr stri
 					keyname = fmt.Sprintf("[%s]", key.Value)
 				}
 				if keyname != "" {
+					value.Name = keyname[1 : len(keyname)-1]
 					r = append(r, wrapApiVariable(value, keyname, "", customFormatters))
 					r = append(r, nil)
 					ok = true
@@ -578,15 +589,6 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		} else {
 			if w.MenuItem(label.TA("Custom format for type...", "LC")) {
 				viewCustomFormatterMaker(w, v, "", []string{})
-			}
-		}
-	}
-
-	switch v.Kind {
-	case reflect.Slice, reflect.Array:
-		if v.Addr != 0 {
-			if w.MenuItem(label.TA("Find element...", "LC")) {
-				viewFindElement(w, v)
 			}
 		}
 	}
@@ -1031,60 +1033,5 @@ func configureLoadParameters(exprMenuIdx int) func(w *nucular.Window) {
 			loadOneExpr(exprMenuIdx)
 			w.Close()
 		}
-	}
-}
-
-func shortenType(typ string) string {
-	out, ok := shortenTypeEx(typ)
-	if !ok {
-		return typ
-	}
-	return out
-}
-
-func shortenTypeEx(typ string) (string, bool) {
-	switch {
-	case strings.HasPrefix(typ, "[]"):
-		sub, ok := shortenTypeEx(typ[2:])
-		return "[]" + sub, ok
-	case strings.HasPrefix(typ, "*"):
-		sub, ok := shortenTypeEx(typ[1:])
-		return "*" + sub, ok
-	case strings.HasPrefix(typ, "map["):
-		depth := 1
-		for i := 4; i < len(typ); i++ {
-			switch typ[i] {
-			case '[':
-				depth++
-			case ']':
-				depth--
-				if depth == 0 {
-					key, keyok := shortenTypeEx(typ[4:i])
-					val, valok := shortenTypeEx(typ[i+1:])
-					return "map[" + key + "]" + val, keyok && valok
-				}
-			}
-		}
-		return "", false
-	case typ == "interface {}" || typ == "interface{}":
-		return typ, true
-	case typ == "struct {}" || typ == "struct{}":
-		return typ, true
-	default:
-		slashnum := 0
-		slash := -1
-		for i, ch := range typ {
-			if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' && ch != '.' && ch != '/' && ch != '@' && ch != '%' {
-				return "", false
-			}
-			if ch == '/' {
-				slash = i
-				slashnum++
-			}
-		}
-		if slashnum <= 1 || slash < 0 {
-			return typ, true
-		}
-		return typ[slash+1:], true
 	}
 }

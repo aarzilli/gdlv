@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build darwin linux
+// +build darwin linux openbsd
 
 package gl
 
@@ -12,13 +12,18 @@ package gl
 #cgo darwin,arm         LDFLAGS: -framework OpenGLES
 #cgo darwin,arm64       LDFLAGS: -framework OpenGLES
 #cgo linux              LDFLAGS: -lGLESv2
+#cgo openbsd            LDFLAGS: -L/usr/X11R6/lib/ -lGLESv2
 
 #cgo android            CFLAGS: -Dos_android
 #cgo ios                CFLAGS: -Dos_ios
 #cgo darwin,amd64,!ios  CFLAGS: -Dos_osx
 #cgo darwin,arm         CFLAGS: -Dos_ios
 #cgo darwin,arm64       CFLAGS: -Dos_ios
+#cgo darwin             CFLAGS: -DGL_SILENCE_DEPRECATION
 #cgo linux              CFLAGS: -Dos_linux
+#cgo openbsd            CFLAGS: -Dos_openbsd
+
+#cgo openbsd            CFLAGS: -I/usr/X11R6/include/
 
 #include <stdint.h>
 #include "work.h"

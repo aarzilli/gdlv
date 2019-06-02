@@ -18,23 +18,29 @@ type Deque struct {
 	front []interface{} // LIFO.
 }
 
-// NextEvent implements the screen.EventDeque interface.
-func (q *Deque) NextEvent() interface{} {
+func (q *Deque) lockAndInit() {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	if q.cond.L == nil {
 		q.cond.L = &q.mu
 	}
+}
+
+// NextEvent implements the screen.EventDeque interface.
+func (q *Deque) NextEvent() interface{} {
+	q.lockAndInit()
+	defer q.mu.Unlock()
 
 	for {
 		if n := len(q.front); n > 0 {
 			e := q.front[n-1]
+			q.front[n-1] = nil
 			q.front = q.front[:n-1]
 			return e
 		}
 
 		if n := len(q.back); n > 0 {
 			e := q.back[0]
+			q.back[0] = nil
 			q.back = q.back[1:]
 			return e
 		}
@@ -45,11 +51,8 @@ func (q *Deque) NextEvent() interface{} {
 
 // Send implements the screen.EventDeque interface.
 func (q *Deque) Send(event interface{}) {
-	q.mu.Lock()
+	q.lockAndInit()
 	defer q.mu.Unlock()
-	if q.cond.L == nil {
-		q.cond.L = &q.mu
-	}
 
 	q.back = append(q.back, event)
 	q.cond.Signal()
@@ -57,11 +60,8 @@ func (q *Deque) Send(event interface{}) {
 
 // SendFirst implements the screen.EventDeque interface.
 func (q *Deque) SendFirst(event interface{}) {
-	q.mu.Lock()
+	q.lockAndInit()
 	defer q.mu.Unlock()
-	if q.cond.L == nil {
-		q.cond.L = &q.mu
-	}
 
 	q.front = append(q.front, event)
 	q.cond.Signal()

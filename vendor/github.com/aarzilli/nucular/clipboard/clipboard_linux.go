@@ -1,3 +1,5 @@
+// +build !android
+
 package clipboard
 
 import (
@@ -169,7 +171,7 @@ func lookupAtom(at xproto.Atom) string {
 		panic(err)
 	}
 
-	// If we're here, it means we didn't have ths ATOM id cached. So cache it.
+	// If we're here, it means we didn't have the ATOM id cached. So cache it.
 	atomName := string(reply.Name)
 	clipboardAtomCache[at] = atomName
 	return atomName

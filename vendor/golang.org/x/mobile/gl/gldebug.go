@@ -2,10 +2,10 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// Generated from gl.go using go generate. DO NOT EDIT.
+// Code generated from gl.go using go generate. DO NOT EDIT.
 // See doc.go for details.
 
-// +build linux darwin windows
+// +build linux darwin windows openbsd
 // +build gldebug
 
 package gl
@@ -1123,8 +1123,6 @@ func (v Enum) String() string {
 		return "TEXTURE_WRAP_R"
 	case 0x911b:
 		return "TIMEOUT_EXPIRED"
-	case 0xffffffffffffffff:
-		return "TIMEOUT_IGNORED"
 	case 0x8e22:
 		return "TRANSFORM_FEEDBACK"
 	case 0x8e24:
@@ -1335,6 +1333,19 @@ func (ctx *context) BindTexture(target Enum, t Texture) {
 			fn: glfnBindTexture,
 			a0: target.c(),
 			a1: t.c(),
+		},
+		blocking: true})
+}
+
+func (ctx *context) BindVertexArray(va VertexArray) {
+	defer func() {
+		errstr := ctx.errDrain()
+		log.Printf("gl.BindVertexArray(%v) %v", va, errstr)
+	}()
+	ctx.enqueueDebug(call{
+		args: fnargs{
+			fn: glfnBindVertexArray,
+			a0: va.c(),
 		},
 		blocking: true})
 }
@@ -1729,6 +1740,19 @@ func (ctx *context) CreateTexture() (r0 Texture) {
 	}))}
 }
 
+func (ctx *context) CreateVertexArray() (r0 VertexArray) {
+	defer func() {
+		errstr := ctx.errDrain()
+		log.Printf("gl.CreateVertexArray() %v%v", r0, errstr)
+	}()
+	return VertexArray{Value: uint32(ctx.enqueue(call{
+		args: fnargs{
+			fn: glfnGenVertexArray,
+		},
+		blocking: true,
+	}))}
+}
+
 func (ctx *context) CullFace(mode Enum) {
 	defer func() {
 		errstr := ctx.errDrain()
@@ -1750,7 +1774,7 @@ func (ctx *context) DeleteBuffer(v Buffer) {
 	ctx.enqueueDebug(call{
 		args: fnargs{
 			fn: glfnDeleteBuffer,
-			a0: uintptr(v.Value),
+			a0: v.c(),
 		},
 		blocking: true})
 }
@@ -1763,7 +1787,7 @@ func (ctx *context) DeleteFramebuffer(v Framebuffer) {
 	ctx.enqueueDebug(call{
 		args: fnargs{
 			fn: glfnDeleteFramebuffer,
-			a0: uintptr(v.Value),
+			a0: v.c(),
 		},
 		blocking: true})
 }
@@ -1815,6 +1839,19 @@ func (ctx *context) DeleteTexture(v Texture) {
 	ctx.enqueueDebug(call{
 		args: fnargs{
 			fn: glfnDeleteTexture,
+			a0: v.c(),
+		},
+		blocking: true})
+}
+
+func (ctx *context) DeleteVertexArray(v VertexArray) {
+	defer func() {
+		errstr := ctx.errDrain()
+		log.Printf("gl.DeleteVertexArray(%v) %v", v, errstr)
+	}()
+	ctx.enqueueDebug(call{
+		args: fnargs{
+			fn: glfnDeleteVertexArray,
 			a0: v.c(),
 		},
 		blocking: true})
@@ -2861,10 +2898,10 @@ func (ctx *context) StencilOpSeparate(face, sfail, dpfail, dppass Enum) {
 		blocking: true})
 }
 
-func (ctx *context) TexImage2D(target Enum, level int, width, height int, format Enum, ty Enum, data []byte) {
+func (ctx *context) TexImage2D(target Enum, level int, internalFormat int, width, height int, format Enum, ty Enum, data []byte) {
 	defer func() {
 		errstr := ctx.errDrain()
-		log.Printf("gl.TexImage2D(%v, %v, %v, %v, %v, %v, len(%d)) %v", target, level, width, height, format, ty, len(data), errstr)
+		log.Printf("gl.TexImage2D(%v, %v, %v, %v, %v, %v, %v, len(%d)) %v", target, level, internalFormat, width, height, format, ty, len(data), errstr)
 	}()
 	parg := unsafe.Pointer(nil)
 	if len(data) > 0 {
@@ -2876,7 +2913,7 @@ func (ctx *context) TexImage2D(target Enum, level int, width, height int, format
 
 			a0: target.c(),
 			a1: uintptr(level),
-			a2: uintptr(format),
+			a2: uintptr(internalFormat),
 			a3: uintptr(width),
 			a4: uintptr(height),
 			a5: format.c(),

@@ -56,6 +56,11 @@ type Context interface {
 	// http://www.khronos.org/opengles/sdk/docs/man3/html/glBindTexture.xhtml
 	BindTexture(target Enum, t Texture)
 
+	// BindVertexArray binds a vertex array.
+	//
+	// http://www.khronos.org/opengles/sdk/docs/man3/html/glBindVertexArray.xhtml
+	BindVertexArray(rb VertexArray)
+
 	// BlendColor sets the blend color.
 	//
 	// http://www.khronos.org/opengles/sdk/docs/man3/html/glBlendColor.xhtml
@@ -187,6 +192,11 @@ type Context interface {
 	// http://www.khronos.org/opengles/sdk/docs/man3/html/glGenTextures.xhtml
 	CreateTexture() Texture
 
+	// CreateTVertexArray creates a vertex array.
+	//
+	// http://www.khronos.org/opengles/sdk/docs/man3/html/glGenVertexArrays.xhtml
+	CreateVertexArray() VertexArray
+
 	// CullFace specifies which polygons are candidates for culling.
 	//
 	// Valid modes: FRONT, BACK, FRONT_AND_BACK.
@@ -223,6 +233,11 @@ type Context interface {
 	//
 	// http://www.khronos.org/opengles/sdk/docs/man3/html/glDeleteTextures.xhtml
 	DeleteTexture(v Texture)
+
+	// DeleteVertexArray deletes the given render buffer object.
+	//
+	// http://www.khronos.org/opengles/sdk/docs/man3/html/glDeleteVertexArrays.xhtml
+	DeleteVertexArray(v VertexArray)
 
 	// DepthFunc sets the function used for depth buffer comparisons.
 	//
@@ -612,7 +627,7 @@ type Context interface {
 	// TexImage2D writes a 2D texture image.
 	//
 	// http://www.khronos.org/opengles/sdk/docs/man3/html/glTexImage2D.xhtml
-	TexImage2D(target Enum, level int, width, height int, format Enum, ty Enum, data []byte)
+	TexImage2D(target Enum, level int, internalFormat int, width, height int, format Enum, ty Enum, data []byte)
 
 	// TexSubImage2D writes a subregion of a 2D texture image.
 	//

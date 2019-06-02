@@ -116,10 +116,7 @@ func Show(hwnd syscall.Handle) {
 }
 
 func Release(hwnd syscall.Handle) {
-	// TODO(andlabs): check for errors from this?
-	// TODO(andlabs): remove unsafe
-	_DestroyWindow(hwnd)
-	// TODO(andlabs): what happens if we're still painting?
+	SendMessage(hwnd, _WM_CLOSE, 0, 0)
 }
 
 func sendFocus(hwnd syscall.Handle, uMsg uint32, wParam, lParam uintptr) (lResult uintptr) {
@@ -170,8 +167,11 @@ func sendSize(hwnd syscall.Handle) {
 }
 
 func sendClose(hwnd syscall.Handle, uMsg uint32, wParam, lParam uintptr) (lResult uintptr) {
+	// TODO(ktye): DefWindowProc calls DestroyWindow by default.
+	// To intercept destruction of the window, return 0 and call
+	// DestroyWindow when appropriate.
 	LifecycleEvent(hwnd, lifecycle.StageDead)
-	return 0
+	return _DefWindowProc(hwnd, uMsg, wParam, lParam)
 }
 
 func sendMouseEvent(hwnd syscall.Handle, uMsg uint32, wParam, lParam uintptr) (lResult uintptr) {
@@ -367,6 +367,7 @@ func NewWindow(opts *screen.NewWindowOptions) (syscall.Handle, error) {
 }
 
 const windowClass = "shiny_Window"
+const screenWindowClass = "shiny_ScreenWindow"
 
 func initWindowClass() (err error) {
 	wcname, err := syscall.UTF16PtrFromString(windowClass)
@@ -385,8 +386,17 @@ func initWindowClass() (err error) {
 	return err
 }
 
+func closeWindowClass() (err error) {
+	wcname, err := syscall.UTF16PtrFromString(windowClass)
+	if err != nil {
+		return err
+	}
+	_UnregisterClass(wcname, hThisInstance)
+
+	return nil
+}
+
 func initScreenWindow() (err error) {
-	const screenWindowClass = "shiny_ScreenWindow"
 	swc, err := syscall.UTF16PtrFromString(screenWindowClass)
 	if err != nil {
 		return err
@@ -416,6 +426,20 @@ func initScreenWindow() (err error) {
 	if err != nil {
 		return err
 	}
+	return nil
+}
+
+func closeScreenWindow() (err error) {
+	// first destroy window
+	_DestroyWindow(screenHWND)
+
+	// then unregister class
+	swc, err := syscall.UTF16PtrFromString(screenWindowClass)
+	if err != nil {
+		return err
+	}
+	_UnregisterClass(swc, hThisInstance)
+
 	return nil
 }
 
@@ -461,13 +485,16 @@ func Main(f func()) (retErr error) {
 	}
 	defer func() {
 		// TODO(andlabs): log an error if this fails?
-		_DestroyWindow(screenHWND)
-		// TODO(andlabs): unregister window class
+		closeScreenWindow()
 	}()
 
 	if err := initWindowClass(); err != nil {
 		return err
 	}
+	defer func() {
+		// TODO(andlabs): log an error if this fails?
+		closeWindowClass()
+	}()
 
 	// Prime the pump.
 	mainCallback = f

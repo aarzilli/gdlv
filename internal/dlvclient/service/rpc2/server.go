@@ -44,6 +44,8 @@ type RestartOut struct {
 }
 
 type StateIn struct {
+	// If NonBlocking is true State will return immediately even if the target process is running.
+	NonBlocking bool
 }
 
 type StateOut struct {
@@ -281,4 +283,39 @@ type AncestorsIn struct {
 
 type AncestorsOut struct {
 	Ancestors []api.Ancestor
+}
+
+// FunctionReturnLocationsIn holds arguments for the
+// FunctionReturnLocationsRPC call. It holds the name of
+// the function for which all return locations should be
+// given.
+type FunctionReturnLocationsIn struct {
+	// FnName is the name of the function for which all
+	// return locations should be given.
+	FnName string
+}
+
+// FunctionReturnLocationsOut holds the result of the FunctionReturnLocations
+// RPC call. It provides the list of addresses that the given function returns,
+// for example with a `RET` instruction or `CALL runtime.deferreturn`.
+type FunctionReturnLocationsOut struct {
+	// Addrs is the list of all locations where the given function returns.
+	Addrs []uint64
+}
+
+type IsMulticlientIn struct {
+}
+
+type IsMulticlientOut struct {
+	// IsMulticlient returns true if the headless instance was started with --accept-multiclient
+	IsMulticlient bool
+}
+
+// ListDynamicLibrariesIn holds the arguments of ListDynamicLibraries
+type ListDynamicLibrariesIn struct {
+}
+
+// ListDynamicLibrariesOut holds the return values of ListDynamicLibraries
+type ListDynamicLibrariesOut struct {
+	List []api.Image
 }

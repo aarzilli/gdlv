@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-// +build linux darwin windows
+// +build linux darwin windows openbsd
 // +build gldebug
 
 package gl
@@ -49,6 +49,10 @@ type Uniform struct {
 	name  string
 }
 
+type VertexArray struct {
+	Value uint32
+}
+
 func (v Attrib) c() uintptr { return uintptr(v.Value) }
 func (v Enum) c() uintptr   { return uintptr(v) }
 func (v Program) c() uintptr {
@@ -65,6 +69,7 @@ func (v Framebuffer) c() uintptr  { return uintptr(v.Value) }
 func (v Renderbuffer) c() uintptr { return uintptr(v.Value) }
 func (v Texture) c() uintptr      { return uintptr(v.Value) }
 func (v Uniform) c() uintptr      { return uintptr(v.Value) }
+func (v VertexArray) c() uintptr  { return uintptr(v.Value) }
 
 func (v Attrib) String() string       { return fmt.Sprintf("Attrib(%d:%s)", v.Value, v.name) }
 func (v Program) String() string      { return fmt.Sprintf("Program(%d)", v.Value) }
@@ -74,3 +79,4 @@ func (v Framebuffer) String() string  { return fmt.Sprintf("Framebuffer(%d)", v.
 func (v Renderbuffer) String() string { return fmt.Sprintf("Renderbuffer(%d)", v.Value) }
 func (v Texture) String() string      { return fmt.Sprintf("Texture(%d)", v.Value) }
 func (v Uniform) String() string      { return fmt.Sprintf("Uniform(%d:%s)", v.Value, v.name) }
+func (v VertexArray) String() string  { return fmt.Sprintf("VertexArray(%d)", v.Value) }
