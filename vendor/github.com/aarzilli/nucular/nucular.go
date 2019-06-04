@@ -2666,6 +2666,12 @@ func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, s
 		rect.H = ctx.scale(rect.H)
 	}
 
+	if ((rect.X+rect.W <= 0) && (rect.Y+rect.H <= 0)) || ((rect.X >= ctx.Windows[0].Bounds.W) && (rect.Y >= ctx.Windows[0].Bounds.H)) {
+		// out of bounds
+		rect.X = 0
+		rect.Y = 0
+	}
+
 	if rect.X == 0 && rect.Y == 0 && flags&WindowNonmodal != 0 {
 		rect.X, rect.Y = ctx.autoPosition()
 	}
