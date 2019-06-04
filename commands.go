@@ -1272,8 +1272,12 @@ func sourceCommand(out io.Writer, args string) error {
 		return nil
 	}
 
-	_, err := StarlarkEnv.Execute(out, expandTilde(args), nil, "main", nil)
-	return err
+	v, err := StarlarkEnv.Execute(out, expandTilde(args), nil, "main", nil)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%v\n", v.String())
+	return nil
 }
 
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
