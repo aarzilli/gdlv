@@ -2,11 +2,16 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"strconv"
+	"strings"
 	"unicode"
 
+	"go.starlark.net/starlark"
+
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
+	"github.com/aarzilli/gdlv/internal/starbind"
 )
 
 // ScopedExpr represents an expression to be evaluated in a specified scope.
@@ -37,7 +42,7 @@ func ParseScopedExpr(in string) ScopedExpr {
 			continue
 		}
 		if ch != '@' {
-			return ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, DeferredCall: -1, EvalExpr: in}
+			return ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, DeferredCall: -1, EvalExpr: strings.TrimSpace(in)}
 		} else {
 			in = in[i:]
 			break
@@ -122,7 +127,7 @@ func ParseScopedExpr(in string) ScopedExpr {
 				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "nothing after @"}
 			}
 			in = in[1:]
-			r.EvalExpr = in
+			r.EvalExpr = strings.TrimSpace(in)
 			return r
 
 		default:
@@ -267,11 +272,43 @@ func evalScopedExpr(expr string, cfg api.LoadConfig) *api.Variable {
 		return &api.Variable{Name: expr, Unreadable: "could not find specified frame"}
 	}
 
-	v, err := client.EvalVariable(api.EvalScope{gid, frame, deferredCall}, se.EvalExpr, cfg)
+	if len(se.EvalExpr) == 0 || se.EvalExpr[0] != '$' {
+		v, err := client.EvalVariable(api.EvalScope{gid, frame, deferredCall}, se.EvalExpr, cfg)
+		if err != nil {
+			return &api.Variable{Name: expr, Unreadable: err.Error()}
+		}
+		return v
+	}
+
+	sv, err := StarlarkEnv.Execute(&editorWriter{&scrollbackEditor, true}, "<expr>", strings.TrimLeft(se.EvalExpr[1:], " "), "<expr>", nil)
 	if err != nil {
 		return &api.Variable{Name: expr, Unreadable: err.Error()}
 	}
-	return v
+
+	return convertStarlarkToVariable(expr, sv)
+}
+
+func convertStarlarkToVariable(expr string, sv starlark.Value) *api.Variable {
+	switch sv := sv.(type) {
+	case *starlark.List:
+		r := &api.Variable{
+			Name: expr,
+			Type: "list", RealType: "list",
+			Kind: reflect.Slice,
+			Len:  int64(sv.Len()), Cap: int64(sv.Len()),
+		}
+
+		for i := 0; i < sv.Len(); i++ {
+			r.Children = append(r.Children, *convertStarlarkToVariable("", sv.Index(i)))
+		}
+		return r
+
+	case starbind.WrappedVariable:
+		return sv.UnwrapVariable()
+	default:
+		s := sv.String()
+		return &api.Variable{Name: expr, Kind: reflect.String, Type: "string", RealType: "string", Len: int64(len(s)), Value: s}
+	}
 }
 
 func findFrameOffset(gid int, frameOffset int64, rx *regexp.Regexp) (frame int) {

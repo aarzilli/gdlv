@@ -16,6 +16,14 @@ import (
 // autoLoadConfig is the load configuration used to automatically load more from a variable
 var autoLoadConfig = api.LoadConfig{false, 1, 1024, 64, -1}
 
+type WrappedVariable interface {
+	UnwrapVariable() *api.Variable
+}
+
+var _ WrappedVariable = structVariableAsStarlarkValue{}
+var _ WrappedVariable = sliceVariableAsStarlarkValue{}
+var _ WrappedVariable = ptrVariableAsStarlarkValue{}
+
 // interfaceToStarlarkValue converts an interface{} variable (produced by
 // decoding JSON) into a starlark.Value.
 func (env *Env) interfaceToStarlarkValue(v interface{}) starlark.Value {
@@ -329,6 +337,10 @@ func (v structVariableAsStarlarkValue) Get(key starlark.Value) (starlark.Value, 
 	return r, true, nil
 }
 
+func (v structVariableAsStarlarkValue) UnwrapVariable() *api.Variable {
+	return v.v
+}
+
 type sliceVariableAsStarlarkValue struct {
 	v   *api.Variable
 	env *Env
@@ -374,6 +386,10 @@ func (v sliceVariableAsStarlarkValue) Len() int {
 
 func (v sliceVariableAsStarlarkValue) Iterate() starlark.Iterator {
 	return &sliceVariableAsStarlarkValueIterator{0, v.v, v.env}
+}
+
+func (v sliceVariableAsStarlarkValue) UnwrapVariable() *api.Variable {
+	return v.v
 }
 
 type sliceVariableAsStarlarkValueIterator struct {
@@ -473,6 +489,10 @@ func (v ptrVariableAsStarlarkValue) Get(key starlark.Value) (starlark.Value, boo
 	// autodereference
 	x := structVariableAsStarlarkValue{&v.v.Children[0], v.env}
 	return x.Get(key)
+}
+
+func (v ptrVariableAsStarlarkValue) UnwrapVariable() *api.Variable {
+	return v.v
 }
 
 // unmarshalStarlarkValue unmarshals a starlark.Value 'val' into a Go variable 'dst'.

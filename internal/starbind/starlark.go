@@ -146,6 +146,11 @@ func (env *Env) Execute(out io.Writer, path string, source interface{}, mainFnNa
 
 	env.out = out
 	thread := env.newThread()
+
+	if mainFnName == "<expr>" {
+		return starlark.Eval(thread, path, source, env.env)
+	}
+
 	globals, err := starlark.ExecFile(thread, path, source, env.env)
 	if err != nil {
 		return starlark.None, err

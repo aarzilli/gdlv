@@ -122,6 +122,7 @@ Option -first will step into the first function call of the line, -last will ste
 		{aliases: []string{"print", "p"}, complete: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
 
 	print [@<scope-expr>] <expression>
+	print [@<scope-expr>] $ <starlar-expression>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.
 Type 'help scope-expr' for a description of <scope-expr>.`},
@@ -137,7 +138,8 @@ Type 'help scope-expr' for a description of <scope-expr>.`},
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions. Only numerical variables and pointers can be changed.`},
 		{aliases: []string{"display", "disp", "dp"}, complete: completeVariable, cmdFn: displayVar, helpMsg: `Adds one expression to the Variables panel.
 	
-	display [@<scope-expr>] <expr>
+	display [@<scope-expr>] <expression>
+	display [@<scope-expr>] $ <starlark-expression>
 
 See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.
 Type 'help scope-expr' for a description of <scope-expr>.`},
