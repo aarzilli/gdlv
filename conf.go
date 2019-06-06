@@ -89,6 +89,11 @@ func loadConfiguration() {
 	if conf.CustomFormatters == nil {
 		conf.CustomFormatters = make(map[string]*CustomFormatter)
 	}
+	for k, cfmt := range conf.CustomFormatters {
+		if !cfmt.IsStarlark {
+			delete(conf.CustomFormatters, k)
+		}
+	}
 }
 
 func saveConfiguration() {

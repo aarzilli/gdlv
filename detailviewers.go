@@ -3,15 +3,12 @@ package main
 import (
 	"bytes"
 	"fmt"
-	"go/ast"
-	"go/parser"
-	"go/printer"
-	"go/token"
 	"math"
 	"reflect"
 	"strconv"
-	"strings"
 	"sync"
+
+	"go.starlark.net/starlark"
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/rect"
@@ -480,18 +477,14 @@ func formatLocation2(loc api.Location) string {
 }
 
 type customFmtMaker struct {
-	v      *Variable
-	fmtEd  nucular.TextEditor
-	argEd  nucular.TextEditor
-	errstr string
+	v  *Variable
+	ed nucular.TextEditor
 }
 
 func viewCustomFormatterMaker(w *nucular.Window, v *Variable, fmtstr string, argstr []string) {
 	vw := &customFmtMaker{v: v}
-	vw.fmtEd.Flags = nucular.EditSelectable | nucular.EditClipboard
-	vw.argEd.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditMultiline
-	vw.fmtEd.Buffer = []rune(fmtstr)
-	vw.argEd.Buffer = []rune(strings.Join(argstr, "\n"))
+	vw.ed.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditMultiline
+	vw.ed.Buffer = []rune(fmtstr)
 	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Type), dynamicPopupFlags, rect.Rect{20, 100, 480, 500}, true, vw.Update)
 }
 
@@ -499,21 +492,11 @@ func (vw *customFmtMaker) Update(w *nucular.Window) {
 	w.Row(30).Static(0)
 	w.Label(fmt.Sprintf("Format string for all variables x of type %s", vw.v.Type), "LC")
 
-	w.Row(30).Static(100, 0)
-
-	w.Label("Format String: ", "LC")
-	vw.fmtEd.Edit(w)
-
-	w.Row(30).Static(0)
-	w.Label("Arguments (use x for the variable name):", "LC")
+	w.Row(30).Dynamic(1)
+	w.Label("Starlark script (current variable is bound to 'x'):", "LC")
 
 	w.RowScaled(nucular.FontHeight(w.Master().Style().Font) * 7).Dynamic(1)
-	vw.argEd.Edit(w)
-
-	if vw.errstr != "" {
-		w.Row(30).Static(0)
-		w.Label(vw.errstr, "LC")
-	}
+	vw.ed.Edit(w)
 
 	w.Row(30).Static(0, 80, 80)
 	w.Spacing(1)
@@ -522,155 +505,33 @@ func (vw *customFmtMaker) Update(w *nucular.Window) {
 	}
 
 	if w.ButtonText("OK") {
-		var err error
-		conf.CustomFormatters[vw.v.Type], err = newCustomFormatter(string(vw.fmtEd.Buffer), string(vw.argEd.Buffer))
-		if err == nil {
-			saveConfiguration()
-			go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
-			w.Close()
-		} else {
-			vw.errstr = fmt.Sprintf("Error: %s", err.Error())
-		}
+		conf.CustomFormatters[vw.v.Type] = newCustomFormatter(string(vw.ed.Buffer))
+		saveConfiguration()
+		go refreshState(refreshToSameFrame, clearFrameSwitch, nil)
+		w.Close()
 	}
-
 }
 
 type CustomFormatter struct {
-	Fmtstr string
-	Argstr []string
+	Fmtstr     string
+	Argstr     []string
+	IsStarlark bool
 }
 
-func newCustomFormatter(fmtstr string, argstr string) (*CustomFormatter, error) {
-	r := &CustomFormatter{Fmtstr: fmtstr}
-
-	v := strings.Split(argstr, "\n")
-
-	r.Argstr = make([]string, 0, len(v))
-
-	for i := range v {
-		v[i] = strings.TrimSpace(v[i])
-		if v[i] == "" {
-			continue
-		}
-		r.Argstr = append(r.Argstr, v[i])
-	}
-
-	_, err := r.parseArgs()
-	if err != nil {
-		return nil, err
-	}
-
-	return r, nil
-}
-
-func (c *CustomFormatter) parseArgs() ([]ast.Expr, error) {
-	argexpr := make([]ast.Expr, len(c.Argstr))
-	for i := range c.Argstr {
-		ae, err := c.parseArg(i)
-		if err != nil {
-			return nil, err
-		}
-		argexpr[i] = ae
-	}
-	return argexpr, nil
-}
-
-type CustomFormatterWalker struct {
-	replace string
-	err     error
-}
-
-func (c *CustomFormatter) parseArg(i int) (ast.Expr, error) {
-	var err error
-	argexpr, err := parser.ParseExpr(c.Argstr[i])
-	if err != nil {
-		return nil, fmt.Errorf("argument %d: %s", i, err.Error())
-	}
-
-	var cfw CustomFormatterWalker
-	ast.Walk(&cfw, argexpr)
-	if cfw.err != nil {
-		return nil, fmt.Errorf("argument %d: %s", i, cfw.err.Error())
-	}
-
-	return argexpr, nil
-}
-
-func (cfw *CustomFormatterWalker) Visit(n ast.Node) ast.Visitor {
-	if cfw.err != nil {
-		return nil
-	}
-	switch n := n.(type) {
-	case *ast.SelectorExpr:
-		ast.Walk(cfw, n.X)
-		return nil
-	case *ast.Ident:
-		if cfw.replace != "" && n.Name == "x" {
-			n.Name = cfw.replace
-		}
-		return nil
-	default:
-		return cfw
-	}
+func newCustomFormatter(fmtstr string) *CustomFormatter {
+	return &CustomFormatter{Fmtstr: fmtstr, IsStarlark: true}
 }
 
 func (c *CustomFormatter) Format(v *Variable) {
-	argexpr, _ := c.parseArgs()
-
-	vars := make([]*api.Variable, len(argexpr))
-	errors := make([]error, len(argexpr))
-
-	var cfw CustomFormatterWalker
-	cfw.replace = fmt.Sprintf("(*(*%q)(%#x))", v.Type, v.Addr)
-
-	for i := range argexpr {
-		if _, isident := argexpr[i].(*ast.Ident); isident {
-			vars[i] = v.Variable
-		} else {
-			ast.Walk(&cfw, argexpr[i])
-
-			var buf bytes.Buffer
-			printer.Fprint(&buf, token.NewFileSet(), argexpr[i])
-			expr := buf.String()
-
-			vars[i], errors[i] = client.EvalVariable(currentEvalScope(), expr, LongLoadConfig)
-		}
+	sv, err := StarlarkEnv.Execute(&editorWriter{&scrollbackEditor, true}, "<expr>", c.Fmtstr, "<expr>", nil, v.Variable)
+	if err != nil {
+		v.Value = fmt.Sprintf("custom formatter error: %v", err)
+		return
 	}
-
-	args := make([]interface{}, 0, len(vars))
-
-	for i, v := range vars {
-		if v == nil {
-			args = append(args, errors[i])
-			continue
-		}
-		switch v.Kind {
-		case reflect.Bool:
-			args = append(args, v.Value == "true")
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			n, err := strconv.ParseInt(v.Value, 0, 64)
-			if err != nil {
-				args = append(args, v.Value)
-			} else {
-				args = append(args, n)
-			}
-		case reflect.Uintptr, reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			n, err := strconv.ParseUint(v.Value, 0, 64)
-			args = append(args, n)
-			if err != nil {
-				args = append(args, v.Value)
-			} else {
-				args = append(args, n)
-			}
-		case reflect.Float32, reflect.Float64:
-			n, _ := strconv.ParseFloat(v.Value, 64)
-			args = append(args, n)
-		case reflect.String:
-			args = append(args, v.Value)
-		default:
-			args = append(args, wrapApiVariableSimple(v).SinglelineString(true, true))
-		}
+	switch sv := sv.(type) {
+	case starlark.String:
+		v.Value = string(sv)
+	default:
+		v.Value = sv.String()
 	}
-
-	v.Value = fmt.Sprintf(c.Fmtstr, args...)
 }

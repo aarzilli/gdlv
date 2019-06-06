@@ -143,7 +143,7 @@ func executeInit() {
 	}
 	fh.Close()
 
-	_, err = StarlarkEnv.Execute(&scrollbackOut, initPath, nil, "main", nil)
+	_, err = StarlarkEnv.Execute(&scrollbackOut, initPath, nil, "main", nil, nil)
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "\n%v\n", err)
 		return

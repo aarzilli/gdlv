@@ -123,7 +123,7 @@ func New(ctx Context) *Env {
 // Source can be either a []byte, a string or a io.Reader. If source is nil
 // Execute will execute the file specified by 'path'.
 // After the file is executed if a function named mainFnName exists it will be called, passing args to it.
-func (env *Env) Execute(out io.Writer, path string, source interface{}, mainFnName string, args []interface{}) (starlark.Value, error) {
+func (env *Env) Execute(out io.Writer, path string, source interface{}, mainFnName string, args []interface{}, v *api.Variable) (starlark.Value, error) {
 	defer func() {
 		err := recover()
 		if err == nil {
@@ -147,11 +147,20 @@ func (env *Env) Execute(out io.Writer, path string, source interface{}, mainFnNa
 	env.out = out
 	thread := env.newThread()
 
-	if mainFnName == "<expr>" {
-		return starlark.Eval(thread, path, source, env.env)
+	envenv := env.env
+	if v != nil {
+		envenv = starlark.StringDict{}
+		for k, v := range env.env {
+			envenv[k] = v
+		}
+		envenv["x"] = structVariableAsStarlarkValue{v, env}
 	}
 
-	globals, err := starlark.ExecFile(thread, path, source, env.env)
+	if mainFnName == "<expr>" {
+		return starlark.Eval(thread, path, source, envenv)
+	}
+
+	globals, err := starlark.ExecFile(thread, path, source, envenv)
 	if err != nil {
 		return starlark.None, err
 	}

@@ -280,7 +280,7 @@ func evalScopedExpr(expr string, cfg api.LoadConfig) *api.Variable {
 		return v
 	}
 
-	sv, err := StarlarkEnv.Execute(&editorWriter{&scrollbackEditor, true}, "<expr>", strings.TrimLeft(se.EvalExpr[1:], " "), "<expr>", nil)
+	sv, err := StarlarkEnv.Execute(&editorWriter{&scrollbackEditor, true}, "<expr>", strings.TrimLeft(se.EvalExpr[1:], " "), "<expr>", nil, nil)
 	if err != nil {
 		return &api.Variable{Name: expr, Unreadable: err.Error()}
 	}
@@ -305,6 +305,8 @@ func convertStarlarkToVariable(expr string, sv starlark.Value) *api.Variable {
 
 	case starbind.WrappedVariable:
 		return sv.UnwrapVariable()
+	case starlark.String:
+		return &api.Variable{Name: expr, Kind: reflect.String, Type: "string", RealType: "string", Len: int64(len(string(sv))), Value: string(sv)}
 	default:
 		s := sv.String()
 		return &api.Variable{Name: expr, Kind: reflect.String, Type: "string", RealType: "string", Len: int64(len(s)), Value: s}

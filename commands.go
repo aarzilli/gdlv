@@ -1274,7 +1274,7 @@ func sourceCommand(out io.Writer, args string) error {
 		return nil
 	}
 
-	v, err := StarlarkEnv.Execute(out, expandTilde(args), nil, "main", nil)
+	v, err := StarlarkEnv.Execute(out, expandTilde(args), nil, "main", nil, nil)
 	if err != nil {
 		return err
 	}
