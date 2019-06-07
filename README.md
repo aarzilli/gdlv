@@ -21,6 +21,9 @@ Use Ctrl+plus and Ctrl+minus to change font size.
 
 # News
 
+## 2019-06-07
+* Added Starlark as a scripting language
+
 ## 2019-05-11
 * Start from main.main instead of runtime.main.
 * Better interface when concurrent breakpoints happen during next, step or stepout.
