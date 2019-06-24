@@ -439,3 +439,23 @@ func (c *RPCClient) call(method string, args, reply interface{}) error {
 func (c *RPCClient) CallAPI(method string, args, reply interface{}) error {
 	return c.call(method, args, reply)
 }
+
+func (c *RPCClient) IsMulticlient() bool {
+	var out IsMulticlientOut
+	c.call("IsMulticlient", IsMulticlientIn{}, &out)
+	return out.IsMulticlient
+}
+
+func (c *RPCClient) Disconnect(cont bool) error {
+	if cont {
+		out := new(CommandOut)
+		c.client.Go("RPCServer.Command", &api.DebuggerCommand{Name: api.Continue, ReturnInfoLoadConfig: c.retValLoadCfg}, &out, nil)
+	}
+	return c.client.Close()
+}
+
+func (c *RPCClient) GetStateNonBlocking() (*api.DebuggerState, error) {
+	var out StateOut
+	err := c.call("State", StateIn{NonBlocking: true}, &out)
+	return out.State, err
+}

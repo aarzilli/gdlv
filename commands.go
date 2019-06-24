@@ -1483,15 +1483,7 @@ func executeCommand(cmdstr string) {
 	cmdstr, args := parseCommand(cmdstr)
 	if err := cmds.Call(cmdstr, args, &out); err != nil {
 		if _, ok := err.(ExitRequestError); ok {
-			if client != nil && client.AttachedToExistingProcess() && curThread >= 0 {
-				wnd.PopupOpen("Confirm Quit", dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, confirmQuit)
-				return
-			} else {
-				if client != nil {
-					client.Detach(true)
-				}
-				wnd.Close()
-			}
+			handleExitRequest()
 			return
 		}
 		// The type information gets lost in serialization / de-serialization,
@@ -1505,26 +1497,63 @@ func executeCommand(cmdstr string) {
 	}
 }
 
-func confirmQuit(w *nucular.Window) {
-	w.Row(20).Dynamic(1)
-	w.Label("Would you like to kill the process?", "LT")
-	w.Row(20).Static(0, 80, 80, 0)
-	w.Spacing(1)
-	exit := false
-	kill := false
-	if w.ButtonText("Yes") {
-		exit = true
-		kill = true
+// handleExitRequest prompts what to do about a multiclient server (if the
+// server is multiclient), what to do about the target process (if we
+// attached to it) and then exits.
+func handleExitRequest() {
+	if client != nil && curThread >= 0 && client.IsMulticlient() {
+		wnd.PopupOpen("Quit Action", dynamicPopupFlags, rect.Rect{100, 100, 500, 700}, true, func(w *nucular.Window) {
+			w.Row(20).Dynamic(1)
+			if w.ButtonText("Disconnect from headless instance, resume target process") {
+				client.Disconnect(true)
+				go wnd.Close()
+			}
+			if w.ButtonText("Disconnect from headless instance, leave target suspended") {
+				client.Disconnect(false)
+				go wnd.Close()
+			}
+			if w.ButtonText("Kill headless instance") {
+				handleExitRequest2()
+				w.Close()
+			}
+		})
+		return
 	}
-	if w.ButtonText("No") {
-		exit = true
-		kill = false
+
+	handleExitRequest2()
+}
+
+// handleExitRequest2, part two of handleExitRequest. Prompts about what to do about the target process (if we attached to it) and then exits.
+func handleExitRequest2() {
+	if client == nil || curThread < 0 || !client.AttachedToExistingProcess() {
+		if client != nil {
+			client.Detach(true)
+		}
+		wnd.Close()
+		return
 	}
-	if exit {
-		client.Detach(kill)
-		go wnd.Close()
-	}
-	w.Spacing(1)
+
+	wnd.PopupOpen("Confirm Quit", dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, func(w *nucular.Window) {
+		w.Row(20).Dynamic(1)
+		w.Label("Would you like to kill the process?", "LT")
+		w.Row(20).Static(0, 80, 80, 0)
+		w.Spacing(1)
+		exit := false
+		kill := false
+		if w.ButtonText("Yes") {
+			exit = true
+			kill = true
+		}
+		if w.ButtonText("No") {
+			exit = true
+			kill = false
+		}
+		if exit {
+			client.Detach(kill)
+			go wnd.Close()
+		}
+		w.Spacing(1)
+	})
 }
 
 func parseCommand(cmdstr string) (string, string) {

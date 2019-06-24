@@ -377,6 +377,17 @@ func (descr *ServerDescr) connectTo() {
 		fmt.Fprintf(&scrollbackOut, "Could not connect: %v\n", err)
 		return
 	}
+
+	if client.IsMulticlient() {
+		state, _ := client.GetStateNonBlocking()
+		if state != nil && state.Running {
+			_, err := client.Halt()
+			if err != nil {
+				fmt.Fprintf(&scrollbackOut, "could not halt: %v\n", err)
+			}
+		}
+	}
+
 	client.SetReturnValuesLoadConfig(&LongLoadConfig)
 	wnd.Unlock()
 	if client == nil {
