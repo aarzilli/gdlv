@@ -10,7 +10,7 @@ Gdlv is a graphical frontend to [Delve](https://github.com/derekparker/delve) fo
 
 First make sure you have the current version of delve installed:
 ```
-go get -u github.com/derekparker/delve/cmd/dlv
+go get -u github.com/go-delve/delve/cmd/dlv
 ```
 then install gdlv:
 ```
