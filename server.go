@@ -13,7 +13,7 @@ import (
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/rpc2"
-	"github.com/derekparker/delve/pkg/goversion"
+	"github.com/go-delve/delve/pkg/goversion"
 )
 
 type ServerDescr struct {

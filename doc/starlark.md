@@ -67,7 +67,7 @@ There are two ways to resume the execution of the target program:
 	raw_command("continue")
 	dlv_command("continue")
 
-The first one maps to the API call [Command](https://godoc.org/github.com/derekparker/delve/service/rpc2#RPCServer.Command). As such all the caveats explained in the [Client HowTo](../api/ClientHowto.md).
+The first one maps to the API call [Command](https://godoc.org/github.com/go-delve/delve/service/rpc2#RPCServer.Command). As such all the caveats explained in the [Client HowTo](../api/ClientHowto.md).
 
 The latter is equivalent to typing `continue` to the `(dlv)` command line and should do what you expect.
 

@@ -83,12 +83,12 @@ Type "help" followed by the name of a command for more information about it.`},
 
 	break [name] <linespec>
 
-See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/locspec.md for the syntax of linespec. To set breakpoints you can also right click on a source line and click "Set breakpoint". Breakpoint properties can be changed by right clicking on a breakpoint (either in the source panel or the breakpoints panel) and selecting "Edit breakpoint".`},
+See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/locspec.md for the syntax of linespec. To set breakpoints you can also right click on a source line and click "Set breakpoint". Breakpoint properties can be changed by right clicking on a breakpoint (either in the source panel or the breakpoints panel) and selecting "Edit breakpoint".`},
 		{aliases: []string{"trace", "t"}, cmdFn: tracepoint, complete: completeLocation, helpMsg: `Set tracepoint.
 
 	trace [name] <linespec>
 	
-A tracepoint is a breakpoint that does not stop the execution of the program, instead when the tracepoint is hit a notification is displayed. See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/locspec.md for the syntax of linespec.
+A tracepoint is a breakpoint that does not stop the execution of the program, instead when the tracepoint is hit a notification is displayed. See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/locspec.md for the syntax of linespec.
 
 See also: "help on", "help cond" and "help clear"`},
 		{aliases: []string{"clear"}, cmdFn: clear, helpMsg: `Deletes breakpoint.
@@ -124,24 +124,24 @@ Option -first will step into the first function call of the line, -last will ste
 	print [@<scope-expr>] <expression>
 	print [@<scope-expr>] $ <starlar-expression>
 
-See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.
+See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions.
 Type 'help scope-expr' for a description of <scope-expr>.`},
 		{aliases: []string{"list", "ls"}, complete: completeLocation, cmdFn: listCommand, helpMsg: `Show source code.
 		
 			list <linespec>
 		
-		See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.`},
+		See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions.`},
 		{aliases: []string{"set"}, cmdFn: setVar, complete: completeVariable, helpMsg: `Changes the value of a variable.
 
 	set <variable> = <value>
 
-See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions. Only numerical variables and pointers can be changed.`},
+See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions. Only numerical variables and pointers can be changed.`},
 		{aliases: []string{"display", "disp", "dp"}, complete: completeVariable, cmdFn: displayVar, helpMsg: `Adds one expression to the Variables panel.
 	
 	display [@<scope-expr>] <expression>
 	display [@<scope-expr>] $ <starlark-expression>
 
-See $GOPATH/src/github.com/derekparker/delve/Documentation/cli/expr.md for a description of supported expressions.
+See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions.
 Type 'help scope-expr' for a description of <scope-expr>.`},
 		{aliases: []string{"details", "det", "dt"}, complete: completeVariable, cmdFn: detailsVar, helpMsg: `Opens details window for the specified expression.
 	

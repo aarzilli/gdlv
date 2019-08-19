@@ -3,7 +3,7 @@ module github.com/aarzilli/gdlv
 require (
 	github.com/aarzilli/nucular v0.0.0-20190604155258-847327059ed7
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
-	github.com/derekparker/delve v1.1.0
+	github.com/go-delve/delve v1.2.0
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 	github.com/hashicorp/golang-lru v0.5.1 // indirect
 	go.starlark.net v0.0.0-20190528202925-30ae18b8564f
@@ -15,3 +15,5 @@ require (
 	golang.org/x/text v0.3.2 // indirect
 	golang.org/x/tools v0.0.0-20190603231351-8aaa1484dc10 // indirect
 )
+
+go 1.11
