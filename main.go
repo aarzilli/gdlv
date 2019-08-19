@@ -194,11 +194,11 @@ func guiUpdate(w *nucular.Window) {
 
 	for _, e := range wnd.Input().Keyboard.Keys {
 		switch {
-		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Code == key.CodeEqualSign):
+		case (e.Modifiers&key.ModControl != 0) && e.Rune == '+':
 			conf.Scaling += 0.1
 			setupStyle()
 
-		case (e.Modifiers == key.ModControl || e.Modifiers == key.ModControl|key.ModShift) && (e.Code == key.CodeHyphenMinus):
+		case (e.Modifiers&key.ModControl != 0) && e.Rune == '-':
 			conf.Scaling -= 0.1
 			setupStyle()
 
