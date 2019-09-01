@@ -828,16 +828,14 @@ func panelLayout(ctx *context, win *Window, height int, cols int, cnt int) {
 	item_spacing := style.Spacing
 
 	if height == 0 {
-		height = layout.Bounds.H - layout.FooterH - (layout.AtY - layout.Bounds.Y)
-		subtractHeight := true
-		if layout.Row.Index == 0 {
-			subtractHeight = false
-		}
-		if subtractHeight {
+		height = layout.Height - (layout.AtY - layout.Bounds.Y) - 1
+		if layout.Row.Index != 0 && (win.flags&windowPopup == 0) {
 			height -= layout.Row.Height
+		} else {
+			height -= item_spacing.Y
 		}
 		if layout.ReservedHeight > 0 {
-			height -= layout.ReservedHeight + item_spacing.Y
+			height -= layout.ReservedHeight
 		}
 	}
 
@@ -1969,8 +1967,14 @@ func doScrollbarv(win *Window, scroll, scrollwheel_bounds rect.Rect, offset floa
 	scroll_ratio = float64(scroll.H) / target
 	scroll_off = scroll_offset / target
 
+	originalScroll := scroll
+
 	/* calculate scrollbar cursor bounds */
 	cursor.H = int(scroll_ratio*float64(scroll.H) - 2)
+	if minh := FontHeight(font); cursor.H < minh {
+		cursor.H = minh
+		scroll.H -= minh
+	}
 	cursor.Y = scroll.Y + int(scroll_off*float64(scroll.H)) + 1
 	cursor.W = scroll.W - 2
 	cursor.X = scroll.X + 1
@@ -1986,13 +1990,13 @@ func doScrollbarv(win *Window, scroll, scrollwheel_bounds rect.Rect, offset floa
 	out := &win.widgets
 	state := out.PrevState(scroll)
 	scroll_offset = scrollbarBehavior(&state, in, scroll, cursor, emptyNorth, emptySouth, scroll_offset, target, scroll_step, vertical)
-	scroll_offset = scrollwheelBehavior(win, scroll, scrollwheel_bounds, scroll_offset, target, scroll_step)
+	scroll_offset = scrollwheelBehavior(win, originalScroll, scrollwheel_bounds, scroll_offset, target, scroll_step)
 
 	scroll_off = scroll_offset / target
 	cursor.Y = scroll.Y + int(scroll_off*float64(scroll.H))
 
 	out.Add(state, scroll)
-	drawScrollbar(win, state, style, scroll, cursor)
+	drawScrollbar(win, state, style, originalScroll, cursor)
 
 	return scroll_offset
 }
