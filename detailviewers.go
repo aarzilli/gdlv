@@ -73,7 +73,7 @@ func (dv *detailViewer) load(p *asyncLoad) {
 		return
 	}
 
-	dv.v = wrapApiVariable(v, v.Name, v.Name, true)
+	dv.v = wrapApiVariable(v, v.Name, v.Name, true, 0)
 
 	switch dv.v.Type {
 	case "string":
@@ -352,7 +352,7 @@ func (dv *detailViewer) loadMore() {
 					dv.v.Width = 0
 					dv.v.Value += lv.Value
 				case reflect.Array, reflect.Slice:
-					dv.v.Children = append(dv.v.Children, wrapApiVariables(lv.Children, dv.v.Kind, len(dv.v.Children), dv.v.Expression, true)...)
+					dv.v.Children = append(dv.v.Children, wrapApiVariables(lv.Children, dv.v.Kind, len(dv.v.Children), dv.v.Expression, true, 0)...)
 				}
 			}
 			additionalLoadMu.Lock()
@@ -485,7 +485,7 @@ func viewCustomFormatterMaker(w *nucular.Window, v *Variable, fmtstr string, arg
 	vw := &customFmtMaker{v: v}
 	vw.ed.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditMultiline
 	vw.ed.Buffer = []rune(fmtstr)
-	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Type), dynamicPopupFlags, rect.Rect{20, 100, 480, 500}, true, vw.Update)
+	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Type), popupFlags|nucular.WindowScalable, rect.Rect{20, 100, 480, 500}, true, vw.Update)
 }
 
 func (vw *customFmtMaker) Update(w *nucular.Window) {
@@ -495,7 +495,8 @@ func (vw *customFmtMaker) Update(w *nucular.Window) {
 	w.Row(30).Dynamic(1)
 	w.Label("Starlark script (current variable is bound to 'x'):", "LC")
 
-	w.RowScaled(nucular.FontHeight(w.Master().Style().Font) * 7).Dynamic(1)
+	w.LayoutReserveRow(30, 1)
+	w.RowScaled(0).Dynamic(1)
 	vw.ed.Edit(w)
 
 	w.Row(30).Static(0, 80, 80)

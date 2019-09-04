@@ -153,7 +153,7 @@ func (env *Env) Execute(out io.Writer, path string, source interface{}, mainFnNa
 		for k, v := range env.env {
 			envenv[k] = v
 		}
-		envenv["x"] = structVariableAsStarlarkValue{v, env}
+		envenv["x"], _ = env.variableValueToStarlarkValue(v, true)
 	}
 
 	if mainFnName == "<expr>" {

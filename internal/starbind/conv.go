@@ -230,10 +230,16 @@ func (env *Env) variableValueToStarlarkValue(v *api.Variable, top bool) (starlar
 	case reflect.String:
 		return starlark.String(v.Value), nil
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int:
-		n, _ := strconv.ParseInt(v.Value, 0, 64)
+		n, err := strconv.ParseInt(v.Value, 0, 64)
+		if err != nil {
+			return starlark.String(v.Value), nil
+		}
 		return starlark.MakeInt64(n), nil
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint, reflect.Uintptr:
-		n, _ := strconv.ParseUint(v.Value, 0, 64)
+		n, err := strconv.ParseUint(v.Value, 0, 64)
+		if err != nil {
+			return starlark.String(v.Value), nil
+		}
 		return starlark.MakeUint64(n), nil
 	case reflect.Float32, reflect.Float64:
 		switch v.Value {

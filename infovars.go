@@ -58,25 +58,13 @@ func (v *Variable) MultilineString(indent string) string {
 }
 
 func wrapApiVariableSimple(v *api.Variable) *Variable {
-	return wrapApiVariable(v, v.Name, v.Name, false)
+	return wrapApiVariable(v, v.Name, v.Name, false, 0)
 }
 
-func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool) *Variable {
+func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool, depth int) *Variable {
 	r := &Variable{Variable: v}
 	r.Value = v.Value
 	r.Expression = expr
-	if f := varFormat[v.Addr]; f != nil {
-		f(r)
-	} else if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) {
-		n, _ := strconv.Atoi(v.Value)
-		if n >= ' ' && n <= '~' {
-			r.Value = fmt.Sprintf("%s %q", v.Value, n)
-		}
-	} else if f := conf.CustomFormatters[v.Type]; f != nil && customFormatters {
-		f.Format(r)
-	} else if v.Type == "time.Time" {
-		r.Value = formatTime(v)
-	}
 
 	if name != "" {
 		r.DisplayName = name
@@ -88,7 +76,7 @@ func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool) 
 
 	r.Varname = r.DisplayName
 
-	r.Children = wrapApiVariables(v.Children, v.Kind, 0, r.Expression, customFormatters)
+	r.Children = wrapApiVariables(v.Children, v.Kind, 0, r.Expression, customFormatters, depth+1)
 
 	if v.Kind == reflect.Interface {
 		if len(r.Children) > 0 && r.Children[0].Kind == reflect.Ptr {
@@ -97,6 +85,20 @@ func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool) 
 			}
 		}
 	}
+
+	if f := varFormat[v.Addr]; f != nil {
+		f(r)
+	} else if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) {
+		n, _ := strconv.Atoi(v.Value)
+		if n >= ' ' && n <= '~' {
+			r.Value = fmt.Sprintf("%s %q", v.Value, n)
+		}
+	} else if f := conf.CustomFormatters[v.Type]; f != nil && customFormatters && depth < 10 {
+		f.Format(r)
+	} else if v.Type == "time.Time" {
+		r.Value = formatTime(v)
+	}
+
 	return r
 }
 
@@ -148,7 +150,7 @@ func fieldVariable(v *api.Variable, name string) *api.Variable {
 	return nil
 }
 
-func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr string, customFormatters bool) []*Variable {
+func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr string, customFormatters bool, depth int) []*Variable {
 	r := make([]*Variable, 0, len(vs))
 
 	const minInlineKeyValueLen = 20
@@ -167,15 +169,15 @@ func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr stri
 				}
 				if keyname != "" {
 					value.Name = keyname[1 : len(keyname)-1]
-					r = append(r, wrapApiVariable(value, keyname, "", customFormatters))
+					r = append(r, wrapApiVariable(value, keyname, "", customFormatters, depth))
 					r = append(r, nil)
 					ok = true
 				}
 			}
 
 			if !ok {
-				r = append(r, wrapApiVariable(key, fmt.Sprintf("[%d key]", start+i/2), "", customFormatters))
-				r = append(r, wrapApiVariable(value, fmt.Sprintf("[%d value]", start+i/2), "", customFormatters))
+				r = append(r, wrapApiVariable(key, fmt.Sprintf("[%d key]", start+i/2), "", customFormatters, depth))
+				r = append(r, wrapApiVariable(value, fmt.Sprintf("[%d value]", start+i/2), "", customFormatters, depth))
 			}
 		}
 		return r
@@ -214,7 +216,7 @@ func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr stri
 			childName = vs[i].Name
 			childExpr = ""
 		}
-		r = append(r, wrapApiVariable(&vs[i], childName, childExpr, customFormatters))
+		r = append(r, wrapApiVariable(&vs[i], childName, childExpr, customFormatters, depth))
 	}
 	return r
 }
@@ -254,7 +256,7 @@ type Expr struct {
 
 func loadGlobals(p *asyncLoad) {
 	globals, err := client.ListPackageVariables("", getVariableLoadConfig())
-	globalsPanel.globals = wrapApiVariables(globals, 0, 0, "", true)
+	globalsPanel.globals = wrapApiVariables(globals, 0, 0, "", true, 0)
 	sort.Sort(variablesByName(globalsPanel.globals))
 	p.done(err)
 }
@@ -294,7 +296,7 @@ func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].
 
 func loadLocals(p *asyncLoad) {
 	args, errloc := client.ListFunctionArgs(currentEvalScope(), getVariableLoadConfig())
-	localsPanel.locals = wrapApiVariables(args, 0, 0, "", true)
+	localsPanel.locals = wrapApiVariables(args, 0, 0, "", true, 0)
 	locals, errarg := client.ListLocalVariables(currentEvalScope(), getVariableLoadConfig())
 	for i := range locals {
 		v := &locals[i]
@@ -304,7 +306,7 @@ func loadLocals(p *asyncLoad) {
 			locals[i].Name = name
 		}
 	}
-	localsPanel.locals = append(localsPanel.locals, wrapApiVariables(locals, 0, 0, "", true)...)
+	localsPanel.locals = append(localsPanel.locals, wrapApiVariables(locals, 0, 0, "", true, 0)...)
 
 	sort.SliceStable(localsPanel.locals, func(i, j int) bool { return localsPanel.locals[i].DeclLine < localsPanel.locals[j].DeclLine })
 
@@ -416,7 +418,7 @@ func loadOneExpr(i int) {
 	v := evalScopedExpr(localsPanel.expressions[i].Expr, cfg)
 	v.Name = localsPanel.expressions[i].Expr
 
-	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name, true)
+	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name, true, 0)
 }
 
 func exprsEditor(w *nucular.Window) {
@@ -931,7 +933,7 @@ func loadMoreMap(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children) / 2)
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children, reflect.Map, len(v.Children), v.Expression, true)...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children, reflect.Map, len(v.Children), v.Expression, true, 0)...)
 			}
 			wnd.Changed()
 			additionalLoadMu.Lock()
@@ -953,7 +955,7 @@ func loadMoreArrayOrSlice(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children))
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children, v.Kind, len(v.Children), v.Expression, true)...)
+				v.Children = append(v.Children, wrapApiVariables(lv.Children, v.Kind, len(v.Children), v.Expression, true, 0)...)
 			}
 			additionalLoadMu.Lock()
 			additionalLoadRunning = false
@@ -974,7 +976,7 @@ func loadMoreStruct(v *Variable) {
 				dn := v.DisplayName
 				vn := v.Varname
 				lv.Name = v.Name
-				*v = *wrapApiVariable(lv, lv.Name, v.Expression, true)
+				*v = *wrapApiVariable(lv, lv.Name, v.Expression, true, 0)
 				v.Varname = vn
 				v.DisplayName = dn
 			}
