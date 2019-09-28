@@ -30,18 +30,30 @@ const (
 	Button5Mask = 1 << 12
 )
 
-type KeysymTable [256][2]uint32
+type KeysymTable struct {
+	Table [256][6]uint32
 
-func (t *KeysymTable) Lookup(detail uint8, state uint16, numLockMod uint16) (rune, key.Code) {
+	NumLockMod, ModeSwitchMod, ISOLevel3ShiftMod uint16
+}
+
+func (t *KeysymTable) Lookup(detail uint8, state uint16) (rune, key.Code) {
+	te := t.Table[detail][0:2]
+	if state&t.ModeSwitchMod != 0 {
+		te = t.Table[detail][2:4]
+	}
+	if state&t.ISOLevel3ShiftMod != 0 {
+		te = t.Table[detail][4:6]
+	}
+
 	// The key event's rune depends on whether the shift key is down.
-	unshifted := rune(t[detail][0])
+	unshifted := rune(te[0])
 	r := unshifted
-	if state&numLockMod != 0 && isKeypad(t[detail][1]) {
+	if state&t.NumLockMod != 0 && isKeypad(te[1]) {
 		if state&ShiftMask == 0 {
-			r = rune(t[detail][1])
+			r = rune(te[1])
 		}
 	} else if state&ShiftMask != 0 {
-		r = rune(t[detail][1])
+		r = rune(te[1])
 		// In X11, a zero keysym when shift is down means to use what the
 		// keysym is when shift is up.
 		if r == 0 {

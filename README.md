@@ -17,7 +17,11 @@ then install gdlv:
 go get -u github.com/aarzilli/gdlv
 ```
 
-Use Ctrl+plus and Ctrl+minus to change font size.
+Use Ctrl+plus and Ctrl+minus, or `config zoom 1.5` to change font size.
+
+## Metal backend on macOS
+
+Gdlv can be built to use metal to draw its window on macOS using `go build -tags=metal github.com/aarzilli/gdlv`.
 
 # News
 

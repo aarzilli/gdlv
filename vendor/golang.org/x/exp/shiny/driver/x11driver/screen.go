@@ -33,8 +33,6 @@ type screenImpl struct {
 	xsi     *xproto.ScreenInfo
 	keysyms x11key.KeysymTable
 
-	numLockMod uint16
-
 	atomNETWMName      xproto.Atom
 	atomUTF8String     xproto.Atom
 	atomWMDeleteWindow xproto.Atom
@@ -115,6 +113,7 @@ func newScreenImpl(xc *xgb.Conn) (*screenImpl, error) {
 }
 
 func (s *screenImpl) run() {
+	keyboardChanged := false
 	for {
 		ev, err := s.xc.WaitForEvent()
 		if err != nil {
@@ -190,6 +189,10 @@ func (s *screenImpl) run() {
 			}
 
 		case xproto.KeyPressEvent:
+			if keyboardChanged {
+				keyboardChanged = false
+				s.initKeyboardMapping()
+			}
 			if w := s.findWindow(ev.Event); w != nil {
 				w.handleKey(ev.Detail, ev.State, key.DirPress)
 			} else {
@@ -197,6 +200,10 @@ func (s *screenImpl) run() {
 			}
 
 		case xproto.KeyReleaseEvent:
+			if keyboardChanged {
+				keyboardChanged = false
+				s.initKeyboardMapping()
+			}
 			if w := s.findWindow(ev.Event); w != nil {
 				w.handleKey(ev.Detail, ev.State, key.DirRelease)
 			} else {
@@ -222,6 +229,11 @@ func (s *screenImpl) run() {
 				w.handleMouse(ev.EventX, ev.EventY, 0, ev.State, mouse.DirNone)
 			} else {
 				noWindowFound = true
+			}
+
+		case xproto.MappingNotifyEvent:
+			if ev.Request == xproto.MappingModifier || ev.Request == xproto.MappingKeyboard {
+				keyboardChanged = true
 			}
 		}
 
@@ -482,8 +494,13 @@ func (s *screenImpl) initKeyboardMapping() error {
 		return fmt.Errorf("x11driver: too few keysyms per keycode: %d", n)
 	}
 	for i := keyLo; i <= keyHi; i++ {
-		s.keysyms[i][0] = uint32(km.Keysyms[(i-keyLo)*n+0])
-		s.keysyms[i][1] = uint32(km.Keysyms[(i-keyLo)*n+1])
+		for j := 0; j < 6; j++ {
+			if j < n {
+				s.keysyms.Table[i][j] = uint32(km.Keysyms[(i-keyLo)*n+j])
+			} else {
+				s.keysyms.Table[i][j] = 0
+			}
+		}
 	}
 
 	// Figure out which modifier is the numlock modifier (see chapter 12.7 of the XLib Manual).
@@ -491,12 +508,30 @@ func (s *screenImpl) initKeyboardMapping() error {
 	if err != nil {
 		return err
 	}
+	s.keysyms.NumLockMod, s.keysyms.ModeSwitchMod, s.keysyms.ISOLevel3ShiftMod = 0, 0, 0
+	numLockFound, modeSwitchFound, isoLevel3ShiftFound := false, false, false
+modifierSearchLoop:
 	for modifier := 0; modifier < 8; modifier++ {
 		for i := 0; i < int(mm.KeycodesPerModifier); i++ {
-			const xkNumLock = 0xff7f // XK_Num_Lock from /usr/include/X11/keysymdef.h.
-			if s.keysyms[mm.Keycodes[modifier*int(mm.KeycodesPerModifier)+i]][0] == xkNumLock {
-				s.numLockMod = 1 << uint(modifier)
-				break
+			const (
+				// XK_Num_Lock, XK_Mode_switch and XK_ISO_Level3_Shift from /usr/include/X11/keysymdef.h.
+				xkNumLock        = 0xff7f
+				xkModeSwitch     = 0xff7e
+				xkISOLevel3Shift = 0xfe03
+			)
+			switch s.keysyms.Table[mm.Keycodes[modifier*int(mm.KeycodesPerModifier)+i]][0] {
+			case xkNumLock:
+				s.keysyms.NumLockMod = 1 << uint(modifier)
+				numLockFound = true
+			case xkModeSwitch:
+				s.keysyms.ModeSwitchMod = 1 << uint(modifier)
+				modeSwitchFound = true
+			case xkISOLevel3Shift:
+				s.keysyms.ISOLevel3ShiftMod = 1 << uint(modifier)
+				isoLevel3ShiftFound = true
+			}
+			if numLockFound && modeSwitchFound && isoLevel3ShiftFound {
+				break modifierSearchLoop
 			}
 		}
 	}

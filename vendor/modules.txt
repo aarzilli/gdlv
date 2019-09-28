@@ -1,3 +1,5 @@
+# dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9
+dmitri.shuralyov.com/gpu/mtl
 # github.com/BurntSushi/xgb v0.0.0-20160522221800-27f122750802
 github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/render
@@ -14,6 +16,8 @@ github.com/aarzilli/nucular/style
 github.com/aarzilli/nucular/style-editor
 # github.com/go-delve/delve v1.2.0
 github.com/go-delve/delve/pkg/goversion
+# github.com/go-gl/glfw v0.0.0-20190409004039-e6da0acd62b1
+github.com/go-gl/glfw/v3.2/glfw
 # github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 github.com/golang/freetype
 github.com/golang/freetype/raster
@@ -27,7 +31,7 @@ go.starlark.net/internal/spell
 go.starlark.net/resolve
 go.starlark.net/starlark
 go.starlark.net/syntax
-# golang.org/x/exp v0.0.0-20190829153037-c13cbed26979
+# golang.org/x/exp v0.0.0-20190927203820-447a159532ef
 golang.org/x/exp/shiny/driver
 golang.org/x/exp/shiny/driver/gldriver
 golang.org/x/exp/shiny/driver/internal/drawer
@@ -37,10 +41,14 @@ golang.org/x/exp/shiny/driver/internal/lifecycler
 golang.org/x/exp/shiny/driver/internal/swizzle
 golang.org/x/exp/shiny/driver/internal/win32
 golang.org/x/exp/shiny/driver/internal/x11key
+golang.org/x/exp/shiny/driver/mtldriver
+golang.org/x/exp/shiny/driver/mtldriver/internal/appkit
+golang.org/x/exp/shiny/driver/mtldriver/internal/coreanim
 golang.org/x/exp/shiny/driver/windriver
 golang.org/x/exp/shiny/driver/x11driver
 golang.org/x/exp/shiny/screen
 # golang.org/x/image v0.0.0-20190829233526-b3c06291d021
+golang.org/x/image/draw
 golang.org/x/image/font
 golang.org/x/image/math/f64
 golang.org/x/image/math/fixed
