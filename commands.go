@@ -160,7 +160,16 @@ Saves the current layout.
 	layout list
 	
 Lists saved layouts.`},
-		{aliases: []string{"config"}, cmdFn: configCommand, helpMsg: `Configuration`},
+		{aliases: []string{"config"}, cmdFn: configCommand, helpMsg: `Configuration
+
+	config
+	config alias <command> <alias>
+	config zoom <factor>
+	
+Without arguments opens the configuration window.
+With the 'alias' subcommand sets up a command alias.
+With the 'zoom' subcommand changes the display scaling factor (makes fonts larger or smaller).
+`},
 		{aliases: []string{"scroll"}, cmdFn: scrollCommand, helpMsg: `Controls scrollback behavior.
 	
 	scroll clear		Clears scrollback
@@ -976,9 +985,21 @@ func layoutCommand(out io.Writer, args string) error {
 }
 
 func configCommand(out io.Writer, args string) error {
-	const aliasPrefix = "alias "
-	if strings.HasPrefix(args, aliasPrefix) {
+	const (
+		aliasPrefix = "alias "
+		zoomPrefix  = "zoom "
+	)
+	switch {
+	case strings.HasPrefix(args, aliasPrefix):
 		return configureSetAlias(strings.TrimSpace(args[len(aliasPrefix):]))
+	case strings.HasPrefix(args, zoomPrefix):
+		s, err := strconv.ParseFloat(strings.TrimSpace(args[len(zoomPrefix):]), 64)
+		if err != nil {
+			return err
+		}
+		conf.Scaling = s
+		setupStyle()
+		return nil
 	}
 	cw := newConfigWindow()
 	wnd.PopupOpen("Configuration", dynamicPopupFlags, rect.Rect{100, 100, 600, 700}, true, cw.Update)
@@ -1043,6 +1064,12 @@ func (cw *configWindow) Update(w *nucular.Window) {
 				setupStyle()
 			}
 		}
+	}
+
+	w.Row(20).Static(col1, 0)
+	w.Label("Display zoom:", "LC")
+	if w.PropertyFloat("Zoom", 0.2, &conf.Scaling, 4.0, 0.1, 0.1, 2) {
+		setupStyle()
 	}
 
 	w.Row(20).Static(col1, 150)
