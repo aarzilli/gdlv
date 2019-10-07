@@ -1,6 +1,6 @@
 # dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9
 dmitri.shuralyov.com/gpu/mtl
-# github.com/BurntSushi/xgb v0.0.0-20160522221800-27f122750802
+# github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802
 github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/render
 github.com/BurntSushi/xgb/shm

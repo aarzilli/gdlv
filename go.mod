@@ -1,7 +1,7 @@
 module github.com/aarzilli/gdlv
 
 require (
-	github.com/BurntSushi/xgb 27f122750802 // indirect
+	github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 // indirect
 	github.com/aarzilli/nucular v0.0.0-20190901090451-46005390ac30
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/go-delve/delve v1.2.0
