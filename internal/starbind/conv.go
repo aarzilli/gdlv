@@ -222,11 +222,16 @@ func (env *Env) variableValueToStarlarkValue(v *api.Variable, top bool) (starlar
 			return starlark.None, errors.New("value not loaded")
 		}
 		return structVariableAsStarlarkValue{v, env}, nil
-	case reflect.Map, reflect.Slice, reflect.Array:
+	case reflect.Slice, reflect.Array:
 		if v.Len != 0 && len(v.Children) == 0 {
 			return starlark.None, errors.New("value not loaded")
 		}
 		return sliceVariableAsStarlarkValue{v, env}, nil
+	case reflect.Map:
+		if v.Len != 0 && len(v.Children) == 0 {
+			return starlark.None, errors.New("value not loaded")
+		}
+		return mapVariableAsStarlarkValue{v, env}, nil
 	case reflect.String:
 		return starlark.String(v.Value), nil
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int:
@@ -499,6 +504,118 @@ func (v ptrVariableAsStarlarkValue) Get(key starlark.Value) (starlark.Value, boo
 
 func (v ptrVariableAsStarlarkValue) UnwrapVariable() *api.Variable {
 	return v.v
+}
+
+type mapVariableAsStarlarkValue struct {
+	v   *api.Variable
+	env *Env
+}
+
+var _ starlark.IterableMapping = mapVariableAsStarlarkValue{}
+
+func (v mapVariableAsStarlarkValue) Freeze() {
+}
+
+func (v mapVariableAsStarlarkValue) Hash() (uint32, error) {
+	return 0, fmt.Errorf("not hashable")
+}
+
+func (v mapVariableAsStarlarkValue) String() string {
+	return fmt.Sprintf("%s", fmt.Sprintf("%#v", v.v))
+}
+
+func (v mapVariableAsStarlarkValue) Truth() starlark.Bool {
+	return true
+}
+
+func (v mapVariableAsStarlarkValue) Type() string {
+	return v.v.Type
+}
+
+func (v mapVariableAsStarlarkValue) Get(key starlark.Value) (starlark.Value, bool, error) {
+	var keyExpr string
+	switch key := key.(type) {
+	case starlark.Int:
+		keyExpr = key.String()
+	case starlark.Float:
+		keyExpr = fmt.Sprintf("%g", float64(key))
+	case starlark.String:
+		keyExpr = fmt.Sprintf("%q", string(key))
+	case starlark.Bool:
+		keyExpr = fmt.Sprintf("%v", bool(key))
+	case structVariableAsStarlarkValue:
+		keyExpr = varAddrExpr(key.v)
+	default:
+		return starlark.None, false, fmt.Errorf("key type not supported %T", key)
+	}
+
+	v2 := v.env.autoLoad(fmt.Sprintf("%s[%s]", varAddrExpr(v.v), keyExpr))
+	r, err := v.env.variableValueToStarlarkValue(v2, false)
+	if err != nil {
+		if err.Error() == "key not found" {
+			return starlark.None, false, nil
+		}
+		return starlark.None, false, err
+	}
+	return r, true, nil
+}
+
+func (v mapVariableAsStarlarkValue) Items() []starlark.Tuple {
+	r := make([]starlark.Tuple, 0, len(v.v.Children)/2)
+	for i := 0; i < len(v.v.Children); i += 2 {
+		r = append(r, mapStarlarkTupleAt(v.v, v.env, i))
+	}
+	return r
+}
+
+func mapStarlarkTupleAt(v *api.Variable, env *Env, i int) starlark.Tuple {
+	keyv := env.autoLoad(varAddrExpr(&v.Children[i]))
+	key, err := env.variableValueToStarlarkValue(keyv, false)
+	if err != nil {
+		key = starlark.None
+	}
+	valv := env.autoLoad(varAddrExpr(&v.Children[i+1]))
+	val, err := env.variableValueToStarlarkValue(valv, false)
+	if err != nil {
+		val = starlark.None
+	}
+	return starlark.Tuple{key, val}
+}
+
+func (v mapVariableAsStarlarkValue) Iterate() starlark.Iterator {
+	return &mapVariableAsStarlarkValueIterator{0, v.v, v.env}
+}
+
+type mapVariableAsStarlarkValueIterator struct {
+	cur int
+	v   *api.Variable
+	env *Env
+}
+
+func (it *mapVariableAsStarlarkValueIterator) Done() {
+}
+
+func (it *mapVariableAsStarlarkValueIterator) Next(p *starlark.Value) bool {
+	if it.cur >= 2*int(it.v.Len) {
+		return false
+	}
+	if it.cur >= len(it.v.Children) {
+		v2 := it.env.autoLoad(fmt.Sprintf("%s[%d:]", varAddrExpr(it.v), len(it.v.Children)/2))
+		it.v.Children = append(it.v.Children, v2.Children...)
+	}
+	if it.cur >= len(it.v.Children) {
+		return false
+	}
+
+	keyv := it.env.autoLoad(varAddrExpr(&it.v.Children[it.cur]))
+	key, err := it.env.variableValueToStarlarkValue(keyv, false)
+	if err != nil {
+		key = starlark.None
+	}
+	*p = key
+
+	it.cur += 2
+	return true
 }
 
 // unmarshalStarlarkValue unmarshals a starlark.Value 'val' into a Go variable 'dst'.
