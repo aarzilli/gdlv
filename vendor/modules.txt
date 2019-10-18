@@ -5,7 +5,7 @@ github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/render
 github.com/BurntSushi/xgb/shm
 github.com/BurntSushi/xgb/xproto
-# github.com/aarzilli/nucular v0.0.0-20190901090451-46005390ac30
+# github.com/aarzilli/nucular v0.0.0-20191018152528-bd6e10abdf4d
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard
 github.com/aarzilli/nucular/command

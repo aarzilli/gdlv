@@ -62,7 +62,6 @@ func contextAllCommands(ctx *context) {
 		}
 	}
 	ctx.cmds = append(ctx.cmds, ctx.finalCmds.Commands...)
-	return
 }
 
 func (ctx *context) setupMasterWindow(layout *panel, updatefn UpdateFn) {
@@ -540,12 +539,12 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 
 			if perfUpdate {
 				if bordopt {
-					brecttim += time.Now().Sub(t0)
+					brecttim += time.Since(t0)
 				} else {
 					if cmd.Rounding > 0 {
-						frrecttim += time.Now().Sub(t0)
+						frrecttim += time.Since(t0)
 					} else {
-						d := time.Now().Sub(t0)
+						d := time.Since(t0)
 						if op == draw.Src {
 							frecttim += d
 						} else {
@@ -575,7 +574,7 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 			ftri++
 
 			if perfUpdate {
-				tritim += time.Now().Sub(t0)
+				tritim += time.Since(t0)
 			}
 
 		case command.CircleFilledCmd:
@@ -614,7 +613,7 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 			}
 			txt++
 			if perfUpdate {
-				txttim += time.Now().Sub(t0)
+				txttim += time.Since(t0)
 			}
 		default:
 			panic(UnknownCommandErr)
@@ -953,7 +952,7 @@ func (t *dockedTree) Undock(win *Window) {
 
 func (t *dockedTree) Scale(win *Window, delta image.Point, scaling float64) image.Point {
 	if t == nil || (delta.X == 0 && delta.Y == 0) {
-		return image.ZP
+		return image.Point{}
 	}
 	switch t.Type {
 	case dockedNodeVert:
@@ -987,7 +986,7 @@ func (t *dockedTree) Scale(win *Window, delta image.Point, scaling float64) imag
 			return delta
 		}
 	}
-	return image.ZP
+	return image.Point{}
 }
 
 func (ctx *context) ResetWindows() *DockSplit {

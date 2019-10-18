@@ -1,4 +1,4 @@
-// +build !android
+// +build linux,!android freebsd
 
 package clipboard
 

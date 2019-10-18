@@ -1,4 +1,4 @@
-// +build linux,!android,!nucular_mobile darwin,!nucular_mobile windows,!nucular_mobile
+// +build linux,!android,!nucular_mobile darwin,!nucular_mobile windows,!nucular_mobile freebsd,!nucular_mobile
 
 package nucular
 

@@ -7,7 +7,6 @@ type GroupList struct {
 	idx               int
 	scrollbary        int
 	done              bool
-	first             bool
 	skippedLineHeight int
 }
 

@@ -565,54 +565,6 @@ func (state *TextEditor) towd(start int, dir int, dontForceAdvance bool) int {
 	return i
 }
 
-// Moves to the beginning or end of a space delimited word
-func (state *TextEditor) tospc(start int, dir int) int {
-	return state.tof(start, dir, unicode.IsSpace)
-}
-
-// Moves to the first position where f returns true
-func (state *TextEditor) tof(start int, dir int, f func(rune) bool) int {
-	first := (dir < 0)
-	notfirst := !first
-	var i int
-	for i = start; (i >= 0) && (i < len(state.Buffer)); i += dir {
-		c := state.Buffer[i]
-		if f(c) {
-			if !first {
-				i++
-			}
-			break
-		}
-		first = notfirst
-	}
-	if i < 0 {
-		i = 0
-	}
-	return i
-}
-
-// Moves to the beginning or end of something that looks like a file path
-func (state *TextEditor) tofp(start int, dir int) int {
-	first := (dir < 0)
-	notfirst := !first
-	var i int
-	for i = start; (i >= 0) && (i < len(state.Buffer)); i += dir {
-		c := state.Buffer[i]
-		if !(unicode.IsLetter(c) || unicode.IsDigit(c) || (c == '_') || (c == '-') || (c == '+') || (c == '/') || (c == '=') || (c == '~') || (c == '!') || (c == ':') || (c == ',') || (c == '.')) {
-			if !first {
-				i++
-			}
-			break
-		}
-		first = notfirst
-	}
-	if i < 0 {
-		i = 0
-	}
-	return i
-
-}
-
 func (state *TextEditor) prepSelectionAtCursor() {
 	/* update selection and cursor to match each other */
 	if !state.hasSelection() {
@@ -694,7 +646,7 @@ func (edit *TextEditor) Text(text []rune) {
 	}
 }
 
-func (state *TextEditor) key(e key.Event, font font.Face, row_height int) {
+func (state *TextEditor) key(e key.Event, font font.Face, row_height int, area_height int) {
 	readOnly := state.Flags&EditReadOnly != 0
 retry:
 	switch e.Code {
@@ -810,52 +762,26 @@ retry:
 			e.Code = key.CodeRightArrow
 			goto retry
 		}
-
-		if e.Modifiers&key.ModShift != 0 {
-			state.prepSelectionAtCursor()
-		} else if state.hasSelection() {
-			state.moveToLast()
-		}
-
-		state.clamp()
-
-		p := state.indexToCoord(state.Cursor, font, row_height)
-		p.Y += row_height
-		if state.HasPreferredX {
-			p.X = state.PreferredX
-		} else {
-			state.HasPreferredX = true
-			state.PreferredX = p.X
-		}
-		state.Cursor = state.locateCoord(p, font, row_height)
-
-		state.clamp()
+		state.verticalCursorMove(e, font, row_height, +row_height)
 
 	case key.CodeUpArrow:
 		if state.SingleLine {
 			e.Code = key.CodeRightArrow
 			goto retry
 		}
+		state.verticalCursorMove(e, font, row_height, -row_height)
 
-		if e.Modifiers&key.ModShift != 0 {
-			state.prepSelectionAtCursor()
-		} else if state.hasSelection() {
-			state.moveToFirst()
+	case key.CodePageDown:
+		if state.SingleLine {
+			break
 		}
+		state.verticalCursorMove(e, font, row_height, +area_height/2)
 
-		state.clamp()
-
-		p := state.indexToCoord(state.Cursor, font, row_height)
-		p.Y -= row_height
-		if state.HasPreferredX {
-			p.X = state.PreferredX
-		} else {
-			state.HasPreferredX = true
-			state.PreferredX = p.X
+	case key.CodePageUp:
+		if state.SingleLine {
+			break
 		}
-		state.Cursor = state.locateCoord(p, font, row_height)
-
-		state.clamp()
+		state.verticalCursorMove(e, font, row_height, -area_height/2)
 
 	case key.CodeDeleteForward:
 		if readOnly {
@@ -967,6 +893,37 @@ retry:
 			state.HasPreferredX = false
 			state.Cursor = end
 		}
+	}
+}
+
+func (state *TextEditor) verticalCursorMove(e key.Event, font font.Face, row_height int, offset int) {
+	if e.Modifiers&key.ModShift != 0 {
+		state.prepSelectionAtCursor()
+	} else if state.hasSelection() {
+		if offset < 0 {
+			state.moveToFirst()
+		} else {
+			state.moveToLast()
+		}
+	}
+
+	state.clamp()
+
+	p := state.indexToCoord(state.Cursor, font, row_height)
+	p.Y += offset
+
+	if state.HasPreferredX {
+		p.X = state.PreferredX
+	} else {
+		state.HasPreferredX = true
+		state.PreferredX = p.X
+	}
+	state.Cursor = state.locateCoord(p, font, row_height)
+
+	state.clamp()
+
+	if e.Modifiers&key.ModShift != 0 {
+		state.SelectEnd = state.Cursor
 	}
 }
 
@@ -1116,6 +1073,31 @@ func (edit *TextEditor) SelectAll() {
 	edit.SelectEnd = len(edit.Buffer)
 }
 
+func measureRunes(f font.Face, runes []rune) int {
+	var advance fixed.Int26_6
+	prevC := rune(-1)
+	for _, c := range runes {
+		if prevC >= 0 {
+			advance += f.Kern(prevC, c)
+		}
+		a, ok := f.GlyphAdvance(c)
+		if !ok {
+			// TODO: is falling back on the U+FFFD glyph the responsibility of
+			// the Drawer or the Face?
+			// TODO: set prevC = '\ufffd'?
+			continue
+		}
+		advance += a
+		prevC = c
+	}
+	return advance.Ceil()
+}
+
+func glyphAdvance(f font.Face, ch rune) int {
+	a, _ := f.GlyphAdvance(ch)
+	return a.Ceil()
+}
+
 func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, pos image.Point, x_margin int, text []rune, textOffset int, row_height int, f font.Face, background color.RGBA, foreground color.RGBA, is_selected bool) (posOut image.Point) {
 	if len(text) == 0 {
 		return pos
@@ -1129,17 +1111,15 @@ func (edit *TextEditor) editDrawText(out *command.Buffer, style *nstyle.Edit, po
 	pos_x, pos_y := pos.X, pos.Y
 	start := 0
 
-	d := font.Drawer{Face: f}
-
-	tabsz := d.MeasureString(" ").Ceil() * tabSizeInSpaces
-	pwsz := d.MeasureString("*").Ceil()
+	tabsz := glyphAdvance(f, ' ') * tabSizeInSpaces
+	pwsz := glyphAdvance(f, '*')
 
 	measureText := func(start, end int) int {
 		if edit.PasswordChar != 0 {
 			return pwsz * (end - start)
 		}
 		// XXX calculating text width here is slow figure out why
-		return d.MeasureString(string(text[start:end])).Ceil()
+		return measureRunes(f, text[start:end])
 	}
 
 	getText := func(start, end int) string {
@@ -1315,14 +1295,35 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 		inpos := inp.Mouse.Pos
 		indelta := inp.Mouse.Delta
 		coord := image.Point{(inpos.X - area.X), (inpos.Y - area.Y)}
-		areaWithoutScrollbar := area
-		areaWithoutScrollbar.W -= style.ScrollbarSize.X
-		is_hovered := inp.Mouse.HoveringRect(areaWithoutScrollbar)
+
+		var isHovered bool
+		{
+			areaWithoutScrollbar := area
+			areaWithoutScrollbar.W -= style.ScrollbarSize.X
+			isHovered = inp.Mouse.HoveringRect(areaWithoutScrollbar)
+		}
+
+		var autoscrollTop bool
+		{
+			a := area
+			a.W -= style.ScrollbarSize.X
+			a.H = FontHeight(font) / 2
+			autoscrollTop = inp.Mouse.HoveringRect(a) && inp.Mouse.Buttons[mouse.ButtonLeft].Down
+		}
+
+		var autoscrollBot bool
+		{
+			a := area
+			a.W -= style.ScrollbarSize.X
+			a.Y = a.Y + a.H - FontHeight(font)/2
+			a.H = FontHeight(font) / 2
+			autoscrollBot = inp.Mouse.HoveringRect(a) && inp.Mouse.Buttons[mouse.ButtonLeft].Down
+		}
 
 		/* mouse click handler */
 		if select_all {
 			ed.SelectAll()
-		} else if is_hovered && inp.Mouse.Buttons[mouse.ButtonLeft].Down && inp.Mouse.Buttons[mouse.ButtonLeft].Clicked {
+		} else if isHovered && inp.Mouse.Buttons[mouse.ButtonLeft].Down && inp.Mouse.Buttons[mouse.ButtonLeft].Clicked {
 			if ed.doubleClick(coord) {
 				ed.clickCount++
 				if ed.clickCount > 3 {
@@ -1332,8 +1333,18 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 				ed.clickCount = 1
 			}
 			ed.click(coord, font, row_height)
-		} else if is_hovered && inp.Mouse.Buttons[mouse.ButtonLeft].Down && (indelta.X != 0.0 || indelta.Y != 0.0) {
+		} else if isHovered && inp.Mouse.Buttons[mouse.ButtonLeft].Down && (indelta.X != 0.0 || indelta.Y != 0.0) {
 			ed.drag(coord, font, row_height)
+			cursor_follow = true
+		} else if autoscrollTop {
+			coord1 := coord
+			coord1.Y -= FontHeight(font)
+			ed.drag(coord1, font, row_height)
+			cursor_follow = true
+		} else if autoscrollBot {
+			coord1 := coord
+			coord1.Y += FontHeight(font)
+			ed.drag(coord1, font, row_height)
 			cursor_follow = true
 		}
 
@@ -1390,7 +1401,7 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 				}
 
 			default:
-				ed.key(e, font, row_height)
+				ed.key(e, font, row_height, area.H)
 				cursor_follow = true
 			}
 
@@ -1666,7 +1677,6 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 	}
 
 	out.PushScissor(old_clip)
-	return
 }
 
 func runeSliceEquals(a, b []rune) bool {

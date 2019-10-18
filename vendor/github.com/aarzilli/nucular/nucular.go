@@ -139,7 +139,6 @@ const (
 	WindowContextualReplace
 	WindowNonmodal
 
-	windowPrivate
 	windowSub
 	windowGroup
 	windowPopup
@@ -213,6 +212,10 @@ func (win *Window) style() *nstyle.Window {
 	default:
 		return &win.ctx.Style.NormalWindow
 	}
+}
+
+func (win *Window) WindowStyle() *nstyle.Window {
+	return win.style()
 }
 
 func panelBegin(ctx *context, win *Window, title string) {
@@ -436,9 +439,6 @@ func (win *Window) specialPanelBegin() {
 		if win.header.Contains(prevbody.Min()) && ((prevbody.Max().X > max.X) || (prevbody.Max().Y > max.Y)) && (win.Bounds.X-prevbody.W >= 0) && (win.Bounds.Y-prevbody.H >= 0) {
 			win.Bounds.X = win.Bounds.X - prevbody.W
 			win.Bounds.Y = win.Bounds.Y - prevbody.H
-		} else {
-			win.Bounds.X = win.Bounds.X
-			win.Bounds.Y = win.Bounds.Y
 		}
 	}
 
@@ -762,7 +762,7 @@ func (win *Window) widget() (valid bool, bounds rect.Rect, calcFittingWidth Fitt
 		return false, bounds, calcFittingWidth
 	}
 
-	return true, bounds, calcFittingWidth
+	return (bounds.W > 0 && bounds.H > 0), bounds, calcFittingWidth
 }
 
 func (win *Window) widgetFitting(item_padding image.Point) (valid bool, bounds rect.Rect) {
@@ -1319,7 +1319,8 @@ func (win *Window) LayoutAvailableWidth() int {
 		return win.layout.Clip.W
 	default:
 		style := win.style()
-		return win.layout.Width - style.Padding.X*2 - style.Spacing.X - win.layout.AtX
+		panel_spacing := int(float64(win.layout.Row.Columns-1) * float64(style.Spacing.X))
+		return win.layout.Width - style.Padding.X*2 - panel_spacing - win.layout.AtX
 	}
 }
 
