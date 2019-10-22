@@ -1,0 +1,4 @@
+language: go
+dist: trusty
+install: true
+script: go test -v github.com/aarzilli/gdlv

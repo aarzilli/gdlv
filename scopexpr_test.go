@@ -24,7 +24,7 @@ func TestScopeSpecs(t *testing.T) {
 		{"@f/some expr/ expr", ScopedExpr{Kind: FrameRegexScopeExpr, Gid: -1, Fre: regexp.MustCompile("some expr"), DeferredCall: 0, EvalExpr: "expr"}},
 		{"@g12f/some expr/ expr", ScopedExpr{Kind: FrameRegexScopeExpr, Gid: 12, Fre: regexp.MustCompile("some expr"), DeferredCall: 0, EvalExpr: "expr"}},
 		{"@f/some expr/g12 expr", ScopedExpr{Kind: FrameRegexScopeExpr, Gid: 12, Fre: regexp.MustCompile("some expr"), DeferredCall: 0, EvalExpr: "expr"}},
-		{"    some expr", ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, DeferredCall: -1, EvalExpr: "    some expr"}},
+		{"    some expr", ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, DeferredCall: -1, EvalExpr: "some expr"}},
 		{"@gf some expr", ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid argument for 'g'"}},
 		{"@m some expr", ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "unknown character m"}},
 	} {

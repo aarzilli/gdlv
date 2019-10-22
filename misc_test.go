@@ -2,11 +2,13 @@ package main
 
 import (
 	"testing"
+
+	"github.com/aarzilli/gdlv/internal/prettyprint"
 )
 
 func TestShortenType(t *testing.T) {
 	c := func(src, tgt string) {
-		out := shortenType(src)
+		out := prettyprint.ShortenType(src)
 		if out != tgt {
 			t.Errorf("for %q expected %q got %q", src, tgt, out)
 		} else {

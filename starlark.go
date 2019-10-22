@@ -125,7 +125,7 @@ func executeInit() {
 	fh, err := os.Open(initPath)
 	if err != nil {
 		if !os.IsNotExist(err) {
-			fmt.Fprintf(&scrollbackOut, "could not read init file: %v", initPath, err)
+			fmt.Fprintf(&scrollbackOut, "could not read init file: %q: %v", initPath, err)
 			return
 		}
 
@@ -137,7 +137,7 @@ func executeInit() {
 
 		fh, err = os.Open(initPath)
 		if err != nil {
-			fmt.Fprintf(&scrollbackOut, "could not read init file: %v\n", initPath, err)
+			fmt.Fprintf(&scrollbackOut, "could not read init file: %q: %v\n", initPath, err)
 			return
 		}
 	}

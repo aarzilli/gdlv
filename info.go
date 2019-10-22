@@ -259,7 +259,7 @@ func loadGoroutines(p *asyncLoad) {
 		logf("Goroutines:\n")
 		for i := range goroutinesPanel.goroutines {
 			g := goroutinesPanel.goroutines[i]
-			fmt.Fprintf(LogOutputNice, "\t%d %#x in %s %s:%d\n", g.ID, g.UserCurrentLoc.Function.Name(), g.UserCurrentLoc.File, g.UserCurrentLoc.Line)
+			fmt.Fprintf(LogOutputNice, "\t%d %#x in %s %s:%d\n", g.ID, g.UserCurrentLoc.PC, g.UserCurrentLoc.Function.Name(), g.UserCurrentLoc.File, g.UserCurrentLoc.Line)
 		}
 	}
 
