@@ -25,6 +25,8 @@ Gdlv can be built to use metal to draw its window on macOS using `go build -tags
 
 # News
 
+## 2019-10-22 / Version 1.0 tagged
+
 ## 2019-06-07
 * Added Starlark as a scripting language
 
