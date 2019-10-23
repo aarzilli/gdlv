@@ -125,6 +125,9 @@ var goroutinesPanel = struct {
 	onlyStopped       bool
 	id                int
 	limit             int
+
+	filterEditor nucular.TextEditor
+	invertFilter bool
 }{
 	goroutineLocation: 1,
 	goroutines:        make([]wrappedGoroutine, 0, 10),
@@ -280,6 +283,13 @@ func updateGoroutines(container *nucular.Window) {
 	w.PropertyInt("Limit:", 1, &goroutinesPanel.limit, 1000000000, 1, 1)
 	goroutinesPanel.goroutineLocation = w.ComboSimple(goroutineLocations, goroutinesPanel.goroutineLocation, 22)
 	w.CheckboxText("Only stopped at breakpoint", &goroutinesPanel.onlyStopped)
+	w.Row(20).Static(100, 0, 100)
+	w.Label("Filter:", "LC")
+	if goroutinesPanel.filterEditor.Flags == 0 {
+		goroutinesPanel.filterEditor.Flags = nucular.EditClipboard | nucular.EditSelectable
+	}
+	goroutinesPanel.filterEditor.Edit(w)
+	w.CheckboxText("Invert", &goroutinesPanel.invertFilter)
 	w.MenubarEnd()
 
 	d := 1
@@ -296,10 +306,46 @@ func updateGoroutines(container *nucular.Window) {
 
 	dthread := digits(maxthreadid)
 
-	for _, g := range goroutines {
+	var filter string
+	if len(goroutinesPanel.filterEditor.Buffer) > 0 {
+		filter = strings.TrimSpace(string(goroutinesPanel.filterEditor.Buffer))
+	}
+
+	getDisplayLocation := func(g *wrappedGoroutine) api.Location {
+		switch goroutineLocations[goroutinesPanel.goroutineLocation] {
+		default:
+			fallthrough
+		case currentGoroutineLocation:
+			return g.CurrentLoc
+		case userGoroutineLocation:
+			return g.UserCurrentLoc
+		case goStatementLocation:
+			return g.GoStatementLoc
+		case startLocation:
+			return g.StartLoc
+		}
+	}
+
+	for i := range goroutines {
+		g := &goroutines[i]
 		if goroutinesPanel.onlyStopped && !g.atBreakpoint {
 			continue
 		}
+
+		if filter != "" {
+			filterMatch := false
+			loc := getDisplayLocation(g)
+			if strings.Index(loc.File, filter) >= 0 || strings.Index(loc.Function.Name(), filter) >= 0 {
+				filterMatch = true
+			}
+			if goroutinesPanel.invertFilter {
+				filterMatch = !filterMatch
+			}
+			if !filterMatch {
+				continue
+			}
+		}
+
 		w.Row(posRowHeight).Static()
 		selected := curGid == g.ID
 
@@ -317,16 +363,7 @@ func updateGoroutines(container *nucular.Window) {
 		}
 
 		w.LayoutFitWidth(goroutinesPanel.id, 100)
-		switch goroutineLocations[goroutinesPanel.goroutineLocation] {
-		case currentGoroutineLocation:
-			w.SelectableLabel(formatLocation2(g.CurrentLoc), "LT", &selected)
-		case userGoroutineLocation:
-			w.SelectableLabel(formatLocation2(g.UserCurrentLoc), "LT", &selected)
-		case goStatementLocation:
-			w.SelectableLabel(formatLocation2(g.GoStatementLoc), "LT", &selected)
-		case startLocation:
-			w.SelectableLabel(formatLocation2(g.StartLoc), "LT", &selected)
-		}
+		w.SelectableLabel(formatLocation2(getDisplayLocation(g)), "LT", &selected)
 
 		if selected && curGid != g.ID && !client.Running() {
 			go func(gid int) {
@@ -946,6 +983,9 @@ func updateDeferredCalls(container *nucular.Window) {
 func (p *stringSlicePanel) update(container *nucular.Window) {
 	if p.filterEditor.Filter == nil {
 		p.filterEditor.Filter = spacefilter
+	}
+	if p.filterEditor.Flags == 0 {
+		p.filterEditor.Flags = nucular.EditClipboard | nucular.EditSelectable
 	}
 	container.Row(0).Dynamic(1)
 	w := container.GroupBegin(p.name, 0)
