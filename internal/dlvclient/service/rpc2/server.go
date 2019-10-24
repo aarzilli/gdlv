@@ -73,6 +73,7 @@ type StacktraceIn struct {
 	Depth  int
 	Full   bool
 	Defers bool // read deferred functions
+	Opts   api.StacktraceOptions
 	Cfg    *api.LoadConfig
 }
 

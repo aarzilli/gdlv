@@ -116,6 +116,17 @@ Prints up to max_depth elements of the linked list variable 'var_name' using 'ne
 	v = Ll(var_name, next_field_name, max_depth)
 	for i in range(len(v)):
 		print(str(i)+":", v)
+
+def command_flaky(args):
+	"Continues and restarts the target program repeatedly, until a breakpoint is hit"
+	count = 1
+	while True:
+		if dlv_command("continue") == None:
+			break
+		print("restarting", count, "...")
+		count = count+1
+		restart(Rerecord=True)
+
 `
 
 func executeInit() {

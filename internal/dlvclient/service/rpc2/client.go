@@ -314,7 +314,11 @@ func (c *RPCClient) ListGoroutines(start, count int) ([]*api.Goroutine, error) {
 
 func (c *RPCClient) Stacktrace(goroutineId, depth int, readDefers bool, cfg *api.LoadConfig) ([]api.Stackframe, error) {
 	var out StacktraceOut
-	err := c.call("Stacktrace", StacktraceIn{goroutineId, depth, false, readDefers, cfg}, &out)
+	var opts api.StacktraceOptions
+	if readDefers {
+		opts = api.StacktraceReadDefers
+	}
+	err := c.call("Stacktrace", StacktraceIn{goroutineId, depth, false, readDefers, opts, cfg}, &out)
 	return out.Locations, err
 }
 
