@@ -67,15 +67,9 @@ func (c *RPCClient) Detach(kill bool) error {
 	return c.call("Detach", DetachIn{kill}, out)
 }
 
-func (c *RPCClient) Restart() ([]api.DiscardedBreakpoint, error) {
+func (c *RPCClient) RestartFrom(pos string, resetArgs bool, newArgs []string, rerecord bool) ([]api.DiscardedBreakpoint, error) {
 	out := new(RestartOut)
-	err := c.call("Restart", RestartIn{"", false, nil}, out)
-	return out.DiscardedBreakpoints, err
-}
-
-func (c *RPCClient) RestartFrom(pos string, resetArgs bool, newArgs []string) ([]api.DiscardedBreakpoint, error) {
-	out := new(RestartOut)
-	err := c.call("Restart", RestartIn{pos, resetArgs, newArgs}, out)
+	err := c.call("Restart", RestartIn{pos, resetArgs, newArgs, rerecord}, out)
 	return out.DiscardedBreakpoints, err
 }
 

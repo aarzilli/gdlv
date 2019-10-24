@@ -981,6 +981,8 @@ func main() {
 		}
 	}
 
+	checkCompatibility()
+
 	setupLog()
 	if LogOutputNice != nil {
 		defer LogOutputNice.Close()

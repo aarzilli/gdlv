@@ -37,6 +37,9 @@ type RestartIn struct {
 	// NewArgs are arguments to launch a new process.  They replace only the
 	// argv[1] and later. Argv[0] cannot be changed.
 	NewArgs []string
+
+	// When Rerecord is set the target will be rerecorded
+	Rerecord bool
 }
 
 type RestartOut struct {

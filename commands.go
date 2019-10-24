@@ -96,12 +96,25 @@ See also: "help on", "help cond" and "help clear"`},
 			clear <breakpoint name or id>`},
 		{aliases: []string{"restart", "r"}, cmdFn: restart, helpMsg: `Restart process.
 
-For recordings a checkpoint can be optionally specified.
-For live processes any argument to restart will be used as argument to the program, use:
+For live processes any argument passed to restart will be used as argument for the program. 
+If no arguments are specified the program will be restarted with the same arguments as the last time it was started.
+
+Use:
 
 	restart --
 	
-To clear the arguments passed to the program.`},
+To clear the arguments passed to the program.
+
+If the target is recorded:
+
+	restart [<checkpoint>]
+
+Restarts the recording at the specified (optional) breakpoint.
+
+	restart -r
+
+Re-records the program, any arguments specified after '-r' are passed to the target program. Pass '--' to clear the arguments passed to the program.
+`},
 		{aliases: []string{"continue", "c"}, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
 		{aliases: []string{"rewind", "rw"}, cmdFn: rewind, helpMsg: "Run backwards until breakpoint or program termination."},
 		{aliases: []string{"checkpoint", "check"}, cmdFn: checkpoint, helpMsg: `Creates a checkpoint at the current position.
@@ -404,9 +417,18 @@ func clear(out io.Writer, args string) error {
 func restart(out io.Writer, args string) error {
 	resetArgs := false
 	var newArgs []string
+	rerecord := false
 	args = strings.TrimSpace(args)
+	restartCheckpoint := ""
 	if args != "" {
 		argv := splitQuotedFields(args, '\'')
+		if len(argv) > 0 {
+			if client != nil && client.Recorded() && argv[0] == "-r" {
+				restartCheckpoint = ""
+				rerecord = true
+				argv = argv[1:]
+			}
+		}
 		if len(argv) > 0 {
 			if argv[0] == "--" {
 				argv = argv[1:]
@@ -414,6 +436,16 @@ func restart(out io.Writer, args string) error {
 			resetArgs = true
 			newArgs = argv
 		}
+	}
+
+	if client != nil && client.Recorded() && !rerecord {
+		restartCheckpoint = args
+		newArgs = nil
+		resetArgs = false
+	}
+
+	if rerecord && !delveFeatures.hasRerecord {
+		return fmt.Errorf("rerecord unsupported by this version of delve")
 	}
 
 	if len(BackendServer.buildcmd) > 0 && (BackendServer.buildcmd[0] == "test") {
@@ -427,13 +459,7 @@ func restart(out io.Writer, args string) error {
 		return nil
 	}
 
-	if client.Recorded() {
-		_, err := client.RestartFrom(args, false, nil)
-		refreshState(refreshToFrameZero, clearStop, nil)
-		return err
-	}
-
-	if BackendServer.StaleExecutable() {
+	if BackendServer.StaleExecutable() && (!client.Recorded() || rerecord) {
 		wnd.PopupOpen("Recompile?", dynamicPopupFlags, rect.Rect{100, 100, 550, 400}, true, func(w *nucular.Window) {
 			w.Row(30).Static(0)
 			w.Label("Executable is stale. Rebuild?", "LC")
@@ -464,7 +490,7 @@ func restart(out io.Writer, args string) error {
 				w.Close()
 			case no:
 				go pseudoCommandWrap(func(w io.Writer) error {
-					return doRestart(w, resetArgs, newArgs)
+					return doRestart(w, restartCheckpoint, resetArgs, newArgs, rerecord)
 				})
 				w.Close()
 			}
@@ -472,7 +498,7 @@ func restart(out io.Writer, args string) error {
 		return nil
 	}
 
-	return doRestart(out, resetArgs, newArgs)
+	return doRestart(out, restartCheckpoint, resetArgs, newArgs, rerecord)
 }
 
 func splitQuotedFields(in string, quote rune) []string {
@@ -540,17 +566,22 @@ func pseudoCommandWrap(cmd func(io.Writer) error) {
 	}
 }
 
-func doRestart(out io.Writer, resetArgs bool, args []string) error {
-	_, err := client.RestartFrom("", resetArgs, args)
+func doRestart(out io.Writer, restartCheckpoint string, resetArgs bool, args []string, rerecord bool) error {
+	shouldFinishRestart := client == nil || !client.Recorded() || rerecord
+	_, err := client.RestartFrom(restartCheckpoint, resetArgs, args, rerecord)
 	if err != nil {
 		return err
 	}
-	finishRestart(out, true)
+	if shouldFinishRestart {
+		finishRestart(out, true)
+	}
 	refreshState(refreshToFrameZero, clearStop, nil)
 	return nil
 }
 
 func doRebuild(out io.Writer, resetArgs bool, args []string) error {
+	rerecord := client != nil && client.Recorded()
+
 	dorestart := BackendServer.serverProcess != nil
 	BackendServer.Rebuild()
 	if !dorestart || !BackendServer.buildok {
@@ -560,7 +591,7 @@ func doRebuild(out io.Writer, resetArgs bool, args []string) error {
 	updateFrozenBreakpoints()
 	clearFrozenBreakpoints()
 
-	discarded, err := client.RestartFrom("", resetArgs, args)
+	discarded, err := client.RestartFrom("", resetArgs, args, rerecord)
 	if err != nil {
 		fmt.Fprintf(out, "error on restart\n")
 		return err
