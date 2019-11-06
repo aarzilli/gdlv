@@ -28,5 +28,6 @@ func increase() {
 
 func main() {
 	fmt.Println(os.Args)
+	otherFunc()
 	increase()
 }

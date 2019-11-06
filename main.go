@@ -912,6 +912,7 @@ Executes "gdlv run" using mozilla rr has a backend.
 Options must appear before the command and include:
 
 	-d <dir>	builds inside the specified directory instead of the current directory (for debug and test)
+	-tags <taglist>	list of tags to pass to 'go build'
 `)
 	os.Exit(1)
 }
@@ -930,6 +931,13 @@ optionsLoop:
 				usage("wrong number of arguments after -d")
 			}
 			opts.buildDir = args[i]
+			i++
+		case "-tags":
+			i++
+			if i >= len(args) {
+				usage("wrong number of arguments after -tags")
+			}
+			opts.tags = args[i]
 			i++
 		default:
 			break optionsLoop
@@ -963,6 +971,7 @@ type commandLineOptions struct {
 	backend        string
 	defaultBackend bool
 	buildDir       string
+	tags           string
 }
 
 func main() {

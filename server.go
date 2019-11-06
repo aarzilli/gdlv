@@ -102,11 +102,17 @@ func parseArguments() (descr ServerDescr) {
 		if opts.buildDir != "" {
 			usage("can not use -d with 'connect'")
 		}
+		if opts.tags != "" {
+			usage("can not use -tags with 'connect'")
+		}
 		descr.connectString = opts.cmdArgs[0]
 
 	case "attach":
 		if opts.buildDir != "" {
 			usage("can not use -d with 'attach'")
+		}
+		if opts.tags != "" {
+			usage("can not use -tags with 'attach'")
 		}
 		switch len(opts.cmdArgs) {
 		case 1:
@@ -126,6 +132,9 @@ func parseArguments() (descr ServerDescr) {
 		descr.builddir = opts.buildDir
 		descr.debugid = dir
 		descr.buildcmd = []string{"build", "-o", descr.exe}
+		if opts.tags != "" {
+			descr.buildcmd = append(descr.buildcmd, "-tags", opts.tags)
+		}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		args := make([]string, 0, len(opts.cmdArgs)+4)
 		args = append(args, opts.backend, "--headless", "exec", descr.exe, "--")
@@ -142,6 +151,9 @@ func parseArguments() (descr ServerDescr) {
 		debugname(opts.cmdArgs[0])
 		descr.debugid, _ = filepath.Abs(opts.cmdArgs[0])
 		descr.buildcmd = []string{"build", "-o", descr.exe}
+		if opts.tags != "" {
+			descr.buildcmd = append(descr.buildcmd, "-tags", opts.tags)
+		}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		descr.buildcmd = append(descr.buildcmd, opts.cmdArgs[0])
 		args := make([]string, 0, len(opts.cmdArgs[1:])+4)
@@ -155,6 +167,9 @@ func parseArguments() (descr ServerDescr) {
 		}
 		if opts.buildDir != "" {
 			usage("can not use -d with 'exec'")
+		}
+		if opts.tags != "" {
+			usage("can not use -tags with 'exec'")
 		}
 		descr.debugid, _ = filepath.Abs(opts.cmdArgs[0])
 		args := make([]string, 0, len(opts.cmdArgs[1:])+5)
@@ -170,6 +185,9 @@ func parseArguments() (descr ServerDescr) {
 		debugname(dir)
 		descr.debugid = dir
 		descr.buildcmd = []string{"test"}
+		if opts.tags != "" {
+			descr.buildcmd = append(descr.buildcmd, "-tags", opts.tags)
+		}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		descr.buildcmd = append(descr.buildcmd, "-c", "-o", descr.exe)
 		args := make([]string, 0, len(opts.cmdArgs)+4)
@@ -187,6 +205,9 @@ func parseArguments() (descr ServerDescr) {
 		if opts.buildDir != "" {
 			usage("can not use -d with 'core'")
 		}
+		if opts.tags != "" {
+			usage("can not use -tags with 'core'")
+		}
 		descr.debugid, _ = filepath.Abs(opts.cmdArgs[0])
 		finish(true, "--headless", "core", opts.cmdArgs[0], opts.cmdArgs[1])
 
@@ -199,6 +220,9 @@ func parseArguments() (descr ServerDescr) {
 		}
 		if opts.buildDir != "" {
 			usage("can not use -d with 'replay'")
+		}
+		if opts.tags != "" {
+			usage("can not use -tags with 'replay'")
 		}
 		descr.debugid = "replay-" + opts.cmdArgs[0]
 		finish(true, "--headless", "replay", opts.cmdArgs[0])
