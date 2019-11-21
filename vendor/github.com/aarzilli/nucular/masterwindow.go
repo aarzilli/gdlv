@@ -14,9 +14,6 @@ import (
 	"github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
-
-	"golang.org/x/image/font"
-	"golang.org/x/image/math/fixed"
 )
 
 type MasterWindow interface {
@@ -167,24 +164,6 @@ func (w *masterWindowCommon) dumpFrame(wimg *image.RGBA, t0, t1, te time.Time, n
 	}
 
 	frameCnt++
-}
-
-func (w *masterWindowCommon) drawPerfCounter(img *image.RGBA, bounds image.Rectangle, t0, t1, te time.Time) {
-	fps := 1.0 / te.Sub(t0).Seconds()
-
-	s := fmt.Sprintf("%0.4fms + %0.4fms (%0.2f)", t1.Sub(t0).Seconds()*1000, te.Sub(t1).Seconds()*1000, fps)
-	d := font.Drawer{
-		Dst:  img,
-		Src:  image.White,
-		Face: w.ctx.Style.Font}
-
-	width := d.MeasureString(s).Ceil()
-
-	bounds.Min.X = bounds.Max.X - width
-	bounds.Min.Y = bounds.Max.Y - (w.ctx.Style.Font.Metrics().Ascent + w.ctx.Style.Font.Metrics().Descent).Ceil()
-	draw.Draw(img, bounds, image.Black, bounds.Min, draw.Src)
-	d.Dot = fixed.P(bounds.Min.X, bounds.Min.Y+w.ctx.Style.Font.Metrics().Ascent.Ceil())
-	d.DrawString(s)
 }
 
 // compares cmds to the last draw frame, returns true if there is a change

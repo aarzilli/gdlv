@@ -19,12 +19,10 @@ import (
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/rpc2"
 	"github.com/aarzilli/nucular"
+	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
-	"github.com/golang/freetype"
-	"github.com/golang/freetype/truetype"
 
-	"golang.org/x/image/font"
 	"golang.org/x/mobile/event/key"
 )
 
@@ -35,10 +33,12 @@ const profileEnabled = false
 var zeroWidth, arrowWidth, starWidth, spaceWidth int
 
 var fontInit sync.Once
-var iconTtfont *truetype.Font
 var iconFace font.Face
-var boldTtfont, normalTtfont *truetype.Font
 var boldFace font.Face
+
+var normalFontData []byte
+var boldFontData []byte
+var iconFontData []byte
 
 const (
 	arrowIconChar      = "\uf061"
@@ -71,8 +71,7 @@ func setupStyle() {
 	}
 
 	fontInit.Do(func() {
-		iconFontData, _ := assets.Asset("fontawesome-webfont.ttf")
-		iconTtfont, _ = freetype.ParseFont(iconFontData)
+		iconFontData, _ = assets.Asset("fontawesome-webfont.ttf")
 
 		normalFontPath := os.Getenv("GDLV_NORMAL_FONT")
 		boldFontPath := os.Getenv("GDLV_BOLD_FONT")
@@ -82,14 +81,10 @@ func setupStyle() {
 			_, normerr := os.Stat(normalFontPath)
 			_, bolderr := os.Stat(boldFontPath)
 			if normerr == nil && bolderr == nil {
-				normalFontData, normerr := ioutil.ReadFile(normalFontPath)
-				boldFontData, bolderr := ioutil.ReadFile(boldFontPath)
+				normalFontData, normerr = ioutil.ReadFile(normalFontPath)
+				boldFontData, bolderr = ioutil.ReadFile(boldFontPath)
 				if normerr == nil && bolderr == nil {
-					normalTtfont, normerr = freetype.ParseFont(normalFontData)
-					boldTtfont, bolderr = freetype.ParseFont(boldFontData)
-					if normerr == nil && bolderr == nil {
-						customFonts = true
-					}
+					customFonts = true
 				}
 			}
 			if normerr != nil {
@@ -105,8 +100,7 @@ func setupStyle() {
 		}
 
 		if !customFonts {
-			boldFontData, _ := assets.Asset("droid-sans.bold.ttf")
-			boldTtfont, _ = freetype.ParseFont(boldFontData)
+			boldFontData, _ = assets.Asset("droid-sans.bold.ttf")
 		}
 	})
 
@@ -121,10 +115,23 @@ func setupStyle() {
 	spaceWidth = nucular.FontWidth(style.Font, " ")
 
 	sz := int(12 * conf.Scaling)
-	iconFace = truetype.NewFace(iconTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
-	boldFace = truetype.NewFace(boldTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
-	if normalTtfont != nil {
-		style.Font = truetype.NewFace(normalTtfont, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
+	var err error
+	iconFace, err = font.NewFace(iconFontData, sz)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not parse icon font: %v\n", err)
+		os.Exit(1)
+	}
+	boldFace, err = font.NewFace(boldFontData, sz)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not parse bold font: %v\n", err)
+		os.Exit(1)
+	}
+	if normalFontData != nil {
+		style.Font, err = font.NewFace(normalFontData, sz)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "could not parse normal font: %v\n", err)
+			os.Exit(1)
+		}
 	}
 
 	arrowWidth = nucular.FontWidth(iconFace, arrowIconChar)

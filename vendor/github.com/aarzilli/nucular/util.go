@@ -1,17 +1,13 @@
 package nucular
 
 import (
-	"image"
-	"strings"
-
+	"github.com/aarzilli/nucular/font"
 	nstyle "github.com/aarzilli/nucular/style"
+	"image"
 
-	"golang.org/x/image/font"
 	"golang.org/x/mobile/event/mouse"
 
 	"github.com/aarzilli/nucular/rect"
-
-	"github.com/hashicorp/golang-lru"
 )
 
 type Heading int
@@ -150,59 +146,6 @@ func shrinkRect(r rect.Rect, amount int) rect.Rect {
 
 func FontHeight(f font.Face) int {
 	return f.Metrics().Ascent.Ceil() + f.Metrics().Descent.Ceil()
-}
-
-var fontWidthCache *lru.Cache
-var fontWidthCacheSize int
-
-func init() {
-	fontWidthCacheSize = 256
-	fontWidthCache, _ = lru.New(256)
-}
-
-func ChangeFontWidthCache(size int) {
-	if size > fontWidthCacheSize {
-		fontWidthCacheSize = size
-		fontWidthCache, _ = lru.New(fontWidthCacheSize)
-	}
-}
-
-type fontWidthCacheKey struct {
-	f      font.Face
-	string string
-}
-
-func FontWidth(f font.Face, str string) int {
-	maxw := 0
-	for {
-		newline := strings.Index(str, "\n")
-		line := str
-		if newline >= 0 {
-			line = str[:newline]
-		}
-
-		k := fontWidthCacheKey{f, line}
-
-		var w int
-		if val, ok := fontWidthCache.Get(k); ok {
-			w = val.(int)
-		} else {
-			d := font.Drawer{Face: f}
-			w = d.MeasureString(line).Ceil()
-			fontWidthCache.Add(k, w)
-		}
-
-		if w > maxw {
-			maxw = w
-		}
-
-		if newline >= 0 {
-			str = str[newline+1:]
-		} else {
-			break
-		}
-	}
-	return maxw
 }
 
 func unify(a rect.Rect, b rect.Rect) (clip rect.Rect) {

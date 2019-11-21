@@ -9,11 +9,11 @@ import (
 	"sync/atomic"
 
 	"github.com/aarzilli/nucular/command"
+	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
 
-	"golang.org/x/image/font"
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
 )

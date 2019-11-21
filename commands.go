@@ -1564,11 +1564,17 @@ func handleExitRequest() {
 			w.Row(20).Dynamic(1)
 			if w.ButtonText("Disconnect from headless instance, resume target process") {
 				client.Disconnect(true)
-				go wnd.Close()
+				go func() {
+					BackendServer.Close()
+					wnd.Close()
+				}()
 			}
 			if w.ButtonText("Disconnect from headless instance, leave target suspended") {
 				client.Disconnect(false)
-				go wnd.Close()
+				go func() {
+					BackendServer.Close()
+					wnd.Close()
+				}()
 			}
 			if w.ButtonText("Kill headless instance") {
 				handleExitRequest2()
@@ -1587,6 +1593,7 @@ func handleExitRequest2() {
 		if client != nil {
 			client.Detach(true)
 		}
+		BackendServer.Close()
 		wnd.Close()
 		return
 	}
@@ -1608,7 +1615,10 @@ func handleExitRequest2() {
 		}
 		if exit {
 			client.Detach(kill)
-			go wnd.Close()
+			go func() {
+				BackendServer.Close()
+				wnd.Close()
+			}()
 		}
 		w.Spacing(1)
 	})

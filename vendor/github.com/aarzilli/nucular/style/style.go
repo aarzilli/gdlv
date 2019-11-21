@@ -3,16 +3,10 @@ package style
 import (
 	"image"
 	"image/color"
-	"sync"
 
 	"github.com/aarzilli/nucular/command"
-	"github.com/aarzilli/nucular/internal/assets"
+	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/label"
-
-	"golang.org/x/image/font"
-
-	"github.com/golang/freetype"
-	"github.com/golang/freetype/truetype"
 )
 
 type WidgetStates int
@@ -1065,11 +1059,11 @@ func (style *Style) Scale(scaling float64) {
 
 	style.Scaling = scaling
 
-	if style.Font == nil || style.defaultFont == style.Font {
+	if style.Font == (font.Face{}) || style.defaultFont == style.Font {
 		style.DefaultFont(scaling)
 		style.defaultFont = style.Font
 	} else {
-		style.defaultFont = nil
+		style.defaultFont = font.Face{}
 	}
 
 	style.unscaled.Font = style.Font
@@ -1202,30 +1196,15 @@ func (style *Style) Scale(scaling float64) {
 }
 
 func (style *Style) DefaultFont(scaling float64) {
-	style.Font = defaultFont(12, scaling)
+	style.Font = font.DefaultFont(12, scaling)
 	style.defaultFont = style.Font
-}
-
-var ttfontDefault *truetype.Font
-var defaultFontInit sync.Once
-
-// Returns default font (DroidSansMono) with specified size and scaling
-func defaultFont(size int, scaling float64) font.Face {
-	defaultFontInit.Do(func() {
-		fontData, _ := assets.Asset("DroidSansMono.ttf")
-		ttfontDefault, _ = freetype.ParseFont(fontData)
-	})
-
-	sz := int(float64(size) * scaling)
-
-	return truetype.NewFace(ttfontDefault, &truetype.Options{Size: float64(sz), Hinting: font.HintingFull, DPI: 72})
 }
 
 func (style *Style) Defaults() {
 	if style.Scaling == 0.0 {
 		style.Scaling = 1.0
 	}
-	if style.Font == nil {
+	if style.Font == (font.Face{}) {
 		style.DefaultFont(style.Scaling)
 	}
 }

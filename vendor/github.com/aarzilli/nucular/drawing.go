@@ -5,11 +5,10 @@ import (
 	"image/color"
 
 	"github.com/aarzilli/nucular/command"
+	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
-
-	"golang.org/x/image/font"
 )
 
 func drawSymbol(out *command.Buffer, type_ label.SymbolType, content rect.Rect, background color.RGBA, foreground color.RGBA, border_width int, font font.Face) {

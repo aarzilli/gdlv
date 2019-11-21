@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
@@ -502,10 +503,14 @@ func loadProgramInfo(out io.Writer) {
 	fmt.Fprintf(out, "done\n")
 }
 
+var closeOnce sync.Once
+
 func (descr *ServerDescr) Close() {
-	if descr.exe != "" && RemoveExecutable {
-		os.Remove(descr.exe)
-	}
+	closeOnce.Do(func() {
+		if descr.exe != "" && RemoveExecutable {
+			os.Remove(descr.exe)
+		}
+	})
 }
 
 func addTestPrefix(inputArgs []string) []string {

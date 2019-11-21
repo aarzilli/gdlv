@@ -4,9 +4,8 @@ import (
 	"image"
 	"image/color"
 
+	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/rect"
-
-	"golang.org/x/image/font"
 )
 
 // CommandBuffer is a list of drawing directives.
@@ -67,10 +66,6 @@ type TriangleFilled struct {
 
 type CircleFilled struct {
 	Color color.RGBA
-}
-
-type Image struct {
-	Img *image.RGBA
 }
 
 type Text struct {
@@ -149,18 +144,6 @@ func (b *Buffer) FillTriangle(p0, p1, p2 image.Point, c color.RGBA) {
 	cmd.TriangleFilled.B = p1
 	cmd.TriangleFilled.C = p2
 	cmd.TriangleFilled.Color = c
-	b.Commands = append(b.Commands, cmd)
-}
-
-func (b *Buffer) DrawImage(r rect.Rect, img *image.RGBA) {
-	if !r.Intersect(&b.Clip) {
-		return
-	}
-
-	var cmd Command
-	cmd.Kind = ImageCmd
-	cmd.Rect = r
-	cmd.Image.Img = img
 	b.Commands = append(b.Commands, cmd)
 }
 

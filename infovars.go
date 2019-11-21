@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"golang.org/x/image/font"
+	"github.com/aarzilli/nucular/font"
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/clipboard"
