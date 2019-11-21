@@ -119,8 +119,10 @@ func (mw *masterWindow) processPointerEvent(e pointer.Event) {
 	case pointer.Release, pointer.Cancel:
 		for i := range mw.ctx.Input.Mouse.Buttons {
 			btn := &mw.ctx.Input.Mouse.Buttons[i]
-			btn.Down = false
-			btn.Clicked = true
+			if btn.Down {
+				btn.Down = false
+				btn.Clicked = true
+			}
 		}
 
 	case pointer.Press:
@@ -133,6 +135,10 @@ func (mw *masterWindow) processPointerEvent(e pointer.Event) {
 			button = mouse.ButtonRight
 		case e.Buttons.Contain(pointer.ButtonMiddle):
 			button = mouse.ButtonMiddle
+		}
+
+		if button == mouse.ButtonRight && e.Modifiers.Contain(key.ModCtrl) {
+			button = mouse.ButtonLeft
 		}
 
 		down := e.Type == pointer.Press

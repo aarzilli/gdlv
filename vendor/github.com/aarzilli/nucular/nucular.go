@@ -436,7 +436,7 @@ func (win *Window) specialPanelBegin() {
 		// Since the size of the contextual menu is only knowable after displaying
 		// it once this must be done on the second frame.
 		max := ctx.Windows[0].Bounds.Max()
-		if win.header.Contains(prevbody.Min()) && ((prevbody.Max().X > max.X) || (prevbody.Max().Y > max.Y)) && (win.Bounds.X-prevbody.W >= 0) && (win.Bounds.Y-prevbody.H >= 0) {
+		if (win.header.H <= 0 || win.header.W <= 0 || win.header.Contains(prevbody.Min())) && ((prevbody.Max().X > max.X) || (prevbody.Max().Y > max.Y)) && (win.Bounds.X-prevbody.W >= 0) && (win.Bounds.Y-prevbody.H >= 0) {
 			win.Bounds.X = win.Bounds.X - prevbody.W
 			win.Bounds.Y = win.Bounds.Y - prevbody.H
 		}
