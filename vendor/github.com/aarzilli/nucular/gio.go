@@ -646,7 +646,6 @@ func drawText(ops *op.Ops, txt *text.Layout, face font.Face, fgcolor color.RGBA,
 	var stack op.StackOp
 	stack.Push(ops)
 	paint.ColorOp{fgcolor}.Add(ops)
-	fmt.Printf("color %#v\n", fgcolor)
 
 	fc := fontFace2fontFace(&face)
 
