@@ -229,7 +229,7 @@ func parseArguments() (descr ServerDescr) {
 		finish(true, "--headless", "replay", opts.cmdArgs[0])
 
 	case "version":
-		fmt.Fprintf(os.Stderr, "Gdlv Debugger\nVersion: 1.0\n")
+		fmt.Fprintf(os.Stderr, "Gdlv Debugger\nVersion: 1.1\n")
 		os.Exit(0)
 
 	default:
