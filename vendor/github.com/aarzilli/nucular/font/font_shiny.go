@@ -1,4 +1,4 @@
-//+build !nucular_gio
+// +build !darwin,!nucular_gio nucular_shiny
 
 package font
 

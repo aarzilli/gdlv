@@ -19,11 +19,22 @@ go get -u github.com/aarzilli/gdlv
 
 Use Ctrl+plus and Ctrl+minus, or `config zoom 1.5` to change font size.
 
-## Metal backend on macOS
+## Other backends
 
-Gdlv can be built to use metal to draw its window on macOS using `go build -tags=metal github.com/aarzilli/gdlv`.
+On Linux and Windows gdlv uses [shiny](https://github.com/golang/exp/tree/master/shiny) to draw its window and receive mouse and keyboard input from the Operating System. On macOS [gio](https://gioui.org/) is used instead. This behavior can be changed using build tags:
+
+```
+go install -tags=nucular_gio github.com/aarzilli/gdlv
+```
+
+will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` will select the shiny backend on macOS. Additionally, on macOS, `-tags=nucular_shiny,metal` can be used to make shiny draw using the metal API.
 
 # News
+
+## 2019-11-22 / Version 1.1
+* Added option to filter the goroutines window to only the goroutines matching a specified pattern.
+* Added `-r` option to the restart command which will rerecord the target (if it was recorded), also added the `flaky` script which runs the program repeatedly (rerecording it) until it hits any breakpoint.
+* Added `-tags` command line option to specify build tags for the target program.
 
 ## 2019-10-22 / Version 1.0 tagged
 
