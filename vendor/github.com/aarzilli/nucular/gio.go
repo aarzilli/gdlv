@@ -10,6 +10,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"sync"
 	"sync/atomic"
 	"time"
 	"unicode/utf8"
@@ -28,6 +29,7 @@ import (
 	"gioui.org/text"
 	"gioui.org/unit"
 
+	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/label"
@@ -54,6 +56,9 @@ type masterWindow struct {
 	closed bool
 }
 
+var clipboardStarted bool = false
+var clipboardMu sync.Mutex
+
 func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, updatefn UpdateFn) MasterWindow {
 	ctx := &context{}
 	wnd := &masterWindow{}
@@ -62,6 +67,13 @@ func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, update
 
 	wnd.Title = title
 	wnd.initialSize = sz
+
+	clipboardMu.Lock()
+	if !clipboardStarted {
+		clipboardStarted = true
+		clipboard.Start()
+	}
+	clipboardMu.Unlock()
 
 	return wnd
 }
