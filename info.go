@@ -664,7 +664,9 @@ func updateBreakpoints(container *nucular.Window) {
 				iconFace, style.Font = style.Font, iconFace
 			}
 
-			w.ContextualOpen(0, image.Point{}, bounds, breakpointContextualMenu)
+			if w := w.ContextualOpen(0, image.Point{}, bounds, breakpointContextualMenu); w != nil {
+				breakpointsPanel.selected = breakpoint.ID
+			}
 
 			if breakpointsPanel.selected != oldselectedId {
 				listingPanel.pinnedLoc = &api.Location{File: breakpoint.File, Line: breakpoint.Line, PC: breakpoint.Addr}
