@@ -59,7 +59,7 @@ func (s starlarkContext) RegisterCallback(name, helpMsg string, fn func(args str
 
 func (s starlarkContext) CallCommand(cmdstr string) error {
 	defer wnd.Changed()
-	out := editorWriter{&scrollbackEditor, true}
+	out := editorWriter{true}
 	cmdstr, args := parseCommand(cmdstr)
 	return cmds.Call(cmdstr, args, &out)
 }
@@ -130,7 +130,7 @@ def command_flaky(args):
 `
 
 func executeInit() {
-	scrollbackOut := editorWriter{&scrollbackEditor, true}
+	scrollbackOut := editorWriter{true}
 	initPath := configLoc() + ".star"
 	fmt.Fprintf(&scrollbackOut, "Loading init file %q...", initPath)
 	fh, err := os.Open(initPath)

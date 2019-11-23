@@ -214,7 +214,7 @@ func (cm *completeMachine) finish() {
 	default:
 		compl := commonPrefix(cm.compls)
 		commandLineEditor.Text([]rune(compl[len(cm.word):]))
-		out := editorWriter{&scrollbackEditor, false}
+		out := editorWriter{false}
 		more := ""
 		if len(cm.compls) > 5 {
 			more = "..."

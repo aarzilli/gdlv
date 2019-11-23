@@ -559,7 +559,7 @@ func pseudoCommandWrap(cmd func(io.Writer) error) {
 	wnd.Changed()
 	defer wnd.Changed()
 
-	out := editorWriter{&scrollbackEditor, true}
+	out := editorWriter{true}
 	err := cmd(&out)
 	if err != nil {
 		fmt.Fprintf(&out, "Error executing command: %v\n", err)
@@ -1221,9 +1221,7 @@ func scrollCommand(out io.Writer, args string) error {
 	switch args {
 	case "clear":
 		wnd.Lock()
-		scrollbackEditor.Buffer = scrollbackEditor.Buffer[:0]
-		scrollbackEditor.Cursor = 0
-		scrollbackEditor.CursorFollow = true
+		scrollbackClear = true
 		wnd.Unlock()
 	case "silence":
 		wnd.Lock()
@@ -1336,7 +1334,9 @@ func sourceCommand(out io.Writer, args string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%v\n", v.String())
+	if v != nil {
+		fmt.Fprintf(out, "%v\n", v.String())
+	}
 	return nil
 }
 
@@ -1537,7 +1537,7 @@ func executeCommand(cmdstr string) {
 
 	logf("Command: %s", cmdstr)
 
-	out := editorWriter{&scrollbackEditor, true}
+	out := editorWriter{true}
 	cmdstr, args := parseCommand(cmdstr)
 	if err := cmds.Call(cmdstr, args, &out); err != nil {
 		if _, ok := err.(ExitRequestError); ok {
@@ -1661,13 +1661,13 @@ func (c *Commands) Call(cmdstr, args string, out io.Writer) error {
 }
 
 func doCommand(cmd string) {
-	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+	var scrollbackOut = editorWriter{false}
 	fmt.Fprintf(&scrollbackOut, "%s %s\n", currentPrompt(), cmd)
 	go executeCommand(cmd)
 }
 
 func continueToLine(file string, lineno int) {
-	out := editorWriter{&scrollbackEditor, true}
+	out := editorWriter{true}
 	bp, err := client.CreateBreakpoint(&api.Breakpoint{File: file, Line: lineno})
 	if err != nil {
 		fmt.Fprintf(&out, "Could not continue to specified line, could not create breakpoint: %v\n", err)

@@ -195,7 +195,12 @@ func (env *Env) Cancel() {
 
 func (env *Env) newThread() *starlark.Thread {
 	thread := &starlark.Thread{
-		Print: func(_ *starlark.Thread, msg string) { fmt.Fprintln(env.out, msg) },
+		Print: func(thread *starlark.Thread, msg string) {
+			if err := isCancelled(thread); err != nil {
+				panic("cancelled")
+			}
+			fmt.Fprintln(env.out, msg)
+		},
 	}
 	env.contextMu.Lock()
 	var ctx context.Context

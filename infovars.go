@@ -320,7 +320,7 @@ func loadLocals(p *asyncLoad) {
 		varmap[varname] = d
 	}
 
-	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+	var scrollbackOut = editorWriter{true}
 	for i := range localsPanel.expressions {
 		loadOneExpr(i)
 		if localsPanel.expressions[i].traced {
@@ -596,7 +596,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 	}
 
 	if w.MenuItem(label.TA("Location...", "LC")) {
-		out := editorWriter{&scrollbackEditor, false}
+		out := editorWriter{false}
 		fmt.Fprintf(&out, "location of %q at %#x: %s\n", v.Name, curPC, v.LocationExpr)
 	}
 }
@@ -928,7 +928,7 @@ func loadMoreMap(v *Variable) {
 			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", v.Type, v.Addr, len(v.Children)/2)
 			lv, err := client.EvalVariable(currentEvalScope(), expr, LongArrayLoadConfig)
 			if err != nil {
-				out := editorWriter{&scrollbackEditor, true}
+				out := editorWriter{true}
 				fmt.Fprintf(&out, "Error loading array contents %s: %v\n", expr, err)
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children) / 2)
@@ -950,7 +950,7 @@ func loadMoreArrayOrSlice(v *Variable) {
 			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", v.Type, v.Addr, len(v.Children))
 			lv, err := client.EvalVariable(currentEvalScope(), expr, LongArrayLoadConfig)
 			if err != nil {
-				out := editorWriter{&scrollbackEditor, true}
+				out := editorWriter{true}
 				fmt.Fprintf(&out, "Error loading array contents %s: %v\n", expr, err)
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children))

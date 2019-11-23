@@ -369,7 +369,7 @@ func updateGoroutines(container *nucular.Window) {
 			go func(gid int) {
 				state, err := client.SwitchGoroutine(gid)
 				if err != nil {
-					out := editorWriter{&scrollbackEditor, true}
+					out := editorWriter{true}
 					fmt.Fprintf(&out, "Could not switch goroutine: %v\n", err)
 				} else {
 					refreshto := refreshToFrameZero
@@ -544,7 +544,7 @@ func updateThreads(container *nucular.Window) {
 			go func(tid int) {
 				state, err := client.SwitchThread(tid)
 				if err != nil {
-					out := editorWriter{&scrollbackEditor, true}
+					out := editorWriter{true}
 					fmt.Fprintf(&out, "Could not switch thread: %v\n", err)
 				} else {
 					go refreshState(refreshToFrameZero, clearGoroutineSwitch, state)
@@ -711,7 +711,7 @@ func breakpointContextualMenu(w *nucular.Window) {
 	}
 	if w.MenuItem(label.TA("Clear All", "LC")) {
 		go func() {
-			scrollbackOut := editorWriter{&scrollbackEditor, true}
+			scrollbackOut := editorWriter{true}
 			for _, bp := range breakpointsPanel.breakpoints {
 				if bp.ID < 0 {
 					continue
@@ -738,7 +738,7 @@ func execClearBreakpoint(id int) {
 			return
 		}
 	}
-	scrollbackOut := editorWriter{&scrollbackEditor, true}
+	scrollbackOut := editorWriter{true}
 	bp, err := client.ClearBreakpoint(id)
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not clear breakpoint %d: %v\n", id, err)
@@ -749,7 +749,7 @@ func execClearBreakpoint(id int) {
 }
 
 func execRestartCheckpoint(id int) {
-	scrollbackOut := editorWriter{&scrollbackEditor, true}
+	scrollbackOut := editorWriter{true}
 	_, err := client.RestartFrom(fmt.Sprintf("c%d", id), false, nil, false)
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not restart from checkpoint c%d: %v\n", id, err)
@@ -760,7 +760,7 @@ func execRestartCheckpoint(id int) {
 }
 
 func execClearCheckpoint(id int) {
-	scrollbackOut := editorWriter{&scrollbackEditor, true}
+	scrollbackOut := editorWriter{true}
 	err := client.ClearCheckpoint(id)
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not clear checkpoint c%d: %v\n", id, err)
@@ -874,7 +874,7 @@ func (bped *breakpointEditor) update(w *nucular.Window) {
 func (bped *breakpointEditor) amendBreakpoint() {
 	err := client.AmendBreakpoint(bped.bp)
 	if err != nil {
-		scrollbackOut := editorWriter{&scrollbackEditor, true}
+		scrollbackOut := editorWriter{true}
 		fmt.Fprintf(&scrollbackOut, "Could not amend breakpoint: %v\n", err)
 	}
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
@@ -1081,7 +1081,7 @@ func funcInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx i
 }
 
 func functionListSetBreakpoint(name string) {
-	setBreakpointEx(&editorWriter{&scrollbackEditor, true}, &api.Breakpoint{FunctionName: name, Line: -1})
+	setBreakpointEx(&editorWriter{true}, &api.Breakpoint{FunctionName: name, Line: -1})
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 }
 
@@ -1275,7 +1275,7 @@ func updateListingPanel(container *nucular.Window) {
 				if isCurrentLine {
 					if listingPanel.stepIntoInfo.Valid {
 						if w.MenuItem(label.TA(listingPanel.stepIntoInfo.Msg, "LC")) {
-							go stepInto(&editorWriter{&scrollbackEditor, true}, listingPanel.stepIntoInfo.Call)
+							go stepInto(&editorWriter{true}, listingPanel.stepIntoInfo.Call)
 						}
 					}
 				} else {
@@ -1306,7 +1306,7 @@ func updateListingPanel(container *nucular.Window) {
 }
 
 func listingSetBreakpoint(file string, line int) {
-	setBreakpointEx(&editorWriter{&scrollbackEditor, true}, &api.Breakpoint{File: file, Line: line})
+	setBreakpointEx(&editorWriter{true}, &api.Breakpoint{File: file, Line: line})
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 }
 

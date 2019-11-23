@@ -344,7 +344,7 @@ func (dv *detailViewer) loadMore() {
 			expr := fmt.Sprintf("(*(*%q)(%#x))[%d:]", dv.v.RealType, dv.v.Addr, dv.length())
 			lv, err := client.EvalVariable(currentEvalScope(), expr, LongArrayLoadConfig)
 			if err != nil {
-				out := editorWriter{&scrollbackEditor, true}
+				out := editorWriter{true}
 				fmt.Fprintf(&out, "Error loading string contents %s: %v\n", expr, err)
 			} else {
 				switch dv.v.Kind {
@@ -524,7 +524,7 @@ func newCustomFormatter(fmtstr string) *CustomFormatter {
 }
 
 func (c *CustomFormatter) Format(v *Variable) {
-	sv, err := StarlarkEnv.Execute(&editorWriter{&scrollbackEditor, true}, "<expr>", c.Fmtstr, "<expr>", nil, v.Variable)
+	sv, err := StarlarkEnv.Execute(&editorWriter{true}, "<expr>", c.Fmtstr, "<expr>", nil, v.Variable)
 	if err != nil {
 		v.Value = fmt.Sprintf("custom formatter error: %v", err)
 		return

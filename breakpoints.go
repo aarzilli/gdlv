@@ -232,7 +232,7 @@ func enableBreakpoint(bp *api.Breakpoint) {
 			fbp := &FrozenBreakpoints[len(FrozenBreakpoints)-1]
 			copy(DisabledBreakpoints[i:], DisabledBreakpoints[i+1:])
 			DisabledBreakpoints = DisabledBreakpoints[:len(DisabledBreakpoints)-1]
-			fbp.Set(&editorWriter{&scrollbackEditor, true}, nil)
+			fbp.Set(&editorWriter{true}, nil)
 			break
 		}
 	}

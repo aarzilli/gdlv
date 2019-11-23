@@ -1,17 +1,19 @@
 package main
 
 import (
-	"github.com/aarzilli/nucular"
-	"github.com/aarzilli/nucular/rect"
+	"sync"
+
+	"github.com/aarzilli/nucular/richtext"
 )
 
 var silenced bool
-var scrollbackEditor nucular.TextEditor
-
-var scrollbackEditorRect rect.Rect
+var scrollbackEditor = richtext.New(richtext.Selectable | richtext.ShowTick | richtext.AutoWrap | richtext.Clipboard | richtext.Keyboard)
+var scrollbackClear bool
+var scrollbackInitialized bool
+var scrollbackMu sync.Mutex
+var scrollbackPreInitWrite []byte
 
 type editorWriter struct {
-	ed   *nucular.TextEditor
 	lock bool
 }
 
@@ -27,28 +29,20 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 		defer wnd.Changed()
 	}
 
+	scrollbackMu.Lock()
+	if !scrollbackInitialized {
+		scrollbackPreInitWrite = append(scrollbackPreInitWrite, b...)
+		scrollbackMu.Unlock()
+		return len(b), nil
+	}
+	scrollbackMu.Unlock()
+
 	logf("Output: %s", string(b))
 
-	w.ed.Buffer = autowrappend(w.ed.Buffer, []rune(expandTabs(string(b))), 260)
-	if len(w.ed.Buffer) > scrollbackHighMark {
-		copy(w.ed.Buffer, w.ed.Buffer[scrollbackLowMark:])
-		w.ed.Buffer = w.ed.Buffer[:len(w.ed.Buffer)-scrollbackLowMark]
-		w.ed.Cursor = len(w.ed.Buffer) - 256
-	}
-	oldcursor := w.ed.Cursor
-	for w.ed.Cursor = len(w.ed.Buffer) - 2; w.ed.Cursor > oldcursor; w.ed.Cursor-- {
-		if w.ed.Buffer[w.ed.Cursor] == '\n' {
-			break
-		}
-	}
-	if w.ed.Cursor > 0 {
-		w.ed.Cursor++
-	}
-	if w.ed.Cursor > len(w.ed.Buffer) {
-		w.ed.Cursor = len(w.ed.Buffer)
-	}
-	w.ed.CursorFollow = true
-	w.ed.Redraw = true
+	c := scrollbackEditor.Append(true)
+	c.Text(string(b))
+	c.End()
+	scrollbackEditor.Tail(10000)
 	return len(b), nil
 }
 
@@ -59,23 +53,4 @@ func currentColumn(buf []rune) int {
 		}
 	}
 	return len(buf)
-}
-
-func autowrappend(r, r1 []rune, ncols int) []rune {
-	if ncols <= 0 {
-		return append(r, r1...)
-	}
-	curcol := currentColumn(r)
-	for _, ch := range r1 {
-		if curcol >= ncols {
-			r = append(r, '\n')
-			curcol = 0
-		}
-		r = append(r, ch)
-		curcol++
-		if ch == '\n' {
-			curcol = 0
-		}
-	}
-	return r
 }

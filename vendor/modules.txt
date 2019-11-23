@@ -29,7 +29,7 @@ github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/render
 github.com/BurntSushi/xgb/shm
 github.com/BurntSushi/xgb/xproto
-# github.com/aarzilli/nucular v0.0.0-20191122151752-8d3f4ba47239
+# github.com/aarzilli/nucular v0.0.0-20191124071325-8eb85411a2db
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard
 github.com/aarzilli/nucular/command
@@ -37,6 +37,7 @@ github.com/aarzilli/nucular/font
 github.com/aarzilli/nucular/internal/assets
 github.com/aarzilli/nucular/label
 github.com/aarzilli/nucular/rect
+github.com/aarzilli/nucular/richtext
 github.com/aarzilli/nucular/style
 github.com/aarzilli/nucular/style-editor
 # github.com/go-delve/delve v1.2.0

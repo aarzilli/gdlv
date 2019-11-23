@@ -21,6 +21,7 @@ import (
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/rect"
+	"github.com/aarzilli/nucular/richtext"
 	nstyle "github.com/aarzilli/nucular/style"
 
 	"golang.org/x/mobile/event/key"
@@ -196,7 +197,7 @@ func guiUpdate(w *nucular.Window) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+	var scrollbackOut = editorWriter{false}
 	mw := w.Master()
 
 	for _, e := range wnd.Input().Keyboard.Keys {
@@ -354,8 +355,20 @@ func updateCommandPanel(w *nucular.Window) {
 	commandToolbar(w)
 
 	w.Row(0).Dynamic(1)
-	scrollbackEditor.Edit(w)
-	scrollbackEditorRect = w.LastWidgetBounds
+	if c := scrollbackEditor.Widget(w, scrollbackClear); c != nil {
+		scrollbackClear = false
+		c.Align(richtext.AlignLeftDumb)
+		if len(scrollbackPreInitWrite) > 0 {
+			c.Text(string(scrollbackPreInitWrite))
+		}
+		c.End()
+		scrollbackEditor.Sel.S = int32(len(scrollbackPreInitWrite))
+		scrollbackEditor.Sel.E = scrollbackEditor.Sel.S
+		scrollbackEditor.FollowCursor()
+		scrollbackMu.Lock()
+		scrollbackInitialized = true
+		scrollbackMu.Unlock()
+	}
 
 	p := currentPrompt()
 	p2 := p
@@ -433,7 +446,7 @@ func updateCommandPanel(w *nucular.Window) {
 	active := commandLineEditor.Edit(w)
 	if active&nucular.EditCommitted != 0 {
 		historySearch = false
-		var scrollbackOut = editorWriter{&scrollbackEditor, false}
+		var scrollbackOut = editorWriter{false}
 		cmd := string(commandLineEditor.Buffer)
 		if scriptRunning {
 			fmt.Fprintf(&scrollbackOut, "a script is running\n")
@@ -565,7 +578,7 @@ const (
 func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.DebuggerState) {
 	defer wnd.Changed()
 
-	var scrollbackOut = editorWriter{&scrollbackEditor, false}
+	var scrollbackOut = editorWriter{false}
 
 	failstate := func(pos string, err error) {
 		fmt.Fprintf(&scrollbackOut, "Error refreshing state %s: %v\n", pos, err)
@@ -1021,11 +1034,10 @@ func main() {
 	curThread = -1
 	curGid = -1
 
-	scrollbackEditor.Flags = nucular.EditSelectable | nucular.EditReadOnly | nucular.EditMultiline | nucular.EditClipboard
 	commandLineEditor.Flags = nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard
 	commandLineEditor.Active = true
 
-	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+	var scrollbackOut = editorWriter{true}
 
 	fmt.Fprintf(&scrollbackOut, `gdlv  Copyright (C) 2016-2019 Gdlv Authors
 This program comes with ABSOLUTELY NO WARRANTY;

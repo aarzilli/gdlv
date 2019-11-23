@@ -280,7 +280,7 @@ func evalScopedExpr(expr string, cfg api.LoadConfig) *api.Variable {
 		return v
 	}
 
-	sv, err := StarlarkEnv.Execute(&editorWriter{&scrollbackEditor, true}, "<expr>", strings.TrimLeft(se.EvalExpr[1:], " "), "<expr>", nil, nil)
+	sv, err := StarlarkEnv.Execute(&editorWriter{true}, "<expr>", strings.TrimLeft(se.EvalExpr[1:], " "), "<expr>", nil, nil)
 	if err != nil {
 		return &api.Variable{Name: expr, Unreadable: err.Error()}
 	}

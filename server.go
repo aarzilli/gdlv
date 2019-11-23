@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -242,7 +241,7 @@ func parseArguments() (descr ServerDescr) {
 const apiServerPrefix = "API server listening at: "
 
 func parseListenString(listenstr string) string {
-	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+	var scrollbackOut = editorWriter{true}
 
 	if !strings.HasPrefix(listenstr, apiServerPrefix) {
 		fmt.Fprintf(&scrollbackOut, "Could not parse connection string: %q\n", listenstr)
@@ -262,14 +261,13 @@ func (s *ServerDescr) Start() {
 }
 
 func (descr *ServerDescr) stdoutProcess(lenient bool) {
-	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+	var scrollbackOut = editorWriter{true}
 
 	bucket := 0
 	t0 := time.Now()
 	first := true
-	scan := bufio.NewScanner(descr.stdout)
 
-	copyToScrollback := func() {
+	copyToScrollback := func(text string) {
 		wnd.Lock()
 		if silenced {
 			wnd.Unlock()
@@ -281,7 +279,7 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 			t0 = now
 			bucket = 0
 		}
-		bucket += len(scan.Text())
+		bucket += len(text)
 		if bucket > scrollbackLowMark {
 			wnd.Lock()
 			silenced = true
@@ -291,25 +289,34 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 			bucket = 0
 			return
 		}
-		fmt.Fprintln(&scrollbackOut, scan.Text())
+		fmt.Fprintln(&scrollbackOut, text)
 		wnd.Changed()
 	}
 
-	for scan.Scan() {
+	buf := make([]byte, 4*1024)
+	for {
+		n, err := descr.stdout.Read(buf)
+
+		text := string(buf[:n])
+
 		if first {
-			if !lenient || strings.HasPrefix(scan.Text(), apiServerPrefix) {
-				descr.connectString = parseListenString(scan.Text())
+			nl := strings.Index(text, "\n")
+			line := text[:nl]
+			text = text[nl+1:]
+			if !lenient || strings.HasPrefix(text, apiServerPrefix) {
+				descr.connectString = parseListenString(line)
 				descr.connectTo()
 				first = false
 			} else {
-				copyToScrollback()
+				copyToScrollback(text)
 			}
-		} else {
-			copyToScrollback()
 		}
-	}
-	if err := scan.Err(); err != nil {
-		fmt.Fprintf(&scrollbackOut, "Error reading stdout: %v\n", err)
+		copyToScrollback(text)
+
+		if err != nil {
+			fmt.Fprintf(&scrollbackOut, "Error reading stdout: %v\n", err)
+			break
+		}
 	}
 	if first {
 		descr.connectionFailed = true
@@ -318,7 +325,7 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 }
 
 func (descr *ServerDescr) stderrProcess() {
-	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+	var scrollbackOut = editorWriter{true}
 	_, err := io.Copy(&scrollbackOut, descr.stderr)
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Error reading stderr: %v\n", err)
@@ -326,7 +333,7 @@ func (descr *ServerDescr) stderrProcess() {
 }
 
 func (descr *ServerDescr) stdinProcess() {
-	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+	var scrollbackOut = editorWriter{true}
 	for line := range descr.stdinChan {
 		scrollbackOut.Write([]byte(line))
 		descr.stdin.Write([]byte(line))
@@ -336,7 +343,7 @@ func (descr *ServerDescr) stdinProcess() {
 }
 
 func (descr *ServerDescr) Rebuild() {
-	sw := &editorWriter{&scrollbackEditor, true}
+	sw := &editorWriter{true}
 	descr.buildok = true
 	if descr.buildcmd != nil {
 		fmt.Fprintf(sw, "Compiling...")
@@ -391,7 +398,7 @@ func (descr *ServerDescr) StaleExecutable() bool {
 }
 
 func (descr *ServerDescr) connectTo() {
-	var scrollbackOut = editorWriter{&scrollbackEditor, true}
+	var scrollbackOut = editorWriter{true}
 
 	if descr.connectString == "" {
 		return
