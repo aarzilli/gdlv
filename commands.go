@@ -23,6 +23,7 @@ import (
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
+	"github.com/aarzilli/nucular/richtext"
 	"github.com/aarzilli/nucular/style-editor"
 )
 
@@ -82,8 +83,11 @@ Type "help" followed by the name of a command for more information about it.`},
 		{aliases: []string{"break", "b"}, cmdFn: breakpoint, complete: completeLocation, helpMsg: `Sets a breakpoint.
 
 	break [name] <linespec>
+	break
 
-See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/locspec.md for the syntax of linespec. To set breakpoints you can also right click on a source line and click "Set breakpoint". Breakpoint properties can be changed by right clicking on a breakpoint (either in the source panel or the breakpoints panel) and selecting "Edit breakpoint".`},
+See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/locspec.md for the syntax of linespec. To set breakpoints you can also right click on a source line and click "Set breakpoint". Breakpoint properties can be changed by right clicking on a breakpoint (either in the source panel or the breakpoints panel) and selecting "Edit breakpoint".
+
+Without arguments displays all currently set breakponts.`},
 		{aliases: []string{"trace", "t"}, cmdFn: tracepoint, complete: completeLocation, helpMsg: `Set tracepoint.
 
 	trace [name] <linespec>
@@ -214,6 +218,12 @@ Shortcuts:
 
 If path is a single '-' character an interactive starlark interpreter will start instead. Type 'exit' to exit.
 See documentation in doc/starlark.md.`},
+
+		{aliases: []string{"stack"}, cmdFn: stackCommand, helpMsg: `Prints stacktrace
+			
+			stack [depth]
+		
+Prints the current stack trace. If depth is omitted it defaults to 5, all other settings are copied from the stacktrace panel.`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -312,6 +322,11 @@ and GDLV_BOLD_FONT to the path of two ttf files.
 }
 
 func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
+	if argstr == "" {
+		listBreakpoints()
+		return nil
+	}
+
 	if curThread < 0 {
 		cmd := "B"
 		if tracepoint {
@@ -385,6 +400,41 @@ func setBreakpointEx(out io.Writer, requestedBp *api.Breakpoint) {
 
 	fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
 	freezeBreakpoint(out, bp)
+}
+
+func listBreakpoints() {
+	wnd.Lock()
+	defer wnd.Unlock()
+	style := wnd.Style()
+	c := scrollbackEditor.Append(true)
+	defer c.End()
+	bps, err := client.ListBreakpoints()
+	if err != nil {
+		c.Text(fmt.Sprintf("Command failed: %v\n", err))
+		return
+	}
+	for _, bp := range bps {
+		c.Text(fmt.Sprintf("%s at %#x for ", formatBreakpointName(bp, true), bp.Addr))
+		if bp.FunctionName != "" {
+			c.Text(fmt.Sprintf("%s()\n        ", bp.FunctionName))
+		} else {
+			c.Text("\n        ")
+		}
+		c.SetStyle(richtext.TextStyle{Face: style.Font, Color: linkColor, Flags: richtext.Underline})
+		p := ShortenFilePath(bp.File)
+		{
+			bp := bp
+			c.Link(fmt.Sprintf("%s:%d", p, bp.Line), linkHoverColor, func() {
+				listingPanel.pinnedLoc = &api.Location{File: bp.File, Line: bp.Line, PC: bp.Addr}
+				go refreshState(refreshToSameFrame, clearNothing, nil)
+			})
+		}
+		c.SetStyle(richtext.TextStyle{Face: style.Font})
+		c.Text(fmt.Sprintf(" (%d)\n", bp.TotalHitCount))
+		if bp.Cond != "" {
+			c.Text(fmt.Sprintf("\tcond %s\n", bp.Cond))
+		}
+	}
 }
 
 func breakpoint(out io.Writer, args string) error {
@@ -1340,6 +1390,31 @@ func sourceCommand(out io.Writer, args string) error {
 	return nil
 }
 
+func stackCommand(out io.Writer, args string) error {
+	depth, err := strconv.Atoi(args)
+	if err != nil {
+		depth = 5
+	}
+	frames, err := client.Stacktrace(curGid, depth, false, nil)
+	if err != nil {
+		return err
+	}
+	printStack(frames, "")
+	ancestors, err := client.Ancestors(curGid, NumAncestors, depth)
+	if err != nil {
+		return err
+	}
+	for _, ancestor := range ancestors {
+		fmt.Fprintf(out, "Created by Goroutine %d:\n", ancestor.ID)
+		if ancestor.Unreadable != "" {
+			fmt.Fprintf(out, "\t%s\n", ancestor.Unreadable)
+			continue
+		}
+		printStack(ancestor.Stack, "        ")
+	}
+	return nil
+}
+
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
 	thing := "breakpoint"
 	if bp.Tracepoint {
@@ -1486,7 +1561,7 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 
 		if bpi.Stacktrace != nil {
 			fmt.Fprintf(out, "    Stack:\n")
-			printStack(out, bpi.Stacktrace, "        ")
+			printStack(bpi.Stacktrace, "        ")
 		}
 	}
 }
@@ -1503,23 +1578,37 @@ func writeGoroutineLong(w io.Writer, g *api.Goroutine, prefix string) {
 		prefix, formatLocation(g.GoStatementLoc))
 }
 
-func printStack(out io.Writer, stack []api.Stackframe, ind string) {
+func printStack(stack []api.Stackframe, ind string) {
+	wnd.Lock()
+	defer wnd.Unlock()
+	c := scrollbackEditor.Append(true)
+	defer c.End()
 	if len(stack) == 0 {
 		return
 	}
 	d := digits(len(stack) - 1)
-	fmtstr := "%s%" + strconv.Itoa(d) + "d  0x%016x in %s\n"
+	fmtstr := "%s%" + strconv.Itoa(d) + "d  0x%016x in %s\n%sat "
 	s := ind + strings.Repeat(" ", d+2+len(ind))
 
+	style := wnd.Style()
+
 	for i := range stack {
-		fmt.Fprintf(out, fmtstr, ind, i, stack[i].PC, stack[i].Function.Name())
-		fmt.Fprintf(out, "%sat %s:%d\n", s, ShortenFilePath(stack[i].File), stack[i].Line)
+		c.Text(fmt.Sprintf(fmtstr, ind, i, stack[i].PC, stack[i].Function.Name(), s))
+		c.SetStyle(richtext.TextStyle{Face: style.Font, Color: linkColor, Flags: richtext.Underline})
+		{
+			frame := stack[i]
+			c.Link(fmt.Sprintf("%s:%d\n", ShortenFilePath(stack[i].File), stack[i].Line), linkHoverColor, func() {
+				listingPanel.pinnedLoc = &api.Location{File: frame.File, Line: frame.Line, PC: frame.PC}
+				go refreshState(refreshToSameFrame, clearNothing, nil)
+			})
+		}
+		c.SetStyle(richtext.TextStyle{Face: style.Font})
 
 		for j := range stack[i].Arguments {
-			fmt.Fprintf(out, "%s    %s = %s\n", s, stack[i].Arguments[j].Name, wrapApiVariableSimple(&stack[i].Arguments[j]).SinglelineString(true, true))
+			c.Text(fmt.Sprintf("%s    %s = %s\n", s, stack[i].Arguments[j].Name, wrapApiVariableSimple(&stack[i].Arguments[j]).SinglelineString(true, true)))
 		}
 		for j := range stack[i].Locals {
-			fmt.Fprintf(out, "%s    %s = %s\n", s, stack[i].Locals[j].Name, wrapApiVariableSimple(&stack[i].Locals[j]).SinglelineString(true, true))
+			c.Text(fmt.Sprintf("%s    %s = %s\n", s, stack[i].Locals[j].Name, wrapApiVariableSimple(&stack[i].Locals[j]).SinglelineString(true, true)))
 		}
 	}
 }

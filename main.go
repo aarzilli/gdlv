@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
+	"image/color"
 	"io/ioutil"
 	"math"
 	"os"
@@ -40,6 +41,11 @@ var boldFace font.Face
 var normalFontData []byte
 var boldFontData []byte
 var iconFontData []byte
+
+var (
+	linkColor      = color.RGBA{0x00, 0x88, 0xdd, 0xff}
+	linkHoverColor = color.RGBA{0x00, 0xaa, 0xff, 0xff}
+)
 
 const (
 	arrowIconChar      = "\uf061"
