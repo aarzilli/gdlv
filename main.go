@@ -208,7 +208,7 @@ func guiUpdate(w *nucular.Window) {
 
 	for _, e := range wnd.Input().Keyboard.Keys {
 		switch {
-		case (e.Modifiers&key.ModControl != 0) && (e.Modifiers&key.ModShift != 0) && e.Code == key.CodeEqualSign:
+		case (e.Modifiers&key.ModControl != 0) && e.Code == key.CodeEqualSign:
 			// mitigation for shiny bug on macOS (see https://github.com/aarzilli/gdlv/issues/39)
 			fallthrough
 		case (e.Modifiers&key.ModControl != 0) && e.Rune == '+':

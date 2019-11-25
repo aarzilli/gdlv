@@ -303,13 +303,12 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 			nl := strings.Index(text, "\n")
 			line := text[:nl]
 			text = text[nl+1:]
-			if !lenient || strings.HasPrefix(text, apiServerPrefix) {
+			if !lenient || strings.HasPrefix(line, apiServerPrefix) {
 				descr.connectString = parseListenString(line)
 				descr.connectTo()
 				first = false
-			} else {
-				copyToScrollback(text)
 			}
+			copyToScrollback(text)
 		}
 		copyToScrollback(text)
 
