@@ -267,7 +267,7 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 	t0 := time.Now()
 	first := true
 
-	copyToScrollback := func(text string) {
+	copyToScrollback := func(text []byte) {
 		wnd.Lock()
 		if silenced {
 			wnd.Unlock()
@@ -289,7 +289,7 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 			bucket = 0
 			return
 		}
-		fmt.Fprintln(&scrollbackOut, text)
+		scrollbackOut.Write(text)
 		wnd.Changed()
 	}
 
@@ -297,11 +297,11 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 	for {
 		n, err := descr.stdout.Read(buf)
 
-		text := string(buf[:n])
+		text := buf[:n]
 
 		if first {
-			nl := strings.Index(text, "\n")
-			line := text[:nl]
+			nl := strings.Index(string(text), "\n")
+			line := string(text)[:nl]
 			text = text[nl+1:]
 			if !lenient || strings.HasPrefix(line, apiServerPrefix) {
 				descr.connectString = parseListenString(line)

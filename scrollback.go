@@ -7,6 +7,7 @@ import (
 )
 
 var silenced bool
+var onNewline bool = true
 var scrollbackEditor = richtext.New(richtext.Selectable | richtext.ShowTick | richtext.AutoWrap | richtext.Clipboard | richtext.Keyboard)
 var scrollbackClear bool
 var scrollbackInitialized bool
@@ -29,6 +30,10 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 		defer wnd.Changed()
 	}
 
+	if len(b) > 0 {
+		onNewline = b[len(b)-1] == '\n'
+	}
+
 	scrollbackMu.Lock()
 	if !scrollbackInitialized {
 		scrollbackPreInitWrite = append(scrollbackPreInitWrite, b...)
@@ -36,8 +41,6 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 		return len(b), nil
 	}
 	scrollbackMu.Unlock()
-
-	logf("Output: %s", string(b))
 
 	c := scrollbackEditor.Append(true)
 	c.Text(string(b))

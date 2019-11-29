@@ -1446,6 +1446,10 @@ func printcontext(out io.Writer, state *api.DebuggerState) error {
 		}
 	}
 
+	if !onNewline {
+		out.Write([]byte{'\n'})
+	}
+
 	for i := range state.Threads {
 		if (state.CurrentThread != nil) && (state.Threads[i].ID == state.CurrentThread.ID) {
 			continue
