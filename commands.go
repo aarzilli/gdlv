@@ -839,7 +839,7 @@ func stepIntoFirst(out io.Writer) error {
 }
 
 func stepInto(out io.Writer, sic stepIntoCall) error {
-	stack, err := client.Stacktrace(curGid, 1, false, nil)
+	stack, err := client.Stacktrace(curGid, 1, 0, nil)
 	if err != nil {
 		return err
 	}
@@ -1395,7 +1395,7 @@ func stackCommand(out io.Writer, args string) error {
 	if err != nil {
 		depth = 5
 	}
-	frames, err := client.Stacktrace(curGid, depth, false, nil)
+	frames, err := client.Stacktrace(curGid, depth, stacktraceOptions(), nil)
 	if err != nil {
 		return err
 	}

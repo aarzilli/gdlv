@@ -142,6 +142,7 @@ var stackPanel = struct {
 	showDeferPos bool
 	id           int
 	deferID      int
+	mode         int
 }{
 	depth: 50,
 }
@@ -385,12 +386,25 @@ func updateGoroutines(container *nucular.Window) {
 
 const NumAncestors = 5
 
+func stacktraceOptions() api.StacktraceOptions {
+	switch stackPanel.mode {
+	default:
+		fallthrough
+	case 0:
+		return 0
+	case 1:
+		return api.StacktraceSimple
+	case 2:
+		return api.StacktraceG | api.StacktraceSimple
+	}
+}
+
 func loadStacktrace(p *asyncLoad) {
 	stackPanel.id++
 	stackPanel.deferID++
 
 	var err error
-	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, true, nil)
+	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, stacktraceOptions()|api.StacktraceReadDefers, nil)
 	if LogOutputNice != nil {
 		logf("Stack (%d %d):\n", curGid, curThread)
 		for i := range stackPanel.stack {
@@ -417,8 +431,18 @@ func updateStacktrace(container *nucular.Window) {
 	}
 
 	w.MenubarBegin()
-	w.Row(20).Static(120)
+	w.Row(20).Static(120, 70, 200)
+	configChanged := false
 	if w.PropertyInt("depth:", 1, &stackPanel.depth, 200, 1, 5) {
+		configChanged = true
+	}
+	w.Label("Mode:", "LC")
+	newmode := w.ComboSimple([]string{"Normal", "No stack switching", "From G struct"}, stackPanel.mode, 30)
+	if newmode != stackPanel.mode {
+		stackPanel.mode = newmode
+		configChanged = true
+	}
+	if configChanged {
 		go func() {
 			stackPanel.asyncLoad.clear()
 			wnd.Changed()
