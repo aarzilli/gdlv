@@ -24,6 +24,7 @@ import (
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 	"github.com/aarzilli/nucular/richtext"
+	"github.com/aarzilli/nucular/style"
 	"github.com/aarzilli/nucular/style-editor"
 )
 
@@ -224,6 +225,10 @@ See documentation in doc/starlark.md.`},
 			stack [depth]
 		
 Prints the current stack trace. If depth is omitted it defaults to 5, all other settings are copied from the stacktrace panel.`},
+
+		{aliases: []string{"goroutines"}, cmdFn: goroutinesCommand, helpMsg: `Prints the list of currently running goroutines.
+
+All parameters are copied from the goroutines panel.`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -420,16 +425,7 @@ func listBreakpoints() {
 		} else {
 			c.Text("\n        ")
 		}
-		c.SetStyle(richtext.TextStyle{Face: style.Font, Color: linkColor, Flags: richtext.Underline})
-		p := ShortenFilePath(bp.File)
-		{
-			bp := bp
-			c.Link(fmt.Sprintf("%s:%d", p, bp.Line), linkHoverColor, func() {
-				listingPanel.pinnedLoc = &api.Location{File: bp.File, Line: bp.Line, PC: bp.Addr}
-				go refreshState(refreshToSameFrame, clearNothing, nil)
-			})
-		}
-		c.SetStyle(richtext.TextStyle{Face: style.Font})
+		writeLinkToLocation(c, style, bp.File, bp.Line, bp.Addr)
 		c.Text(fmt.Sprintf(" (%d)\n", bp.TotalHitCount))
 		if bp.Cond != "" {
 			c.Text(fmt.Sprintf("\tcond %s\n", bp.Cond))
@@ -1399,7 +1395,7 @@ func stackCommand(out io.Writer, args string) error {
 	if err != nil {
 		return err
 	}
-	printStack(frames, "")
+	printStack(nil, frames, "")
 	ancestors, err := client.Ancestors(curGid, NumAncestors, depth)
 	if err != nil {
 		return err
@@ -1410,8 +1406,52 @@ func stackCommand(out io.Writer, args string) error {
 			fmt.Fprintf(out, "\t%s\n", ancestor.Unreadable)
 			continue
 		}
-		printStack(ancestor.Stack, "        ")
+		printStack(nil, ancestor.Stack, "        ")
 	}
+	return nil
+}
+
+func goroutinesCommand(out io.Writer, args string) error {
+	wnd.Lock()
+	defer wnd.Unlock()
+	style := wnd.Style()
+	c := scrollbackEditor.Append(true)
+	defer c.End()
+
+	lim := goroutinesPanel.limit
+	if lim == 0 {
+		lim = 100
+	}
+	gs, err := client.ListGoroutines(0, lim)
+	if err != nil {
+		return err
+	}
+
+	for _, g := range gs {
+		if g.ID == curGid {
+			c.Text("* ")
+		} else {
+			c.Text("  ")
+		}
+		locType := ""
+		switch goroutineLocations[goroutinesPanel.goroutineLocation] {
+		default:
+			fallthrough
+		case currentGoroutineLocation:
+			locType = "Current"
+		case userGoroutineLocation:
+			locType = "User"
+		case goStatementLocation:
+			locType = "Go"
+		case startLocation:
+			locType = "Start"
+		}
+		loc := goroutineGetDisplayLiocation(g)
+		c.Text(fmt.Sprintf("Goroutine %d - %s: ", g.ID, locType))
+		writeLinkToLocation(c, style, loc.File, loc.Line, loc.PC)
+		c.Text(fmt.Sprintf(" %s (%#x)\n", loc.Function.Name(), loc.PC))
+	}
+
 	return nil
 }
 
@@ -1455,7 +1495,7 @@ func printcontext(out io.Writer, state *api.DebuggerState) error {
 			continue
 		}
 		if state.Threads[i].Breakpoint != nil {
-			printcontextThread(out, state.Threads[i])
+			printcontextThread(state.Threads[i])
 		}
 	}
 
@@ -1468,31 +1508,36 @@ func printcontext(out io.Writer, state *api.DebuggerState) error {
 		return nil
 	}
 
-	printcontextThread(out, state.CurrentThread)
+	printcontextThread(state.CurrentThread)
 
 	return nil
 }
 
-func printReturnValues(out io.Writer, th *api.Thread) {
+func printReturnValues(c *richtext.Ctor, th *api.Thread) {
 	if len(th.ReturnValues) == 0 {
 		return
 	}
-	fmt.Fprintln(out, "Values returned:")
+	c.Text("Values returned:\n")
 	for _, v := range th.ReturnValues {
-		fmt.Fprintf(out, "\t%s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t"))
+		c.Text(fmt.Sprintf("\t%s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t")))
 	}
-	fmt.Fprintln(out)
+	c.Text("\n")
 }
 
-func printcontextThread(out io.Writer, th *api.Thread) {
+func printcontextThread(th *api.Thread) {
+	wnd.Lock()
+	defer wnd.Unlock()
+	style := wnd.Style()
+	c := scrollbackEditor.Append(true)
+	defer c.End()
+
 	fn := th.Function
 
 	if th.Breakpoint == nil {
-		fmt.Fprintf(out, "> %s() %s:%d (PC: %#v)\n", fn.Name(), ShortenFilePath(th.File), th.Line, th.PC)
-		if th.Function != nil && th.Function.Optimized {
-			fmt.Fprintln(out, optimizedFunctionWarning)
-		}
-		printReturnValues(out, th)
+		c.Text(fmt.Sprintf("> %s() ", fn.Name()))
+		writeLinkToLocation(c, style, th.File, th.Line, th.PC)
+		c.Text(fmt.Sprintf(" (PC %#x)\n", th.PC))
+		printReturnValues(c, th)
 		return
 	}
 
@@ -1510,32 +1555,23 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 		bpname = fmt.Sprintf("[%s] ", th.Breakpoint.Name)
 	}
 
+	c.Text(fmt.Sprintf("> %s%s(%s) ", bpname, fn.Name(), args))
+	writeLinkToLocation(c, style, th.File, th.Line, th.PC)
 	if hitCount, ok := th.Breakpoint.HitCount[strconv.Itoa(th.GoroutineID)]; ok {
-		fmt.Fprintf(out, "> %s%s(%s) %s:%d (hits goroutine(%d):%d total:%d) (PC: %#v)\n",
-			bpname,
-			fn.Name(),
-			args,
-			ShortenFilePath(th.File),
-			th.Line,
+		c.Text(fmt.Sprintf(" (hits goroutine(%d):%d total:%d) (PC: %#v)\n",
 			th.GoroutineID,
 			hitCount,
 			th.Breakpoint.TotalHitCount,
-			th.PC)
+			th.PC))
 	} else {
-		fmt.Fprintf(out, "> %s%s(%s) %s:%d (hits total:%d) (PC: %#v)\n",
-			bpname,
-			fn.Name(),
-			args,
-			ShortenFilePath(th.File),
-			th.Line,
-			th.Breakpoint.TotalHitCount,
-			th.PC)
+		c.Text(fmt.Sprintf(" (hits total:%d) (PC: %#v)\n", th.Breakpoint.TotalHitCount, th.PC))
 	}
 	if th.Function != nil && th.Function.Optimized {
-		fmt.Fprintln(out, optimizedFunctionWarning)
+		c.Text(optimizedFunctionWarning)
+		c.Text("\n")
 	}
 
-	printReturnValues(out, th)
+	printReturnValues(c, th)
 
 	if th.BreakpointInfo != nil {
 		bp := th.Breakpoint
@@ -1546,26 +1582,26 @@ func printcontextThread(out io.Writer, th *api.Thread) {
 		}
 
 		for _, v := range bpi.Variables {
-			fmt.Fprintf(out, "    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t"))
+			c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("        ")))
 		}
 
 		for _, v := range bpi.Locals {
 			if *bp.LoadLocals == LongLoadConfig {
-				fmt.Fprintf(out, "    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t"))
+				c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("        ")))
 			} else {
-				fmt.Fprintf(out, "    %s: %s\n", v.Name, wrapApiVariableSimple(&v).SinglelineString(true, true))
+				c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).SinglelineString(true, true)))
 			}
 		}
 
 		if bp.LoadArgs != nil && *bp.LoadArgs == LongLoadConfig {
 			for _, v := range bpi.Arguments {
-				fmt.Fprintf(out, "    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t"))
+				c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("        ")))
 			}
 		}
 
 		if bpi.Stacktrace != nil {
-			fmt.Fprintf(out, "    Stack:\n")
-			printStack(bpi.Stacktrace, "        ")
+			c.Text("    Stack:\n")
+			printStack(nil, bpi.Stacktrace, "        ")
 		}
 	}
 }
@@ -1582,11 +1618,22 @@ func writeGoroutineLong(w io.Writer, g *api.Goroutine, prefix string) {
 		prefix, formatLocation(g.GoStatementLoc))
 }
 
-func printStack(stack []api.Stackframe, ind string) {
-	wnd.Lock()
-	defer wnd.Unlock()
-	c := scrollbackEditor.Append(true)
-	defer c.End()
+func writeLinkToLocation(c *richtext.Ctor, style *style.Style, file string, line int, pc uint64) {
+	c.SetStyle(richtext.TextStyle{Face: style.Font, Color: linkColor, Flags: richtext.Underline})
+	c.Link(fmt.Sprintf("%s:%d", ShortenFilePath(file), line), linkHoverColor, func() {
+		listingPanel.pinnedLoc = &api.Location{File: file, Line: line, PC: pc}
+		go refreshState(refreshToSameFrame, clearNothing, nil)
+	})
+	c.SetStyle(richtext.TextStyle{Face: style.Font})
+}
+
+func printStack(c *richtext.Ctor, stack []api.Stackframe, ind string) {
+	if c == nil {
+		wnd.Lock()
+		defer wnd.Unlock()
+		c = scrollbackEditor.Append(true)
+		defer c.End()
+	}
 	if len(stack) == 0 {
 		return
 	}
@@ -1598,15 +1645,8 @@ func printStack(stack []api.Stackframe, ind string) {
 
 	for i := range stack {
 		c.Text(fmt.Sprintf(fmtstr, ind, i, stack[i].PC, stack[i].Function.Name(), s))
-		c.SetStyle(richtext.TextStyle{Face: style.Font, Color: linkColor, Flags: richtext.Underline})
-		{
-			frame := stack[i]
-			c.Link(fmt.Sprintf("%s:%d\n", ShortenFilePath(stack[i].File), stack[i].Line), linkHoverColor, func() {
-				listingPanel.pinnedLoc = &api.Location{File: frame.File, Line: frame.Line, PC: frame.PC}
-				go refreshState(refreshToSameFrame, clearNothing, nil)
-			})
-		}
-		c.SetStyle(richtext.TextStyle{Face: style.Font})
+		writeLinkToLocation(c, style, stack[i].File, stack[i].Line, stack[i].PC)
+		c.Text("\n")
 
 		for j := range stack[i].Arguments {
 			c.Text(fmt.Sprintf("%s    %s = %s\n", s, stack[i].Arguments[j].Name, wrapApiVariableSimple(&stack[i].Arguments[j]).SinglelineString(true, true)))

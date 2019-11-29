@@ -270,6 +270,21 @@ func loadGoroutines(p *asyncLoad) {
 	p.done(nil)
 }
 
+func goroutineGetDisplayLiocation(g *api.Goroutine) api.Location {
+	switch goroutineLocations[goroutinesPanel.goroutineLocation] {
+	default:
+		fallthrough
+	case currentGoroutineLocation:
+		return g.CurrentLoc
+	case userGoroutineLocation:
+		return g.UserCurrentLoc
+	case goStatementLocation:
+		return g.GoStatementLoc
+	case startLocation:
+		return g.StartLoc
+	}
+}
+
 func updateGoroutines(container *nucular.Window) {
 	w := goroutinesPanel.asyncLoad.showRequest(container)
 	if w == nil {
@@ -312,21 +327,6 @@ func updateGoroutines(container *nucular.Window) {
 		filter = strings.TrimSpace(string(goroutinesPanel.filterEditor.Buffer))
 	}
 
-	getDisplayLocation := func(g *wrappedGoroutine) api.Location {
-		switch goroutineLocations[goroutinesPanel.goroutineLocation] {
-		default:
-			fallthrough
-		case currentGoroutineLocation:
-			return g.CurrentLoc
-		case userGoroutineLocation:
-			return g.UserCurrentLoc
-		case goStatementLocation:
-			return g.GoStatementLoc
-		case startLocation:
-			return g.StartLoc
-		}
-	}
-
 	for i := range goroutines {
 		g := &goroutines[i]
 		if goroutinesPanel.onlyStopped && !g.atBreakpoint {
@@ -335,7 +335,7 @@ func updateGoroutines(container *nucular.Window) {
 
 		if filter != "" {
 			filterMatch := false
-			loc := getDisplayLocation(g)
+			loc := goroutineGetDisplayLiocation(&g.Goroutine)
 			if strings.Index(loc.File, filter) >= 0 || strings.Index(loc.Function.Name(), filter) >= 0 {
 				filterMatch = true
 			}
@@ -364,7 +364,7 @@ func updateGoroutines(container *nucular.Window) {
 		}
 
 		w.LayoutFitWidth(goroutinesPanel.id, 100)
-		w.SelectableLabel(formatLocation2(getDisplayLocation(g)), "LT", &selected)
+		w.SelectableLabel(formatLocation2(goroutineGetDisplayLiocation(&g.Goroutine)), "LT", &selected)
 
 		if selected && curGid != g.ID && !client.Running() {
 			go func(gid int) {
