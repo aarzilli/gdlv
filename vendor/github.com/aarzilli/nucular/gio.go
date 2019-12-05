@@ -288,6 +288,10 @@ func (mw *masterWindow) updateLocked() {
 			io.WriteString(&mw.textbuffer, e.Text)
 
 		case key.Event:
+			switch e.Name {
+			case key.NameEnter, key.NameReturn:
+				io.WriteString(&mw.textbuffer, "\n")
+			}
 			mw.ctx.Input.Keyboard.Keys = append(mw.ctx.Input.Keyboard.Keys, gio2mobileKey(e))
 		}
 	}
