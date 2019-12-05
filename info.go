@@ -203,6 +203,7 @@ func init() {
 	globalsPanel.asyncLoad.load = loadGlobals
 	localsPanel.asyncLoad.load = loadLocals
 	disassemblyPanel.asyncLoad.load = loadDisassembly
+	autoCheckpointsPanel.asyncLoad.load = loadAutoCheckpoints
 }
 
 func spacefilter(ch rune) bool {
@@ -772,15 +773,29 @@ func execClearBreakpoint(id int) {
 	wnd.Changed()
 }
 
-func execRestartCheckpoint(id int) {
+func execRestartCheckpoint(id int, gid int, where string) {
 	scrollbackOut := editorWriter{true}
-	_, err := client.RestartFrom(fmt.Sprintf("c%d", id), false, nil, false)
+	err := restartCheckpointToGoroutine(id, gid)
 	if err != nil {
 		fmt.Fprintf(&scrollbackOut, "Could not restart from checkpoint c%d: %v\n", id, err)
 		return
 	}
-	fmt.Fprintf(&scrollbackOut, "Process restarted from c%d\n", id)
+	fmt.Fprintf(&scrollbackOut, "Process restarted from c%d %s\n", id, where)
 	refreshState(refreshToFrameZero, clearStop, nil)
+}
+
+func restartCheckpointToGoroutine(id, gid int) error {
+	_, err := client.RestartFrom(fmt.Sprintf("c%d", id), false, nil, false)
+	if err != nil {
+		return err
+	}
+	if gid > 0 {
+		_, err = client.SwitchGoroutine(gid)
+		if err != nil {
+			return fmt.Errorf("switch to goroutine %d: %v", gid, err)
+		}
+	}
+	return nil
 }
 
 func execClearCheckpoint(id int) {
@@ -902,6 +917,7 @@ func (bped *breakpointEditor) amendBreakpoint() {
 		fmt.Fprintf(&scrollbackOut, "Could not amend breakpoint: %v\n", err)
 	}
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
+	autoCheckpointsReloadVars()
 }
 
 type checkpointsByID []api.Checkpoint
@@ -968,7 +984,7 @@ func updateCheckpoints(container *nucular.Window) {
 			}
 
 			if w.MenuItem(label.TA("Restart from checkpoint", "LC")) {
-				go execRestartCheckpoint(checkpointsPanel.selected)
+				go execRestartCheckpoint(checkpoint.ID, 0, checkpoint.Where)
 			}
 		}
 	}

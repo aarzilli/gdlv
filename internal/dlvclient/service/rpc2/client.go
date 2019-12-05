@@ -22,6 +22,8 @@ type RPCClient struct {
 	running bool
 
 	retValLoadCfg *api.LoadConfig
+
+	recordedCache *bool
 }
 
 // NewClient creates a new RPCClient.
@@ -347,8 +349,12 @@ func (c *RPCClient) DisassemblePC(scope api.EvalScope, pc uint64, flavour api.As
 
 // Recorded returns true if the debugger target is a recording.
 func (c *RPCClient) Recorded() bool {
+	if c.recordedCache != nil {
+		return *c.recordedCache
+	}
 	out := new(RecordedOut)
 	c.call("Recorded", RecordedIn{}, out)
+	c.recordedCache = &out.Recorded
 	return out.Recorded
 }
 
