@@ -1081,12 +1081,22 @@ func markChangedVariables(newvars []*Variable, oldvars []*Variable) {
 }
 
 func markChangedVariable(newvar *Variable, oldvar *Variable) {
+	if newvar == nil {
+		return
+	}
+	if oldvar == nil {
+		newvar.changed = true
+		return
+	}
 	if newvar.Value != oldvar.Value {
 		newvar.changed = true
 		return
 	}
 
 	for i := range newvar.Children {
+		if newvar.Children[i] == nil {
+			continue
+		}
 		if i >= len(oldvar.Children) {
 			newvar.Children[i].changed = true
 		} else {
