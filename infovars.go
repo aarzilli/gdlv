@@ -31,6 +31,13 @@ const (
 	octMode
 )
 
+var changedVariableOpacity uint8
+
+const maxChangedVariableOpacity = 0xd0
+const minChangedVariableOpacity = 0x10
+
+var drawStartTime time.Time
+
 type Variable struct {
 	*api.Variable
 	Width    int
@@ -43,6 +50,8 @@ type Variable struct {
 	ShortType   string
 	DisplayName string
 	Expression  string
+
+	changed bool
 
 	Children []*Variable
 }
@@ -295,17 +304,14 @@ func (vars variablesByName) Swap(i, j int)      { vars[i], vars[j] = vars[j], va
 func (vars variablesByName) Less(i, j int) bool { return vars[i].Name < vars[j].Name }
 
 func loadLocals(p *asyncLoad) {
+	changedVariableOpacity = maxChangedVariableOpacity
+	oldlocals := append([]*Variable{}, localsPanel.locals...)
+	oldv := append([]*Variable{}, localsPanel.v...)
+	drawStartTime = time.Now()
+
 	args, errloc := client.ListFunctionArgs(currentEvalScope(), getVariableLoadConfig())
 	localsPanel.locals = wrapApiVariables(args, 0, 0, "", true, 0)
 	locals, errarg := client.ListLocalVariables(currentEvalScope(), getVariableLoadConfig())
-	for i := range locals {
-		v := &locals[i]
-		if v.Kind == reflect.Ptr && len(v.Name) > 1 && v.Name[0] == '&' && len(v.Children) > 0 {
-			name := v.Name[1:]
-			locals[i] = v.Children[0]
-			locals[i].Name = name
-		}
-	}
 	localsPanel.locals = append(localsPanel.locals, wrapApiVariables(locals, 0, 0, "", true, 0)...)
 
 	sort.SliceStable(localsPanel.locals, func(i, j int) bool { return localsPanel.locals[i].DeclLine < localsPanel.locals[j].DeclLine })
@@ -320,6 +326,8 @@ func loadLocals(p *asyncLoad) {
 		varmap[varname] = d
 	}
 
+	markChangedVariables(localsPanel.locals, oldlocals)
+
 	var scrollbackOut = editorWriter{true}
 	for i := range localsPanel.expressions {
 		loadOneExpr(i)
@@ -327,6 +335,8 @@ func loadLocals(p *asyncLoad) {
 			fmt.Fprintf(&scrollbackOut, "%s = %s\n", localsPanel.v[i].Name, localsPanel.v[i].SinglelineString(true, false))
 		}
 	}
+
+	markChangedVariables(localsPanel.v, oldv)
 
 	if LogOutputNice != nil {
 		logf("Local variables (%#v):\n", currentEvalScope())
@@ -401,6 +411,16 @@ func updateLocals(container *nucular.Window) {
 			}
 			w.TreePop()
 		}
+	}
+
+	if changedVariableOpacity > minChangedVariableOpacity {
+		opacityReductionPerMillisecond := float64(maxChangedVariableOpacity-minChangedVariableOpacity) / 1500
+		elapsed := time.Since(drawStartTime)
+		changedVariableOpacity = maxChangedVariableOpacity - byte(float64(elapsed.Milliseconds())*opacityReductionPerMillisecond)
+		if changedVariableOpacity > maxChangedVariableOpacity || changedVariableOpacity < minChangedVariableOpacity {
+			changedVariableOpacity = minChangedVariableOpacity
+		}
+		w.Master().Changed()
 	}
 }
 
@@ -611,6 +631,9 @@ func variableHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Va
 	if out == nil {
 		return isopen
 	}
+	if v.changed {
+		out.FillRect(lblrect, 0, changedVariableColor())
+	}
 
 	clipb := []byte{}
 
@@ -670,6 +693,9 @@ func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *
 	lblrect, out := w.Custom(nstyle.WidgetStateActive)
 	if out == nil {
 		return
+	}
+	if v.changed {
+		out.FillRect(lblrect, 0, changedVariableColor())
 	}
 
 	lblrect.Y += style.Text.Padding.Y
@@ -1036,4 +1062,42 @@ func configureLoadParameters(exprMenuIdx int) func(w *nucular.Window) {
 			w.Close()
 		}
 	}
+}
+
+func markChangedVariables(newvars []*Variable, oldvars []*Variable) {
+	m := make(map[string]*Variable)
+	for i := range oldvars {
+		m[oldvars[i].Varname] = oldvars[i]
+	}
+
+	for i := range newvars {
+		oldvar, _ := m[newvars[i].Varname]
+		if oldvar == nil {
+			newvars[i].changed = true
+		} else {
+			markChangedVariable(newvars[i], oldvar)
+		}
+	}
+}
+
+func markChangedVariable(newvar *Variable, oldvar *Variable) {
+	if newvar.Value != oldvar.Value {
+		newvar.changed = true
+		return
+	}
+
+	for i := range newvar.Children {
+		if i >= len(oldvar.Children) {
+			newvar.Children[i].changed = true
+		} else {
+			markChangedVariable(newvar.Children[i], oldvar.Children[i])
+		}
+		if newvar.Children[i].changed {
+			newvar.changed = true
+		}
+	}
+}
+
+func changedVariableColor() color.RGBA {
+	return color.RGBA{changedVariableOpacity, 0, 0, changedVariableOpacity}
 }

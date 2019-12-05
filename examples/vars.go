@@ -40,4 +40,7 @@ func main() {
 			}
 		}
 	}
+
+	pointarr[0].X = 10
+	pointarr = append(pointarr, Point{1, 6})
 }
