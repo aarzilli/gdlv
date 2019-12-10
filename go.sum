@@ -52,6 +52,8 @@ github.com/aarzilli/nucular v0.0.0-20191125095837-376cdb7f3461 h1:p9qxWe5dTO+6n8
 github.com/aarzilli/nucular v0.0.0-20191125095837-376cdb7f3461/go.mod h1:sczQ1qsfmcy48VzIBjTjBfwIwALsgHMpR8KZfOLijPg=
 github.com/aarzilli/nucular v0.0.0-20191205162203-6f7c5beb01f1 h1:cVVglgmQjbJDuzOaJgpeV4ZklaKcyV9/6/AYq/JjoNk=
 github.com/aarzilli/nucular v0.0.0-20191205162203-6f7c5beb01f1/go.mod h1:sczQ1qsfmcy48VzIBjTjBfwIwALsgHMpR8KZfOLijPg=
+github.com/aarzilli/nucular v0.0.0-20191210123751-30db94bb06d3 h1:Mab0+Wq1sBGDqTCxVL+OvgqElxAJBc7S8ZVTf+BBlfM=
+github.com/aarzilli/nucular v0.0.0-20191210123751-30db94bb06d3/go.mod h1:sczQ1qsfmcy48VzIBjTjBfwIwALsgHMpR8KZfOLijPg=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e h1:fY5BOSpyZCqRo5OhCuC+XN+r/bBCmeuuJtjz+bCNIf8=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/cosiner/argv v0.0.0-20170225145430-13bacc38a0a5/go.mod h1:p/NrK5tF6ICIly4qwEDsf6VDirFiWWz0FenfYBwJaKQ=

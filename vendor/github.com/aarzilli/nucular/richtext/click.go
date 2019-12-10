@@ -206,7 +206,20 @@ func (citer *citer) Init(line line, off int32) {
 }
 
 func (citer *citer) Valid() bool {
-	return citer.valid
+	if !citer.valid {
+		return false
+	}
+	if citer.i < 0 || citer.i >= len(citer.line.chunks) {
+		return false
+	}
+	chunk := citer.line.chunks[citer.i]
+	if citer.j < 0 {
+		return false
+	}
+	if chunk.b != nil {
+		return citer.j < len(chunk.b)
+	}
+	return citer.j < len(chunk.s)
 }
 
 func (citer *citer) Char() byte {
@@ -226,6 +239,13 @@ func (citer *citer) Prev() {
 			citer.i = 0
 			citer.off++
 			citer.valid = false
+		} else {
+			chunk := citer.line.chunks[citer.i]
+			if chunk.b != nil {
+				citer.j = len(chunk.b) - 1
+			} else {
+				citer.j = len(chunk.s) - 1
+			}
 		}
 	}
 }
