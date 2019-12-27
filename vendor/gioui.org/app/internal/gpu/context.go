@@ -32,9 +32,9 @@ type textureTriple struct {
 	typ            gl.Enum
 }
 
-func newContext(glctx gl.Context) (*context, error) {
+func newContext(glctx *gl.Functions) (*context, error) {
 	ctx := &context{
-		Functions: glctx.Functions(),
+		Functions: glctx,
 	}
 	exts := strings.Split(ctx.GetString(gl.EXTENSIONS), " ")
 	glVer := ctx.GetString(gl.VERSION)
@@ -66,7 +66,10 @@ func floatTripleFor(ctx *context, ver [2]int, exts []string) (textureTriple, err
 	if ver[0] >= 3 {
 		triples = append(triples, textureTriple{gl.R16F, gl.Enum(gl.RED), gl.Enum(gl.HALF_FLOAT)})
 	}
-	if hasExtension(exts, "GL_OES_texture_half_float") || hasExtension(exts, "EXT_color_buffer_half_float") {
+	if hasExtension(exts, "GL_OES_texture_half_float") && hasExtension(exts, "GL_EXT_color_buffer_half_float") {
+		// Try single channel.
+		triples = append(triples, textureTriple{gl.LUMINANCE, gl.Enum(gl.LUMINANCE), gl.Enum(gl.HALF_FLOAT_OES)})
+		// Fallback to 4 channels.
 		triples = append(triples, textureTriple{gl.RGBA, gl.Enum(gl.RGBA), gl.Enum(gl.HALF_FLOAT_OES)})
 	}
 	if hasExtension(exts, "GL_OES_texture_float") || hasExtension(exts, "GL_EXT_color_buffer_float") {

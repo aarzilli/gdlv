@@ -104,7 +104,7 @@ func (b *Buffer) StrokeLine(p0, p1 image.Point, line_thickness int, c color.RGBA
 }
 
 func (b *Buffer) FillRect(rect rect.Rect, rounding uint16, c color.RGBA) {
-	if c.A == 0 {
+	if c.A == 0 && len(b.Commands) > 0 {
 		return
 	}
 	if !rect.Intersect(&b.Clip) {

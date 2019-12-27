@@ -41,6 +41,8 @@ import (
 
 /*
 #cgo LDFLAGS: -lwayland-client -lwayland-cursor
+#cgo freebsd CFLAGS: -I/usr/local/include
+#cgo freebsd LDFLAGS: -L/usr/local/lib
 
 #include <stdlib.h>
 #include <wayland-client.h>
@@ -1050,8 +1052,6 @@ func (w *window) display() *C.struct_wl_display {
 }
 
 func (w *window) surface() (*C.struct_wl_surface, int, int) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.needAck {
 		C.xdg_surface_ack_configure(w.wmSurf, w.serial)
 		w.needAck = false

@@ -707,7 +707,7 @@ func (face *fontFace) layout(str string, width int) *text.Layout {
 	return face.shaper.Layout(face, text.Font{}, str, text.LayoutOptions{MaxWidth: width})
 }
 
-func (face *fontFace) shape(txtstr text.String) gioclip.Op {
+func (face *fontFace) shape(txtstr text.String) op.CallOp {
 	return face.shaper.Shape(face, text.Font{}, txtstr)
 }
 

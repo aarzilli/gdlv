@@ -18,7 +18,9 @@ var (
 )
 
 func getPasteCommand() *exec.Cmd {
-	return exec.Command(pasteCmdArgs)
+	cmd := exec.Command(pasteCmdArgs)
+	cmd.Env = []string{"LANG=en_US.UTF-8"}
+	return cmd
 }
 
 func getCopyCommand() *exec.Cmd {

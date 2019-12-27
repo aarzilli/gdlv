@@ -7,15 +7,6 @@ type (
 	Enum   uint
 )
 
-type Context interface {
-	Functions() *Functions
-	Present() error
-	MakeCurrent() error
-	Release()
-	Lock()
-	Unlock()
-}
-
 const (
 	ARRAY_BUFFER                          = 0x8892
 	BLEND                                 = 0xbe2
@@ -45,6 +36,8 @@ const (
 	LUMINANCE                             = 0x1909
 	MAX_TEXTURE_SIZE                      = 0xd33
 	NEAREST                               = 0x2600
+	NO_ERROR                              = 0x0
+	NUM_EXTENSIONS                        = 0x821D
 	ONE                                   = 0x1
 	ONE_MINUS_SRC_ALPHA                   = 0x303
 	QUERY_RESULT                          = 0x8866

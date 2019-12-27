@@ -8,8 +8,6 @@ import (
 	"image"
 	"time"
 
-	"gioui.org/app/internal/gl"
-	"gioui.org/app/internal/gpu"
 	"gioui.org/app/internal/input"
 	"gioui.org/app/internal/window"
 	"gioui.org/io/event"
@@ -27,7 +25,11 @@ type Option func(opts *window.Options)
 // Window represents an operating system window.
 type Window struct {
 	driver window.Driver
-	gpu    *gpu.GPU
+	loop   *renderLoop
+
+	// driverFuncs is a channel of functions to run when
+	// the Window has a valid driver.
+	driverFuncs chan func()
 
 	out         chan event.Event
 	in          chan event.Event
@@ -95,6 +97,7 @@ func NewWindow(options ...Option) *Window {
 		invalidates: make(chan struct{}, 1),
 		frames:      make(chan *op.Ops),
 		frameAck:    make(chan struct{}),
+		driverFuncs: make(chan func()),
 	}
 	w.callbacks.w = w
 	go w.run(opts)
@@ -122,7 +125,7 @@ func (w *Window) update(frame *op.Ops) {
 }
 
 func (w *Window) draw(frameStart time.Time, size image.Point, frame *op.Ops) {
-	sync := w.gpu.Draw(w.queue.q.Profiling(), size, frame)
+	sync := w.loop.Draw(w.queue.q.Profiling(), size, frame)
 	w.queue.q.Frame(frame)
 	switch w.queue.q.TextInputState() {
 	case input.TextInputOpen:
@@ -134,7 +137,7 @@ func (w *Window) draw(frameStart time.Time, size image.Point, frame *op.Ops) {
 		frameDur := time.Since(frameStart)
 		frameDur = frameDur.Truncate(100 * time.Microsecond)
 		q := 100 * time.Microsecond
-		timings := fmt.Sprintf("tot:%7s %s", frameDur.Round(q), w.gpu.Timings())
+		timings := fmt.Sprintf("tot:%7s %s", frameDur.Round(q), w.loop.Summary())
 		w.queue.q.AddProfile(profile.Event{Timings: timings})
 	}
 	if t, ok := w.queue.q.WakeupTime(); ok {
@@ -213,9 +216,9 @@ func (w *Window) destroy(err error) {
 }
 
 func (w *Window) destroyGPU() {
-	if w.gpu != nil {
-		w.gpu.Release()
-		w.gpu = nil
+	if w.loop != nil {
+		w.loop.Release()
+		w.loop = nil
 	}
 }
 
@@ -227,6 +230,10 @@ func (w *Window) run(opts *window.Options) {
 		return
 	}
 	for {
+		var driverFuncs chan func() = nil
+		if w.driver != nil {
+			driverFuncs = w.driverFuncs
+		}
 		var timer <-chan time.Time
 		if w.delayedDraw != nil {
 			timer = w.delayedDraw.C
@@ -238,15 +245,17 @@ func (w *Window) run(opts *window.Options) {
 		case <-w.invalidates:
 			w.setNextFrame(time.Time{})
 			w.updateAnimation()
+		case f := <-driverFuncs:
+			f()
 		case e := <-w.in:
 			switch e2 := e.(type) {
 			case system.StageEvent:
-				if w.gpu != nil {
+				if w.loop != nil {
 					if e2.Stage < system.StageRunning {
-						w.gpu.Release()
-						w.gpu = nil
+						w.loop.Release()
+						w.loop = nil
 					} else {
-						w.gpu.Refresh()
+						w.loop.Refresh()
 					}
 				}
 				w.stage = e2.Stage
@@ -266,19 +275,22 @@ func (w *Window) run(opts *window.Options) {
 				e2.Frame = w.update
 				w.out <- e2.FrameEvent
 				var err error
-				if w.gpu != nil {
+				if w.loop != nil {
 					if e2.Sync {
-						w.gpu.Refresh()
+						w.loop.Refresh()
 					}
-					if err = w.gpu.Flush(); err != nil {
-						w.gpu.Release()
-						w.gpu = nil
+					if err = w.loop.Flush(); err != nil {
+						w.loop.Release()
+						w.loop = nil
 					}
 				} else {
-					var ctx gl.Context
+					var ctx window.Context
 					ctx, err = w.driver.NewContext()
 					if err == nil {
-						w.gpu, err = gpu.NewGPU(ctx)
+						w.loop, err = newLoop(ctx)
+						if err != nil {
+							ctx.Release()
+						}
 					}
 				}
 				var frame *op.Ops
@@ -304,9 +316,9 @@ func (w *Window) run(opts *window.Options) {
 					w.frameAck <- struct{}{}
 				}
 				if e2.Sync {
-					if err := w.gpu.Flush(); err != nil {
-						w.gpu.Release()
-						w.gpu = nil
+					if err := w.loop.Flush(); err != nil {
+						w.loop.Release()
+						w.loop = nil
 						w.destroy(err)
 						return
 					}

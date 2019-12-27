@@ -17,7 +17,7 @@ import (
 )
 
 /*
-#cgo LDFLAGS: -framework Metal -framework Foundation
+#cgo LDFLAGS: -framework Metal -framework CoreGraphics -framework Foundation
 #include <stdlib.h>
 #include "mtl.h"
 struct Library Go_Device_MakeLibrary(void * device, _GoString_ source) {

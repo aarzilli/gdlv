@@ -34,7 +34,6 @@ enum
 void makeCurrentContext(uintptr_t context) {
 	NSOpenGLContext* ctx = (NSOpenGLContext*)context;
 	[ctx makeCurrentContext];
-	[ctx update];
 }
 
 void flushContext(uintptr_t context) {

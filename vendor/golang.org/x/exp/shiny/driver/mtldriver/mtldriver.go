@@ -17,7 +17,7 @@ import (
 	"unsafe"
 
 	"dmitri.shuralyov.com/gpu/mtl"
-	"github.com/go-gl/glfw/v3.2/glfw"
+	"github.com/go-gl/glfw/v3.3/glfw"
 	"golang.org/x/exp/shiny/driver/internal/errscreen"
 	"golang.org/x/exp/shiny/driver/mtldriver/internal/appkit"
 	"golang.org/x/exp/shiny/driver/mtldriver/internal/coreanim"
@@ -67,6 +67,14 @@ func main(f func(screen.Screen)) error {
 		close(done)
 		glfw.PostEmptyEvent() // Break main loop out of glfw.WaitEvents so it can receive on done.
 	}()
+	select {
+	// TODO(dmitshur): Delete this when https://github.com/go-gl/glfw/issues/262 is resolved.
+	// Wait for first window request (or done) before entering main
+	// loop to work around https://github.com/glfw/glfw/issues/1543.
+	case w := <-newWindowCh:
+		newWindowCh <- w
+	case <-done:
+	}
 	for {
 		select {
 		case <-done:

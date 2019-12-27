@@ -12,7 +12,7 @@ import (
 	"log"
 
 	"dmitri.shuralyov.com/gpu/mtl"
-	"github.com/go-gl/glfw/v3.2/glfw"
+	"github.com/go-gl/glfw/v3.3/glfw"
 	"golang.org/x/exp/shiny/driver/internal/drawer"
 	"golang.org/x/exp/shiny/driver/internal/event"
 	"golang.org/x/exp/shiny/driver/internal/lifecycler"

@@ -1,8 +1,10 @@
 package glfw
 
+//#include <stdlib.h>
 //#define GLFW_INCLUDE_NONE
 //#include "glfw/include/GLFW/glfw3.h"
 import "C"
+import "unsafe"
 
 // Version constants.
 const (
@@ -50,6 +52,21 @@ func Terminate() {
 	C.glfwTerminate()
 }
 
+// InitHint function sets hints for the next initialization of GLFW.
+//
+// The values you set hints to are never reset by GLFW, but they only take
+// effect during initialization. Once GLFW has been initialized, any values you
+// set will be ignored until the library is terminated and initialized again.
+//
+// Some hints are platform specific. These may be set on any platform but they
+// will only affect their specific platform. Other platforms will ignore them.
+// Setting these hints requires no platform specific headers or functions.
+//
+// This function must only be called from the main thread.
+func InitHint(hint Hint, value int) {
+	C.glfwInitHint(C.int(hint), C.int(value))
+}
+
 // GetVersion retrieves the major, minor and revision numbers of the GLFW
 // library. It is intended for when you are using GLFW as a shared library and
 // want to ensure that you are using the minimum required version.
@@ -74,4 +91,27 @@ func GetVersion() (major, minor, revision int) {
 // This function may be called before Init.
 func GetVersionString() string {
 	return C.GoString(C.glfwGetVersionString())
+}
+
+// GetClipboardString returns the contents of the system clipboard, if it
+// contains or is convertible to a UTF-8 encoded string.
+//
+// This function may only be called from the main thread.
+func GetClipboardString() string {
+	cs := C.glfwGetClipboardString(nil)
+	if cs == nil {
+		return ""
+	}
+	return C.GoString(cs)
+}
+
+// SetClipboardString sets the system clipboard to the specified UTF-8 encoded
+// string.
+//
+// This function may only be called from the main thread.
+func SetClipboardString(str string) {
+	cp := C.CString(str)
+	defer C.free(unsafe.Pointer(cp))
+	C.glfwSetClipboardString(nil, cp)
+	panicError()
 }

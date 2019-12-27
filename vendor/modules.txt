@@ -1,12 +1,14 @@
-# dmitri.shuralyov.com/gpu/mtl v0.0.0-20190408044501-666a987793e9
+# dmitri.shuralyov.com/gpu/mtl v0.0.0-20191203043605-d42048ed14fd
 dmitri.shuralyov.com/gpu/mtl
-# gioui.org v0.0.0-20191125092449-99d97d2ef501
+# gioui.org v0.0.0-20191218180754-3dd7c8121c67
 gioui.org/app
+gioui.org/app/internal/egl
 gioui.org/app/internal/gl
 gioui.org/app/internal/gpu
 gioui.org/app/internal/input
 gioui.org/app/internal/log
 gioui.org/app/internal/window
+gioui.org/app/internal/windows
 gioui.org/app/internal/xkb
 gioui.org/f32
 gioui.org/font/opentype
@@ -29,7 +31,7 @@ github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/render
 github.com/BurntSushi/xgb/shm
 github.com/BurntSushi/xgb/xproto
-# github.com/aarzilli/nucular v0.0.0-20191210123751-30db94bb06d3
+# github.com/aarzilli/nucular v0.0.0-20191227141642-cca133278403
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard
 github.com/aarzilli/nucular/command
@@ -42,8 +44,8 @@ github.com/aarzilli/nucular/style
 github.com/aarzilli/nucular/style-editor
 # github.com/go-delve/delve v1.2.0
 github.com/go-delve/delve/pkg/goversion
-# github.com/go-gl/glfw v0.0.0-20190409004039-e6da0acd62b1
-github.com/go-gl/glfw/v3.2/glfw
+# github.com/go-gl/glfw/v3.3/glfw v0.0.0-20191125211704-12ad95a8df72
+github.com/go-gl/glfw/v3.3/glfw
 # github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 github.com/golang/freetype
 github.com/golang/freetype/raster
@@ -57,7 +59,7 @@ go.starlark.net/internal/spell
 go.starlark.net/resolve
 go.starlark.net/starlark
 go.starlark.net/syntax
-# golang.org/x/exp v0.0.0-20191030013958-a1ab85dbe136
+# golang.org/x/exp v0.0.0-20191224044220-1fea468a75e9
 golang.org/x/exp/shiny/driver
 golang.org/x/exp/shiny/driver/gldriver
 golang.org/x/exp/shiny/driver/internal/drawer
@@ -73,13 +75,13 @@ golang.org/x/exp/shiny/driver/mtldriver/internal/coreanim
 golang.org/x/exp/shiny/driver/windriver
 golang.org/x/exp/shiny/driver/x11driver
 golang.org/x/exp/shiny/screen
-# golang.org/x/image v0.0.0-20191009234506-e7c1f5e7dbb8
+# golang.org/x/image v0.0.0-20191214001246-9130b4cfad52
 golang.org/x/image/draw
 golang.org/x/image/font
 golang.org/x/image/font/sfnt
 golang.org/x/image/math/f64
 golang.org/x/image/math/fixed
-# golang.org/x/mobile v0.0.0-20191120161935-871512928762
+# golang.org/x/mobile v0.0.0-20191210151939-1a1fef82734d
 golang.org/x/mobile/event/key
 golang.org/x/mobile/event/lifecycle
 golang.org/x/mobile/event/mouse
@@ -87,7 +89,7 @@ golang.org/x/mobile/event/paint
 golang.org/x/mobile/event/size
 golang.org/x/mobile/geom
 golang.org/x/mobile/gl
-# golang.org/x/sys v0.0.0-20191120155948-bd437916bb0e
+# golang.org/x/sys v0.0.0-20191224085550-c709ea063b76
 golang.org/x/sys/unix
 golang.org/x/sys/windows
 # golang.org/x/text v0.3.2

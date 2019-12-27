@@ -5,6 +5,8 @@
 package opentype
 
 import (
+	"io"
+
 	"unicode"
 	"unicode/utf8"
 
@@ -17,10 +19,15 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-// Font implementats text.Face.
+// Font implements text.Face.
 type Font struct {
 	font *sfnt.Font
 	buf  sfnt.Buffer
+}
+
+// Collection is a collection of one or more fonts.
+type Collection struct {
+	coll *sfnt.Collection
 }
 
 type opentype struct {
@@ -38,11 +45,51 @@ func Parse(src []byte) (*Font, error) {
 	return &Font{font: fnt}, nil
 }
 
+// ParseCollection parses an SFNT font collection, such as TTC or OTC data,
+// from a []byte data source.
+//
+// If passed data for a single font, a TTF or OTF instead of a TTC or OTC,
+// it will return a collection containing 1 font.
+func ParseCollection(src []byte) (*Collection, error) {
+	c, err := sfnt.ParseCollection(src)
+	if err != nil {
+		return nil, err
+	}
+	return &Collection{c}, nil
+}
+
+// ParseCollectionReaderAt parses an SFNT collection, such as TTC or OTC data,
+// from an io.ReaderAt data source.
+//
+// If passed data for a single font, a TTF or OTF instead of a TTC or OTC, it
+// will return a collection containing 1 font.
+func ParseCollectionReaderAt(src io.ReaderAt) (*Collection, error) {
+	c, err := sfnt.ParseCollectionReaderAt(src)
+	if err != nil {
+		return nil, err
+	}
+	return &Collection{c}, nil
+}
+
+// NumFonts returns the number of fonts in the collection.
+func (c *Collection) NumFonts() int {
+	return c.coll.NumFonts()
+}
+
+// Font returns the i'th font in the collection.
+func (c *Collection) Font(i int) (*Font, error) {
+	fnt, err := c.coll.Font(i)
+	if err != nil {
+		return nil, err
+	}
+	return &Font{font: fnt}, nil
+}
+
 func (f *Font) Layout(ppem fixed.Int26_6, str string, opts text.LayoutOptions) *text.Layout {
 	return layoutText(&f.buf, ppem, str, &opentype{Font: f.font, Hinting: font.HintingFull}, opts)
 }
 
-func (f *Font) Shape(ppem fixed.Int26_6, str text.String) clip.Op {
+func (f *Font) Shape(ppem fixed.Int26_6, str text.String) op.CallOp {
 	return textPath(&f.buf, ppem, &opentype{Font: f.font, Hinting: font.HintingFull}, str)
 }
 
@@ -130,7 +177,7 @@ func layoutText(buf *sfnt.Buffer, ppem fixed.Int26_6, str string, f *opentype, o
 	return &text.Layout{Lines: lines}
 }
 
-func textPath(buf *sfnt.Buffer, ppem fixed.Int26_6, f *opentype, str text.String) clip.Op {
+func textPath(buf *sfnt.Buffer, ppem fixed.Int26_6, f *opentype, str text.String) op.CallOp {
 	var lastPos f32.Point
 	var builder clip.Path
 	ops := new(op.Ops)
@@ -188,7 +235,8 @@ func textPath(buf *sfnt.Buffer, ppem fixed.Int26_6, f *opentype, str text.String
 		x += str.Advances[advIdx]
 		advIdx++
 	}
-	return builder.End()
+	builder.End().Add(ops)
+	return op.CallOp{Ops: ops}
 }
 
 func (f *opentype) GlyphAdvance(buf *sfnt.Buffer, ppem fixed.Int26_6, r rune) (advance fixed.Int26_6, ok bool) {
