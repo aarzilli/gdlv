@@ -31,6 +31,10 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2020-01-28 / Version 1.2
+* Highlight changed variables in a different color
+* Add source code links in scrollback
+
 ## 2019-11-22 / Version 1.1
 * Added option to filter the goroutines window to only the goroutines matching a specified pattern.
 * Added `-r` option to the restart command which will rerecord the target (if it was recorded), also added the `flaky` script which runs the program repeatedly (rerecording it) until it hits any breakpoint.
