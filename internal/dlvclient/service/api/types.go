@@ -268,6 +268,8 @@ type Goroutine struct {
 	StartLoc Location `json:"startLoc"`
 	// ID of the associated thread for running goroutines
 	ThreadID int `json:"threadID"`
+	// Goroutine's pprof labels
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // DebuggerCommand is a command which changes the debugger's execution state.

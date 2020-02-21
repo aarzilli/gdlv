@@ -296,10 +296,17 @@ func updateGoroutines(container *nucular.Window) {
 	goroutines := goroutinesPanel.goroutines
 
 	w.MenubarBegin()
-	w.Row(20).Static(130, 180, 240)
+	w.Row(20).Static(130, 300)
 	w.PropertyInt("Limit:", 1, &goroutinesPanel.limit, 1000000000, 1, 1)
-	goroutinesPanel.goroutineLocation = w.ComboSimple(goroutineLocations, goroutinesPanel.goroutineLocation, 22)
-	w.CheckboxText("Only stopped at breakpoint", &goroutinesPanel.onlyStopped)
+	if w := w.Combo(label.T(goroutineLocations[goroutinesPanel.goroutineLocation]), 500, nil); w != nil {
+		w.Row(22).Dynamic(1)
+		for i := range goroutineLocations {
+			if w.MenuItem(label.TA(goroutineLocations[i], "LC")) {
+				goroutinesPanel.goroutineLocation = i
+			}
+		}
+		w.CheckboxText("Only stoppped at breakpoint", &goroutinesPanel.onlyStopped)
+	}
 	w.Row(20).Static(100, 0, 100)
 	w.Label("Filter:", "LC")
 	if goroutinesPanel.filterEditor.Flags == 0 {
@@ -348,7 +355,12 @@ func updateGoroutines(container *nucular.Window) {
 			}
 		}
 
-		w.Row(posRowHeight).Static()
+		rowHeight := posRowHeight
+		if len(g.Labels) > 0 {
+			rowHeight = int((float64(rowHeight) / 2) * 3)
+		}
+
+		w.Row(rowHeight).Static()
 		selected := curGid == g.ID
 
 		w.LayoutSetWidthScaled(starWidth + style.Text.Padding.X*2)
@@ -365,7 +377,11 @@ func updateGoroutines(container *nucular.Window) {
 		}
 
 		w.LayoutFitWidth(goroutinesPanel.id, 100)
-		w.SelectableLabel(formatLocation2(goroutineGetDisplayLiocation(&g.Goroutine)), "LT", &selected)
+		loc := formatLocation2(goroutineGetDisplayLiocation(&g.Goroutine))
+		if len(g.Labels) > 0 {
+			loc += fmt.Sprintf("\nLabels: %s", writeGoroutineLabels(g.Labels))
+		}
+		w.SelectableLabel(loc, "LT", &selected)
 
 		if selected && curGid != g.ID && !client.Running() {
 			go func(gid int) {
@@ -383,6 +399,31 @@ func updateGoroutines(container *nucular.Window) {
 			}(g.ID)
 		}
 	}
+}
+
+func writeGoroutineLabels(labels map[string]string) string {
+	const maxNumberOfGoroutineLabels = 5
+	var w bytes.Buffer
+	keys := make([]string, 0, len(labels))
+	for k := range labels {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	more := false
+	if len(keys) > maxNumberOfGoroutineLabels {
+		more = true
+		keys = keys[:maxNumberOfGoroutineLabels]
+	}
+	for i, k := range keys {
+		fmt.Fprintf(&w, "%q:%q", k, labels[k])
+		if i != len(keys)-1 {
+			fmt.Fprintf(&w, ", ")
+		} else if more {
+			fmt.Fprintf(&w, "... (%d more)", len(labels)-maxNumberOfGoroutineLabels)
+		}
+	}
+	fmt.Fprintf(&w, "\n")
+	return w.String()
 }
 
 const NumAncestors = 5
