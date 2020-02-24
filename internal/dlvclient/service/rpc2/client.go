@@ -18,8 +18,9 @@ type RPCClient struct {
 	addr   string
 	client *rpc.Client
 
-	mu      sync.Mutex
-	running bool
+	mu sync.Mutex
+
+	running, recording bool
 
 	retValLoadCfg *api.LoadConfig
 
@@ -48,7 +49,7 @@ func (c *RPCClient) Running() bool {
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.running
+	return c.running || c.recording
 }
 
 func (c *RPCClient) ProcessPid() int {
@@ -407,33 +408,33 @@ func (c *RPCClient) call(method string, args, reply interface{}) error {
 		}
 		return cmd
 	}
-	if c.Running() {
-		if method != "Command" {
-			return errRunning
-		}
-
+	switch method {
+	case "Command":
 		cmd := argsAsCmd()
-		if cmd.Name != api.Halt {
-			return errRunning
-		}
-	} else {
-		if method == "Command" {
-			cmd := argsAsCmd()
-			switch cmd.Name {
-			case api.SwitchThread, api.SwitchGoroutine, api.Halt:
-				// those don't start the process
-			default:
+		switch cmd.Name {
+		case api.SwitchThread, api.SwitchGoroutine, api.Halt:
+			// those don't start the process
+		default:
+			c.mu.Lock()
+			c.running = true
+			c.mu.Unlock()
+			defer func() {
 				c.mu.Lock()
-				c.running = true
+				c.running = false
 				c.mu.Unlock()
-				defer func() {
-					c.mu.Lock()
-					c.running = false
-					c.mu.Unlock()
-				}()
-			}
+			}()
 		}
+	case "Restart":
+		c.mu.Lock()
+		c.running = true
+		c.mu.Unlock()
+		defer func() {
+			c.mu.Lock()
+			c.running = false
+			c.mu.Unlock()
+		}()
 	}
+
 	return c.client.Call("RPCServer."+method, args, reply)
 }
 
@@ -459,4 +460,18 @@ func (c *RPCClient) GetStateNonBlocking() (*api.DebuggerState, error) {
 	var out StateOut
 	err := c.call("State", StateIn{NonBlocking: true}, &out)
 	return out.State, err
+}
+
+func (c *RPCClient) WaitForRecordingDone() {
+	c.mu.Lock()
+	c.recording = true
+	c.mu.Unlock()
+	c.GetState()
+	c.mu.Lock()
+	c.recording = false
+	c.mu.Unlock()
+}
+
+func (c *RPCClient) StopRecording() error {
+	return c.call("StopRecording", StopRecordingIn{}, &StopRecordingOut{})
 }

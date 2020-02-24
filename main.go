@@ -203,7 +203,6 @@ func guiUpdate(w *nucular.Window) {
 		time.Sleep(50 * time.Millisecond)
 	}
 
-	var scrollbackOut = editorWriter{false}
 	mw := w.Master()
 
 	for _, e := range wnd.Input().Keyboard.Keys {
@@ -257,15 +256,8 @@ func guiUpdate(w *nucular.Window) {
 		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeF5):
 			fallthrough
 		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeDeleteForward):
-			if client.Running() && client != nil {
-				_, err := client.Halt()
-				if err != nil {
-					fmt.Fprintf(&scrollbackOut, "Request manual stop failed: %v\n", err)
-				}
-				err = client.CancelNext()
-				if err != nil {
-					fmt.Fprintf(&scrollbackOut, "Could not cancel next operation: %v\n", err)
-				}
+			if client != nil {
+				doCommand("interrupt")
 			}
 
 		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code1):

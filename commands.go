@@ -912,7 +912,11 @@ func interrupt(out io.Writer, args string) error {
 		close(BackendServer.stdinChan)
 		return nil
 	}
-	_, err := client.Halt()
+	state, err := client.GetStateNonBlocking()
+	if err == nil && state.Recording {
+		return client.StopRecording()
+	}
+	_, err = client.Halt()
 	if err != nil {
 		return err
 	}

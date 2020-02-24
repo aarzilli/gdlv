@@ -323,3 +323,9 @@ type ListDynamicLibrariesIn struct {
 type ListDynamicLibrariesOut struct {
 	List []api.Image
 }
+
+type StopRecordingIn struct {
+}
+
+type StopRecordingOut struct {
+}

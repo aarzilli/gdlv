@@ -12,7 +12,7 @@ import (
 // DebuggerState represents the current context of the debugger.
 type DebuggerState struct {
 	// Running is true if the process is running and no other information can be collected.
-	Running bool
+	Running, Recording bool
 	// CurrentThread is the currently selected debugger thread.
 	CurrentThread *Thread `json:"currentThread,omitempty"`
 	// SelectedGoroutine is the currently selected goroutine

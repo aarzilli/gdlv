@@ -300,15 +300,16 @@ func (descr *ServerDescr) stdoutProcess(lenient bool) {
 		text := buf[:n]
 
 		if first {
-			nl := strings.Index(string(text), "\n")
-			line := string(text)[:nl]
-			text = text[nl+1:]
-			if !lenient || strings.HasPrefix(line, apiServerPrefix) {
-				descr.connectString = parseListenString(line)
-				descr.connectTo()
-				first = false
+			if nl := strings.Index(string(text), "\n"); nl >= 0 {
+				line := string(text)[:nl]
+				text = text[nl+1:]
+				if !lenient || strings.HasPrefix(line, apiServerPrefix) {
+					descr.connectString = parseListenString(line)
+					descr.connectTo()
+					first = false
+				}
+				copyToScrollback(text)
 			}
-			copyToScrollback(text)
 		}
 		copyToScrollback(text)
 
@@ -429,19 +430,25 @@ func (descr *ServerDescr) connectTo() {
 		fmt.Fprintf(&scrollbackOut, "Could not connect\n")
 	}
 
-	restoreFrozenBreakpoints(&scrollbackOut)
+	go func() {
+		if state, _ := client.GetStateNonBlocking(); state != nil && state.Recording {
+			client.WaitForRecordingDone()
+		}
 
-	finishRestart(&scrollbackOut, descr.atStart)
+		restoreFrozenBreakpoints(&scrollbackOut)
 
-	state, err := client.GetState()
-	if err == nil && state == nil {
-		wnd.Lock()
-		client = nil
-		wnd.Unlock()
-		fmt.Fprintf(&scrollbackOut, "Could not get state, old version of delve?\n")
-	}
+		finishRestart(&scrollbackOut, descr.atStart)
 
-	refreshState(refreshToFrameZero, clearStop, state)
+		state, err := client.GetState()
+		if err == nil && state == nil {
+			wnd.Lock()
+			client = nil
+			wnd.Unlock()
+			fmt.Fprintf(&scrollbackOut, "Could not get state, old version of delve?\n")
+		}
+
+		refreshState(refreshToFrameZero, clearStop, state)
+	}()
 }
 
 func continueToRuntimeMain() {
