@@ -2,7 +2,7 @@ module github.com/aarzilli/gdlv
 
 require (
 	dmitri.shuralyov.com/gpu/mtl v0.0.0-20191203043605-d42048ed14fd // indirect
-	github.com/aarzilli/nucular v0.0.0-20191227141642-cca133278403
+	github.com/aarzilli/nucular v0.0.0-20200327172903-075996fae40b
 	github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e // indirect
 	github.com/go-delve/delve v1.2.0
 	github.com/go-gl/glfw v0.0.0-20191125211704-12ad95a8df72 // indirect

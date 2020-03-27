@@ -25,6 +25,7 @@ type RichText struct {
 	flags      Flags      // flags for this widget
 	SelFgColor color.RGBA // foreground color for selection, zero value specifies that it should be copied from the window style
 	SelColor   color.RGBA // background color for selection, zero value specifies that it should be copied from the window style
+	Width      int        // maximum line width
 
 	txtColor, selFgColor, selColor color.RGBA // default foreground color and background selected color
 
