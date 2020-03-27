@@ -31,6 +31,10 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2020-03-27 / Version 1.3
+* Show goroutine labels
+* Support interrupting a recording
+
 ## 2020-01-28 / Version 1.2
 * Highlight changed variables in a different color
 * Add source code links in scrollback
