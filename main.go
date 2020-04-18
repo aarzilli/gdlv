@@ -460,7 +460,12 @@ func updateCommandPanel(w *nucular.Window) {
 			starlarkMode <- cmd
 		} else if canExecuteCmd(cmd) && !client.Running() {
 			if cmd == "" {
-				fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmdhistory[len(cmdhistory)-1])
+				if len(cmdhistory) > 0 {
+					fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmdhistory[len(cmdhistory)-1])
+					cmd = cmdhistory[len(cmdhistory)-1]
+				} else {
+					cmd = "help"
+				}
 			} else {
 				cmdhistory = append(cmdhistory, cmd)
 				fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmd)

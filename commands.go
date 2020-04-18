@@ -76,8 +76,7 @@ func (c command) match(cmdstr string) bool {
 }
 
 type Commands struct {
-	cmds    []command
-	lastCmd cmdfunc
+	cmds []command
 }
 
 var (
@@ -1861,16 +1860,7 @@ func (c *Commands) findCommand(cmdstr string) *command {
 // If it cannot find the command it will default to noCmdAvailable().
 // If the command is an empty string it will replay the last command.
 func (c *Commands) Find(cmdstr string) cmdfunc {
-	// If <enter> use last command, if there was one.
-	if cmdstr == "" {
-		if c.lastCmd != nil {
-			return c.lastCmd
-		}
-		return nullCommand
-	}
-
 	if v := c.findCommand(cmdstr); v != nil {
-		c.lastCmd = v.cmdFn
 		return v.cmdFn
 	}
 
