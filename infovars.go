@@ -261,6 +261,7 @@ type Expr struct {
 	Expr                         string
 	maxArrayValues, maxStringLen int
 	traced                       bool
+	fmt                          formatterFn
 }
 
 func loadGlobals(p *asyncLoad) {
@@ -440,6 +441,9 @@ func loadOneExpr(i int) {
 	v.Name = localsPanel.expressions[i].Expr
 
 	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name, true, 0)
+	if localsPanel.expressions[i].fmt != nil {
+		localsPanel.expressions[i].fmt(localsPanel.v[i])
+	}
 }
 
 func exprsEditor(w *nucular.Window) {
@@ -549,6 +553,14 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 	}
 
+	setVarFormat := func(f formatterFn) {
+		if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
+			localsPanel.expressions[exprMenuIdx].fmt = f
+		} else {
+			varFormat[v.Addr] = f
+		}
+	}
+
 	switch v.Kind {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
 		mode := v.IntMode
@@ -564,7 +576,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 		if mode != oldmode {
 			f := intFormatter[mode]
-			varFormat[v.Addr] = f
+			setVarFormat(f)
 			f(v)
 			v.Width = 0
 		}
@@ -583,14 +595,14 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 		if mode != oldmode {
 			f := uintFormatter[mode]
-			varFormat[v.Addr] = f
+			setVarFormat(f)
 			f(v)
 			v.Width = 0
 		}
 
 	case reflect.Float32, reflect.Float64:
 		if w.MenuItem(label.TA("Format...", "LC")) {
-			newFloatViewer(w, v)
+			newFloatViewer(w, v, setVarFormat)
 		}
 	}
 

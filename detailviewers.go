@@ -393,12 +393,13 @@ func (dv *detailViewer) intArrayUpdate(w *nucular.Window) {
 }
 
 type floatViewer struct {
-	v  *Variable
-	ed nucular.TextEditor
+	v            *Variable
+	ed           nucular.TextEditor
+	setVarFormat func(formatterFn)
 }
 
-func newFloatViewer(w *nucular.Window, v *Variable) {
-	vw := &floatViewer{v: v}
+func newFloatViewer(w *nucular.Window, v *Variable, setVarFormat func(formatterFn)) {
+	vw := &floatViewer{v: v, setVarFormat: setVarFormat}
 	vw.ed.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditSigEnter
 	vw.ed.Buffer = []rune(v.FloatFmt)
 	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Name), dynamicPopupFlags|nucular.WindowClosable, rect.Rect{20, 100, 480, 500}, true, vw.Update)
@@ -415,7 +416,7 @@ func (vw *floatViewer) Update(w *nucular.Window) {
 	if newfmt := string(vw.ed.Buffer); newfmt != vw.v.FloatFmt {
 		vw.v.FloatFmt = newfmt
 		f := floatFormatter(vw.v.FloatFmt)
-		varFormat[vw.v.Addr] = f
+		vw.setVarFormat(f)
 		f(vw.v)
 		vw.v.Width = 0
 	}
