@@ -1037,7 +1037,7 @@ func main() {
 
 	var scrollbackOut = editorWriter{true}
 
-	fmt.Fprintf(&scrollbackOut, `gdlv  Copyright (C) 2016-2019 Gdlv Authors
+	fmt.Fprintf(&scrollbackOut, `gdlv  Copyright (C) 2016-2020 Gdlv Authors
 This program comes with ABSOLUTELY NO WARRANTY;
 This is free software, and you are welcome to redistribute it
 under certain conditions; see COPYING for details.
