@@ -28,7 +28,7 @@ import (
 	"golang.org/x/mobile/event/key"
 )
 
-//go:generate go-bindata -o internal/assets/assets.go -pkg assets fontawesome-webfont.ttf droid-sans.bold.ttf
+//go:generate go-bindata -o internal/assets/assets.go -pkg assets fontawesome-webfont.ttf droid-sans.bold.ttf codicon.ttf
 
 const profileEnabled = false
 
@@ -36,11 +36,13 @@ var zeroWidth, arrowWidth, starWidth, spaceWidth int
 
 var fontInit sync.Once
 var iconFace font.Face
+var codiconFace font.Face
 var boldFace font.Face
 
 var normalFontData []byte
 var boldFontData []byte
 var iconFontData []byte
+var codiconFontData []byte
 
 var (
 	linkColor      = color.RGBA{0x00, 0x88, 0xdd, 0xff}
@@ -51,14 +53,12 @@ const (
 	arrowIconChar      = "\uf061"
 	breakpointIconChar = "\uf28d"
 
-	interruptIconChar = "\uf04c"
-	continueIconChar  = "\uf04b"
-	cancelIconChar    = "\uf05e"
-	nextIconChar      = "\uf050"
-	stepIconChar      = "\uf051"
-	stepoutIconChar   = "\uf112"
-
-	splitIconChar = "\uf0db"
+	interruptIconChar = "\uEAD1"
+	continueIconChar  = "\uEACF"
+	cancelIconChar    = "\uEAD7"
+	nextIconChar      = "\uEAD6"
+	stepIconChar      = "\uEAD4"
+	stepoutIconChar   = "\uEAD5"
 )
 
 func setupStyle() {
@@ -79,6 +79,7 @@ func setupStyle() {
 
 	fontInit.Do(func() {
 		iconFontData, _ = assets.Asset("fontawesome-webfont.ttf")
+		codiconFontData, _ = assets.Asset("codicon.ttf")
 
 		normalFontPath := os.Getenv("GDLV_NORMAL_FONT")
 		boldFontPath := os.Getenv("GDLV_BOLD_FONT")
@@ -126,6 +127,11 @@ func setupStyle() {
 	iconFace, err = font.NewFace(iconFontData, sz)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not parse icon font: %v\n", err)
+		os.Exit(1)
+	}
+	codiconFace, err = font.NewFace(codiconFontData, sz)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "could not parse codicon font: %v\n", err)
 		os.Exit(1)
 	}
 	boldFace, err = font.NewFace(boldFontData, sz)

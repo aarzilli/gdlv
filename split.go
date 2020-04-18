@@ -285,12 +285,12 @@ func commandToolbar(sw *nucular.Window) {
 	hovering := ""
 	style := sw.Master().Style()
 	iconbtn := func(icon string, tooltip string) bool {
-		iconFace, style.Font = style.Font, iconFace
+		codiconFace, style.Font = style.Font, codiconFace
 		r := sw.ButtonText(icon)
 		if sw.Input().Mouse.HoveringRect(sw.LastWidgetBounds) {
 			hovering = tooltip
 		}
-		iconFace, style.Font = style.Font, iconFace
+		codiconFace, style.Font = style.Font, codiconFace
 		return r
 	}
 	cmdbtn := func(icon, cmd string) {
