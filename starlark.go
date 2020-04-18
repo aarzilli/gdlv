@@ -52,6 +52,7 @@ func (s starlarkContext) RegisterCallback(name, helpMsg string, fn func(args str
 			aliases: []string{name},
 			helpMsg: helpMsg,
 			cmdFn:   cmdfn,
+			group:   scriptCmds,
 		}
 		cmds.cmds = append(cmds.cmds, newcmd)
 	}

@@ -34,9 +34,33 @@ type cmdfunc func(out io.Writer, args string) error
 
 type command struct {
 	aliases  []string
+	group    commandGroup
 	complete func()
 	helpMsg  string
 	cmdFn    cmdfunc
+}
+
+type commandGroup uint8
+
+const (
+	otherCmds commandGroup = iota
+	breakCmds
+	runCmds
+	dataCmds
+	winCmds
+	scriptCmds
+)
+
+var commandGroupDescriptions = []struct {
+	description string
+	group       commandGroup
+}{
+	{"Running the program", runCmds},
+	{"Manipulating breakpoints", breakCmds},
+	{"Viewing program variables and memory", dataCmds},
+	{"Setting up the GUI", winCmds},
+	{"Starlark script commands", scriptCmds},
+	{"Other commands", otherCmds},
 }
 
 // Returns true if the command string matches one of the aliases for this command
@@ -81,7 +105,7 @@ func DebugCommands() *Commands {
 	help [command]
 	
 Type "help" followed by the name of a command for more information about it.`},
-		{aliases: []string{"break", "b"}, cmdFn: breakpoint, complete: completeLocation, helpMsg: `Sets a breakpoint.
+		{aliases: []string{"break", "b"}, group: breakCmds, cmdFn: breakpoint, complete: completeLocation, helpMsg: `Sets a breakpoint.
 
 	break [name] <linespec>
 	break
@@ -89,17 +113,10 @@ Type "help" followed by the name of a command for more information about it.`},
 See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/locspec.md for the syntax of linespec. To set breakpoints you can also right click on a source line and click "Set breakpoint". Breakpoint properties can be changed by right clicking on a breakpoint (either in the source panel or the breakpoints panel) and selecting "Edit breakpoint".
 
 Without arguments displays all currently set breakponts.`},
-		{aliases: []string{"trace", "t"}, cmdFn: tracepoint, complete: completeLocation, helpMsg: `Set tracepoint.
-
-	trace [name] <linespec>
-	
-A tracepoint is a breakpoint that does not stop the execution of the program, instead when the tracepoint is hit a notification is displayed. See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/locspec.md for the syntax of linespec.
-
-See also: "help on", "help cond" and "help clear"`},
-		{aliases: []string{"clear"}, cmdFn: clear, helpMsg: `Deletes breakpoint.
+		{aliases: []string{"clear"}, group: breakCmds, cmdFn: clear, helpMsg: `Deletes breakpoint.
 		
 			clear <breakpoint name or id>`},
-		{aliases: []string{"restart", "r"}, cmdFn: restart, helpMsg: `Restart process.
+		{aliases: []string{"restart", "r"}, group: runCmds, cmdFn: restart, helpMsg: `Restart process.
 
 For live processes any argument passed to restart will be used as argument for the program. 
 If no arguments are specified the program will be restarted with the same arguments as the last time it was started.
@@ -120,24 +137,24 @@ Restarts the recording at the specified (optional) breakpoint.
 
 Re-records the program, any arguments specified after '-r' are passed to the target program. Pass '--' to clear the arguments passed to the program.
 `},
-		{aliases: []string{"continue", "c"}, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
-		{aliases: []string{"rewind", "rw"}, cmdFn: rewind, helpMsg: "Run backwards until breakpoint or program termination."},
+		{aliases: []string{"continue", "c"}, group: runCmds, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
+		{aliases: []string{"rewind", "rw"}, group: runCmds, cmdFn: rewind, helpMsg: "Run backwards until breakpoint or program termination."},
 		{aliases: []string{"checkpoint", "check"}, cmdFn: checkpoint, helpMsg: `Creates a checkpoint at the current position.
 	
 	checkpoint [where]`},
-		{aliases: []string{"step", "s"}, cmdFn: step, helpMsg: `Single step through program.
+		{aliases: []string{"step", "s"}, group: runCmds, cmdFn: step, helpMsg: `Single step through program.
 		
 		step [-list|-first|-last|name]
 		
 Specify a name to step into one specific function call. Use the -list option for all the function calls on the current line. To step into a specific function call you can also right click on a function call (on the current line) and select "Step into".
 
 Option -first will step into the first function call of the line, -last will step into the last call of the line. When called without arguments step will use -first as default, but this can be changed using config.`},
-		{aliases: []string{"step-instruction", "si"}, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
-		{aliases: []string{"next", "n"}, cmdFn: next, helpMsg: "Step over to next source line."},
-		{aliases: []string{"stepout", "o"}, cmdFn: stepout, helpMsg: "Step out of the current function."},
-		{aliases: []string{"cancelnext"}, cmdFn: cancelnext, helpMsg: "Cancels the next operation currently in progress."},
-		{aliases: []string{"interrupt"}, cmdFn: interrupt, helpMsg: "interrupts execution."},
-		{aliases: []string{"print", "p"}, complete: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
+		{aliases: []string{"step-instruction", "si"}, group: runCmds, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
+		{aliases: []string{"next", "n"}, group: runCmds, cmdFn: next, helpMsg: "Step over to next source line."},
+		{aliases: []string{"stepout", "o"}, group: runCmds, cmdFn: stepout, helpMsg: "Step out of the current function."},
+		{aliases: []string{"cancelnext"}, group: runCmds, cmdFn: cancelnext, helpMsg: "Cancels the next operation currently in progress."},
+		{aliases: []string{"interrupt"}, group: runCmds, cmdFn: interrupt, helpMsg: "interrupts execution."},
+		{aliases: []string{"print", "p"}, group: dataCmds, complete: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
 
 	print [@<scope-expr>] <expression>
 	print [@<scope-expr>] $ <starlar-expression>
@@ -149,23 +166,23 @@ Type 'help scope-expr' for a description of <scope-expr>.`},
 			list <linespec>
 		
 		See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions.`},
-		{aliases: []string{"set"}, cmdFn: setVar, complete: completeVariable, helpMsg: `Changes the value of a variable.
+		{aliases: []string{"set"}, group: dataCmds, cmdFn: setVar, complete: completeVariable, helpMsg: `Changes the value of a variable.
 
 	set <variable> = <value>
 
 See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions. Only numerical variables and pointers can be changed.`},
-		{aliases: []string{"display", "disp", "dp"}, complete: completeVariable, cmdFn: displayVar, helpMsg: `Adds one expression to the Variables panel.
+		{aliases: []string{"display", "disp", "dp"}, group: dataCmds, complete: completeVariable, cmdFn: displayVar, helpMsg: `Adds one expression to the Variables panel.
 	
 	display [@<scope-expr>] <expression>
 	display [@<scope-expr>] $ <starlark-expression>
 
 See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions.
 Type 'help scope-expr' for a description of <scope-expr>.`},
-		{aliases: []string{"details", "det", "dt"}, complete: completeVariable, cmdFn: detailsVar, helpMsg: `Opens details window for the specified expression.
+		{aliases: []string{"details", "det", "dt"}, group: dataCmds, complete: completeVariable, cmdFn: detailsVar, helpMsg: `Opens details window for the specified expression.
 	
 	details <expr>
 `},
-		{aliases: []string{"layout"}, cmdFn: layoutCommand, helpMsg: `Manages window layout.
+		{aliases: []string{"layout"}, group: winCmds, cmdFn: layoutCommand, helpMsg: `Manages window layout.
 	
 	layout <name>
 
@@ -188,7 +205,7 @@ Without arguments opens the configuration window.
 With the 'alias' subcommand sets up a command alias.
 With the 'zoom' subcommand changes the display scaling factor (makes fonts larger or smaller).
 `},
-		{aliases: []string{"scroll"}, cmdFn: scrollCommand, helpMsg: `Controls scrollback behavior.
+		{aliases: []string{"scroll"}, group: winCmds, cmdFn: scrollCommand, helpMsg: `Controls scrollback behavior.
 	
 	scroll clear		Clears scrollback
 	scroll silence		Silences output from inferior
@@ -290,35 +307,45 @@ and GDLV_BOLD_FONT to the path of two ttf files.
 	}
 
 	fmt.Fprintln(out, "The following commands are available:")
-	w := new(tabwriter.Writer)
-	w.Init(out, 0, 8, 0, ' ', 0)
-	for _, cmd := range c.cmds {
-		h := cmd.helpMsg
-		if idx := strings.Index(h, "\n"); idx >= 0 {
-			h = h[:idx]
+
+	for _, cgd := range commandGroupDescriptions {
+		fmt.Fprintf(out, "\n%s:\n", cgd.description)
+		w := new(tabwriter.Writer)
+		w.Init(out, 0, 8, 0, ' ', 0)
+		for _, cmd := range c.cmds {
+			if cmd.group != cgd.group {
+				continue
+			}
+			h := cmd.helpMsg
+			if idx := strings.Index(h, "\n"); idx >= 0 {
+				h = h[:idx]
+			}
+			if len(cmd.aliases) > 1 {
+				fmt.Fprintf(w, "    %s (alias: %s) \t %s\n", cmd.aliases[0], strings.Join(cmd.aliases[1:], " | "), h)
+			} else {
+				fmt.Fprintf(w, "    %s \t %s\n", cmd.aliases[0], h)
+			}
 		}
-		if len(cmd.aliases) > 1 {
-			fmt.Fprintf(w, "    %s (alias: %s) \t %s\n", cmd.aliases[0], strings.Join(cmd.aliases[1:], " | "), h)
-		} else {
-			fmt.Fprintf(w, "    %s \t %s\n", cmd.aliases[0], h)
+		if err := w.Flush(); err != nil {
+			return err
 		}
-	}
-	if err := w.Flush(); err != nil {
-		return err
 	}
 	fmt.Fprintln(out, "Type help followed by a command for full documentation.")
 	fmt.Fprintln(out)
 	fmt.Fprintln(out, "Keybindings:")
-	fmt.Fprintln(w, "    Ctrl +/- \t Zoom in/out")
-	fmt.Fprintln(w, "    Escape \t Focus command line")
-	fmt.Fprintln(w, "    Shift-F5, Ctrl-delete \t Request manual stop")
-	fmt.Fprintln(w, "    F5 \t Continue")
-	fmt.Fprintln(w, "    F10, Alt-right \t Next")
-	fmt.Fprintln(w, "    F11, Alt-down \t Step")
-	fmt.Fprintln(w, "    Shift-F11, Alt-up \t Step Out")
-
-	if err := w.Flush(); err != nil {
-		return err
+	{
+		w := new(tabwriter.Writer)
+		w.Init(out, 0, 8, 0, ' ', 0)
+		fmt.Fprintln(w, "    Ctrl +/- \t Zoom in/out")
+		fmt.Fprintln(w, "    Escape \t Focus command line")
+		fmt.Fprintln(w, "    Shift-F5, Ctrl-delete \t Request manual stop")
+		fmt.Fprintln(w, "    F5 \t Continue")
+		fmt.Fprintln(w, "    F10, Alt-right \t Next")
+		fmt.Fprintln(w, "    F11, Alt-down \t Step")
+		fmt.Fprintln(w, "    Shift-F11, Alt-up \t Step Out")
+		if err := w.Flush(); err != nil {
+			return err
+		}
 	}
 
 	fmt.Fprintln(out, "\nFor help about changing fonts type \"help fonts\".")
@@ -435,10 +462,6 @@ func listBreakpoints() {
 
 func breakpoint(out io.Writer, args string) error {
 	return setBreakpoint(out, false, args)
-}
-
-func tracepoint(out io.Writer, args string) error {
-	return setBreakpoint(out, true, args)
 }
 
 func clear(out io.Writer, args string) error {
