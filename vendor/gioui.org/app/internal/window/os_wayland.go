@@ -40,7 +40,8 @@ import (
 //go:generate sed -i "1s;^;// +build linux,!android,!nowayland freebsd\\n\\n;" wayland_text_input.c
 
 /*
-#cgo LDFLAGS: -lwayland-client -lwayland-cursor
+#cgo linux pkg-config: wayland-client wayland-cursor
+#cgo freebsd openbsd LDFLAGS: -lwayland-client -lwayland-cursor
 #cgo freebsd CFLAGS: -I/usr/local/include
 #cgo freebsd LDFLAGS: -L/usr/local/lib
 
@@ -1001,13 +1002,6 @@ func (w *window) isAnimating() bool {
 	return w.animating || w.fling.anim.Active()
 }
 
-func (w *window) kill(err error) {
-	if w.pendingErr == nil {
-		w.pendingErr = err
-	}
-	w.dead = true
-}
-
 func (w *window) draw(sync bool) {
 	w.flushScroll()
 	w.mu.Lock()
@@ -1089,10 +1083,10 @@ func waylandConnect() error {
 		return fmt.Errorf("wayland: %v", err)
 	}
 	c.xkb = xkb
-	c.disp = C.wl_display_connect(nil)
+	c.disp, err = C.wl_display_connect(nil)
 	if c.disp == nil {
 		c.destroy()
-		return errors.New("wayland: wl_display_connect failed")
+		return fmt.Errorf("wayland: wl_display_connect failed: %v", err)
 	}
 	reg := C.wl_display_get_registry(c.disp)
 	if reg == nil {

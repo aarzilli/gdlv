@@ -9,7 +9,7 @@ import (
 	"math"
 	"time"
 
-	"gioui.org/app/internal/gl"
+	"gioui.org/gpu/backend"
 	"gioui.org/io/event"
 	"gioui.org/io/system"
 	"gioui.org/unit"
@@ -32,13 +32,18 @@ type Callbacks interface {
 }
 
 type Context interface {
-	Functions() *gl.Functions
+	Backend() (backend.Device, error)
 	Present() error
 	MakeCurrent() error
 	Release()
 	Lock()
 	Unlock()
 }
+
+// ErrDeviceLost is returned from Context.Present when
+// the underlying GPU device is gone and should be
+// recreated.
+var ErrDeviceLost = errors.New("GPU device lost")
 
 // Driver is the interface for the platform implementation
 // of a window.

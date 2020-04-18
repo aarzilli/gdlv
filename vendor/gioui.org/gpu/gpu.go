@@ -1,5 +1,10 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
+/*
+Package gpu implements the rendering of Gio drawing operations. It
+is used by package app and package app/headless and is otherwise not
+useful except for integrating with external window implementations.
+*/
 package gpu
 
 import (
@@ -8,15 +13,17 @@ import (
 	"image"
 	"image/color"
 	"math"
-	"strings"
+	"reflect"
 	"time"
 	"unsafe"
 
-	"gioui.org/app/internal/gl"
 	"gioui.org/f32"
+	"gioui.org/gpu/backend"
+	"gioui.org/internal/f32color"
 	"gioui.org/internal/opconst"
 	"gioui.org/internal/ops"
 	"gioui.org/internal/path"
+	gunsafe "gioui.org/internal/unsafe"
 	"gioui.org/op"
 	"gioui.org/op/paint"
 )
@@ -25,16 +32,18 @@ type GPU struct {
 	pathCache *opCache
 	cache     *resourceCache
 
+	defFBO                                            backend.Framebuffer
+	profile                                           string
 	timers                                            *timers
 	frameStart                                        time.Time
 	zopsTimer, stencilTimer, coverTimer, cleanupTimer *timer
 	drawOps                                           drawOps
-	ctx                                               *context
+	ctx                                               backend.Device
 	renderer                                          *renderer
 }
 
 type renderer struct {
-	ctx           *context
+	ctx           backend.Device
 	blitter       *blitter
 	pather        *pather
 	packer        packer
@@ -42,10 +51,11 @@ type renderer struct {
 }
 
 type drawOps struct {
+	profile    bool
 	reader     ops.Reader
 	cache      *resourceCache
 	viewport   image.Point
-	clearColor [3]float32
+	clearColor f32color.RGBA
 	imageOps   []imageOp
 	// zimageOps are the rectangle clipped opaque images
 	// that can use fast front-to-back rendering with z-test
@@ -95,7 +105,7 @@ type material struct {
 	material materialType
 	opaque   bool
 	// For materialTypeColor.
-	color [4]float32
+	color f32color.RGBA
 	// For materialTypeTexture.
 	texture  *texture
 	uvScale  f32.Point
@@ -109,6 +119,7 @@ type clipOp struct {
 
 // imageOpData is the shadow of paint.ImageOp.
 type imageOpData struct {
+	rect   image.Rectangle
 	src    *image.RGBA
 	handle interface{}
 }
@@ -139,9 +150,20 @@ func decodeImageOp(data []byte, refs []interface{}) imageOpData {
 	}
 	handle := refs[1]
 	if handle == nil {
-		panic("nil handle")
+		return imageOpData{}
 	}
+	bo := binary.LittleEndian
 	return imageOpData{
+		rect: image.Rectangle{
+			Min: image.Point{
+				X: int(bo.Uint32(data[1:])),
+				Y: int(bo.Uint32(data[5:])),
+			},
+			Max: image.Point{
+				X: int(bo.Uint32(data[9:])),
+				Y: int(bo.Uint32(data[13:])),
+			},
+		},
 		src:    refs[0].(*image.RGBA),
 		handle: handle,
 	}
@@ -182,25 +204,60 @@ func decodePaintOp(data []byte) paint.PaintOp {
 type clipType uint8
 
 type resource interface {
-	release(ctx *context)
+	release()
 }
 
 type texture struct {
 	src *image.RGBA
-	id  gl.Texture
+	tex backend.Texture
 }
 
 type blitter struct {
-	ctx      *context
-	viewport image.Point
-	prog     [2]gl.Program
-	vars     [2]struct {
-		z                   gl.Uniform
-		uScale, uOffset     gl.Uniform
-		uUVScale, uUVOffset gl.Uniform
-		uColor              gl.Uniform
+	ctx         backend.Device
+	viewport    image.Point
+	prog        [2]*program
+	layout      backend.InputLayout
+	colUniforms *blitColUniforms
+	texUniforms *blitTexUniforms
+	quadVerts   backend.Buffer
+}
+
+type blitColUniforms struct {
+	vert struct {
+		blitUniforms
+		_ [10]byte // Padding to a multiple of 16.
 	}
-	quadVerts gl.Buffer
+	frag struct {
+		colorUniforms
+	}
+}
+
+type blitTexUniforms struct {
+	vert struct {
+		blitUniforms
+		_ [10]byte // Padding to a multiple of 16.
+	}
+}
+
+type uniformBuffer struct {
+	buf backend.Buffer
+	ptr []byte
+}
+
+type program struct {
+	prog         backend.Program
+	vertUniforms *uniformBuffer
+	fragUniforms *uniformBuffer
+}
+
+type blitUniforms struct {
+	transform   [4]float32
+	uvTransform [4]float32
+	z           float32
+}
+
+type colorUniforms struct {
+	color f32color.RGBA
 }
 
 type materialType uint8
@@ -216,14 +273,10 @@ const (
 	materialTexture
 )
 
-var (
-	blitAttribs           = []string{"pos", "uv"}
-	attribPos   gl.Attrib = 0
-	attribUV    gl.Attrib = 1
-)
-
-func New(ctx *gl.Functions) (*GPU, error) {
+func New(ctx backend.Device) (*GPU, error) {
+	defFBO := ctx.CurrentFramebuffer()
 	g := &GPU{
+		defFBO:    defFBO,
 		pathCache: newOpCache(),
 		cache:     newResourceCache(),
 	}
@@ -233,11 +286,7 @@ func New(ctx *gl.Functions) (*GPU, error) {
 	return g, nil
 }
 
-func (g *GPU) init(glctx *gl.Functions) error {
-	ctx, err := newContext(glctx)
-	if err != nil {
-		return err
-	}
+func (g *GPU) init(ctx backend.Device) error {
 	g.ctx = ctx
 	g.renderer = newRenderer(ctx)
 	return nil
@@ -245,18 +294,20 @@ func (g *GPU) init(glctx *gl.Functions) error {
 
 func (g *GPU) Release() {
 	g.renderer.release()
-	g.pathCache.release(g.ctx)
-	g.cache.release(g.ctx)
+	g.pathCache.release()
+	g.cache.release()
 	if g.timers != nil {
 		g.timers.release()
 	}
 }
 
-func (g *GPU) Collect(profile bool, viewport image.Point, frameOps *op.Ops) {
+func (g *GPU) Collect(viewport image.Point, frameOps *op.Ops) {
+	g.renderer.blitter.viewport = viewport
+	g.renderer.pather.viewport = viewport
 	g.drawOps.reset(g.cache, viewport)
 	g.drawOps.collect(g.cache, frameOps, viewport)
 	g.frameStart = time.Now()
-	if profile && g.timers == nil && g.ctx.caps.EXT_disjoint_timer_query {
+	if g.drawOps.profile && g.timers == nil && g.ctx.Caps().Features.Has(backend.FeatureTimers) {
 		g.timers = newTimers(g.ctx)
 		g.zopsTimer = g.timers.newTimer()
 		g.stencilTimer = g.timers.newTimer()
@@ -272,78 +323,85 @@ func (g *GPU) Collect(profile bool, viewport image.Point, frameOps *op.Ops) {
 	}
 }
 
-func (g *GPU) Frame(profile bool, viewport image.Point) {
-	g.renderer.blitter.viewport = viewport
-	g.renderer.pather.viewport = viewport
+func (g *GPU) BeginFrame() {
+	g.ctx.BeginFrame()
+	defer g.ctx.EndFrame()
+	viewport := g.renderer.blitter.viewport
 	for _, img := range g.drawOps.imageOps {
 		expandPathOp(img.path, img.clip)
 	}
-	if profile {
+	if g.drawOps.profile {
 		g.zopsTimer.begin()
 	}
-	g.ctx.DepthFunc(gl.GREATER)
-	g.ctx.ClearColor(g.drawOps.clearColor[0], g.drawOps.clearColor[1], g.drawOps.clearColor[2], 1.0)
-	g.ctx.ClearDepthf(0.0)
-	g.ctx.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT)
+	g.ctx.BindFramebuffer(g.defFBO)
+	g.ctx.DepthFunc(backend.DepthFuncGreater)
+	g.ctx.ClearDepth(0.0)
+	g.ctx.Clear(g.drawOps.clearColor.Float32())
 	g.ctx.Viewport(0, 0, viewport.X, viewport.Y)
 	g.renderer.drawZOps(g.drawOps.zimageOps)
 	g.zopsTimer.end()
 	g.stencilTimer.begin()
-	g.ctx.Enable(gl.BLEND)
+	g.ctx.SetBlend(true)
 	g.renderer.packStencils(&g.drawOps.pathOps)
 	g.renderer.stencilClips(g.pathCache, g.drawOps.pathOps)
 	g.renderer.packIntersections(g.drawOps.imageOps)
 	g.renderer.intersect(g.drawOps.imageOps)
 	g.stencilTimer.end()
 	g.coverTimer.begin()
+	g.ctx.BindFramebuffer(g.defFBO)
 	g.ctx.Viewport(0, 0, viewport.X, viewport.Y)
 	g.renderer.drawOps(g.drawOps.imageOps)
-	g.ctx.Disable(gl.BLEND)
+	g.ctx.SetBlend(false)
 	g.renderer.pather.stenciler.invalidateFBO()
 	g.coverTimer.end()
 }
 
-func (g *GPU) EndFrame(profile bool) string {
+func (g *GPU) EndFrame() {
 	g.cleanupTimer.begin()
-	g.cache.frame(g.ctx)
-	g.pathCache.frame(g.ctx)
+	g.cache.frame()
+	g.pathCache.frame()
 	g.cleanupTimer.end()
-	var summary string
-	if profile && g.timers.ready() {
+	if g.drawOps.profile && g.timers.ready() {
 		zt, st, covt, cleant := g.zopsTimer.Elapsed, g.stencilTimer.Elapsed, g.coverTimer.Elapsed, g.cleanupTimer.Elapsed
 		ft := zt + st + covt + cleant
 		q := 100 * time.Microsecond
 		zt, st, covt = zt.Round(q), st.Round(q), covt.Round(q)
 		frameDur := time.Since(g.frameStart).Round(q)
 		ft = ft.Round(q)
-		summary = fmt.Sprintf("draw:%7s gpu:%7s zt:%7s st:%7s cov:%7s", frameDur, ft, zt, st, covt)
-	}
-	return summary
-}
-
-func (r *renderer) texHandle(t *texture) gl.Texture {
-	if t.id.Valid() {
-		return t.id
-	}
-	t.id = createTexture(r.ctx)
-	r.ctx.BindTexture(gl.TEXTURE_2D, t.id)
-	r.uploadTexture(t.src)
-	return t.id
-}
-
-func (t *texture) release(ctx *context) {
-	if t.id.Valid() {
-		ctx.DeleteTexture(t.id)
+		g.profile = fmt.Sprintf("draw:%7s gpu:%7s zt:%7s st:%7s cov:%7s", frameDur, ft, zt, st, covt)
 	}
 }
 
-func newRenderer(ctx *context) *renderer {
+func (g *GPU) Profile() string {
+	return g.profile
+}
+
+func (r *renderer) texHandle(t *texture) backend.Texture {
+	if t.tex != nil {
+		return t.tex
+	}
+	tex, err := r.ctx.NewTexture(backend.TextureFormatSRGB, t.src.Bounds().Dx(), t.src.Bounds().Dy(), backend.FilterLinear, backend.FilterLinear, backend.BufferBindingTexture)
+	if err != nil {
+		panic(err)
+	}
+	tex.Upload(t.src)
+	t.tex = tex
+	return t.tex
+}
+
+func (t *texture) release() {
+	if t.tex != nil {
+		t.tex.Release()
+	}
+}
+
+func newRenderer(ctx backend.Device) *renderer {
 	r := &renderer{
 		ctx:     ctx,
 		blitter: newBlitter(ctx),
 		pather:  newPather(ctx),
 	}
-	r.packer.maxDim = ctx.GetInteger(gl.MAX_TEXTURE_SIZE)
+	r.packer.maxDim = ctx.Caps().MaxTextureSize
 	r.intersections.maxDim = r.packer.maxDim
 	return r
 }
@@ -353,78 +411,83 @@ func (r *renderer) release() {
 	r.blitter.release()
 }
 
-func newBlitter(ctx *context) *blitter {
-	prog, err := createColorPrograms(ctx, blitVSrc, blitFSrc)
-	if err != nil {
-		panic(err)
-	}
-	quadVerts := ctx.CreateBuffer()
-	ctx.BindBuffer(gl.ARRAY_BUFFER, quadVerts)
-	ctx.BufferData(gl.ARRAY_BUFFER,
-		gl.BytesView([]float32{
+func newBlitter(ctx backend.Device) *blitter {
+	quadVerts, err := ctx.NewImmutableBuffer(backend.BufferBindingVertices,
+		gunsafe.BytesView([]float32{
 			-1, +1, 0, 0,
 			+1, +1, 1, 0,
 			-1, -1, 0, 1,
 			+1, -1, 1, 1,
 		}),
-		gl.STATIC_DRAW)
+	)
+	if err != nil {
+		panic(err)
+	}
 	b := &blitter{
 		ctx:       ctx,
-		prog:      prog,
 		quadVerts: quadVerts,
 	}
-	for i, prog := range prog {
-		ctx.UseProgram(prog)
-		switch materialType(i) {
-		case materialTexture:
-			uTex := gl.GetUniformLocation(ctx.Functions, prog, "tex")
-			ctx.Uniform1i(uTex, 0)
-			b.vars[i].uUVScale = gl.GetUniformLocation(ctx.Functions, prog, "uvScale")
-			b.vars[i].uUVOffset = gl.GetUniformLocation(ctx.Functions, prog, "uvOffset")
-		case materialColor:
-			b.vars[i].uColor = gl.GetUniformLocation(ctx.Functions, prog, "color")
-		}
-		b.vars[i].z = gl.GetUniformLocation(ctx.Functions, prog, "z")
-		b.vars[i].uScale = gl.GetUniformLocation(ctx.Functions, prog, "scale")
-		b.vars[i].uOffset = gl.GetUniformLocation(ctx.Functions, prog, "offset")
+	b.colUniforms = new(blitColUniforms)
+	b.texUniforms = new(blitTexUniforms)
+	prog, layout, err := createColorPrograms(ctx, shader_blit_vert, shader_blit_frag,
+		[2]interface{}{&b.colUniforms.vert, &b.texUniforms.vert}, [2]interface{}{&b.colUniforms.frag, nil})
+	if err != nil {
+		panic(err)
 	}
+	b.prog = prog
+	b.layout = layout
 	return b
 }
 
 func (b *blitter) release() {
-	b.ctx.DeleteBuffer(b.quadVerts)
+	b.quadVerts.Release()
 	for _, p := range b.prog {
-		b.ctx.DeleteProgram(p)
+		p.Release()
 	}
+	b.layout.Release()
 }
 
-func createColorPrograms(ctx *context, vsSrc, fsSrc string) ([2]gl.Program, error) {
-	var prog [2]gl.Program
-	frep := strings.NewReplacer(
-		"HEADER", `
-uniform sampler2D tex;
-`,
-		"GET_COLOR", `texture2D(tex, vUV)`,
-	)
-	fsSrcTex := frep.Replace(fsSrc)
-	var err error
-	prog[materialTexture], err = gl.CreateProgram(ctx.Functions, vsSrc, fsSrcTex, blitAttribs)
+func createColorPrograms(b backend.Device, vsSrc backend.ShaderSources, fsSrc [2]backend.ShaderSources, vertUniforms, fragUniforms [2]interface{}) ([2]*program, backend.InputLayout, error) {
+	var progs [2]*program
+	prog, err := b.NewProgram(vsSrc, fsSrc[materialTexture])
 	if err != nil {
-		return prog, err
+		return progs, nil, err
 	}
-	frep = strings.NewReplacer(
-		"HEADER", `
-uniform vec4 color;
-`,
-		"GET_COLOR", `color`,
-	)
-	fsSrcCol := frep.Replace(fsSrc)
-	prog[materialColor], err = gl.CreateProgram(ctx.Functions, vsSrc, fsSrcCol, blitAttribs)
+	var vertBuffer *uniformBuffer
+	if u := vertUniforms[materialTexture]; u != nil {
+		vertBuffer = newUniformBuffer(b, u)
+		prog.SetVertexUniforms(vertBuffer.buf)
+	}
+	var fragBuffer *uniformBuffer
+	if u := fragUniforms[materialTexture]; u != nil {
+		fragBuffer = newUniformBuffer(b, u)
+		prog.SetFragmentUniforms(fragBuffer.buf)
+	}
+	progs[materialTexture] = newProgram(prog, vertBuffer, fragBuffer)
+	prog, err = b.NewProgram(vsSrc, fsSrc[materialColor])
 	if err != nil {
-		ctx.DeleteProgram(prog[materialTexture])
-		return prog, err
+		progs[materialTexture].Release()
+		return progs, nil, err
 	}
-	return prog, nil
+	if u := vertUniforms[materialColor]; u != nil {
+		vertBuffer = newUniformBuffer(b, u)
+		prog.SetVertexUniforms(vertBuffer.buf)
+	}
+	if u := fragUniforms[materialColor]; u != nil {
+		fragBuffer = newUniformBuffer(b, u)
+		prog.SetFragmentUniforms(fragBuffer.buf)
+	}
+	progs[materialColor] = newProgram(prog, vertBuffer, fragBuffer)
+	layout, err := b.NewInputLayout(vsSrc, []backend.InputDesc{
+		{Type: backend.DataTypeFloat, Size: 2, Offset: 0},
+		{Type: backend.DataTypeFloat, Size: 2, Offset: 4 * 2},
+	})
+	if err != nil {
+		progs[materialTexture].Release()
+		progs[materialColor].Release()
+		return progs, nil, err
+	}
+	return progs, layout, nil
 }
 
 func (r *renderer) stencilClips(pathCache *opCache, ops []*pathOp) {
@@ -437,13 +500,12 @@ func (r *renderer) stencilClips(pathCache *opCache, ops []*pathOp) {
 		if fbo != p.place.Idx {
 			fbo = p.place.Idx
 			f := r.pather.stenciler.cover(fbo)
-			bindFramebuffer(r.ctx, f.fbo)
-			r.ctx.Clear(gl.COLOR_BUFFER_BIT)
+			r.ctx.BindFramebuffer(f.fbo)
+			r.ctx.Clear(0.0, 0.0, 0.0, 0.0)
 		}
 		data, _ := pathCache.get(p.pathKey)
 		r.pather.stencilPath(p.clip, p.off, p.place.Pos, data.(*pathData))
 	}
-	r.pather.end()
 }
 
 func (r *renderer) intersect(ops []imageOp) {
@@ -452,11 +514,8 @@ func (r *renderer) intersect(ops []imageOp) {
 	}
 	fbo := -1
 	r.pather.stenciler.beginIntersect(r.intersections.sizes)
-	r.ctx.BindBuffer(gl.ARRAY_BUFFER, r.blitter.quadVerts)
-	r.ctx.VertexAttribPointer(attribPos, 2, gl.FLOAT, false, 4*4, 0)
-	r.ctx.VertexAttribPointer(attribUV, 2, gl.FLOAT, false, 4*4, 4*2)
-	r.ctx.EnableVertexAttribArray(attribPos)
-	r.ctx.EnableVertexAttribArray(attribUV)
+	r.ctx.BindVertexBuffer(r.blitter.quadVerts, 4*4, 0)
+	r.ctx.BindInputLayout(r.pather.stenciler.iprog.layout)
 	for _, img := range ops {
 		if img.clipType != clipTypeIntersection {
 			continue
@@ -464,15 +523,12 @@ func (r *renderer) intersect(ops []imageOp) {
 		if fbo != img.place.Idx {
 			fbo = img.place.Idx
 			f := r.pather.stenciler.intersections.fbos[fbo]
-			bindFramebuffer(r.ctx, f.fbo)
-			r.ctx.Clear(gl.COLOR_BUFFER_BIT)
+			r.ctx.BindFramebuffer(f.fbo)
+			r.ctx.Clear(1.0, 0.0, 0.0, 0.0)
 		}
 		r.ctx.Viewport(img.place.Pos.X, img.place.Pos.Y, img.clip.Dx(), img.clip.Dy())
 		r.intersectPath(img.path, img.clip)
 	}
-	r.ctx.DisableVertexAttribArray(attribPos)
-	r.ctx.DisableVertexAttribArray(attribUV)
-	r.pather.stenciler.endIntersect()
 }
 
 func (r *renderer) intersectPath(p *pathOp, clip image.Rectangle) {
@@ -482,17 +538,23 @@ func (r *renderer) intersectPath(p *pathOp, clip image.Rectangle) {
 	if !p.path {
 		return
 	}
-	o := p.place.Pos.Add(clip.Min).Sub(p.clip.Min)
 	uv := image.Rectangle{
+		Min: p.place.Pos,
+		Max: p.place.Pos.Add(p.clip.Size()),
+	}
+	o := clip.Min.Sub(p.clip.Min)
+	sub := image.Rectangle{
 		Min: o,
 		Max: o.Add(clip.Size()),
 	}
 	fbo := r.pather.stenciler.cover(p.place.Idx)
-	r.ctx.BindTexture(gl.TEXTURE_2D, fbo.tex)
+	r.ctx.BindTexture(0, fbo.tex)
 	coverScale, coverOff := texSpaceTransform(toRectF(uv), fbo.size)
-	r.ctx.Uniform2f(r.pather.stenciler.uIntersectUVScale, coverScale.X, coverScale.Y)
-	r.ctx.Uniform2f(r.pather.stenciler.uIntersectUVOffset, coverOff.X, coverOff.Y)
-	r.ctx.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+	subScale, subOff := texSpaceTransform(toRectF(sub), p.clip.Size())
+	r.pather.stenciler.iprog.uniforms.vert.uvTransform = [4]float32{coverScale.X, coverScale.Y, coverOff.X, coverOff.Y}
+	r.pather.stenciler.iprog.uniforms.vert.subUVTransform = [4]float32{subScale.X, subScale.Y, subOff.X, subOff.Y}
+	r.pather.stenciler.iprog.prog.UploadUniforms()
+	r.ctx.DrawArrays(backend.DrawModeTriangleStrip, 0, 4)
 }
 
 func (r *renderer) packIntersections(ops []imageOp) {
@@ -587,7 +649,8 @@ func floor(v float32) int {
 }
 
 func (d *drawOps) reset(cache *resourceCache, viewport image.Point) {
-	d.clearColor = [3]float32{1.0, 1.0, 1.0}
+	d.profile = false
+	d.clearColor = f32color.RGBA{R: 1.0, G: 1.0, B: 1.0, A: 1.0}
 	d.cache = cache
 	d.viewport = viewport
 	d.imageOps = d.imageOps[:0]
@@ -621,6 +684,8 @@ func (d *drawOps) collectOps(r *ops.Reader, state drawState) int {
 loop:
 	for encOp, ok := r.Decode(); ok; encOp, ok = r.Decode() {
 		switch opconst.OpType(encOp.Data[0]) {
+		case opconst.TypeProfile:
+			d.profile = true
 		case opconst.TypeTransform:
 			dop := ops.DecodeTransformOp(encOp.Data)
 			state.t = state.t.Multiply(op.TransformOp(dop))
@@ -679,7 +744,7 @@ loop:
 				d.zimageOps = d.zimageOps[:0]
 				d.imageOps = d.imageOps[:0]
 				state.z = 0
-				copy(d.clearColor[:], mat.color[:3])
+				d.clearColor = mat.color.Opaque()
 				continue
 			}
 			state.z++
@@ -724,18 +789,13 @@ func (d *drawState) materialFor(cache *resourceCache, rect f32.Rectangle, off f3
 	switch d.matType {
 	case materialColor:
 		m.material = materialColor
-		m.color = gamma(d.color.RGBA())
-		m.opaque = m.color[3] == 1.0
+		m.color = f32color.RGBAFromSRGB(d.color)
+		m.opaque = m.color.A == 1.0
 	case materialTexture:
 		m.material = materialTexture
 		dr := boundRectF(rect.Add(off))
 		sz := d.image.src.Bounds().Size()
-		sr := f32.Rectangle{
-			Max: f32.Point{
-				X: float32(sz.X),
-				Y: float32(sz.Y),
-			},
-		}
+		sr := toRectF(d.image.rect)
 		if dx := float32(dr.Dx()); dx != 0 {
 			// Don't clip 1 px width sources.
 			if sdx := sr.Dx(); sdx > 1 {
@@ -765,44 +825,36 @@ func (d *drawState) materialFor(cache *resourceCache, rect f32.Rectangle, off f3
 }
 
 func (r *renderer) drawZOps(ops []imageOp) {
-	r.ctx.Enable(gl.DEPTH_TEST)
-	r.ctx.BindBuffer(gl.ARRAY_BUFFER, r.blitter.quadVerts)
-	r.ctx.VertexAttribPointer(attribPos, 2, gl.FLOAT, false, 4*4, 0)
-	r.ctx.VertexAttribPointer(attribUV, 2, gl.FLOAT, false, 4*4, 4*2)
-	r.ctx.EnableVertexAttribArray(attribPos)
-	r.ctx.EnableVertexAttribArray(attribUV)
+	r.ctx.SetDepthTest(true)
+	r.ctx.BindVertexBuffer(r.blitter.quadVerts, 4*4, 0)
+	r.ctx.BindInputLayout(r.blitter.layout)
 	// Render front to back.
 	for i := len(ops) - 1; i >= 0; i-- {
 		img := ops[i]
 		m := img.material
 		switch m.material {
 		case materialTexture:
-			r.ctx.BindTexture(gl.TEXTURE_2D, r.texHandle(m.texture))
+			r.ctx.BindTexture(0, r.texHandle(m.texture))
 		}
 		drc := img.clip
 		scale, off := clipSpaceTransform(drc, r.blitter.viewport)
 		r.blitter.blit(img.z, m.material, m.color, scale, off, m.uvScale, m.uvOffset)
 	}
-	r.ctx.DisableVertexAttribArray(attribPos)
-	r.ctx.DisableVertexAttribArray(attribUV)
-	r.ctx.Disable(gl.DEPTH_TEST)
+	r.ctx.SetDepthTest(false)
 }
 
 func (r *renderer) drawOps(ops []imageOp) {
-	r.ctx.Enable(gl.DEPTH_TEST)
+	r.ctx.SetDepthTest(true)
 	r.ctx.DepthMask(false)
-	r.ctx.BlendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA)
-	r.ctx.BindBuffer(gl.ARRAY_BUFFER, r.blitter.quadVerts)
-	r.ctx.VertexAttribPointer(attribPos, 2, gl.FLOAT, false, 4*4, 0)
-	r.ctx.VertexAttribPointer(attribUV, 2, gl.FLOAT, false, 4*4, 4*2)
-	r.ctx.EnableVertexAttribArray(attribPos)
-	r.ctx.EnableVertexAttribArray(attribUV)
-	var coverTex gl.Texture
+	r.ctx.BlendFunc(backend.BlendFactorOne, backend.BlendFactorOneMinusSrcAlpha)
+	r.ctx.BindVertexBuffer(r.blitter.quadVerts, 4*4, 0)
+	r.ctx.BindInputLayout(r.pather.coverer.layout)
+	var coverTex backend.Texture
 	for _, img := range ops {
 		m := img.material
 		switch m.material {
 		case materialTexture:
-			r.ctx.BindTexture(gl.TEXTURE_2D, r.texHandle(m.texture))
+			r.ctx.BindTexture(0, r.texHandle(m.texture))
 		}
 		drc := img.clip
 		scale, off := clipSpaceTransform(drc, r.blitter.viewport)
@@ -816,11 +868,9 @@ func (r *renderer) drawOps(ops []imageOp) {
 		case clipTypeIntersection:
 			fbo = r.pather.stenciler.intersections.fbos[img.place.Idx]
 		}
-		if !coverTex.Equal(fbo.tex) {
+		if coverTex != fbo.tex {
 			coverTex = fbo.tex
-			r.ctx.ActiveTexture(gl.TEXTURE1)
-			r.ctx.BindTexture(gl.TEXTURE_2D, coverTex)
-			r.ctx.ActiveTexture(gl.TEXTURE0)
+			r.ctx.BindTexture(1, coverTex)
 		}
 		uv := image.Rectangle{
 			Min: img.place.Pos,
@@ -829,55 +879,82 @@ func (r *renderer) drawOps(ops []imageOp) {
 		coverScale, coverOff := texSpaceTransform(toRectF(uv), fbo.size)
 		r.pather.cover(img.z, m.material, m.color, scale, off, m.uvScale, m.uvOffset, coverScale, coverOff)
 	}
-	r.ctx.DisableVertexAttribArray(attribPos)
-	r.ctx.DisableVertexAttribArray(attribUV)
 	r.ctx.DepthMask(true)
-	r.ctx.Disable(gl.DEPTH_TEST)
+	r.ctx.SetDepthTest(false)
 }
 
-func (r *renderer) uploadTexture(img *image.RGBA) {
-	var pixels []byte
-	b := img.Bounds()
-	w, h := b.Dx(), b.Dy()
-	if img.Stride != w*4 {
-		panic("unsupported stride")
-	}
-	start := (b.Min.X + b.Min.Y*w) * 4
-	end := (b.Max.X + (b.Max.Y-1)*w) * 4
-	pixels = img.Pix[start:end]
-	tt := r.ctx.caps.srgbaTriple
-	r.ctx.TexImage2D(gl.TEXTURE_2D, 0, tt.internalFormat, w, h, tt.format, tt.typ, pixels)
-}
-
-func gamma(r, g, b, a uint32) [4]float32 {
-	color := [4]float32{float32(r) / 0xffff, float32(g) / 0xffff, float32(b) / 0xffff, float32(a) / 0xffff}
-	// Assume that image.Uniform colors are in sRGB space. Linearize.
-	for i := 0; i <= 2; i++ {
-		c := color[i]
-		// Use the formula from EXT_sRGB.
-		if c <= 0.04045 {
-			c = c / 12.92
-		} else {
-			c = float32(math.Pow(float64((c+0.055)/1.055), 2.4))
-		}
-		color[i] = c
-	}
-	return color
-}
-
-func (b *blitter) blit(z float32, mat materialType, col [4]float32, scale, off, uvScale, uvOff f32.Point) {
-	b.ctx.UseProgram(b.prog[mat])
+func (b *blitter) blit(z float32, mat materialType, col f32color.RGBA, scale, off, uvScale, uvOff f32.Point) {
+	p := b.prog[mat]
+	b.ctx.BindProgram(p.prog)
+	var uniforms *blitUniforms
 	switch mat {
 	case materialColor:
-		b.ctx.Uniform4f(b.vars[mat].uColor, col[0], col[1], col[2], col[3])
+		b.colUniforms.frag.color = col
+		uniforms = &b.colUniforms.vert.blitUniforms
 	case materialTexture:
-		b.ctx.Uniform2f(b.vars[mat].uUVScale, uvScale.X, uvScale.Y)
-		b.ctx.Uniform2f(b.vars[mat].uUVOffset, uvOff.X, uvOff.Y)
+		b.texUniforms.vert.uvTransform = [4]float32{uvScale.X, uvScale.Y, uvOff.X, uvOff.Y}
+		uniforms = &b.texUniforms.vert.blitUniforms
 	}
-	b.ctx.Uniform1f(b.vars[mat].z, z)
-	b.ctx.Uniform2f(b.vars[mat].uScale, scale.X, scale.Y)
-	b.ctx.Uniform2f(b.vars[mat].uOffset, off.X, off.Y)
-	b.ctx.DrawArrays(gl.TRIANGLE_STRIP, 0, 4)
+	uniforms.z = z
+	uniforms.transform = [4]float32{scale.X, scale.Y, off.X, off.Y}
+	p.UploadUniforms()
+	b.ctx.DrawArrays(backend.DrawModeTriangleStrip, 0, 4)
+}
+
+// newUniformBuffer creates a new GPU uniform buffer backed by the
+// structure uniformBlock points to.
+func newUniformBuffer(b backend.Device, uniformBlock interface{}) *uniformBuffer {
+	ref := reflect.ValueOf(uniformBlock)
+	// Determine the size of the uniforms structure, *uniforms.
+	size := ref.Elem().Type().Size()
+	// Map the uniforms structure as a byte slice.
+	ptr := (*[1 << 30]byte)(unsafe.Pointer(ref.Pointer()))[:size:size]
+	ubuf, err := b.NewBuffer(backend.BufferBindingUniforms, len(ptr))
+	if err != nil {
+		panic(err)
+	}
+	return &uniformBuffer{buf: ubuf, ptr: ptr}
+}
+
+func (u *uniformBuffer) Upload() {
+	u.buf.Upload(u.ptr)
+}
+
+func (u *uniformBuffer) Release() {
+	u.buf.Release()
+	u.buf = nil
+}
+
+func newProgram(prog backend.Program, vertUniforms, fragUniforms *uniformBuffer) *program {
+	if vertUniforms != nil {
+		prog.SetVertexUniforms(vertUniforms.buf)
+	}
+	if fragUniforms != nil {
+		prog.SetFragmentUniforms(fragUniforms.buf)
+	}
+	return &program{prog: prog, vertUniforms: vertUniforms, fragUniforms: fragUniforms}
+}
+
+func (p *program) UploadUniforms() {
+	if p.vertUniforms != nil {
+		p.vertUniforms.Upload()
+	}
+	if p.fragUniforms != nil {
+		p.fragUniforms.Upload()
+	}
+}
+
+func (p *program) Release() {
+	p.prog.Release()
+	p.prog = nil
+	if p.vertUniforms != nil {
+		p.vertUniforms.Release()
+		p.vertUniforms = nil
+	}
+	if p.fragUniforms != nil {
+		p.fragUniforms.Release()
+		p.fragUniforms = nil
+	}
 }
 
 // texSpaceTransform return the scale and offset that transforms the given subimage
@@ -910,23 +987,6 @@ func clipSpaceTransform(r image.Rectangle, viewport image.Point) (f32.Point, f32
 	scale := f32.Point{X: w * .5, Y: h * .5}
 	offset := f32.Point{X: x + w*.5, Y: y - h*.5}
 	return scale, offset
-}
-
-func bindFramebuffer(ctx *context, fbo gl.Framebuffer) {
-	ctx.BindFramebuffer(gl.FRAMEBUFFER, fbo)
-	if st := ctx.CheckFramebufferStatus(gl.FRAMEBUFFER); st != gl.FRAMEBUFFER_COMPLETE {
-		panic(fmt.Errorf("AA FBO not complete; status = 0x%x, err = %d", st, ctx.GetError()))
-	}
-}
-
-func createTexture(ctx *context) gl.Texture {
-	tex := ctx.CreateTexture()
-	ctx.BindTexture(gl.TEXTURE_2D, tex)
-	ctx.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR)
-	ctx.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR)
-	ctx.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
-	ctx.TexParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
-	return tex
 }
 
 // Fill in maximal Y coordinates of the NW and NE corners.
@@ -969,43 +1029,3 @@ func fillContourMaxY(maxy float32, verts []byte) {
 		bo.PutUint32(verts[i+off:], math.Float32bits(maxy))
 	}
 }
-
-const blitVSrc = `
-#version 100
-
-precision highp float;
-
-uniform float z;
-uniform vec2 scale;
-uniform vec2 offset;
-
-attribute vec2 pos;
-
-attribute vec2 uv;
-uniform vec2 uvScale;
-uniform vec2 uvOffset;
-
-varying vec2 vUV;
-
-void main() {
-	vec2 p = pos;
-	p *= scale;
-	p += offset;
-	gl_Position = vec4(p, z, 1);
-	vUV = uv*uvScale + uvOffset;
-}
-`
-
-const blitFSrc = `
-#version 100
-
-precision mediump float;
-
-varying vec2 vUV;
-
-HEADER
-
-void main() {
-	gl_FragColor = GET_COLOR;
-}
-`

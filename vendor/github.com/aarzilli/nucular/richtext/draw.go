@@ -71,6 +71,10 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 		}
 	}
 
+	if rtxt.Sel.S > rtxt.Sel.E {
+		rtxt.Sel.E = rtxt.Sel.S
+	}
+
 	rtxt.changed = false
 
 	in := w.Input()
@@ -255,7 +259,7 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 
 	if rtxt.followCursor {
 		rtxt.followCursor = false
-		if above, below := w.Invisible(); above || below {
+		if above, below := w.Invisible(0); above || below {
 			scrollbary = w.At().Y - w.Bounds.H/2
 			if scrollbary < 0 {
 				scrollbary = 0

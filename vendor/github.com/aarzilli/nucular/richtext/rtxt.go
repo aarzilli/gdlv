@@ -344,6 +344,10 @@ func (rtxt *RichText) Get(sel Sel) string {
 		endByteIdx = 0
 	}
 
+	if startChunkIdx == endChunkIdx {
+		return rtxt.chunks[startChunkIdx].sub(startByteIdx, endByteIdx).str()
+	}
+
 	var out strings.Builder
 	out.WriteString(rtxt.chunks[startChunkIdx].sub(startByteIdx, rtxt.chunks[startChunkIdx].len()).str())
 

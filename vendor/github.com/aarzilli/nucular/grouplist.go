@@ -28,7 +28,7 @@ func (gl *GroupList) Next() bool {
 		return false
 	}
 	if gl.skippedLineHeight > 0 && gl.idx >= 0 {
-		if _, below := gl.w.Invisible(); below {
+		if _, below := gl.w.Invisible(0); below {
 			n := gl.num - gl.idx
 			gl.idx = gl.num
 			gl.empty(n)
@@ -85,7 +85,7 @@ func (gl *GroupList) Index() int {
 }
 
 func (gl *GroupList) Center() {
-	if above, below := gl.w.Invisible(); above || below {
+	if above, below := gl.w.Invisible(gl.w.LastWidgetBounds.H * 2); above || below {
 		gl.scrollbary = gl.w.At().Y - gl.w.Bounds.H/2
 		if gl.scrollbary < 0 {
 			gl.scrollbary = 0

@@ -3,15 +3,18 @@
 package text
 
 import (
+	"io"
+
 	"gioui.org/op"
-	"gioui.org/unit"
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 )
 
 // A Line contains the measurements of a line of text.
 type Line struct {
-	Text String
+	Layout []Glyph
+	// Len is the length in UTF8 bytes of the line.
+	Len int
 	// Width is the width of the line.
 	Width fixed.Int26_6
 	// Ascent is the height above the baseline.
@@ -23,22 +26,9 @@ type Line struct {
 	Bounds fixed.Rectangle26_6
 }
 
-type String struct {
-	String string
-	// Advances contain the advance of each rune in String.
-	Advances []fixed.Int26_6
-}
-
-// A Layout contains the measurements of a body of text as
-// a list of Lines.
-type Layout struct {
-	Lines []Line
-}
-
-// LayoutOptions specify the constraints of a text layout.
-type LayoutOptions struct {
-	// MaxWidth is the available width of the layout.
-	MaxWidth int
+type Glyph struct {
+	Rune    rune
+	Advance fixed.Int26_6
 }
 
 // Style is the font style.
@@ -47,11 +37,10 @@ type Style int
 // Weight is a font weight, in CSS units.
 type Weight int
 
-// Font specify a particular typeface, style and size.
+// Font specify a particular typeface variant, style and weight.
 type Font struct {
 	Typeface Typeface
 	Variant  Variant
-	Size     unit.Value
 	Style    Style
 	// Weight is the text weight. If zero, Normal is used instead.
 	Weight Weight
@@ -59,8 +48,8 @@ type Font struct {
 
 // Face implements text layout and shaping for a particular font.
 type Face interface {
-	Layout(ppem fixed.Int26_6, str string, opts LayoutOptions) *Layout
-	Shape(ppem fixed.Int26_6, str String) op.CallOp
+	Layout(ppem fixed.Int26_6, maxWidth int, txt io.Reader) ([]Line, error)
+	Shape(ppem fixed.Int26_6, str []Glyph) op.CallOp
 	Metrics(ppem fixed.Int26_6) font.Metrics
 }
 

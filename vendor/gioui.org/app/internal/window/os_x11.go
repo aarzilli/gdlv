@@ -1,11 +1,15 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
-// +build linux,!android,!nox11 freebsd
+// +build linux,!android,!nox11 freebsd openbsd
 
 package window
 
 /*
-#cgo LDFLAGS: -lX11 -lxkbcommon -lxkbcommon-x11 -lX11-xcb
+#cgo openbsd CFLAGS: -I/usr/X11R6/include -I/usr/local/include
+#cgo openbsd LDFLAGS: -L/usr/X11R6/lib -L/usr/local/lib
+#cgo freebsd openbsd LDFLAGS: -lX11 -lxkbcommon -lxkbcommon-x11 -lX11-xcb
+#cgo linux pkg-config: x11 xkbcommon xkbcommon-x11 x11-xcb
+
 #include <stdlib.h>
 #include <locale.h>
 #include <X11/Xlib.h>
@@ -201,11 +205,9 @@ func (w *x11Window) atom(name string, onlyIfExists bool) C.Atom {
 // in x11window.loop.
 //
 type x11EventHandler struct {
-	w      *x11Window
-	text   []byte
-	xev    *C.XEvent
-	status C.Status
-	keysym C.KeySym
+	w    *x11Window
+	text []byte
+	xev  *C.XEvent
 }
 
 // handleEvents returns true if the window needs to be redrawn.

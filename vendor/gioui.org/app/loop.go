@@ -6,8 +6,8 @@ import (
 	"image"
 	"runtime"
 
-	"gioui.org/app/internal/gpu"
 	"gioui.org/app/internal/window"
+	"gioui.org/gpu"
 	"gioui.org/op"
 )
 
@@ -26,13 +26,12 @@ type renderLoop struct {
 }
 
 type frame struct {
-	collectStats bool
-	viewport     image.Point
-	ops          *op.Ops
+	viewport image.Point
+	ops      *op.Ops
 }
 
 type frameResult struct {
-	summary string
+	profile string
 	err     error
 }
 
@@ -54,7 +53,7 @@ func newLoop(ctx window.Context) (*renderLoop, error) {
 	return l, nil
 }
 
-func (l *renderLoop) renderLoop(glctx window.Context) error {
+func (l *renderLoop) renderLoop(ctx window.Context) error {
 	// GL Operations must happen on a single OS thread, so
 	// pass initialization result through a channel.
 	initErr := make(chan error)
@@ -63,32 +62,38 @@ func (l *renderLoop) renderLoop(glctx window.Context) error {
 		runtime.LockOSThread()
 		// Don't UnlockOSThread to avoid reuse by the Go runtime.
 
-		if err := glctx.MakeCurrent(); err != nil {
+		if err := ctx.MakeCurrent(); err != nil {
 			initErr <- err
 			return
 		}
-		g, err := gpu.New(glctx.Functions())
+		b, err := ctx.Backend()
 		if err != nil {
 			initErr <- err
 			return
 		}
-		defer glctx.Release()
+		g, err := gpu.New(b)
+		if err != nil {
+			initErr <- err
+			return
+		}
+		defer ctx.Release()
 		initErr <- nil
 	loop:
 		for {
 			select {
 			case <-l.refresh:
-				l.refreshErr <- glctx.MakeCurrent()
+				l.refreshErr <- ctx.MakeCurrent()
 			case frame := <-l.frames:
-				glctx.Lock()
-				g.Collect(frame.collectStats, frame.viewport, frame.ops)
+				ctx.Lock()
+				g.Collect(frame.viewport, frame.ops)
 				// Signal that we're done with the frame ops.
 				l.ack <- struct{}{}
-				g.Frame(frame.collectStats, frame.viewport)
+				g.BeginFrame()
 				var res frameResult
-				res.err = glctx.Present()
-				res.summary = g.EndFrame(frame.collectStats)
-				glctx.Unlock()
+				res.err = ctx.Present()
+				g.EndFrame()
+				res.profile = g.Profile()
+				ctx.Unlock()
 				l.results <- res
 			case <-l.stop:
 				break loop
@@ -110,8 +115,8 @@ func (l *renderLoop) Flush() error {
 	if l.drawing {
 		st := <-l.results
 		l.setErr(st.err)
-		if st.summary != "" {
-			l.summary = st.summary
+		if st.profile != "" {
+			l.summary = st.profile
 		}
 		l.drawing = false
 	}
@@ -134,13 +139,13 @@ func (l *renderLoop) Refresh() {
 
 // Draw initiates a draw of a frame. It returns a channel
 // than signals when the frame is no longer being accessed.
-func (l *renderLoop) Draw(profile bool, viewport image.Point, frameOps *op.Ops) <-chan struct{} {
+func (l *renderLoop) Draw(viewport image.Point, frameOps *op.Ops) <-chan struct{} {
 	if l.err != nil {
 		l.ack <- struct{}{}
 		return l.ack
 	}
 	l.Flush()
-	l.frames <- frame{profile, viewport, frameOps}
+	l.frames <- frame{viewport, frameOps}
 	l.drawing = true
 	return l.ack
 }

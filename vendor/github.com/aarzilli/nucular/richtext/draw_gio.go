@@ -18,7 +18,7 @@ import (
 
 type fontFace struct {
 	fnt     *opentype.Font
-	shaper  *text.Shaper
+	shaper  *text.FontRegistry
 	size    int
 	fsize   fixed.Int26_6
 	metrics ifont.Metrics
@@ -28,11 +28,11 @@ func fontFace2fontFace(f *font.Face) *fontFace {
 	return (*fontFace)(unsafe.Pointer(f))
 }
 
-func (face *fontFace) layout(str string, width int) *text.Layout {
+func (face *fontFace) layout(str string, width int) []text.Line {
 	if width < 0 {
 		width = 1e6
 	}
-	return face.shaper.Layout(face, text.Font{}, str, text.LayoutOptions{MaxWidth: width})
+	return face.shaper.LayoutString(text.Font{}, fixed.I(face.size), width, str)
 }
 
 func (face *fontFace) Px(v unit.Value) int {
@@ -59,8 +59,10 @@ func (rtxt *RichText) calcAdvances(partial int) {
 			}
 
 			txt := fontFace2fontFace(&siter.styleSel.Face).layout(chunk.s[:len], 1e6)
-			for _, line := range txt.Lines {
-				rtxt.adv = append(rtxt.adv, line.Text.Advances...)
+			for _, line := range txt {
+				for i := range line.Layout {
+					rtxt.adv = append(rtxt.adv, line.Layout[i].Advance)
+				}
 			}
 
 			siter.AdvanceTo(pos + len)

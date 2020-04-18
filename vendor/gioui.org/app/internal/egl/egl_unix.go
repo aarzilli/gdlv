@@ -1,18 +1,20 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
-// +build linux freebsd
+// +build linux freebsd openbsd
 
 package egl
 
 /*
-#cgo LDFLAGS: -lEGL
+#cgo linux,!android  pkg-config: egl
+#cgo freebsd openbsd android LDFLAGS: -lEGL
 #cgo freebsd CFLAGS: -I/usr/local/include
 #cgo freebsd LDFLAGS: -L/usr/local/lib
+#cgo openbsd CFLAGS: -I/usr/X11R6/include
+#cgo openbsd LDFLAGS: -L/usr/X11R6/lib
+#cgo CFLAGS: -DMESA_EGL_NO_X11_HEADERS
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
-#include <GLES2/gl2.h>
-#include <GLES3/gl3.h>
 */
 import "C"
 

@@ -17,10 +17,13 @@ const (
 	DEPTH_BUFFER_BIT                      = 0x100
 	DEPTH_ATTACHMENT                      = 0x8d00
 	DEPTH_COMPONENT16                     = 0x81a5
+	DEPTH_COMPONENT24                     = 0x81A6
+	DEPTH_COMPONENT32F                    = 0x8CAC
 	DEPTH_TEST                            = 0xb71
 	DST_COLOR                             = 0x306
 	ELEMENT_ARRAY_BUFFER                  = 0x8893
 	EXTENSIONS                            = 0x1f03
+	FALSE                                 = 0
 	FLOAT                                 = 0x1406
 	FRAGMENT_SHADER                       = 0x8b30
 	FRAMEBUFFER                           = 0x8d40
@@ -30,6 +33,7 @@ const (
 	HALF_FLOAT                            = 0x140b
 	HALF_FLOAT_OES                        = 0x8d61
 	INFO_LOG_LENGTH                       = 0x8B84
+	INVALID_INDEX                         = ^uint(0)
 	GREATER                               = 0x204
 	LINEAR                                = 0x2601
 	LINK_STATUS                           = 0x8b82
@@ -69,6 +73,8 @@ const (
 	TEXTURE1                              = 0x84c1
 	TRIANGLE_STRIP                        = 0x5
 	TRIANGLES                             = 0x4
+	TRUE                                  = 1
+	UNIFORM_BUFFER                        = 0x8A11
 	UNPACK_ALIGNMENT                      = 0xcf5
 	UNSIGNED_BYTE                         = 0x1401
 	UNSIGNED_SHORT                        = 0x1403
@@ -81,15 +87,15 @@ const (
 	GPU_DISJOINT_EXT = 0x8FBB
 )
 
-// Enforce Functions interface.
-var _ interface {
+type Functions interface {
 	ActiveTexture(texture Enum)
 	AttachShader(p Program, s Shader)
 	BeginQuery(target Enum, query Query)
 	BindAttribLocation(p Program, a Attrib, name string)
 	BindBuffer(target Enum, b Buffer)
+	BindBufferBase(target Enum, index int, buffer Buffer)
 	BindFramebuffer(target Enum, fb Framebuffer)
-	BindRenderbuffer(target Enum, rb Renderbuffer)
+	BindRenderbuffer(target Enum, fb Renderbuffer)
 	BindTexture(target Enum, t Texture)
 	BlendEquation(mode Enum)
 	BlendFunc(sfactor, dfactor Enum)
@@ -110,7 +116,7 @@ var _ interface {
 	DeleteFramebuffer(v Framebuffer)
 	DeleteProgram(p Program)
 	DeleteQuery(query Query)
-	DeleteRenderbuffer(v Renderbuffer)
+	DeleteRenderbuffer(r Renderbuffer)
 	DeleteShader(s Shader)
 	DeleteTexture(v Texture)
 	DepthFunc(f Enum)
@@ -122,13 +128,10 @@ var _ interface {
 	Enable(cap Enum)
 	EnableVertexAttribArray(a Attrib)
 	EndQuery(target Enum)
-	Finish()
-	FramebufferRenderbuffer(target, attachment, renderbuffertarget Enum, renderbuffer Renderbuffer)
 	FramebufferTexture2D(target, attachment, texTarget Enum, t Texture, level int)
+	FramebufferRenderbuffer(target, attachment, renderbuffertarget Enum, renderbuffer Renderbuffer)
 	GetBinding(pname Enum) Object
 	GetError() Enum
-	GetRenderbufferParameteri(target, pname Enum) int
-	GetFramebufferAttachmentParameteri(target, attachment, pname Enum) int
 	GetInteger(pname Enum) int
 	GetProgrami(p Program, pname Enum) int
 	GetProgramInfoLog(p Program) string
@@ -136,16 +139,16 @@ var _ interface {
 	GetShaderi(s Shader, pname Enum) int
 	GetShaderInfoLog(s Shader) string
 	GetString(pname Enum) string
+	GetUniformBlockIndex(p Program, name string) uint
 	GetUniformLocation(p Program, name string) Uniform
 	InvalidateFramebuffer(target, attachment Enum)
 	LinkProgram(p Program)
-	PixelStorei(pname Enum, param int32)
+	ReadPixels(x, y, width, height int, format, ty Enum, data []byte)
 	RenderbufferStorage(target, internalformat Enum, width, height int)
-	Scissor(x, y, width, height int32)
 	ShaderSource(s Shader, src string)
 	TexImage2D(target Enum, level int, internalFormat int, width, height int, format, ty Enum, data []byte)
-	TexSubImage2D(target Enum, level int, x, y, width, height int, format, ty Enum, data []byte)
 	TexParameteri(target, pname Enum, param int)
+	UniformBlockBinding(p Program, uniformBlockIndex uint, uniformBlockBinding uint)
 	Uniform1f(dst Uniform, v float32)
 	Uniform1i(dst Uniform, v int)
 	Uniform2f(dst Uniform, v0, v1 float32)
@@ -154,4 +157,4 @@ var _ interface {
 	UseProgram(p Program)
 	VertexAttribPointer(dst Attrib, size int, ty Enum, normalized bool, stride, offset int)
 	Viewport(x, y, width, height int)
-} = (*Functions)(nil)
+}

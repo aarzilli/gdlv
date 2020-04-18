@@ -1327,8 +1327,8 @@ func (win *Window) LayoutAvailableWidth() int {
 // Will return (false, false) if the last widget is visible, (true,
 // false) if it is above the visible area, (false, true) if it is
 // below the visible area
-func (win *Window) Invisible() (above, below bool) {
-	return win.LastWidgetBounds.Y < win.layout.Clip.Y, win.LastWidgetBounds.Y+win.LastWidgetBounds.H > (win.layout.Clip.Y + win.layout.Clip.H)
+func (win *Window) Invisible(slop int) (above, below bool) {
+	return (win.LastWidgetBounds.Y - slop) < win.layout.Clip.Y, (win.LastWidgetBounds.Y + win.LastWidgetBounds.H + slop) > (win.layout.Clip.Y + win.layout.Clip.H)
 }
 
 func (win *Window) At() image.Point {

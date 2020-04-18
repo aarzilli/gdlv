@@ -10,7 +10,8 @@ import (
 
 	syscall "golang.org/x/sys/windows"
 
-	"gioui.org/app/internal/gl"
+	"gioui.org/app/internal/glimpl"
+	gunsafe "gioui.org/internal/unsafe"
 )
 
 type (
@@ -56,7 +57,7 @@ func loadDLLs() error {
 	if err := loadDLL(libEGL, "libEGL.dll"); err != nil {
 		return err
 	}
-	if err := loadDLL(gl.LibGLESv2, "libGLESv2.dll"); err != nil {
+	if err := loadDLL(glimpl.LibGLESv2, "libGLESv2.dll"); err != nil {
 		return err
 	}
 	// d3dcompiler_47.dll is needed internally for shader compilation to function.
@@ -64,14 +65,11 @@ func loadDLLs() error {
 }
 
 func loadDLL(dll *syscall.LazyDLL, name string) error {
-	loadErr := dll.Load()
-	if loadErr == nil {
-		return nil
+	err := dll.Load()
+	if err != nil {
+		return fmt.Errorf("egl: failed to load %s: %v", name, err)
 	}
-	pmsg := syscall.StringToUTF16Ptr("Failed to load " + name + ". Gio requires the ANGLE OpenGL ES driver to run. A prebuilt version can be downloaded from https://gioui.org/doc/install.")
-	ptitle := syscall.StringToUTF16Ptr("Error")
-	syscall.MessageBox(0 /* HWND */, pmsg, ptitle, syscall.MB_ICONERROR|syscall.MB_SYSTEMMODAL)
-	return fmt.Errorf("egl: failed to load %s", name)
+	return nil
 }
 
 func eglChooseConfig(disp _EGLDisplay, attribs []_EGLint) (_EGLConfig, bool) {
@@ -156,7 +154,7 @@ func eglTerminate(disp _EGLDisplay) bool {
 
 func eglQueryString(disp _EGLDisplay, name _EGLint) string {
 	r, _, _ := _eglQueryString.Call(uintptr(disp), uintptr(name))
-	return gl.GoString(gl.SliceOf(r))
+	return gunsafe.GoString(gunsafe.SliceOf(r))
 }
 
 // issue34474KeepAlive calls runtime.KeepAlive as a

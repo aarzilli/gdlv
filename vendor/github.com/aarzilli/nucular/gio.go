@@ -13,7 +13,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 	"unsafe"
 
 	"gioui.org/app"
@@ -333,7 +332,7 @@ func (mw *masterWindow) updateLocked() {
 		font := mw.Style().Font
 		txt := fontFace2fontFace(&font).layout(s, -1)
 
-		bounds := image.Point{X: maxLinesWidth(txt.Lines), Y: (txt.Lines[0].Ascent + txt.Lines[0].Descent).Ceil() * 2}
+		bounds := image.Point{X: maxLinesWidth(txt), Y: (txt[0].Ascent + txt[0].Descent).Ceil() * 2}
 
 		pos := mw.size
 		pos.Y -= bounds.Y
@@ -539,11 +538,11 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 
 		case command.TextCmd:
 			txt := fontFace2fontFace(&icmd.Text.Face).layout(icmd.Text.String, -1)
-			if len(txt.Lines) <= 0 {
+			if len(txt) <= 0 {
 				continue
 			}
 
-			bounds := image.Point{X: maxLinesWidth(txt.Lines), Y: (txt.Lines[0].Ascent + txt.Lines[0].Descent).Ceil()}
+			bounds := image.Point{X: maxLinesWidth(txt), Y: (txt[0].Ascent + txt[0].Descent).Ceil()}
 			if bounds.X > icmd.W {
 				bounds.X = icmd.W
 			}
@@ -616,33 +615,26 @@ func textPadding(lines []text.Line) (padding image.Rectangle) {
 	return
 }
 
-func clipLine(line text.Line, clip image.Rectangle) (text.String, f32.Point, bool) {
+func clipLine(line text.Line, clip image.Rectangle) (text.Line, f32.Point, bool) {
 	off := fixed.Point26_6{X: fixed.I(0), Y: fixed.I(line.Ascent.Ceil())}
-	str := line.Text
-	for len(str.Advances) > 0 {
-		adv := str.Advances[0]
+	for len(line.Layout) > 0 {
+		adv := line.Layout[0].Advance
 		if (off.X + adv + line.Bounds.Max.X - line.Width).Ceil() >= clip.Min.X {
 			break
 		}
 		off.X += adv
-		_, s := utf8.DecodeRuneInString(str.String)
-		str.String = str.String[s:]
-		str.Advances = str.Advances[1:]
+		line.Layout = line.Layout[1:]
 	}
-	n := 0
 	endx := off.X
-	for i, adv := range str.Advances {
+	for i, glyph := range line.Layout {
 		if (endx + line.Bounds.Min.X).Floor() > clip.Max.X {
-			str.String = str.String[:n]
-			str.Advances = str.Advances[:i]
+			line.Layout = line.Layout[:i]
 			break
 		}
-		_, s := utf8.DecodeRuneInString(str.String[n:])
-		n += s
-		endx += adv
+		endx += glyph.Advance
 	}
 	offf := f32.Point{X: float32(off.X) / 64, Y: float32(off.Y) / 64}
-	return str, offf, true
+	return line, offf, true
 }
 
 func maxLinesWidth(lines []text.Line) int {
@@ -655,8 +647,8 @@ func maxLinesWidth(lines []text.Line) int {
 	return w
 }
 
-func drawText(ops *op.Ops, txt *text.Layout, face font.Face, fgcolor color.RGBA, pos, bounds image.Point, paintRect f32.Rectangle) {
-	clip := textPadding(txt.Lines)
+func drawText(ops *op.Ops, txt []text.Line, face font.Face, fgcolor color.RGBA, pos, bounds image.Point, paintRect f32.Rectangle) {
+	clip := textPadding(txt)
 	clip.Max = clip.Max.Add(bounds)
 
 	var stack op.StackOp
@@ -665,8 +657,8 @@ func drawText(ops *op.Ops, txt *text.Layout, face font.Face, fgcolor color.RGBA,
 
 	fc := fontFace2fontFace(&face)
 
-	for i := range txt.Lines {
-		txtstr, off, ok := clipLine(txt.Lines[i], clip)
+	for i := range txt {
+		txtstr, off, ok := clipLine(txt[i], clip)
 		if !ok {
 			continue
 		}
@@ -678,7 +670,7 @@ func drawText(ops *op.Ops, txt *text.Layout, face font.Face, fgcolor color.RGBA,
 		stack.Push(ops)
 
 		op.TransformOp{}.Offset(off).Add(ops)
-		fc.shape(txtstr).Add(ops)
+		fc.shape(txtstr.Layout).Add(ops)
 
 		paint.PaintOp{Rect: paintRect.Sub(off)}.Add(ops)
 
@@ -690,7 +682,7 @@ func drawText(ops *op.Ops, txt *text.Layout, face font.Face, fgcolor color.RGBA,
 
 type fontFace struct {
 	fnt     *opentype.Font
-	shaper  *text.Shaper
+	shaper  *text.FontRegistry
 	size    int
 	fsize   fixed.Int26_6
 	metrics ifont.Metrics
@@ -700,15 +692,15 @@ func fontFace2fontFace(f *font.Face) *fontFace {
 	return (*fontFace)(unsafe.Pointer(f))
 }
 
-func (face *fontFace) layout(str string, width int) *text.Layout {
+func (face *fontFace) layout(str string, width int) []text.Line {
 	if width < 0 {
 		width = 1e6
 	}
-	return face.shaper.Layout(face, text.Font{}, str, text.LayoutOptions{MaxWidth: width})
+	return face.shaper.LayoutString(text.Font{}, fixed.I(face.size), width, str)
 }
 
-func (face *fontFace) shape(txtstr text.String) op.CallOp {
-	return face.shaper.Shape(face, text.Font{}, txtstr)
+func (face *fontFace) shape(txtstr []text.Glyph) op.CallOp {
+	return face.shaper.Shape(text.Font{}, fixed.I(face.size), txtstr)
 }
 
 func (face *fontFace) Px(v unit.Value) int {
@@ -721,8 +713,8 @@ func ChangeFontWidthCache(size int) {
 func FontWidth(f font.Face, str string) int {
 	txt := fontFace2fontFace(&f).layout(str, -1)
 	maxw := 0
-	for i := range txt.Lines {
-		if w := txt.Lines[i].Width.Ceil(); w > maxw {
+	for i := range txt {
+		if w := txt[i].Width.Ceil(); w > maxw {
 			maxw = w
 		}
 	}
@@ -731,14 +723,14 @@ func FontWidth(f font.Face, str string) int {
 
 func glyphAdvance(f font.Face, ch rune) int {
 	txt := fontFace2fontFace(&f).layout(string(ch), 1e6)
-	return txt.Lines[0].Width.Ceil()
+	return txt[0].Width.Ceil()
 }
 
 func measureRunes(f font.Face, runes []rune) int {
 	text := fontFace2fontFace(&f).layout(string(runes), 1e6)
 	w := fixed.Int26_6(0)
-	for i := range text.Lines {
-		w += text.Lines[i].Width
+	for i := range text {
+		w += text[i].Width
 	}
 	return w.Ceil()
 }
@@ -820,11 +812,15 @@ func widgetTextWrap(o *command.Buffer, b rect.Rect, str []rune, t *textWidget, f
 
 	lines := fontFace2fontFace(&f).layout(string(str), line.W)
 
-	for _, txtline := range lines.Lines {
+	for _, txtline := range lines {
 		if line.Y+line.H >= (b.Y + b.H) {
 			break
 		}
-		widgetText(o, line, txtline.Text.String, &text, "LC", f)
+		runes := make([]rune, len(txtline.Layout))
+		for i := range txtline.Layout {
+			runes[i] = txtline.Layout[i].Rune
+		}
+		widgetText(o, line, string(runes), &text, "LC", f)
 		line.Y += FontHeight(f) + 2*t.Padding.Y
 	}
 }

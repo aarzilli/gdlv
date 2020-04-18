@@ -16,6 +16,7 @@ import (
 
 // ImageOp sets the material to an image.
 type ImageOp struct {
+	Rect    image.Rectangle
 	uniform bool
 	color   color.RGBA
 	src     *image.RGBA
@@ -48,6 +49,7 @@ func NewImageOp(src image.Image) ImageOp {
 		bounds := src.Bounds()
 		if bounds.Min == (image.Point{}) && src.Stride == bounds.Dx()*4 {
 			return ImageOp{
+				Rect:   src.Bounds(),
 				src:    src,
 				handle: new(int),
 			}
@@ -59,8 +61,9 @@ func NewImageOp(src image.Image) ImageOp {
 	dst := image.NewRGBA(image.Rectangle{
 		Max: sz,
 	})
-	draw.Draw(dst, src.Bounds(), src, image.Point{}, draw.Src)
+	draw.Draw(dst, dst.Bounds(), src, src.Bounds().Min, draw.Src)
 	return ImageOp{
+		Rect:   dst.Bounds(),
 		src:    dst,
 		handle: new(int),
 	}
@@ -82,6 +85,11 @@ func (i ImageOp) Add(o *op.Ops) {
 	}
 	data := o.Write(opconst.TypeImageLen, i.src, i.handle)
 	data[0] = byte(opconst.TypeImage)
+	bo := binary.LittleEndian
+	bo.PutUint32(data[1:], uint32(i.Rect.Min.X))
+	bo.PutUint32(data[5:], uint32(i.Rect.Min.Y))
+	bo.PutUint32(data[9:], uint32(i.Rect.Max.X))
+	bo.PutUint32(data[13:], uint32(i.Rect.Max.Y))
 }
 
 func (c ColorOp) Add(o *op.Ops) {

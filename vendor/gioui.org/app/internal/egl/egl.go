@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
-// +build linux windows freebsd
+// +build linux windows freebsd openbsd
 
 package egl
 
@@ -10,18 +10,21 @@ import (
 	"runtime"
 	"strings"
 
-	"gioui.org/app/internal/gl"
+	"gioui.org/app/internal/glimpl"
+	"gioui.org/app/internal/srgb"
+	"gioui.org/gpu/backend"
+	"gioui.org/gpu/gl"
 )
 
 type Context struct {
-	c             *gl.Functions
+	c             *glimpl.Functions
 	disp          _EGLDisplay
 	eglCtx        *eglContext
 	eglSurf       _EGLSurface
 	width, height int
 	refreshFBO    bool
 	// For sRGB emulation.
-	srgbFBO *gl.SRGBFBO
+	srgbFBO *srgb.FBO
 }
 
 type eglContext struct {
@@ -33,12 +36,11 @@ type eglContext struct {
 }
 
 var (
-	nilEGLDisplay          _EGLDisplay
-	nilEGLSurface          _EGLSurface
-	nilEGLContext          _EGLContext
-	nilEGLConfig           _EGLConfig
-	nilEGLNativeWindowType NativeWindowType
-	EGL_DEFAULT_DISPLAY    NativeDisplayType
+	nilEGLDisplay       _EGLDisplay
+	nilEGLSurface       _EGLSurface
+	nilEGLContext       _EGLContext
+	nilEGLConfig        _EGLConfig
+	EGL_DEFAULT_DISPLAY NativeDisplayType
 )
 
 const (
@@ -93,6 +95,12 @@ func NewContext(disp NativeDisplayType) (*Context, error) {
 		return nil, err
 	}
 	eglDisp := eglGetDisplay(disp)
+	// eglGetDisplay can return EGL_NO_DISPLAY yet no error
+	// (EGL_SUCCESS), in which case a default EGL display might be
+	// available.
+	if eglDisp == nilEGLDisplay {
+		eglDisp = eglGetDisplay(EGL_DEFAULT_DISPLAY)
+	}
 	if eglDisp == nilEGLDisplay {
 		return nil, fmt.Errorf("eglGetDisplay failed: 0x%x", eglGetError())
 	}
@@ -103,13 +111,17 @@ func NewContext(disp NativeDisplayType) (*Context, error) {
 	c := &Context{
 		disp:   eglDisp,
 		eglCtx: eglCtx,
-		c:      new(gl.Functions),
+		c:      new(glimpl.Functions),
 	}
 	return c, nil
 }
 
-func (c *Context) Functions() *gl.Functions {
+func (c *Context) Functions() *glimpl.Functions {
 	return c.c
+}
+
+func (c *Context) Backend() (backend.Device, error) {
+	return gl.NewBackend(c.c)
 }
 
 func (c *Context) ReleaseSurface() {
@@ -154,7 +166,7 @@ func (c *Context) MakeCurrent() error {
 	}
 	if c.srgbFBO == nil {
 		var err error
-		c.srgbFBO, err = gl.NewSRGBFBO(c.c)
+		c.srgbFBO, err = srgb.New(c.c)
 		if err != nil {
 			return err
 		}

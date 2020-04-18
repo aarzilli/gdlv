@@ -4,8 +4,11 @@ package window
 
 import (
 	"errors"
+	"fmt"
 	"image"
 	"runtime"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 	"unicode"
@@ -41,6 +44,15 @@ const _WM_REDRAW = windows.WM_USER + 0
 
 var onceMu sync.Mutex
 var mainDone = make(chan struct{})
+
+// backends is the list of potential Context
+// implementations.
+var backends []gpuAPI
+
+type gpuAPI struct {
+	priority    int
+	initializer func(w *window) (Context, error)
+}
 
 func Main() {
 	<-mainDone
@@ -185,6 +197,7 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 			Type:     pointer.Move,
 			Source:   pointer.Mouse,
 			Position: p,
+			Buttons:  w.pointerBtns,
 			Time:     windows.GetMessageTime(),
 		})
 	case windows.WM_MOUSEWHEEL:
@@ -266,6 +279,7 @@ func (w *window) scrollEvent(wParam, lParam uintptr) {
 		Type:     pointer.Move,
 		Source:   pointer.Mouse,
 		Position: p,
+		Buttons:  w.pointerBtns,
 		Scroll:   f32.Point{Y: -dist},
 		Time:     windows.GetMessageTime(),
 	})
@@ -318,6 +332,9 @@ func (w *window) draw(sync bool) {
 	windows.GetClientRect(w.hwnd, &r)
 	w.width = int(r.Right - r.Left)
 	w.height = int(r.Bottom - r.Top)
+	if w.width == 0 || w.height == 0 {
+		return
+	}
 	cfg := configForDC()
 	cfg.now = time.Now()
 	w.w.Event(FrameEvent{
@@ -341,6 +358,24 @@ func (w *window) destroy() {
 		windows.DestroyWindow(w.hwnd)
 		w.hwnd = 0
 	}
+}
+
+func (w *window) NewContext() (Context, error) {
+	sort.Slice(backends, func(i, j int) bool {
+		return backends[i].priority < backends[j].priority
+	})
+	var errs []string
+	for _, b := range backends {
+		ctx, err := b.initializer(w)
+		if err == nil {
+			return ctx, nil
+		}
+		errs = append(errs, err.Error())
+	}
+	if len(errs) > 0 {
+		return nil, fmt.Errorf("NewContext: failed to create a GPU device, tried: %s", strings.Join(errs, ", "))
+	}
+	return nil, errors.New("NewContext: no available backends")
 }
 
 func (w *window) ShowTextInput(show bool) {}
