@@ -46,6 +46,7 @@ const (
 	otherCmds commandGroup = iota
 	breakCmds
 	runCmds
+	revCmds
 	dataCmds
 	winCmds
 	scriptCmds
@@ -56,6 +57,7 @@ var commandGroupDescriptions = []struct {
 	group       commandGroup
 }{
 	{"Running the program", runCmds},
+	{"Reverse execution", revCmds},
 	{"Manipulating breakpoints", breakCmds},
 	{"Viewing program variables and memory", dataCmds},
 	{"Setting up the GUI", winCmds},
@@ -138,7 +140,15 @@ Restarts the recording at the specified (optional) breakpoint.
 Re-records the program, any arguments specified after '-r' are passed to the target program. Pass '--' to clear the arguments passed to the program.
 `},
 		{aliases: []string{"continue", "c"}, group: runCmds, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
-		{aliases: []string{"rewind", "rw"}, group: runCmds, cmdFn: rewind, helpMsg: "Run backwards until breakpoint or program termination."},
+		{aliases: []string{"rewind", "rw"}, group: revCmds, cmdFn: rewind, helpMsg: "Run backwards until breakpoint or program termination."},
+		{aliases: []string{"rev"}, group: revCmds, cmdFn: c.reverse, helpMsg: `Executes program backwards.
+		
+		rev next
+		rev step
+		rev stepout
+		rev step-instruction
+`},
+
 		{aliases: []string{"checkpoint", "check"}, cmdFn: checkpoint, helpMsg: `Creates a checkpoint at the current position.
 	
 	checkpoint [where]`},
@@ -706,6 +716,34 @@ func rewind(out io.Writer, args string) error {
 	return nil
 }
 
+func (c *Commands) reverse(out io.Writer, args string) error {
+	v := strings.SplitN(args, " ", 2)
+	if len(v) < 1 {
+		return fmt.Errorf("rev must be followed by next, step, step-instruction or stepout")
+	}
+
+	cmd := c.findCommand(v[0])
+	if cmd == nil {
+		return fmt.Errorf("unknown command %q", v[0])
+	}
+
+	const revprefix = "-rev "
+
+	switch cmd.aliases[0] {
+	case "next":
+		return next(out, revprefix+args)
+	case "step":
+		return step(out, revprefix+args)
+	case "stepout":
+		return stepout(out, revprefix+args)
+	case "step-instruction":
+		return stepInstruction(out, revprefix+args)
+	default:
+		return fmt.Errorf("rev must be followed by next, step, step-instruction or stepout")
+	}
+
+}
+
 type continueAction uint8
 
 const (
@@ -722,7 +760,7 @@ func continueUntilCompleteNext(out io.Writer, state *api.DebuggerState, op strin
 	}
 continueLoop:
 	for {
-		stateChan := client.Continue()
+		stateChan := client.DirectionCongruentContinue()
 		for state = range stateChan {
 			if state.Err != nil {
 				break continueLoop
@@ -791,6 +829,14 @@ continueCompleted:
 	return nil
 }
 
+func processRevArg(args string, normal, reverse func() (*api.DebuggerState, error)) (string, func() (*api.DebuggerState, error), bool) {
+	const revprefix = "-rev "
+	if strings.HasPrefix(args, revprefix) {
+		return strings.TrimSpace(args[len(revprefix):]), reverse, true
+	}
+	return args, normal, false
+}
+
 func step(out io.Writer, args string) error {
 	getsics := func() ([]stepIntoCall, uint64, error) {
 		state, err := client.GetState()
@@ -807,20 +853,26 @@ func step(out io.Writer, args string) error {
 		return stepIntoList(*loc), state.CurrentThread.PC, nil
 	}
 
+	args, stepfn, isrev := processRevArg(args, client.Step, client.ReverseStep)
+
+	if isrev && args != "" && args != "-first" {
+		return fmt.Errorf("can not reverse step with arguments")
+	}
+
 	if args == "" {
 		args = conf.DefaultStepBehaviour
 	}
 
 	switch args {
 	case "", "-first":
-		return stepIntoFirst(out)
+		return stepIntoFirst(out, stepfn)
 
 	case "-last":
 		sics, _, _ := getsics()
 		if len(sics) > 0 {
 			return stepInto(out, sics[len(sics)-1])
 		} else {
-			return stepIntoFirst(out)
+			return stepIntoFirst(out, client.Step)
 		}
 
 	case "-list":
@@ -848,8 +900,8 @@ func step(out io.Writer, args string) error {
 	return nil
 }
 
-func stepIntoFirst(out io.Writer) error {
-	state, err := client.Step()
+func stepIntoFirst(out io.Writer, stepfn func() (*api.DebuggerState, error)) error {
+	state, err := stepfn()
 	if err != nil {
 		return err
 	}
@@ -893,13 +945,14 @@ func stepInto(out io.Writer, sic stepIntoCall) error {
 		}
 	}
 	if bpfound {
-		return stepIntoFirst(out)
+		return stepIntoFirst(out, client.Step)
 	}
 	return nil
 }
 
 func stepInstruction(out io.Writer, args string) error {
-	state, err := client.StepInstruction()
+	args, stepfn, _ := processRevArg(args, client.StepInstruction, client.ReverseStepInstruction)
+	state, err := stepfn()
 	if err != nil {
 		return err
 	}
@@ -909,7 +962,8 @@ func stepInstruction(out io.Writer, args string) error {
 }
 
 func next(out io.Writer, args string) error {
-	state, err := client.Next()
+	args, stepfn, _ := processRevArg(args, client.Next, client.ReverseNext)
+	state, err := stepfn()
 	if err != nil {
 		return err
 	}
@@ -918,7 +972,8 @@ func next(out io.Writer, args string) error {
 }
 
 func stepout(out io.Writer, args string) error {
-	state, err := client.StepOut()
+	args, stepfn, _ := processRevArg(args, client.StepOut, client.ReverseStepOut)
+	state, err := stepfn()
 	if err != nil {
 		return err
 	}
@@ -1792,6 +1847,16 @@ func parseCommand(cmdstr string) (string, string) {
 	return vals[0], strings.TrimSpace(vals[1])
 }
 
+func (c *Commands) findCommand(cmdstr string) *command {
+	for i := range c.cmds {
+		v := &c.cmds[i]
+		if v.match(cmdstr) {
+			return v
+		}
+	}
+	return nil
+}
+
 // Find will look up the command function for the given command input.
 // If it cannot find the command it will default to noCmdAvailable().
 // If the command is an empty string it will replay the last command.
@@ -1804,11 +1869,9 @@ func (c *Commands) Find(cmdstr string) cmdfunc {
 		return nullCommand
 	}
 
-	for _, v := range c.cmds {
-		if v.match(cmdstr) {
-			c.lastCmd = v.cmdFn
-			return v.cmdFn
-		}
+	if v := c.findCommand(cmdstr); v != nil {
+		c.lastCmd = v.cmdFn
+		return v.cmdFn
 	}
 
 	return func(out io.Writer, argstr string) error {
