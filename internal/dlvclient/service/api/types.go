@@ -42,6 +42,8 @@ type Breakpoint struct {
 	Name string `json:"name"`
 	// Addr is the address of the breakpoint.
 	Addr uint64 `json:"addr"`
+	// Addrs is the list of addresses for this breakpoint.
+	Addrs []uint64 `json:"addrs"`
 	// File is the source file for the breakpoint.
 	File string `json:"file"`
 	// Line is a line in File for the breakpoint.
@@ -115,6 +117,7 @@ type Location struct {
 	File     string    `json:"file"`
 	Line     int       `json:"line"`
 	Function *Function `json:"function,omitempty"`
+	PCs      []uint64  `json:"pcs,omitempty"`
 }
 
 type Stackframe struct {

@@ -603,7 +603,7 @@ func updateThreads(container *nucular.Window) {
 		w.SelectableLabel(fmt.Sprintf("%*d", d, thread.ID), "LT", &selected)
 
 		w.LayoutFitWidth(threadsPanel.id, 1)
-		loc := api.Location{thread.PC, thread.File, thread.Line, thread.Function}
+		loc := api.Location{thread.PC, thread.File, thread.Line, thread.Function, nil}
 		w.SelectableLabel(formatLocation2(loc), "LT", &selected)
 
 		if selected && curThread != thread.ID && !client.Running() {

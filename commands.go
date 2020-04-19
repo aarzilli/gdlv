@@ -413,6 +413,7 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 	}
 	for _, loc := range locs {
 		requestedBp.Addr = loc.PC
+		requestedBp.Addrs = loc.PCs
 		setBreakpointEx(out, requestedBp)
 	}
 	return nil
@@ -440,6 +441,12 @@ func setBreakpointEx(out io.Writer, requestedBp *api.Breakpoint) {
 	}
 
 	fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
+	if len(bp.Addrs) > 1 {
+		fmt.Fprintf(out, "\tother addresses:")
+		for _, addr := range bp.Addrs {
+			fmt.Fprintf(out, " %#x", addr)
+		}
+	}
 	freezeBreakpoint(out, bp)
 }
 
