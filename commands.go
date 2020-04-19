@@ -398,7 +398,7 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 	}
 
 	requestedBp.Tracepoint = tracepoint
-	locs, err := client.FindLocation(currentEvalScope(), locspec)
+	locs, err := client.FindLocation(currentEvalScope(), locspec, true)
 	if err != nil {
 		if requestedBp.Name == "" {
 			return err
@@ -406,7 +406,7 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 		requestedBp.Name = ""
 		locspec = argstr
 		var err2 error
-		locs, err2 = client.FindLocation(currentEvalScope(), locspec)
+		locs, err2 = client.FindLocation(currentEvalScope(), locspec, true)
 		if err2 != nil {
 			return err
 		}
@@ -1033,7 +1033,7 @@ func detailsVar(out io.Writer, args string) error {
 }
 
 func listCommand(out io.Writer, args string) error {
-	locs, err := client.FindLocation(currentEvalScope(), args)
+	locs, err := client.FindLocation(currentEvalScope(), args, false)
 	if err != nil {
 		return err
 	}

@@ -231,8 +231,9 @@ type AttachedToExistingProcessOut struct {
 }
 
 type FindLocationIn struct {
-	Scope api.EvalScope
-	Loc   string
+	Scope                     api.EvalScope
+	Loc                       string
+	IncludeNonExecutableLines bool
 }
 
 type FindLocationOut struct {
