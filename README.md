@@ -31,6 +31,12 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2020-04-25 / Version 1.4
+* Support reverse step/next/stepout
+* Support logical breakpoints
+* Fixes copying from scrollback editor
+* Fixes listing recentering on current line after a target resume
+
 ## 2020-03-27 / Version 1.3
 * Show goroutine labels
 * Support interrupting a recording
