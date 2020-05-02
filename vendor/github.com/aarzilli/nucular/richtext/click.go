@@ -16,6 +16,11 @@ import (
 )
 
 func (rtxt *RichText) handleClick(w *nucular.Window, r rect.Rect, in *nucular.Input, styleSel styleSel, line *line, chunkIdx int, hovering *bool, linkClick *int32) {
+	defer func() {
+		if rtxt.Sel.S > rtxt.Sel.E {
+			rtxt.Sel.E = rtxt.Sel.S
+		}
+	}()
 	if rtxt.flags&Selectable == 0 && !styleSel.isLink && rtxt.flags&Clipboard == 0 && styleSel.Tooltip == nil && rtxt.flags&Keyboard == 0 {
 		return
 	}
