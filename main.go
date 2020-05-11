@@ -171,7 +171,7 @@ var listingPanel struct {
 	recenterListing     bool
 	recenterDisassembly bool
 	listing             []listline
-	text                api.AsmInstructions
+	text                []wrappedInstruction
 	framePC             uint64
 	pinnedLoc           *api.Location
 	stale               bool
@@ -180,6 +180,10 @@ var listingPanel struct {
 
 	stepIntoInfo   stepIntoInfo
 	stepIntoFilled bool
+
+	disassHoverIdx      int
+	disassHoverClickIdx int
+	centerOnDisassHover bool
 }
 
 var wnd nucular.MasterWindow
@@ -780,6 +784,8 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 func loadDisassembly(p *asyncLoad) {
 	listingPanel.text = nil
 	listingPanel.recenterDisassembly = true
+	listingPanel.disassHoverIdx = -1
+	listingPanel.disassHoverClickIdx = -1
 
 	loc := disassemblyPanel.loc
 
@@ -794,7 +800,7 @@ func loadDisassembly(p *asyncLoad) {
 			return
 		}
 
-		listingPanel.text = text
+		listingPanel.text = wrapInstructions(text, loc.PC)
 		listingPanel.framePC = loc.PC
 	} else {
 		listingPanel.text = nil

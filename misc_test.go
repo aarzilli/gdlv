@@ -3,6 +3,7 @@ package main
 import (
 	"testing"
 
+	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/gdlv/internal/prettyprint"
 )
 
@@ -42,4 +43,23 @@ func TestCurrentColumn(t *testing.T) {
 	c("something\nblah", 4)
 	c("something\nsomething else\nb", 1)
 	c("something\nsomething else\nblah", 4)
+}
+
+func TestWrapInstruction(t *testing.T) {
+	c := func(src, tgtop, tgtargs string) {
+		out := wrapInstructions([]api.AsmInstruction{{Text: src}}, 0)
+		if out[0].op != tgtop || out[0].args != tgtargs {
+			t.Errorf("for %q expected op=%q arg=%q got op=%q arg=%q", src, tgtop, tgtargs, out[0].op, out[0].args)
+		} else {
+			t.Logf("for %q got op=%q arg=%q", src, out[0].op, out[0].args)
+		}
+	}
+
+	c("blah", "blah", "")
+	c("rep blah", "rep blah", "")
+	c("blah arg1, arg2", "blah", "arg1, arg2")
+	c("rep blah arg1, arg2", "rep blah", "arg1, arg2")
+	c("rep lock blah arg1, arg2", "rep lock blah", "arg1, arg2")
+	c("rex.w blah", "rex.w blah", "")
+	c("rex.w blah arg1", "rex.w blah", "arg1")
 }

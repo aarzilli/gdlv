@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -1418,17 +1419,33 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		listp.Label(fmt.Sprintf("TEXT %s(SB) %s", listingPanel.text[0].Loc.Function.Name(), listingPanel.text[0].Loc.File), "LC")
 	}
 
+	oldDisassHoverIdx := listingPanel.disassHoverIdx
+	listingPanel.disassHoverIdx = -1
+
+	reachableColor := style.Text.Color
+	unreachableColor := style.Text.Color
+	darken(&unreachableColor)
+
 	for gl.Next() {
 		instr := listingPanel.text[gl.Index()]
+
+		if !instr.reach {
+			style.Text.Color = unreachableColor
+		} else {
+			style.Text.Color = reachableColor
+		}
+
 		if instr.Loc.File != lastfile || instr.Loc.Line != lastlineno {
-			listp.Row(lineheight).Static()
-			listp.Row(lineheight).Static()
-			text := ""
-			if instr.Loc.File == listingPanel.file && instr.Loc.Line-1 < len(listingPanel.listing) && instr.Loc.Line-1 > 0 {
-				text = strings.TrimSpace(listingPanel.listing[instr.Loc.Line-1].text)
+			if instr.Loc.File != listingPanel.file || strings.ToLower(filepath.Ext(listingPanel.file)) != ".s" {
+				listp.Row(lineheight).Static()
+				listp.Row(lineheight).Static()
+				text := ""
+				if instr.Loc.File == listingPanel.file && instr.Loc.Line-1 < len(listingPanel.listing) && instr.Loc.Line-1 > 0 {
+					text = strings.TrimSpace(listingPanel.listing[instr.Loc.Line-1].text)
+				}
+				listp.LayoutFitWidth(listingPanel.id, 1)
+				listp.Label(fmt.Sprintf("%s:%d: %s", instr.Loc.File, instr.Loc.Line, text), "LC")
 			}
-			listp.LayoutFitWidth(listingPanel.id, 1)
-			listp.Label(fmt.Sprintf("%s:%d: %s", instr.Loc.File, instr.Loc.Line, text), "LC")
 			lastfile, lastlineno = instr.Loc.File, instr.Loc.Line
 		}
 		listp.Row(lineheight).Static()
@@ -1443,6 +1460,20 @@ func updateDisassemblyPanel(container *nucular.Window) {
 			rowbounds.W = listp.Bounds.W
 			cmds := listp.Commands()
 			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
+		}
+
+		if gl.Index() == listingPanel.disassHoverIdx || gl.Index() == listingPanel.disassHoverClickIdx {
+			if listingPanel.centerOnDisassHover {
+				listingPanel.centerOnDisassHover = false
+				gl.Center()
+			}
+			rowbounds := listp.WidgetBounds()
+			rowbounds.X = listp.Bounds.X
+			rowbounds.W = listp.Bounds.W
+			cmds := listp.Commands()
+			c := style.Selectable.PressedActive.Data.Color
+			darken(&c)
+			cmds.FillRect(rowbounds, 0, c)
 		}
 
 		breakpointIcon(listp, instr.Breakpoint, true, "CC", style)
@@ -1460,11 +1491,142 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		listp.LayoutFitWidth(listingPanel.id, 10)
 		listp.Label(fmt.Sprintf("%x", instr.Loc.PC), "LC")
 		listp.LayoutFitWidth(listingPanel.id, 100)
-		listp.Label(instr.Text, "LC")
+		listp.Label(instr.op, "LC")
+		listp.LayoutFitWidth(listingPanel.id, 100)
+		listp.Label(instr.args, "LC")
+
+		if listp.Input().Mouse.HoveringRect(listp.LastWidgetBounds) {
+			if instr.dstidx >= 0 {
+				if listp.Input().Mouse.IsClickInRect(mouse.ButtonLeft, listp.LastWidgetBounds) {
+					listingPanel.disassHoverClickIdx = instr.dstidx
+					listingPanel.centerOnDisassHover = true
+				}
+				if listingPanel.disassHoverIdx != instr.dstidx {
+					listingPanel.disassHoverIdx = instr.dstidx
+				}
+			}
+		}
 
 		if listingPanel.recenterDisassembly && centerline {
 			listingPanel.recenterDisassembly = false
 			gl.Center()
 		}
 	}
+
+	style.Text.Color = reachableColor
+
+	if oldDisassHoverIdx != listingPanel.disassHoverIdx {
+		listp.Master().Changed()
+	}
+}
+
+type wrappedInstruction struct {
+	api.AsmInstruction
+
+	op     string
+	args   string
+	reach  bool
+	dstidx int
+}
+
+var asmprefixes = map[string]bool{
+	"cs":       true,
+	"ds":       true,
+	"es":       true,
+	"fs":       true,
+	"gs":       true,
+	"ss":       true,
+	"lock":     true,
+	"rep":      true,
+	"repn":     true,
+	"repne":    true,
+	"addr16":   true,
+	"data16":   true,
+	"addr32":   true,
+	"data32":   true,
+	"bnd":      true,
+	"xacquire": true,
+	"xrelease": true,
+	"pt":       true,
+	"pn":       true,
+}
+
+func wrapInstructions(text api.AsmInstructions, curpc uint64) []wrappedInstruction {
+	r := make([]wrappedInstruction, len(text))
+	for i := range text {
+		r[i].AsmInstruction = text[i]
+
+		cur := 0
+		for {
+			n := strings.Index(text[i].Text[cur:], " ")
+			if n < 0 {
+				cur = len(text[i].Text)
+				break
+			}
+			op := strings.ToLower(strings.TrimSpace(text[i].Text[cur : cur+n]))
+			cur += n + 1
+			if !asmprefixes[op] && !strings.HasPrefix(op, "rex.") {
+				break
+			}
+		}
+
+		r[i].op = strings.TrimSpace(text[i].Text[:cur])
+		r[i].args = text[i].Text[cur:]
+	}
+
+	marked := make(map[uint64]bool, len(r))
+	fringe := make(map[uint64]bool, len(r))
+
+	fringe[curpc] = true
+
+	fringepop := func() uint64 {
+		for pc := range fringe {
+			delete(fringe, pc)
+			return pc
+		}
+		return 0
+	}
+
+	fringepush := func(pc uint64) {
+		if marked[pc] {
+			return
+		}
+		fringe[pc] = true
+	}
+
+	findinstr := func(pc uint64) int {
+		for i := range r {
+			if r[i].Loc.PC == pc {
+				return i
+			}
+		}
+		return -1
+	}
+
+	for len(fringe) > 0 {
+		pc := fringepop()
+
+		for i := findinstr(pc); i >= 0 && i < len(r); i++ {
+			marked[r[i].Loc.PC] = true
+			r[i].reach = true
+			dstpc, err := strconv.ParseUint(r[i].args, 0, 64)
+			if err == nil {
+				fringepush(dstpc)
+			}
+			if strings.ToLower(r[i].op) == "jmp" {
+				break
+			}
+		}
+	}
+
+	for i := range r {
+		dstpc, err := strconv.ParseUint(r[i].args, 0, 64)
+		if err != nil {
+			r[i].dstidx = -1
+			continue
+		}
+		r[i].dstidx = findinstr(dstpc)
+	}
+
+	return r
 }
