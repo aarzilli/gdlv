@@ -218,6 +218,7 @@ func init() {
 	runeToCode[key.NameDeleteForward] = mkey.CodeDeleteForward
 	runeToCode[key.NamePageUp] = mkey.CodePageUp
 	runeToCode[key.NamePageDown] = mkey.CodePageDown
+	runeToCode[key.NameTab] = mkey.CodeTab
 }
 
 func gio2mobileKey(e key.Event) mkey.Event {
