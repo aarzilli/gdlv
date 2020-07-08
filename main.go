@@ -618,6 +618,11 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 			wnd.Unlock()
 			return
 		}
+	} else if state != nil && state.Err != nil {
+		state2, err := client.GetState()
+		if err == nil && state2.Err == nil {
+			state = state2
+		}
 	}
 
 	wnd.Lock()
