@@ -996,6 +996,7 @@ func interrupt(out io.Writer, args string) error {
 		close(BackendServer.stdinChan)
 		return nil
 	}
+	StarlarkEnv.Cancel()
 	state, err := client.GetStateNonBlocking()
 	if err == nil && state.Recording {
 		return client.StopRecording()

@@ -164,13 +164,10 @@ func (p *parser) parseDefStmt() Stmt {
 	p.consume(COLON)
 	body := p.parseSuite()
 	return &DefStmt{
-		Def:  defpos,
-		Name: id,
-		Function: Function{
-			StartPos: defpos,
-			Params:   params,
-			Body:     body,
-		},
+		Def:    defpos,
+		Name:   id,
+		Params: params,
+		Body:   body,
 	}
 }
 
@@ -417,7 +414,7 @@ func (p *parser) consume(t Token) Position {
 	return p.nextToken()
 }
 
-// params = (param COMMA)* param
+// params = (param COMMA)* param COMMA?
 //        |
 //
 // param = IDENT
@@ -435,22 +432,16 @@ func (p *parser) consume(t Token) Position {
 //      *Unary{Op: STARSTAR, X: *Ident}                 **kwargs
 func (p *parser) parseParams() []Expr {
 	var params []Expr
-	stars := false
 	for p.tok != RPAREN && p.tok != COLON && p.tok != EOF {
 		if len(params) > 0 {
 			p.consume(COMMA)
 		}
 		if p.tok == RPAREN {
-			// list can end with a COMMA if there is neither * nor **
-			if stars {
-				p.in.errorf(p.in.pos, "got %#v, want parameter", p.tok)
-			}
 			break
 		}
 
 		// * or *args or **kwargs
 		if p.tok == STAR || p.tok == STARSTAR {
-			stars = true
 			op := p.tok
 			pos := p.nextToken()
 			var x Expr
@@ -569,11 +560,8 @@ func (p *parser) parseLambda(allowCond bool) Expr {
 
 	return &LambdaExpr{
 		Lambda: lambda,
-		Function: Function{
-			StartPos: lambda,
-			Params:   params,
-			Body:     []Stmt{&ReturnStmt{Result: body}},
-		},
+		Params: params,
+		Body:   body,
 	}
 }
 
@@ -736,22 +724,16 @@ func (p *parser) parseCallSuffix(fn Expr) Expr {
 // arg_list = ((arg COMMA)* arg COMMA?)?
 func (p *parser) parseArgs() []Expr {
 	var args []Expr
-	stars := false
 	for p.tok != RPAREN && p.tok != EOF {
 		if len(args) > 0 {
 			p.consume(COMMA)
 		}
 		if p.tok == RPAREN {
-			// list can end with a COMMA if there is neither * nor **
-			if stars {
-				p.in.errorf(p.in.pos, `got %#v, want argument`, p.tok)
-			}
 			break
 		}
 
 		// *args or **kwargs
 		if p.tok == STAR || p.tok == STARSTAR {
-			stars = true
 			op := p.tok
 			pos := p.nextToken()
 			x := p.parseTest()
