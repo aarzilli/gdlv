@@ -60,6 +60,9 @@ func (f *Font) parseGPOSKern(buf []byte) ([]byte, []kernFunc, error) {
 
 	// get all lookup indices for kern features
 	buf, lookupIdx, err := f.parseGPOSFeaturesLookup(buf, int(f.gpos.offset)+int(featureListOffset), featureIdxs, hexFeatureKern)
+	if err != nil {
+		return buf, nil, err
+	}
 
 	// LookupTableList: lookupCount,[]lookups
 	buf, numLookupTables, err := f.src.varLenView(buf, int(f.gpos.offset)+int(lookupListOffset), 2, 0, 2)
@@ -284,6 +287,9 @@ func (f *Font) parseGPOSScriptFeatures(buf []byte, offset int, script uint32) ([
 
 	// LangSys table: lookupOrder (reserved), requiredFeatureIndex, featureIndexCount, []featureIndices
 	buf, numFeatures, err := f.src.varLenView(buf, offset+int(scriptTableOffset)+int(defaultLangSysOffset), 6, 4, 2)
+	if err != nil {
+		return buf, nil, err
+	}
 
 	featureIdxs := make([]int, numFeatures)
 	for i := range featureIdxs {

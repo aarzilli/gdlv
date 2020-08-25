@@ -70,8 +70,6 @@ func (c *Context) Release() {
 	c.ReleaseSurface()
 	if c.eglCtx != nil {
 		eglDestroyContext(c.disp, c.eglCtx.ctx)
-		eglTerminate(c.disp)
-		eglReleaseThread()
 		c.eglCtx = nil
 	}
 	c.disp = nilEGLDisplay
@@ -168,12 +166,16 @@ func (c *Context) MakeCurrent() error {
 		var err error
 		c.srgbFBO, err = srgb.New(c.c)
 		if err != nil {
+			c.ReleaseCurrent()
 			return err
 		}
 	}
 	if c.refreshFBO {
 		c.refreshFBO = false
-		return c.srgbFBO.Refresh(c.width, c.height)
+		if err := c.srgbFBO.Refresh(c.width, c.height); err != nil {
+			c.ReleaseCurrent()
+			return err
+		}
 	}
 	return nil
 }
@@ -212,10 +214,12 @@ func createContext(disp _EGLDisplay) (*eglContext, error) {
 		_EGL_CONFIG_CAVEAT, _EGL_NONE,
 	}
 	if srgb {
-		if runtime.GOOS == "linux" {
+		if runtime.GOOS == "linux" || runtime.GOOS == "android" {
 			// Some Mesa drivers crash if an sRGB framebuffer is requested without alpha.
 			// https://bugs.freedesktop.org/show_bug.cgi?id=107782.
-			attribs = append(attribs, _EGL_ALPHA_SIZE, 1)
+			//
+			// Also, some Android devices (Samsung S9) needs alpha for sRGB to work.
+			attribs = append(attribs, _EGL_ALPHA_SIZE, 8)
 		}
 		// Only request a depth buffer if we're going to render directly to the framebuffer.
 		attribs = append(attribs, _EGL_DEPTH_SIZE, 16)

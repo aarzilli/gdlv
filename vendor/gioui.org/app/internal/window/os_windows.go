@@ -6,17 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 	"unicode"
+	"unicode/utf16"
 	"unsafe"
 
 	syscall "golang.org/x/sys/windows"
 
 	"gioui.org/app/internal/windows"
+	"gioui.org/unit"
 
 	"gioui.org/f32"
 	"gioui.org/io/key"
@@ -24,7 +27,15 @@ import (
 	"gioui.org/io/system"
 )
 
-var winMap = make(map[syscall.Handle]*window)
+type winConstraints struct {
+	minWidth, minHeight int32
+	maxWidth, maxHeight int32
+}
+
+type winDeltas struct {
+	width  int32
+	height int32
+}
 
 type window struct {
 	hwnd        syscall.Handle
@@ -38,32 +49,41 @@ type window struct {
 
 	mu        sync.Mutex
 	animating bool
+
+	minmax winConstraints
+	deltas winDeltas
+	opts   *Options
 }
 
 const _WM_REDRAW = windows.WM_USER + 0
-
-var onceMu sync.Mutex
-var mainDone = make(chan struct{})
-
-// backends is the list of potential Context
-// implementations.
-var backends []gpuAPI
 
 type gpuAPI struct {
 	priority    int
 	initializer func(w *window) (Context, error)
 }
 
+// backends is the list of potential Context
+// implementations.
+var backends []gpuAPI
+
+// winMap maps win32 HWNDs to *windows.
+var winMap sync.Map
+
+var resources struct {
+	once sync.Once
+	// handle is the module handle from GetModuleHandle.
+	handle syscall.Handle
+	// class is the Gio window class from RegisterClassEx.
+	class uint16
+	// cursor is the arrow cursor resource
+	cursor syscall.Handle
+}
+
 func Main() {
-	<-mainDone
+	select {}
 }
 
 func NewWindow(window Callbacks, opts *Options) error {
-	onceMu.Lock()
-	defer onceMu.Unlock()
-	if len(winMap) > 0 {
-		return errors.New("multiple windows are not supported")
-	}
 	cerr := make(chan error)
 	go func() {
 		// Call win32 API from a single OS thread.
@@ -75,8 +95,8 @@ func NewWindow(window Callbacks, opts *Options) error {
 		}
 		defer w.destroy()
 		cerr <- nil
-		winMap[w.hwnd] = w
-		defer delete(winMap, w.hwnd)
+		winMap.Store(w.hwnd, w)
+		defer winMap.Delete(w.hwnd)
 		w.w = window
 		w.w.SetDriver(w)
 		defer w.w.Event(system.DestroyEvent{})
@@ -86,22 +106,23 @@ func NewWindow(window Callbacks, opts *Options) error {
 		if err := w.loop(); err != nil {
 			panic(err)
 		}
-		close(mainDone)
 	}()
 	return <-cerr
 }
 
-func createNativeWindow(opts *Options) (*window, error) {
+// initResources initializes the resources global.
+func initResources() error {
 	windows.SetProcessDPIAware()
-	cfg := configForDC()
 	hInst, err := windows.GetModuleHandle()
 	if err != nil {
-		return nil, err
+		return err
 	}
+	resources.handle = hInst
 	curs, err := windows.LoadCursor(windows.IDC_ARROW)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	resources.cursor = curs
 	wcls := windows.WndClassEx{
 		CbSize:        uint32(unsafe.Sizeof(windows.WndClassEx{})),
 		Style:         windows.CS_HREDRAW | windows.CS_VREDRAW | windows.CS_OWNDC,
@@ -112,17 +133,47 @@ func createNativeWindow(opts *Options) (*window, error) {
 	}
 	cls, err := windows.RegisterClassEx(&wcls)
 	if err != nil {
-		return nil, err
+		return err
 	}
+	resources.class = cls
+	return nil
+}
+
+func getWindowConstraints(cfg unit.Metric, opts *Options, d winDeltas) winConstraints {
+	var minmax winConstraints
+	minmax.minWidth = int32(cfg.Px(opts.MinWidth))
+	minmax.minHeight = int32(cfg.Px(opts.MinHeight))
+	minmax.maxWidth = int32(cfg.Px(opts.MaxWidth))
+	minmax.maxHeight = int32(cfg.Px(opts.MaxHeight))
+	return minmax
+}
+
+func createNativeWindow(opts *Options) (*window, error) {
+	var resErr error
+	resources.once.Do(func() {
+		resErr = initResources()
+	})
+	if resErr != nil {
+		return nil, resErr
+	}
+	dpi := windows.GetSystemDPI()
+	cfg := configForDPI(dpi)
 	wr := windows.Rect{
 		Right:  int32(cfg.Px(opts.Width)),
 		Bottom: int32(cfg.Px(opts.Height)),
 	}
 	dwStyle := uint32(windows.WS_OVERLAPPEDWINDOW)
 	dwExStyle := uint32(windows.WS_EX_APPWINDOW | windows.WS_EX_WINDOWEDGE)
+	deltas := winDeltas{
+		width:  wr.Right,
+		height: wr.Bottom,
+	}
 	windows.AdjustWindowRectEx(&wr, dwStyle, 0, dwExStyle)
+	deltas.width = wr.Right - wr.Left - deltas.width
+	deltas.height = wr.Bottom - wr.Top - deltas.height
+
 	hwnd, err := windows.CreateWindowEx(dwExStyle,
-		cls,
+		resources.class,
 		opts.Title,
 		dwStyle|windows.WS_CLIPSIBLINGS|windows.WS_CLIPCHILDREN,
 		windows.CW_USEDEFAULT, windows.CW_USEDEFAULT,
@@ -130,13 +181,16 @@ func createNativeWindow(opts *Options) (*window, error) {
 		wr.Bottom-wr.Top,
 		0,
 		0,
-		hInst,
+		resources.handle,
 		0)
 	if err != nil {
 		return nil, err
 	}
 	w := &window{
-		hwnd: hwnd,
+		hwnd:   hwnd,
+		minmax: getWindowConstraints(cfg, opts, deltas),
+		deltas: deltas,
+		opts:   opts,
 	}
 	w.hdc, err = windows.GetDC(hwnd)
 	if err != nil {
@@ -146,7 +200,13 @@ func createNativeWindow(opts *Options) (*window, error) {
 }
 
 func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr {
-	w := winMap[hwnd]
+	win, exists := winMap.Load(hwnd)
+	if !exists {
+		return windows.DefWindowProc(hwnd, msg, wParam, lParam)
+	}
+
+	w := win.(*window)
+
 	switch msg {
 	case windows.WM_UNICHAR:
 		if wParam == windows.UNICODE_NOCHAR {
@@ -213,7 +273,22 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 		case windows.SIZE_MAXIMIZED, windows.SIZE_RESTORED:
 			w.setStage(system.StageRunning)
 		}
+	case windows.WM_GETMINMAXINFO:
+		mm := (*windows.MinMaxInfo)(unsafe.Pointer(uintptr(lParam)))
+		if w.minmax.minWidth > 0 || w.minmax.minHeight > 0 {
+			mm.PtMinTrackSize = windows.Point{
+				w.minmax.minWidth + w.deltas.width,
+				w.minmax.minHeight + w.deltas.height,
+			}
+		}
+		if w.minmax.maxWidth > 0 || w.minmax.maxHeight > 0 {
+			mm.PtMaxTrackSize = windows.Point{
+				w.minmax.maxWidth + w.deltas.width,
+				w.minmax.maxHeight + w.deltas.height,
+			}
+		}
 	}
+
 	return windows.DefWindowProc(hwnd, msg, wParam, lParam)
 }
 
@@ -276,7 +351,7 @@ func (w *window) scrollEvent(wParam, lParam uintptr) {
 	p := f32.Point{X: float32(np.X), Y: float32(np.Y)}
 	dist := float32(int16(wParam >> 16))
 	w.w.Event(pointer.Event{
-		Type:     pointer.Move,
+		Type:     pointer.Scroll,
 		Source:   pointer.Mouse,
 		Position: p,
 		Buttons:  w.pointerBtns,
@@ -335,15 +410,17 @@ func (w *window) draw(sync bool) {
 	if w.width == 0 || w.height == 0 {
 		return
 	}
-	cfg := configForDC()
-	cfg.now = time.Now()
+	dpi := windows.GetWindowDPI(w.hwnd)
+	cfg := configForDPI(dpi)
+	w.minmax = getWindowConstraints(cfg, w.opts, w.deltas)
 	w.w.Event(FrameEvent{
 		FrameEvent: system.FrameEvent{
+			Now: time.Now(),
 			Size: image.Point{
 				X: w.width,
 				Y: w.height,
 			},
-			Config: &cfg,
+			Metric: cfg,
 		},
 		Sync: sync,
 	})
@@ -378,6 +455,84 @@ func (w *window) NewContext() (Context, error) {
 	return nil, errors.New("NewContext: no available backends")
 }
 
+func (w *window) ReadClipboard() {
+	w.readClipboard()
+}
+
+func (w *window) readClipboard() error {
+	if err := windows.OpenClipboard(w.hwnd); err != nil {
+		return err
+	}
+	defer windows.CloseClipboard()
+	mem, err := windows.GetClipboardData(windows.CF_UNICODETEXT)
+	if err != nil {
+		return err
+	}
+	ptr, err := windows.GlobalLock(mem)
+	if err != nil {
+		return err
+	}
+	defer windows.GlobalUnlock(mem)
+	// Look for terminating null character.
+	n := 0
+	for {
+		ch := *(*uint16)(unsafe.Pointer(ptr + uintptr(n)*2))
+		if ch == 0 {
+			break
+		}
+		n++
+	}
+	var u16 []uint16
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u16))
+	hdr.Data = ptr
+	hdr.Cap = n
+	hdr.Len = n
+	content := string(utf16.Decode(u16))
+	go func() {
+		w.w.Event(system.ClipboardEvent{Text: content})
+	}()
+	return nil
+}
+
+func (w *window) WriteClipboard(s string) {
+	w.writeClipboard(s)
+}
+
+func (w *window) writeClipboard(s string) error {
+	u16 := utf16.Encode([]rune(s))
+	// Data must be null terminated.
+	u16 = append(u16, 0)
+	if err := windows.OpenClipboard(w.hwnd); err != nil {
+		return err
+	}
+	defer windows.CloseClipboard()
+	if err := windows.EmptyClipboard(); err != nil {
+		return err
+	}
+	n := len(u16) * int(unsafe.Sizeof(u16[0]))
+	mem, err := windows.GlobalAlloc(n)
+	if err != nil {
+		return err
+	}
+	ptr, err := windows.GlobalLock(mem)
+	if err != nil {
+		windows.GlobalFree(mem)
+		return err
+	}
+	var u16v []uint16
+	hdr := (*reflect.SliceHeader)(unsafe.Pointer(&u16v))
+	hdr.Data = ptr
+	hdr.Cap = len(u16)
+	hdr.Len = len(u16)
+	copy(u16v, u16)
+	windows.GlobalUnlock(mem)
+	if err := windows.SetClipboardData(windows.CF_UNICODETEXT, mem); err != nil {
+		windows.GlobalFree(mem)
+		return err
+	}
+	return nil
+}
+
 func (w *window) ShowTextInput(show bool) {}
 
 func (w *window) HDC() syscall.Handle {
@@ -388,9 +543,13 @@ func (w *window) HWND() (syscall.Handle, int, int) {
 	return w.hwnd, w.width, w.height
 }
 
+func (w *window) Close() {
+	windows.PostMessage(w.hwnd, windows.WM_CLOSE, 0, 0)
+}
+
 func convertKeyCode(code uintptr) (string, bool) {
 	if '0' <= code && code <= '9' || 'A' <= code && code <= 'Z' {
-		return string(code), true
+		return string(rune(code)), true
 	}
 	var r string
 	switch code {
@@ -474,12 +633,11 @@ func convertKeyCode(code uintptr) (string, bool) {
 	return r, true
 }
 
-func configForDC() config {
-	dpi := windows.GetSystemDPI()
+func configForDPI(dpi int) unit.Metric {
 	const inchPrDp = 1.0 / 96.0
 	ppdp := float32(dpi) * inchPrDp
-	return config{
-		pxPerDp: ppdp,
-		pxPerSp: ppdp,
+	return unit.Metric{
+		PxPerDp: ppdp,
+		PxPerSp: ppdp,
 	}
 }

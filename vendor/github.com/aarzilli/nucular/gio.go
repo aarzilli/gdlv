@@ -46,6 +46,7 @@ type masterWindow struct {
 	Title       string
 	initialSize image.Point
 	size        image.Point
+	onClose     func()
 
 	w   *app.Window
 	ops op.Ops
@@ -81,6 +82,11 @@ func (mw *masterWindow) Main() {
 	go func() {
 		mw.w = app.NewWindow(app.Title(mw.Title), app.Size(unit.Px(float32(mw.ctx.scale(mw.initialSize.X))), unit.Px(float32(mw.ctx.scale(mw.initialSize.Y)))))
 		mw.main()
+		if mw.onClose != nil {
+			mw.onClose()
+		} else {
+			os.Exit(0)
+		}
 	}()
 	go mw.updater()
 	app.Main()
@@ -95,7 +101,7 @@ func (mw *masterWindow) Unlock() {
 }
 
 func (mw *masterWindow) Close() {
-	os.Exit(0) // Bad...
+	mw.w.Close()
 }
 
 func (mw *masterWindow) Closed() bool {
@@ -104,9 +110,13 @@ func (mw *masterWindow) Closed() bool {
 	return mw.closed
 }
 
+func (mw *masterWindow) OnClose(onClose func()) {
+	mw.onClose = onClose
+}
+
 func (mw *masterWindow) main() {
-	for {
-		e := <-mw.w.Events()
+	perfString := ""
+	for e := range mw.w.Events() {
 		switch e := e.(type) {
 		case system.DestroyEvent:
 			mw.uilock.Lock()
@@ -121,10 +131,30 @@ func (mw *masterWindow) main() {
 			mw.size = e.Size
 			mw.uilock.Lock()
 			mw.prevCmds = mw.prevCmds[:0]
-			mw.updateLocked()
+			mw.updateLocked(perfString)
 			mw.uilock.Unlock()
 
 			e.Frame(&mw.ops)
+
+		case profile.Event:
+			perfString = e.Timings
+		case pointer.Event:
+			mw.uilock.Lock()
+			mw.processPointerEvent(e)
+			mw.uilock.Unlock()
+		case key.EditEvent:
+			mw.uilock.Lock()
+			io.WriteString(&mw.textbuffer, e.Text)
+			mw.uilock.Unlock()
+
+		case key.Event:
+			mw.uilock.Lock()
+			switch e.Name {
+			case key.NameEnter, key.NameReturn:
+				io.WriteString(&mw.textbuffer, "\n")
+			}
+			mw.ctx.Input.Keyboard.Keys = append(mw.ctx.Input.Keyboard.Keys, gio2mobileKey(e))
+			mw.uilock.Unlock()
 		}
 	}
 }
@@ -169,7 +199,7 @@ func (mw *masterWindow) processPointerEvent(e pointer.Event) {
 		btn.Clicked = true
 		btn.Down = down
 
-	case pointer.Move:
+	case pointer.Move, pointer.Drag, pointer.Scroll:
 		mw.ctx.Input.Mouse.Pos.X = int(e.Position.X)
 		mw.ctx.Input.Mouse.Pos.Y = int(e.Position.Y)
 		mw.ctx.Input.Mouse.Delta = mw.ctx.Input.Mouse.Pos.Sub(mw.ctx.Input.Mouse.Prev)
@@ -275,27 +305,7 @@ func (w *masterWindow) updater() {
 	}
 }
 
-func (mw *masterWindow) updateLocked() {
-	perfString := ""
-	q := mw.w.Queue()
-	for _, e := range q.Events(mw.ctx) {
-		switch e := e.(type) {
-		case profile.Event:
-			perfString = e.Timings
-		case pointer.Event:
-			mw.processPointerEvent(e)
-		case key.EditEvent:
-			io.WriteString(&mw.textbuffer, e.Text)
-
-		case key.Event:
-			switch e.Name {
-			case key.NameEnter, key.NameReturn:
-				io.WriteString(&mw.textbuffer, "\n")
-			}
-			mw.ctx.Input.Keyboard.Keys = append(mw.ctx.Input.Keyboard.Keys, gio2mobileKey(e))
-		}
-	}
-
+func (mw *masterWindow) updateLocked(perfString string) {
 	mw.ctx.Windows[0].Bounds = rect.Rect{X: 0, Y: 0, W: mw.size.X, H: mw.size.Y}
 	in := &mw.ctx.Input
 	in.Mouse.clip = nk_null_rect
@@ -341,8 +351,7 @@ func (mw *masterWindow) updateLocked() {
 
 		paintRect := f32.Rectangle{f32.Point{float32(pos.X), float32(pos.Y)}, f32.Point{float32(pos.X + bounds.X), float32(pos.Y + bounds.Y)}}
 
-		var stack op.StackOp
-		stack.Push(&mw.ops)
+		stack := op.Push(&mw.ops)
 		paint.ColorOp{Color: color.RGBA{0xff, 0xff, 0xff, 0xff}}.Add(&mw.ops)
 		paint.PaintOp{Rect: paintRect}.Add(&mw.ops)
 		stack.Pop()
@@ -367,7 +376,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 	if perf {
 		profile.Op{ctx}.Add(ops)
 	}
-	pointer.InputOp{ctx, false}.Add(ops)
+	pointer.InputOp{ctx, false, pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Scroll}.Add(ops)
 	key.InputOp{ctx, true}.Add(ops)
 
 	var scissorStack op.StackOp
@@ -380,15 +389,14 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 			if !scissorless {
 				scissorStack.Pop()
 			}
-			scissorStack.Push(ops)
-			gioclip.Rect{Rect: n2fRect(icmd.Rect)}.Op(ops).Add(ops)
+			scissorStack = op.Push(ops)
+			gioclip.Rect(icmd.Rect.Rectangle()).Add(ops)
 			scissorless = false
 
 		case command.LineCmd:
 			cmd := icmd.Line
 
-			var stack op.StackOp
-			stack.Push(ops)
+			stack := op.Push(ops)
 			paint.ColorOp{Color: cmd.Color}.Add(ops)
 
 			h1 := int(cmd.LineThickness / 2)
@@ -453,8 +461,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 			// rounding is true if rounding has been requested AND we can draw it
 			rounding := cmd.Rounding > 0 && int(cmd.Rounding*2) < icmd.W && int(cmd.Rounding*2) < icmd.H
 
-			var stack op.StackOp
-			stack.Push(ops)
+			stack := op.Push(ops)
 			paint.ColorOp{Color: cmd.Color}.Add(ops)
 
 			if rounding {
@@ -482,8 +489,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 		case command.TriangleFilledCmd:
 			cmd := icmd.TriangleFilled
 
-			var stack op.StackOp
-			stack.Push(ops)
+			stack := op.Push(ops)
 
 			paint.ColorOp{cmd.Color}.Add(ops)
 
@@ -508,8 +514,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 			stack.Pop()
 
 		case command.CircleFilledCmd:
-			var stack op.StackOp
-			stack.Push(ops)
+			stack := op.Push(ops)
 
 			paint.ColorOp{icmd.CircleFilled.Color}.Add(ops)
 
@@ -530,8 +535,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 			stack.Pop()
 
 		case command.ImageCmd:
-			var stack op.StackOp
-			stack.Push(ops)
+			stack := op.Push(ops)
 			//TODO: this should be retained between frames somehow...
 			paint.NewImageOp(icmd.Image.Img).Add(ops)
 			paint.PaintOp{n2fRect(icmd.Rect)}.Add(ops)
@@ -652,8 +656,7 @@ func drawText(ops *op.Ops, txt []text.Line, face font.Face, fgcolor color.RGBA, 
 	clip := textPadding(txt)
 	clip.Max = clip.Max.Add(bounds)
 
-	var stack op.StackOp
-	stack.Push(ops)
+	stack := op.Push(ops)
 	paint.ColorOp{fgcolor}.Add(ops)
 
 	fc := fontFace2fontFace(&face)
@@ -667,10 +670,9 @@ func drawText(ops *op.Ops, txt []text.Line, face font.Face, fgcolor color.RGBA, 
 		off.X += float32(pos.X)
 		off.Y += float32(pos.Y) + float32(i*FontHeight(face))
 
-		var stack op.StackOp
-		stack.Push(ops)
+		stack := op.Push(ops)
 
-		op.TransformOp{}.Offset(off).Add(ops)
+		op.Offset(off).Add(ops)
 		fc.shape(txtstr.Layout).Add(ops)
 
 		paint.PaintOp{Rect: paintRect.Sub(off)}.Add(ops)
@@ -683,7 +685,7 @@ func drawText(ops *op.Ops, txt []text.Line, face font.Face, fgcolor color.RGBA, 
 
 type fontFace struct {
 	fnt     *opentype.Font
-	shaper  *text.FontRegistry
+	shaper  *text.Cache
 	size    int
 	fsize   fixed.Int26_6
 	metrics ifont.Metrics

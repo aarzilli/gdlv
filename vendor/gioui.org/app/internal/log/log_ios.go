@@ -7,7 +7,7 @@ package log
 /*
 #cgo CFLAGS: -Werror -fmodules -fobjc-arc -x objective-c
 
-#include "log_ios.h"
+__attribute__ ((visibility ("hidden"))) void nslog(char *str);
 */
 import "C"
 
@@ -16,10 +16,12 @@ import (
 	"io"
 	"log"
 	"unsafe"
+
+	_ "gioui.org/app/internal/cocoainit"
 )
 
 func init() {
-	// macOS Console already includes timstamps.
+	// macOS Console already includes timestamps.
 	log.SetFlags(log.Flags() &^ log.LstdFlags)
 	log.SetOutput(newNSLogWriter())
 }

@@ -18,7 +18,7 @@ import (
 
 type fontFace struct {
 	fnt     *opentype.Font
-	shaper  *text.FontRegistry
+	shaper  *text.Cache
 	size    int
 	fsize   fixed.Int26_6
 	metrics ifont.Metrics

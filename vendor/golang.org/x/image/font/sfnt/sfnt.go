@@ -1496,6 +1496,92 @@ func (f *Font) GlyphName(b *Buffer, x GlyphIndex) (string, error) {
 	}
 }
 
+// GlyphBounds returns the bounding box of the x'th glyph, drawn at a dot equal
+// to the origin, and that glyph's advance width. ppem is the number of pixels
+// in 1 em.
+//
+// It returns ErrNotFound if the glyph index is out of range.
+//
+// The glyph's ascent and descent are equal to -bounds.Min.Y and +bounds.Max.Y.
+// The glyph's left-side and right-side bearings are equal to bounds.Min.X and
+// advance-bounds.Max.X. A visual depiction of what these metrics are is at
+// https://developer.apple.com/library/archive/documentation/TextFonts/Conceptual/CocoaTextArchitecture/Art/glyphterms_2x.png
+func (f *Font) GlyphBounds(b *Buffer, x GlyphIndex, ppem fixed.Int26_6, h font.Hinting) (bounds fixed.Rectangle26_6, advance fixed.Int26_6, err error) {
+	if int(x) >= f.NumGlyphs() {
+		return fixed.Rectangle26_6{}, 0, ErrNotFound
+	}
+	if b == nil {
+		b = &Buffer{}
+	}
+
+	// https://www.microsoft.com/typography/OTSPEC/hmtx.htm says that "As an
+	// optimization, the number of records can be less than the number of
+	// glyphs, in which case the advance width value of the last record applies
+	// to all remaining glyph IDs."
+	if n := GlyphIndex(f.cached.numHMetrics - 1); x > n {
+		x = n
+	}
+
+	buf, err := b.view(&f.src, int(f.hmtx.offset)+4*int(x), 2)
+	if err != nil {
+		return fixed.Rectangle26_6{}, 0, err
+	}
+	advance = fixed.Int26_6(u16(buf))
+	advance = scale(advance*ppem, f.cached.unitsPerEm)
+
+	// Ignore the hmtx LSB entries and the glyf bounding boxes. Instead, always
+	// calculate bounds from the segments. OpenType does contain the bounds for
+	// each glyph in the glyf table, but the bounds are not available for
+	// compound glyphs. CFF/PostScript also have no explicit bounds and must be
+	// obtained from the segments.
+
+	seg, err := f.LoadGlyph(b, x, ppem, &LoadGlyphOptions{
+		// TODO: pass h, the font.Hinting.
+	})
+	if err != nil {
+		return fixed.Rectangle26_6{}, 0, err
+	}
+
+	if len(seg) > 0 {
+		bounds.Min.X = fixed.Int26_6(+(1 << 31) - 1)
+		bounds.Min.Y = fixed.Int26_6(+(1 << 31) - 1)
+		bounds.Max.X = fixed.Int26_6(-(1 << 31) + 0)
+		bounds.Max.Y = fixed.Int26_6(-(1 << 31) + 0)
+		for _, s := range seg {
+			n := 1
+			switch s.Op {
+			case SegmentOpQuadTo:
+				n = 2
+			case SegmentOpCubeTo:
+				n = 3
+			}
+			for i := 0; i < n; i++ {
+				if bounds.Max.X < s.Args[i].X {
+					bounds.Max.X = s.Args[i].X
+				}
+				if bounds.Min.X > s.Args[i].X {
+					bounds.Min.X = s.Args[i].X
+				}
+				if bounds.Max.Y < s.Args[i].Y {
+					bounds.Max.Y = s.Args[i].Y
+				}
+				if bounds.Min.Y > s.Args[i].Y {
+					bounds.Min.Y = s.Args[i].Y
+				}
+			}
+		}
+	}
+
+	if h == font.HintingFull {
+		// Quantize the fixed.Int26_6 value to the nearest pixel.
+		advance = (advance + 32) &^ 63
+		// TODO: hinting of bounds should be handled by LoadGlyph. See TODO
+		// above.
+	}
+
+	return bounds, advance, nil
+}
+
 // GlyphAdvance returns the advance width for the x'th glyph. ppem is the
 // number of pixels in 1 em.
 //
@@ -1516,7 +1602,7 @@ func (f *Font) GlyphAdvance(b *Buffer, x GlyphIndex, ppem fixed.Int26_6, h font.
 		x = n
 	}
 
-	buf, err := b.view(&f.src, int(f.hmtx.offset)+int(4*x), 2)
+	buf, err := b.view(&f.src, int(f.hmtx.offset)+4*int(x), 2)
 	if err != nil {
 		return 0, err
 	}

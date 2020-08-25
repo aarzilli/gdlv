@@ -53,6 +53,7 @@ type masterWindow struct {
 	bounds image.Rectangle
 
 	initialSize image.Point
+	onClose     func()
 
 	// window is focused
 	Focus bool
@@ -86,6 +87,9 @@ func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, update
 // Shows window, runs event loop
 func (mw *masterWindow) Main() {
 	driver.Main(mw.main)
+	if mw.onClose != nil {
+		mw.onClose()
+	}
 }
 
 func (mw *masterWindow) Lock() {
@@ -94,6 +98,10 @@ func (mw *masterWindow) Lock() {
 
 func (mw *masterWindow) Unlock() {
 	mw.uilock.Unlock()
+}
+
+func (mw *masterWindow) OnClose(onClose func()) {
+	mw.onClose = onClose
 }
 
 func (mw *masterWindow) main(s screen.Screen) {

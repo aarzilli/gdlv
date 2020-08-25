@@ -15,7 +15,14 @@ import (
 #include <CoreGraphics/CoreGraphics.h>
 #include <AppKit/AppKit.h>
 #include <OpenGL/gl3.h>
-#include "gl_macos.h"
+
+__attribute__ ((visibility ("hidden"))) CFTypeRef gio_createGLView(void);
+__attribute__ ((visibility ("hidden"))) CFTypeRef gio_contextForView(CFTypeRef viewRef);
+__attribute__ ((visibility ("hidden"))) void gio_makeCurrentContext(CFTypeRef ctx);
+__attribute__ ((visibility ("hidden"))) void gio_flushContextBuffer(CFTypeRef ctx);
+__attribute__ ((visibility ("hidden"))) void gio_clearCurrentContext(void);
+__attribute__ ((visibility ("hidden"))) void gio_lockContext(CFTypeRef ctxRef);
+__attribute__ ((visibility ("hidden"))) void gio_unlockContext(CFTypeRef ctxRef);
 */
 import "C"
 
@@ -50,6 +57,11 @@ func (c *context) Release() {
 	c.Lock()
 	defer c.Unlock()
 	C.gio_clearCurrentContext()
+	// We could release the context with [view clearGLContext]
+	// and rely on [view openGLContext] auto-creating a new context.
+	// However that second context is not properly set up by
+	// OpenGLContextView, so we'll stay on the safe side and keep
+	// the first context around.
 }
 
 func (c *context) Present() error {

@@ -1,110 +1,14 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
 #include <jni.h>
-#include <dlfcn.h>
-#include <android/log.h>
-#include "os_android.h"
 #include "_cgo_export.h"
-
-JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
-	JNIEnv *env;
-	if ((*vm)->GetEnv(vm, (void**)&env, JNI_VERSION_1_6) != JNI_OK) {
-		return -1;
-	}
-
-	setJVM(vm);
-
-	jclass viewClass = (*env)->FindClass(env, "org/gioui/GioView");
-	if (viewClass == NULL) {
-		return -1;
-	}
-
-	static const JNINativeMethod methods[] = {
-		{
-			.name = "runGoMain",
-			.signature = "([BLandroid/content/Context;)V",
-			.fnPtr = runGoMain
-		},
-		{
-			.name = "onCreateView",
-			.signature = "(Lorg/gioui/GioView;)J",
-			.fnPtr = onCreateView
-		},
-		{
-			.name = "onDestroyView",
-			.signature = "(J)V",
-			.fnPtr = onDestroyView
-		},
-		{
-			.name = "onStartView",
-			.signature = "(J)V",
-			.fnPtr = onStartView
-		},
-		{
-			.name = "onStopView",
-			.signature = "(J)V",
-			.fnPtr = onStopView
-		},
-		{
-			.name = "onSurfaceDestroyed",
-			.signature = "(J)V",
-			.fnPtr = onSurfaceDestroyed
-		},
-		{
-			.name = "onSurfaceChanged",
-			.signature = "(JLandroid/view/Surface;)V",
-			.fnPtr = onSurfaceChanged
-		},
-		{
-			.name = "onConfigurationChanged",
-			.signature = "(J)V",
-			.fnPtr = onConfigurationChanged
-		},
-		{
-			.name = "onWindowInsets",
-			.signature = "(JIIII)V",
-			.fnPtr = onWindowInsets
-		},
-		{
-			.name = "onLowMemory",
-			.signature = "()V",
-			.fnPtr = onLowMemory
-		},
-		{
-			.name = "onTouchEvent",
-			.signature = "(JIIIFFIJ)V",
-			.fnPtr = onTouchEvent
-		},
-		{
-			.name = "onKeyEvent",
-			.signature = "(JIIJ)V",
-			.fnPtr = onKeyEvent
-		},
-		{
-			.name = "onFrameCallback",
-			.signature = "(JJ)V",
-			.fnPtr = onFrameCallback
-		},
-		{
-			.name = "onBack",
-			.signature = "(J)Z",
-			.fnPtr = onBack
-		},
-		{
-			.name = "onFocusChange",
-			.signature = "(JZ)V",
-			.fnPtr = onFocusChange
-		}
-	};
-	if ((*env)->RegisterNatives(env, viewClass, methods, sizeof(methods)/sizeof(methods[0])) != 0) {
-		return -1;
-	}
-
-	return JNI_VERSION_1_6;
-}
 
 jint gio_jni_GetEnv(JavaVM *vm, JNIEnv **env, jint version) {
 	return (*vm)->GetEnv(vm, (void **)env, version);
+}
+
+jint gio_jni_GetJavaVM(JNIEnv *env, JavaVM **jvm) {
+	return (*env)->GetJavaVM(env, jvm);
 }
 
 jint gio_jni_AttachCurrentThread(JavaVM *vm, JNIEnv **p_env, void *thr_args) {
@@ -135,10 +39,6 @@ jmethodID gio_jni_GetStaticMethodID(JNIEnv *env, jclass clazz, const char *name,
 	return (*env)->GetStaticMethodID(env, clazz, name, sig);
 }
 
-jint gio_jni_CallStaticIntMethodII(JNIEnv *env, jclass clazz, jmethodID methodID, jint a1, jint a2) {
-	return (*env)->CallStaticIntMethod(env, clazz, methodID, a1, a2);
-}
-
 jfloat gio_jni_CallFloatMethod(JNIEnv *env, jobject obj, jmethodID methodID) {
 	return (*env)->CallFloatMethod(env, obj, methodID);
 }
@@ -147,12 +47,12 @@ jint gio_jni_CallIntMethod(JNIEnv *env, jobject obj, jmethodID methodID) {
 	return (*env)->CallIntMethod(env, obj, methodID);
 }
 
-void gio_jni_CallVoidMethod(JNIEnv *env, jobject obj, jmethodID methodID) {
-	(*env)->CallVoidMethod(env, obj, methodID);
+void gio_jni_CallStaticVoidMethodA(JNIEnv *env, jclass cls, jmethodID methodID, const jvalue *args) {
+	(*env)->CallStaticVoidMethodA(env, cls, methodID, args);
 }
 
-void gio_jni_CallVoidMethod_J(JNIEnv *env, jobject obj, jmethodID methodID, jlong a1) {
-	(*env)->CallVoidMethod(env, obj, methodID, a1);
+void gio_jni_CallVoidMethodA(JNIEnv *env, jobject obj, jmethodID methodID, const jvalue *args) {
+	(*env)->CallVoidMethodA(env, obj, methodID, args);
 }
 
 jbyte *gio_jni_GetByteArrayElements(JNIEnv *env, jbyteArray arr) {
@@ -167,7 +67,30 @@ jsize gio_jni_GetArrayLength(JNIEnv *env, jbyteArray arr) {
 	return (*env)->GetArrayLength(env, arr);
 }
 
-void gio_jni_RegisterFragment(JNIEnv *env, jobject view, jmethodID mid, char* del) {
-	jstring jdel = (*env)->NewStringUTF(env, del);
-	(*env)->CallObjectMethod(env, view, mid, jdel);
+jstring gio_jni_NewString(JNIEnv *env, const jchar *unicodeChars, jsize len) {
+	return (*env)->NewString(env, unicodeChars, len);
+}
+
+jsize gio_jni_GetStringLength(JNIEnv *env, jstring str) {
+	return (*env)->GetStringLength(env, str);
+}
+
+const jchar *gio_jni_GetStringChars(JNIEnv *env, jstring str) {
+	return (*env)->GetStringChars(env, str, NULL);
+}
+
+jthrowable gio_jni_ExceptionOccurred(JNIEnv *env) {
+	return (*env)->ExceptionOccurred(env);
+}
+
+void gio_jni_ExceptionClear(JNIEnv *env) {
+	(*env)->ExceptionClear(env);
+}
+
+jobject gio_jni_CallObjectMethodA(JNIEnv *env, jobject obj, jmethodID method, jvalue *args) {
+	return (*env)->CallObjectMethodA(env, obj, method, args);
+}
+
+jobject gio_jni_CallStaticObjectMethodA(JNIEnv *env, jclass cls, jmethodID method, jvalue *args) {
+	return (*env)->CallStaticObjectMethodA(env, cls, method, args);
 }

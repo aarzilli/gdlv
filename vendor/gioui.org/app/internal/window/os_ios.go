@@ -10,8 +10,21 @@ package window
 #include <CoreGraphics/CoreGraphics.h>
 #include <UIKit/UIKit.h>
 #include <stdint.h>
-#include "os_ios.h"
 
+struct drawParams {
+	CGFloat dpi, sdpi;
+	CGFloat width, height;
+	CGFloat top, right, bottom, left;
+};
+
+__attribute__ ((visibility ("hidden"))) void gio_showTextInput(CFTypeRef viewRef);
+__attribute__ ((visibility ("hidden"))) void gio_hideTextInput(CFTypeRef viewRef);
+__attribute__ ((visibility ("hidden"))) void gio_addLayerToView(CFTypeRef viewRef, CFTypeRef layerRef);
+__attribute__ ((visibility ("hidden"))) void gio_updateView(CFTypeRef viewRef, CFTypeRef layerRef);
+__attribute__ ((visibility ("hidden"))) void gio_removeLayer(CFTypeRef layerRef);
+__attribute__ ((visibility ("hidden"))) struct drawParams gio_viewDrawParams(CFTypeRef viewRef);
+__attribute__ ((visibility ("hidden"))) CFTypeRef gio_readClipboard(void);
+__attribute__ ((visibility ("hidden"))) void gio_writeClipboard(unichar *chars, NSUInteger length);
 */
 import "C"
 
@@ -21,6 +34,8 @@ import (
 	"runtime/debug"
 	"sync/atomic"
 	"time"
+	"unicode/utf16"
+	"unsafe"
 
 	"gioui.org/f32"
 	"gioui.org/io/key"
@@ -30,8 +45,9 @@ import (
 )
 
 type window struct {
-	view C.CFTypeRef
-	w    Callbacks
+	view        C.CFTypeRef
+	w           Callbacks
+	displayLink *displayLink
 
 	layer   C.CFTypeRef
 	visible atomic.Value
@@ -55,6 +71,13 @@ func onCreate(view C.CFTypeRef) {
 	w := &window{
 		view: view,
 	}
+	dl, err := NewDisplayLink(func() {
+		w.draw(false)
+	})
+	if err != nil {
+		panic(err)
+	}
+	w.displayLink = dl
 	wopts := <-mainWindow.out
 	w.w = wopts.window
 	w.w.SetDriver(w)
@@ -65,42 +88,43 @@ func onCreate(view C.CFTypeRef) {
 	w.w.Event(system.StageEvent{Stage: system.StagePaused})
 }
 
-//export onDraw
-func onDraw(view C.CFTypeRef, dpi, sdpi, width, height C.CGFloat, sync C.int, top, right, bottom, left C.CGFloat) {
-	if width == 0 || height == 0 {
+//export gio_onDraw
+func gio_onDraw(view C.CFTypeRef) {
+	w := views[view]
+	w.draw(true)
+}
+
+func (w *window) draw(sync bool) {
+	params := C.gio_viewDrawParams(w.view)
+	if params.width == 0 || params.height == 0 {
 		return
 	}
-	w := views[view]
 	wasVisible := w.isVisible()
 	w.visible.Store(true)
-	C.gio_updateView(view, w.layer)
+	C.gio_updateView(w.view, w.layer)
 	if !wasVisible {
 		w.w.Event(system.StageEvent{Stage: system.StageRunning})
-	}
-	isSync := false
-	if sync != 0 {
-		isSync = true
 	}
 	const inchPrDp = 1.0 / 163
 	w.w.Event(FrameEvent{
 		FrameEvent: system.FrameEvent{
+			Now: time.Now(),
 			Size: image.Point{
-				X: int(width + .5),
-				Y: int(height + .5),
+				X: int(params.width + .5),
+				Y: int(params.height + .5),
 			},
 			Insets: system.Insets{
-				Top:    unit.Px(float32(top)),
-				Right:  unit.Px(float32(right)),
-				Bottom: unit.Px(float32(bottom)),
-				Left:   unit.Px(float32(left)),
+				Top:    unit.Px(float32(params.top)),
+				Right:  unit.Px(float32(params.right)),
+				Bottom: unit.Px(float32(params.bottom)),
+				Left:   unit.Px(float32(params.left)),
 			},
-			Config: &config{
-				pxPerDp: float32(dpi) * inchPrDp,
-				pxPerSp: float32(sdpi) * inchPrDp,
-				now:     time.Now(),
+			Metric: unit.Metric{
+				PxPerDp: float32(params.dpi) * inchPrDp,
+				PxPerSp: float32(params.sdpi) * inchPrDp,
 			},
 		},
-		Sync: isSync,
+		Sync: sync,
 	})
 }
 
@@ -116,6 +140,7 @@ func onDestroy(view C.CFTypeRef) {
 	w := views[view]
 	delete(views, view)
 	w.w.Event(system.DestroyEvent{})
+	w.displayLink.Close()
 	C.gio_removeLayer(w.layer)
 	C.CFRelease(w.layer)
 	w.layer = 0
@@ -194,15 +219,34 @@ func onTouch(last C.int, view, touchRef C.CFTypeRef, phase C.NSInteger, x, y C.C
 	})
 }
 
+func (w *window) ReadClipboard() {
+	runOnMain(func() {
+		content := nsstringToString(C.gio_readClipboard())
+		w.w.Event(system.ClipboardEvent{Text: content})
+	})
+}
+
+func (w *window) WriteClipboard(s string) {
+	u16 := utf16.Encode([]rune(s))
+	runOnMain(func() {
+		var chars *C.unichar
+		if len(u16) > 0 {
+			chars = (*C.unichar)(unsafe.Pointer(&u16[0]))
+		}
+		C.gio_writeClipboard(chars, C.NSUInteger(len(u16)))
+	})
+}
+
 func (w *window) SetAnimating(anim bool) {
-	if w.view == 0 {
+	v := w.view
+	if v == 0 {
 		return
 	}
-	var animi C.int
 	if anim {
-		animi = 1
+		w.displayLink.Start()
+	} else {
+		w.displayLink.Stop()
 	}
-	C.gio_setAnimating(w.view, animi)
 }
 
 func (w *window) onKeyCommand(name string) {
@@ -240,15 +284,23 @@ func (w *window) isVisible() bool {
 }
 
 func (w *window) ShowTextInput(show bool) {
-	if w.view == 0 {
+	v := w.view
+	if v == 0 {
 		return
 	}
-	if show {
-		C.gio_showTextInput(w.view)
-	} else {
-		C.gio_hideTextInput(w.view)
-	}
+	C.CFRetain(v)
+	runOnMain(func() {
+		defer C.CFRelease(v)
+		if show {
+			C.gio_showTextInput(w.view)
+		} else {
+			C.gio_hideTextInput(w.view)
+		}
+	})
 }
+
+// Close the window. Not implemented for iOS.
+func (w *window) Close() {}
 
 func NewWindow(win Callbacks, opts *Options) error {
 	mainWindow.in <- windowAndOptions{win, opts}
@@ -256,4 +308,9 @@ func NewWindow(win Callbacks, opts *Options) error {
 }
 
 func Main() {
+}
+
+//export gio_runMain
+func gio_runMain() {
+	runMain()
 }

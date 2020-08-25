@@ -6,70 +6,18 @@
 
 #include <stdint.h>
 #include "_cgo_export.h"
-#include "os_ios.h"
 #include "framework_ios.h"
 
 @interface GioView: UIView <UIKeyInput>
-- (void)setAnimating:(BOOL)anim;
-@end
-
-@interface GioViewController : UIViewController
-@property(weak) UIScreen *screen;
-@end
-
-static void redraw(CFTypeRef viewRef, BOOL sync) {
-	UIView *v = (__bridge UIView *)viewRef;
-	CGFloat scale = v.layer.contentsScale;
-	// Use 163 as the standard ppi on iOS.
-	CGFloat dpi = 163*scale;
-	CGFloat sdpi = dpi;
-	UIEdgeInsets insets = v.layoutMargins;
-	if (@available(iOS 11.0, tvOS 11.0, *)) {
-		UIFontMetrics *metrics = [UIFontMetrics defaultMetrics];
-		sdpi = [metrics scaledValueForValue:sdpi];
-		insets = v.safeAreaInsets;
-	}
-	onDraw(viewRef, dpi, sdpi, v.bounds.size.width*scale, v.bounds.size.height*scale, sync,
-			insets.top*scale, insets.right*scale, insets.bottom*scale, insets.left*scale);
-}
-
-@implementation GioAppDelegate
-- (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
-	gio_runMain();
-
-	self.window = [[UIWindow alloc] initWithFrame:[[UIScreen mainScreen] bounds]];
-	GioViewController *controller = [[GioViewController alloc] initWithNibName:nil bundle:nil];
-	controller.screen = self.window.screen;
-    self.window.rootViewController = controller;
-    [self.window makeKeyAndVisible];
-	return YES;
-}
-
-- (void)applicationWillResignActive:(UIApplication *)application {
-}
-
-- (void)applicationDidEnterBackground:(UIApplication *)application {
-	GioViewController *vc = (GioViewController *)self.window.rootViewController;
-	UIView *drawView = vc.view.subviews[0];
-	if (drawView != nil) {
-		onStop((__bridge CFTypeRef)drawView);
-	}
-}
-
-- (void)applicationWillEnterForeground:(UIApplication *)application {
-	GioViewController *c = (GioViewController*)self.window.rootViewController;
-	UIView *drawView = c.view.subviews[0];
-	if (drawView != nil) {
-		CFTypeRef viewRef = (__bridge CFTypeRef)drawView;
-		redraw(viewRef, YES);
-	}
-}
 @end
 
 @implementation GioViewController
+
 CGFloat _keyboardHeight;
 
 - (void)loadView {
+	gio_runMain();
+
 	CGRect zeroFrame = CGRectMake(0, 0, 0, 0);
 	self.view = [[UIView alloc] initWithFrame:zeroFrame];
 	self.view.layoutMargins = UIEdgeInsetsMake(0, 0, 0, 0);
@@ -78,7 +26,6 @@ CGFloat _keyboardHeight;
 #ifndef TARGET_OS_TV
 	drawView.multipleTouchEnabled = YES;
 #endif
-	drawView.contentScaleFactor = self.screen.nativeScale;
 	drawView.preservesSuperviewLayoutMargins = YES;
 	drawView.layoutMargins = UIEdgeInsetsMake(0, 0, 0, 0);
 	onCreate((__bridge CFTypeRef)drawView);
@@ -94,6 +41,28 @@ CGFloat _keyboardHeight;
 											 selector:@selector(keyboardWillHide:)
 												 name:UIKeyboardWillHideNotification
 											   object:nil];
+	[[NSNotificationCenter defaultCenter] addObserver: self
+											 selector: @selector(applicationDidEnterBackground:)
+												 name: UIApplicationDidEnterBackgroundNotification
+											   object: nil];
+	[[NSNotificationCenter defaultCenter] addObserver: self
+											 selector: @selector(applicationWillEnterForeground:)
+												 name: UIApplicationWillEnterForegroundNotification
+											   object: nil];
+}
+
+- (void)applicationWillEnterForeground:(UIApplication *)application {
+	UIView *drawView = self.view.subviews[0];
+	if (drawView != nil) {
+		gio_onDraw((__bridge CFTypeRef)drawView);
+	}
+}
+
+- (void)applicationDidEnterBackground:(UIApplication *)application {
+	UIView *drawView = self.view.subviews[0];
+	if (drawView != nil) {
+		onStop((__bridge CFTypeRef)drawView);
+	}
 }
 
 - (void)viewDidDisappear:(BOOL)animated {
@@ -109,7 +78,7 @@ CGFloat _keyboardHeight;
 	// Adjust view bounds to make room for the keyboard.
 	frame.size.height -= _keyboardHeight;
 	view.frame = frame;
-	redraw((__bridge CFTypeRef)view, YES);
+	gio_onDraw((__bridge CFTypeRef)view);
 }
 
 - (void)didReceiveMemoryWarning {
@@ -151,20 +120,9 @@ static void handleTouches(int last, UIView *view, NSSet<UITouch *> *touches, UIE
 }
 
 @implementation GioView
-CADisplayLink *displayLink;
 NSArray<UIKeyCommand *> *_keyCommands;
-
-- (void)onFrameCallback:(CADisplayLink *)link {
-	redraw((__bridge CFTypeRef)self, NO);
-}
-
-- (instancetype)initWithFrame:(CGRect)frame {
-	self = [super initWithFrame:frame];
-	if (self) {
-		__weak id weakSelf = self;
-		displayLink = [CADisplayLink displayLinkWithTarget:weakSelf selector:@selector(onFrameCallback:)];
-	}
-	return self;
++ (void)onFrameCallback:(CADisplayLink *)link {
+	gio_onFrameCallback((__bridge CFTypeRef)link);
 }
 
 - (void)willMoveToWindow:(UIWindow *)newWindow {
@@ -176,6 +134,7 @@ NSArray<UIKeyCommand *> *_keyCommands;
 														name:UIWindowDidResignKeyNotification
 													  object:self.window];
 	}
+	self.contentScaleFactor = newWindow.screen.nativeScale;
 	[[NSNotificationCenter defaultCenter] addObserver:self
 											 selector:@selector(onWindowDidBecomeKey:)
 												 name:UIWindowDidBecomeKeyNotification
@@ -199,16 +158,6 @@ NSArray<UIKeyCommand *> *_keyCommands;
 }
 
 - (void)dealloc {
-	[displayLink invalidate];
-}
-
-- (void)setAnimating:(BOOL)anim {
-	NSRunLoop *runLoop = [NSRunLoop currentRunLoop];
-	if (anim) {
-		[displayLink addToRunLoop:runLoop forMode:[runLoop currentMode]];
-	} else {
-		[displayLink removeFromRunLoop:runLoop forMode:[runLoop currentMode]];
-	}
 }
 
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
@@ -280,25 +229,32 @@ NSArray<UIKeyCommand *> *_keyCommands;
 }
 @end
 
-void gio_setAnimating(CFTypeRef viewRef, int anim) {
-	GioView *view = (__bridge GioView *)viewRef;
-	dispatch_async(dispatch_get_main_queue(), ^{
-		[view setAnimating:(anim ? YES : NO)];
-	});
+void gio_writeClipboard(unichar *chars, NSUInteger length) {
+	@autoreleasepool {
+		NSString *s = [NSString string];
+		if (length > 0) {
+			s = [NSString stringWithCharacters:chars length:length];
+		}
+		UIPasteboard *p = UIPasteboard.generalPasteboard;
+		p.string = s;
+	}
+}
+
+CFTypeRef gio_readClipboard(void) {
+	@autoreleasepool {
+		UIPasteboard *p = UIPasteboard.generalPasteboard;
+		return (__bridge_retained CFTypeRef)p.string;
+	}
 }
 
 void gio_showTextInput(CFTypeRef viewRef) {
 	UIView *view = (__bridge UIView *)viewRef;
-	dispatch_async(dispatch_get_main_queue(), ^{
-		[view becomeFirstResponder];
-	});
+	[view becomeFirstResponder];
 }
 
 void gio_hideTextInput(CFTypeRef viewRef) {
 	UIView *view = (__bridge UIView *)viewRef;
-	dispatch_async(dispatch_get_main_queue(), ^{
-		[view resignFirstResponder];
-	});
+	[view resignFirstResponder];
 }
 
 void gio_addLayerToView(CFTypeRef viewRef, CFTypeRef layerRef) {
@@ -317,4 +273,56 @@ void gio_updateView(CFTypeRef viewRef, CFTypeRef layerRef) {
 void gio_removeLayer(CFTypeRef layerRef) {
 	CALayer *layer = (__bridge CALayer *)layerRef;
 	[layer removeFromSuperlayer];
+}
+
+struct drawParams gio_viewDrawParams(CFTypeRef viewRef) {
+	UIView *v = (__bridge UIView *)viewRef;
+	struct drawParams params;
+	CGFloat scale = v.layer.contentsScale;
+	// Use 163 as the standard ppi on iOS.
+	params.dpi = 163*scale;
+	params.sdpi = params.dpi;
+	UIEdgeInsets insets = v.layoutMargins;
+	if (@available(iOS 11.0, tvOS 11.0, *)) {
+		UIFontMetrics *metrics = [UIFontMetrics defaultMetrics];
+		params.sdpi = [metrics scaledValueForValue:params.sdpi];
+		insets = v.safeAreaInsets;
+	}
+	params.width = v.bounds.size.width*scale;
+	params.height = v.bounds.size.height*scale;
+	params.top = insets.top*scale;
+	params.right = insets.right*scale;
+	params.bottom = insets.bottom*scale;
+	params.left = insets.left*scale;
+	return params;
+}
+
+CFTypeRef gio_createDisplayLink(void) {
+	CADisplayLink *dl = [CADisplayLink displayLinkWithTarget:[GioView class] selector:@selector(onFrameCallback:)];
+	dl.paused = YES;
+	NSRunLoop *runLoop = [NSRunLoop mainRunLoop];
+	[dl addToRunLoop:runLoop forMode:[runLoop currentMode]];
+	return (__bridge_retained CFTypeRef)dl;
+}
+
+int gio_startDisplayLink(CFTypeRef dlref) {
+	CADisplayLink *dl = (__bridge CADisplayLink *)dlref;
+	dl.paused = NO;
+	return 0;
+}
+
+int gio_stopDisplayLink(CFTypeRef dlref) {
+	CADisplayLink *dl = (__bridge CADisplayLink *)dlref;
+	dl.paused = YES;
+	return 0;
+}
+
+void gio_releaseDisplayLink(CFTypeRef dlref) {
+	CADisplayLink *dl = (__bridge CADisplayLink *)dlref;
+	[dl invalidate];
+	CFRelease(dlref);
+}
+
+void gio_setDisplayLinkDisplay(CFTypeRef dl, uint64_t did) {
+	// Nothing to do on iOS.
 }

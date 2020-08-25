@@ -15,14 +15,17 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
+	"gioui.org/unit"
 )
 
 type window struct {
 	window                js.Value
+	clipboard             js.Value
 	cnv                   js.Value
 	tarea                 js.Value
 	w                     Callbacks
 	redraw                js.Func
+	clipboardCallback     js.Func
 	requestAnimationFrame js.Value
 	cleanfuncs            []func()
 	touches               []js.Value
@@ -33,8 +36,6 @@ type window struct {
 	animating bool
 }
 
-var mainDone = make(chan struct{})
-
 func NewWindow(win Callbacks, opts *Options) error {
 	doc := js.Global().Get("document")
 	cont := getContainer(doc)
@@ -43,13 +44,19 @@ func NewWindow(win Callbacks, opts *Options) error {
 	tarea := createTextArea(doc)
 	cont.Call("appendChild", tarea)
 	w := &window{
-		cnv:    cnv,
-		tarea:  tarea,
-		window: js.Global().Get("window"),
+		cnv:       cnv,
+		tarea:     tarea,
+		window:    js.Global().Get("window"),
+		clipboard: js.Global().Get("navigator").Get("clipboard"),
 	}
 	w.requestAnimationFrame = w.window.Get("requestAnimationFrame")
 	w.redraw = w.funcOf(func(this js.Value, args []js.Value) interface{} {
 		w.animCallback()
+		return nil
+	})
+	w.clipboardCallback = w.funcOf(func(this js.Value, args []js.Value) interface{} {
+		content := args[0].String()
+		win.Event(system.ClipboardEvent{Text: content})
 		return nil
 	})
 	w.addEventListeners()
@@ -61,7 +68,6 @@ func NewWindow(win Callbacks, opts *Options) error {
 		w.draw(true)
 		select {}
 		w.cleanup()
-		close(mainDone)
 	}()
 	return nil
 }
@@ -138,7 +144,7 @@ func (w *window) addEventListeners() {
 			dx *= 120
 			dy *= 120
 		}
-		w.pointerEvent(pointer.Move, float32(dx), float32(dy), e)
+		w.pointerEvent(pointer.Scroll, float32(dx), float32(dy), e)
 		return nil
 	})
 	w.addEventListener(w.cnv, "touchstart", func(this js.Value, args []js.Value) interface{} {
@@ -212,18 +218,28 @@ func (w *window) focus() {
 func (w *window) keyEvent(e js.Value) {
 	k := e.Get("key").String()
 	if n, ok := translateKey(k); ok {
-		cmd := key.Event{Name: n}
-		if e.Call("getModifierState", "Alt").Bool() {
-			cmd.Modifiers |= key.ModAlt
-		}
-		if e.Call("getModifierState", "Control").Bool() {
-			cmd.Modifiers |= key.ModCtrl
-		}
-		if e.Call("getModifierState", "Shift").Bool() {
-			cmd.Modifiers |= key.ModShift
+		cmd := key.Event{
+			Name:      n,
+			Modifiers: modifiersFor(e),
 		}
 		w.w.Event(cmd)
 	}
+}
+
+// modifiersFor returns the modifier set for a DOM MouseEvent or
+// KeyEvent.
+func modifiersFor(e js.Value) key.Modifiers {
+	var mods key.Modifiers
+	if e.Call("getModifierState", "Alt").Bool() {
+		mods |= key.ModAlt
+	}
+	if e.Call("getModifierState", "Control").Bool() {
+		mods |= key.ModCtrl
+	}
+	if e.Call("getModifierState", "Shift").Bool() {
+		mods |= key.ModShift
+	}
+	return mods
 }
 
 func (w *window) touchEvent(typ pointer.Type, e js.Value) {
@@ -235,6 +251,16 @@ func (w *window) touchEvent(typ pointer.Type, e js.Value) {
 	w.mu.Lock()
 	scale := w.scale
 	w.mu.Unlock()
+	var mods key.Modifiers
+	if e.Get("shiftKey").Bool() {
+		mods |= key.ModShift
+	}
+	if e.Get("altKey").Bool() {
+		mods |= key.ModAlt
+	}
+	if e.Get("ctrlKey").Bool() {
+		mods |= key.ModCtrl
+	}
 	for i := 0; i < n; i++ {
 		touch := changedTouches.Index(i)
 		pid := w.touchIDFor(touch)
@@ -251,6 +277,7 @@ func (w *window) touchEvent(typ pointer.Type, e js.Value) {
 			Position:  pos,
 			PointerID: pid,
 			Time:      t,
+			Modifiers: mods,
 		})
 	}
 }
@@ -297,12 +324,13 @@ func (w *window) pointerEvent(typ pointer.Type, dx, dy float32, e js.Value) {
 		btns |= pointer.ButtonMiddle
 	}
 	w.w.Event(pointer.Event{
-		Type:     typ,
-		Source:   pointer.Mouse,
-		Buttons:  btns,
-		Position: pos,
-		Scroll:   scroll,
-		Time:     t,
+		Type:      typ,
+		Source:    pointer.Mouse,
+		Buttons:   btns,
+		Position:  pos,
+		Scroll:    scroll,
+		Time:      t,
+		Modifiers: modifiersFor(e),
 	})
 }
 
@@ -343,6 +371,26 @@ func (w *window) SetAnimating(anim bool) {
 	w.animating = anim
 }
 
+func (w *window) ReadClipboard() {
+	if w.clipboard.IsUndefined() {
+		return
+	}
+	if w.clipboard.Get("readText").IsUndefined() {
+		return
+	}
+	w.clipboard.Call("readText", w.clipboard).Call("then", w.clipboardCallback)
+}
+
+func (w *window) WriteClipboard(s string) {
+	if w.clipboard.IsUndefined() {
+		return
+	}
+	if w.clipboard.Get("writeText").IsUndefined() {
+		return
+	}
+	w.clipboard.Call("writeText", s)
+}
+
 func (w *window) ShowTextInput(show bool) {
 	// Run in a goroutine to avoid a deadlock if the
 	// focus change result in an event.
@@ -355,28 +403,31 @@ func (w *window) ShowTextInput(show bool) {
 	}()
 }
 
+// Close the window. Not implemented for js.
+func (w *window) Close() {}
+
 func (w *window) draw(sync bool) {
 	width, height, scale, cfg := w.config()
-	if cfg == (config{}) || width == 0 || height == 0 {
+	if cfg == (unit.Metric{}) || width == 0 || height == 0 {
 		return
 	}
 	w.mu.Lock()
 	w.scale = float32(scale)
 	w.mu.Unlock()
-	cfg.now = time.Now()
 	w.w.Event(FrameEvent{
 		FrameEvent: system.FrameEvent{
+			Now: time.Now(),
 			Size: image.Point{
 				X: width,
 				Y: height,
 			},
-			Config: &cfg,
+			Metric: cfg,
 		},
 		Sync: sync,
 	})
 }
 
-func (w *window) config() (int, int, float32, config) {
+func (w *window) config() (int, int, float32, unit.Metric) {
 	rect := w.cnv.Call("getBoundingClientRect")
 	width, height := rect.Get("width").Float(), rect.Get("height").Float()
 	scale := w.window.Get("devicePixelRatio").Float()
@@ -388,14 +439,14 @@ func (w *window) config() (int, int, float32, config) {
 		w.cnv.Set("width", iw)
 		w.cnv.Set("height", ih)
 	}
-	return iw, ih, float32(scale), config{
-		pxPerDp: float32(scale),
-		pxPerSp: float32(scale),
+	return iw, ih, float32(scale), unit.Metric{
+		PxPerDp: float32(scale),
+		PxPerSp: float32(scale),
 	}
 }
 
 func Main() {
-	<-mainDone
+	select {}
 }
 
 func translateKey(k string) (string, bool) {

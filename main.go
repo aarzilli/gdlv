@@ -1075,7 +1075,10 @@ To change font size use Ctrl-plus/Ctrl-minus or the 'config zoom' command.
 
 	go BackendServer.Start()
 
-	wnd.Main()
+	wnd.OnClose(func() {
+		BackendServer.Close()
+		os.Exit(0)
+	})
 
-	BackendServer.Close()
+	wnd.Main()
 }

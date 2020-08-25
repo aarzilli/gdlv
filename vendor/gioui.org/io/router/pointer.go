@@ -17,10 +17,11 @@ import (
 type pointerQueue struct {
 	hitTree  []hitNode
 	areas    []areaNode
-	handlers map[event.Key]*pointerHandler
+	handlers map[event.Tag]*pointerHandler
 	pointers []pointerInfo
 	reader   ops.Reader
-	scratch  []event.Key
+
+	scratch []event.Tag
 }
 
 type hitNode struct {
@@ -30,20 +31,23 @@ type hitNode struct {
 	pass bool
 
 	// For handler nodes.
-	key event.Key
+	tag event.Tag
 }
 
 type pointerInfo struct {
 	id       pointer.ID
 	pressed  bool
-	handlers []event.Key
+	handlers []event.Tag
+
+	// entered tracks the tags that contain the pointer.
+	entered []event.Tag
 }
 
 type pointerHandler struct {
 	area      int
 	active    bool
-	transform op.TransformOp
 	wantsGrab bool
+	types     pointer.Type
 }
 
 type areaOp struct {
@@ -52,7 +56,7 @@ type areaOp struct {
 }
 
 type areaNode struct {
-	trans op.TransformOp
+	trans f32.Affine2D
 	next  int
 	area  areaOp
 }
@@ -64,7 +68,7 @@ const (
 	areaEllipse
 )
 
-func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents, t op.TransformOp, area, node int, pass bool) {
+func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents, t f32.Affine2D, area, node int, pass bool) {
 	for encOp, ok := r.Decode(); ok; encOp, ok = r.Decode() {
 		switch opconst.OpType(encOp.Data[0]) {
 		case opconst.TypePush:
@@ -86,32 +90,32 @@ func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents, t o
 			})
 			node = len(q.hitTree) - 1
 		case opconst.TypeTransform:
-			dop := ops.DecodeTransformOp(encOp.Data)
-			t = t.Multiply(op.TransformOp(dop))
+			dop := ops.DecodeTransform(encOp.Data)
+			t = t.Mul(dop)
 		case opconst.TypePointerInput:
 			op := decodePointerInputOp(encOp.Data, encOp.Refs)
 			q.hitTree = append(q.hitTree, hitNode{
 				next: node,
 				area: area,
 				pass: pass,
-				key:  op.Key,
+				tag:  op.Tag,
 			})
 			node = len(q.hitTree) - 1
-			h, ok := q.handlers[op.Key]
+			h, ok := q.handlers[op.Tag]
 			if !ok {
 				h = new(pointerHandler)
-				q.handlers[op.Key] = h
-				events.Set(op.Key, []event.Event{pointer.Event{Type: pointer.Cancel}})
+				q.handlers[op.Tag] = h
+				events.Add(op.Tag, pointer.Event{Type: pointer.Cancel})
 			}
 			h.active = true
 			h.area = area
-			h.transform = t
 			h.wantsGrab = h.wantsGrab || op.Grab
+			h.types = h.types | op.Types
 		}
 	}
 }
 
-func (q *pointerQueue) opHit(handlers *[]event.Key, pos f32.Point) {
+func (q *pointerQueue) opHit(handlers *[]event.Tag, pos f32.Point) {
 	// Track whether we're passing through hits.
 	pass := true
 	idx := len(q.hitTree) - 1
@@ -127,19 +131,26 @@ func (q *pointerQueue) opHit(handlers *[]event.Key, pos f32.Point) {
 		} else {
 			idx = n.next
 		}
-		if n.key != nil {
-			if _, exists := q.handlers[n.key]; exists {
-				*handlers = append(*handlers, n.key)
+		if n.tag != nil {
+			if _, exists := q.handlers[n.tag]; exists {
+				*handlers = append(*handlers, n.tag)
 			}
-
 		}
 	}
+}
+
+func (q *pointerQueue) invTransform(areaIdx int, p f32.Point) f32.Point {
+	if areaIdx == -1 {
+		return p
+	}
+	return q.areas[areaIdx].trans.Invert().Transform(p)
 }
 
 func (q *pointerQueue) hit(areaIdx int, p f32.Point) bool {
 	for areaIdx != -1 {
 		a := &q.areas[areaIdx]
-		if !a.hit(p) {
+		p := a.trans.Invert().Transform(p)
+		if !a.area.Hit(p) {
 			return false
 		}
 		areaIdx = a.next
@@ -147,14 +158,9 @@ func (q *pointerQueue) hit(areaIdx int, p f32.Point) bool {
 	return true
 }
 
-func (a *areaNode) hit(p f32.Point) bool {
-	p = a.trans.Invert().Transform(p)
-	return a.area.Hit(p)
-}
-
 func (q *pointerQueue) init() {
 	if q.handlers == nil {
-		q.handlers = make(map[event.Key]*pointerHandler)
+		q.handlers = make(map[event.Tag]*pointerHandler)
 	}
 }
 
@@ -163,27 +169,50 @@ func (q *pointerQueue) Frame(root *op.Ops, events *handlerEvents) {
 	for _, h := range q.handlers {
 		// Reset handler.
 		h.active = false
+		h.wantsGrab = false
+		h.types = 0
 	}
 	q.hitTree = q.hitTree[:0]
 	q.areas = q.areas[:0]
 	q.reader.Reset(root)
-	q.collectHandlers(&q.reader, events, op.TransformOp{}, -1, -1, false)
+	q.collectHandlers(&q.reader, events, f32.Affine2D{}, -1, -1, false)
 	for k, h := range q.handlers {
 		if !h.active {
-			q.dropHandler(k, events)
+			q.dropHandlers(events, k)
 			delete(q.handlers, k)
+		}
+		if h.wantsGrab {
+			for _, p := range q.pointers {
+				if !p.pressed {
+					continue
+				}
+				for i, k2 := range p.handlers {
+					if k2 == k {
+						// Drop other handlers that lost their grab.
+						q.dropHandlers(events, p.handlers[i+1:]...)
+						q.dropHandlers(events, p.handlers[:i]...)
+						break
+					}
+				}
+			}
 		}
 	}
 }
 
-func (q *pointerQueue) dropHandler(k event.Key, events *handlerEvents) {
-	events.Add(k, pointer.Event{Type: pointer.Cancel})
-	q.handlers[k].wantsGrab = false
-	for i := range q.pointers {
-		p := &q.pointers[i]
-		for i := len(p.handlers) - 1; i >= 0; i-- {
-			if p.handlers[i] == k {
-				p.handlers = append(p.handlers[:i], p.handlers[i+1:]...)
+func (q *pointerQueue) dropHandlers(events *handlerEvents, tags ...event.Tag) {
+	for _, k := range tags {
+		events.Add(k, pointer.Event{Type: pointer.Cancel})
+		for i := range q.pointers {
+			p := &q.pointers[i]
+			for i := len(p.handlers) - 1; i >= 0; i-- {
+				if p.handlers[i] == k {
+					p.handlers = append(p.handlers[:i], p.handlers[i+1:]...)
+				}
+			}
+			for i := len(p.entered) - 1; i >= 0; i-- {
+				if p.entered[i] == k {
+					p.entered = append(p.entered[:i], p.entered[i+1:]...)
+				}
 			}
 		}
 	}
@@ -194,7 +223,7 @@ func (q *pointerQueue) Push(e pointer.Event, events *handlerEvents) {
 	if e.Type == pointer.Cancel {
 		q.pointers = q.pointers[:0]
 		for k := range q.handlers {
-			q.dropHandler(k, events)
+			q.dropHandlers(events, k)
 		}
 		return
 	}
@@ -210,54 +239,103 @@ func (q *pointerQueue) Push(e pointer.Event, events *handlerEvents) {
 		pidx = len(q.pointers) - 1
 	}
 	p := &q.pointers[pidx]
-	if !p.pressed && (e.Type == pointer.Move || e.Type == pointer.Press) {
-		p.handlers, q.scratch = q.scratch[:0], p.handlers
-		q.opHit(&p.handlers, e.Position)
-		if e.Type == pointer.Press {
-			p.pressed = true
-		}
+
+	if e.Type == pointer.Move && p.pressed {
+		e.Type = pointer.Drag
 	}
+
+	if e.Type == pointer.Release {
+		q.deliverEvent(p, events, e)
+		p.pressed = false
+	}
+	q.scratch = q.scratch[:0]
+	q.opHit(&q.scratch, e.Position)
 	if p.pressed {
-		// Resolve grabs.
-		q.scratch = q.scratch[:0]
-		for i, k := range p.handlers {
-			h := q.handlers[k]
-			if h.wantsGrab {
-				q.scratch = append(q.scratch, p.handlers[:i]...)
-				q.scratch = append(q.scratch, p.handlers[i+1:]...)
-				break
+		// Filter out non-participating handlers.
+		for i := len(q.scratch) - 1; i >= 0; i-- {
+			if _, found := searchTag(p.handlers, q.scratch[i]); !found {
+				q.scratch = append(q.scratch[:i], q.scratch[i+1:]...)
 			}
 		}
-		// Drop handlers that lost their grab.
-		for _, k := range q.scratch {
-			q.dropHandler(k, events)
-		}
 	}
-	if e.Type == pointer.Release {
+	q.deliverEnterLeaveEvents(p, q.scratch, events, e)
+
+	if !p.pressed {
+		p.handlers = append(p.handlers[:0], q.scratch...)
+	}
+	if e.Type == pointer.Press {
+		p.pressed = true
+	}
+	if e.Type != pointer.Release {
+		q.deliverEvent(p, events, e)
+	}
+	if !p.pressed && len(p.entered) == 0 {
+		// No longer need to track pointer.
 		q.pointers = append(q.pointers[:pidx], q.pointers[pidx+1:]...)
 	}
+}
+
+func (q *pointerQueue) deliverEvent(p *pointerInfo, events *handlerEvents, e pointer.Event) {
+	foremost := true
 	for _, k := range p.handlers {
 		h := q.handlers[k]
 		e := e
 		if p.pressed && len(p.handlers) == 1 {
 			e.Priority = pointer.Grabbed
+		} else if foremost {
+			e.Priority = pointer.Foremost
 		}
-		e.Hit = q.hit(h.area, e.Position)
-		e.Position = h.transform.Invert().Transform(e.Position)
-		events.Add(k, e)
-		if e.Type == pointer.Release {
-			// Release grab when the number of grabs reaches zero.
-			grabs := 0
-			for _, p := range q.pointers {
-				if p.pressed && len(p.handlers) == 1 && p.handlers[0] == k {
-					grabs++
-				}
-			}
-			if grabs == 0 {
-				h.wantsGrab = false
-			}
+
+		e.Position = q.invTransform(h.area, e.Position)
+
+		if e.Type&h.types == e.Type {
+			foremost = false
+			events.Add(k, e)
 		}
 	}
+}
+
+func (q *pointerQueue) deliverEnterLeaveEvents(p *pointerInfo, hits []event.Tag, events *handlerEvents, e pointer.Event) {
+	if e.Source != pointer.Mouse && !p.pressed && e.Type != pointer.Press {
+		// Consider non-mouse pointers leaving when they're released.
+		hits = nil
+	}
+	// Deliver Leave events.
+	for _, k := range p.entered {
+		if _, found := searchTag(hits, k); found {
+			continue
+		}
+		h := q.handlers[k]
+		e.Type = pointer.Leave
+		e.Position = q.invTransform(h.area, e.Position)
+
+		if e.Type&h.types == e.Type {
+			events.Add(k, e)
+		}
+	}
+	// Deliver Enter events.
+	for _, k := range hits {
+		if _, found := searchTag(p.entered, k); found {
+			continue
+		}
+		h := q.handlers[k]
+		e.Type = pointer.Enter
+		e.Position = q.invTransform(h.area, e.Position)
+
+		if e.Type&h.types == e.Type {
+			events.Add(k, e)
+		}
+	}
+	p.entered = append(p.entered[:0], hits...)
+}
+
+func searchTag(tags []event.Tag, tag event.Tag) (int, bool) {
+	for i, t := range tags {
+		if t == tag {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 func (op *areaOp) Decode(d []byte) {
@@ -290,24 +368,16 @@ func (op *areaOp) Hit(pos f32.Point) bool {
 	size := op.rect.Size()
 	switch op.kind {
 	case areaRect:
-		if 0 <= pos.X && pos.X < float32(size.X) &&
-			0 <= pos.Y && pos.Y < float32(size.Y) {
-			return true
-		} else {
-			return false
-		}
+		return 0 <= pos.X && pos.X < float32(size.X) &&
+			0 <= pos.Y && pos.Y < float32(size.Y)
 	case areaEllipse:
 		rx := float32(size.X) / 2
 		ry := float32(size.Y) / 2
-		rx2 := rx * rx
-		ry2 := ry * ry
 		xh := pos.X - rx
 		yk := pos.Y - ry
-		if xh*xh*ry2+yk*yk*rx2 <= rx2*ry2 {
-			return true
-		} else {
-			return false
-		}
+		// The ellipse function works in all cases because
+		// 0/0 is not <= 1.
+		return (xh*xh)/(rx*rx)+(yk*yk)/(ry*ry) <= 1
 	default:
 		panic("invalid area kind")
 	}
@@ -318,8 +388,9 @@ func decodePointerInputOp(d []byte, refs []interface{}) pointer.InputOp {
 		panic("invalid op")
 	}
 	return pointer.InputOp{
-		Grab: d[1] != 0,
-		Key:  refs[0].(event.Key),
+		Tag:   refs[0].(event.Tag),
+		Grab:  d[1] != 0,
+		Types: pointer.Type(d[2]),
 	}
 }
 

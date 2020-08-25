@@ -8,8 +8,8 @@ type OpType byte
 const firstOpIndex = 200
 
 const (
-	TypeMacroDef OpType = iota + firstOpIndex
-	TypeMacro
+	TypeMacro OpType = iota + firstOpIndex
+	TypeCall
 	TypeTransform
 	TypeLayer
 	TypeInvalidate
@@ -26,20 +26,19 @@ const (
 	TypeAux
 	TypeClip
 	TypeProfile
-	TypeCall
 )
 
 const (
-	TypeMacroDefLen     = 1 + 4 + 4
 	TypeMacroLen        = 1 + 4 + 4
-	TypeTransformLen    = 1 + 4*2
+	TypeCallLen         = 1 + 4 + 4
+	TypeTransformLen    = 1 + 4*6
 	TypeLayerLen        = 1
 	TypeRedrawLen       = 1 + 8
 	TypeImageLen        = 1 + 4*4
 	TypePaintLen        = 1 + 4*4
 	TypeColorLen        = 1 + 4
 	TypeAreaLen         = 1 + 1 + 4*4
-	TypePointerInputLen = 1 + 1
+	TypePointerInputLen = 1 + 1 + 1
 	TypePassLen         = 1 + 1
 	TypeKeyInputLen     = 1 + 1
 	TypeHideInputLen    = 1
@@ -48,13 +47,12 @@ const (
 	TypeAuxLen          = 1
 	TypeClipLen         = 1 + 4*4
 	TypeProfileLen      = 1
-	TypeCallLen         = 1
 )
 
 func (t OpType) Size() int {
 	return [...]int{
-		TypeMacroDefLen,
 		TypeMacroLen,
+		TypeCallLen,
 		TypeTransformLen,
 		TypeLayerLen,
 		TypeRedrawLen,
@@ -71,7 +69,6 @@ func (t OpType) Size() int {
 		TypeAuxLen,
 		TypeClipLen,
 		TypeProfileLen,
-		TypeCallLen,
 	}[t-firstOpIndex]
 }
 

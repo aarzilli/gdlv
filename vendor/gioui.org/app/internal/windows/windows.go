@@ -46,6 +46,14 @@ type Point struct {
 	X, Y int32
 }
 
+type MinMaxInfo struct {
+	PtReserved     Point
+	PtMaxSize      Point
+	PtMaxPosition  Point
+	PtMinTrackSize Point
+	PtMaxTrackSize Point
+}
+
 const (
 	CS_HREDRAW = 0x0002
 	CS_VREDRAW = 0x0001
@@ -120,32 +128,34 @@ const (
 
 	UNICODE_NOCHAR = 65535
 
-	WM_CANCELMODE  = 0x001F
-	WM_CHAR        = 0x0102
-	WM_CREATE      = 0x0001
-	WM_DPICHANGED  = 0x02E0
-	WM_DESTROY     = 0x0002
-	WM_ERASEBKGND  = 0x0014
-	WM_KEYDOWN     = 0x0100
-	WM_KEYUP       = 0x0101
-	WM_LBUTTONDOWN = 0x0201
-	WM_LBUTTONUP   = 0x0202
-	WM_MBUTTONDOWN = 0x0207
-	WM_MBUTTONUP   = 0x0208
-	WM_MOUSEMOVE   = 0x0200
-	WM_MOUSEWHEEL  = 0x020A
-	WM_PAINT       = 0x000F
-	WM_QUIT        = 0x0012
-	WM_SETFOCUS    = 0x0007
-	WM_KILLFOCUS   = 0x0008
-	WM_SHOWWINDOW  = 0x0018
-	WM_SIZE        = 0x0005
-	WM_SYSKEYDOWN  = 0x0104
-	WM_RBUTTONDOWN = 0x0204
-	WM_RBUTTONUP   = 0x0205
-	WM_TIMER       = 0x0113
-	WM_UNICHAR     = 0x0109
-	WM_USER        = 0x0400
+	WM_CANCELMODE    = 0x001F
+	WM_CHAR          = 0x0102
+	WM_CREATE        = 0x0001
+	WM_DPICHANGED    = 0x02E0
+	WM_DESTROY       = 0x0002
+	WM_ERASEBKGND    = 0x0014
+	WM_KEYDOWN       = 0x0100
+	WM_KEYUP         = 0x0101
+	WM_LBUTTONDOWN   = 0x0201
+	WM_LBUTTONUP     = 0x0202
+	WM_MBUTTONDOWN   = 0x0207
+	WM_MBUTTONUP     = 0x0208
+	WM_MOUSEMOVE     = 0x0200
+	WM_MOUSEWHEEL    = 0x020A
+	WM_PAINT         = 0x000F
+	WM_CLOSE         = 0x0010
+	WM_QUIT          = 0x0012
+	WM_SETFOCUS      = 0x0007
+	WM_KILLFOCUS     = 0x0008
+	WM_SHOWWINDOW    = 0x0018
+	WM_SIZE          = 0x0005
+	WM_SYSKEYDOWN    = 0x0104
+	WM_RBUTTONDOWN   = 0x0204
+	WM_RBUTTONUP     = 0x0205
+	WM_TIMER         = 0x0113
+	WM_UNICHAR       = 0x0109
+	WM_USER          = 0x0400
+	WM_GETMINMAXINFO = 0x0024
 
 	WS_CLIPCHILDREN     = 0x00010000
 	WS_CLIPSIBLINGS     = 0x04000000
@@ -171,21 +181,33 @@ const (
 
 	PM_REMOVE   = 0x0001
 	PM_NOREMOVE = 0x0000
+
+	GHND = 0x0042
+
+	CF_UNICODETEXT = 13
 )
 
 var (
 	kernel32          = syscall.NewLazySystemDLL("kernel32.dll")
 	_GetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
+	_GlobalAlloc      = kernel32.NewProc("GlobalAlloc")
+	_GlobalFree       = kernel32.NewProc("GlobalFree")
+	_GlobalLock       = kernel32.NewProc("GlobalLock")
+	_GlobalUnlock     = kernel32.NewProc("GlobalUnlock")
 
 	user32                       = syscall.NewLazySystemDLL("user32.dll")
 	_AdjustWindowRectEx          = user32.NewProc("AdjustWindowRectEx")
 	_CallMsgFilter               = user32.NewProc("CallMsgFilterW")
+	_CloseClipboard              = user32.NewProc("CloseClipboard")
 	_CreateWindowEx              = user32.NewProc("CreateWindowExW")
 	_DefWindowProc               = user32.NewProc("DefWindowProcW")
 	_DestroyWindow               = user32.NewProc("DestroyWindow")
 	_DispatchMessage             = user32.NewProc("DispatchMessageW")
+	_EmptyClipboard              = user32.NewProc("EmptyClipboard")
 	_GetClientRect               = user32.NewProc("GetClientRect")
+	_GetClipboardData            = user32.NewProc("GetClipboardData")
 	_GetDC                       = user32.NewProc("GetDC")
+	_GetDpiForWindow             = user32.NewProc("GetDpiForWindow")
 	_GetKeyState                 = user32.NewProc("GetKeyState")
 	_GetMessage                  = user32.NewProc("GetMessageW")
 	_GetMessageTime              = user32.NewProc("GetMessageTime")
@@ -193,6 +215,7 @@ var (
 	_LoadCursor                  = user32.NewProc("LoadCursorW")
 	_MonitorFromPoint            = user32.NewProc("MonitorFromPoint")
 	_MsgWaitForMultipleObjectsEx = user32.NewProc("MsgWaitForMultipleObjectsEx")
+	_OpenClipboard               = user32.NewProc("OpenClipboard")
 	_PeekMessage                 = user32.NewProc("PeekMessageW")
 	_PostMessage                 = user32.NewProc("PostMessageW")
 	_PostQuitMessage             = user32.NewProc("PostQuitMessage")
@@ -202,6 +225,7 @@ var (
 	_ScreenToClient              = user32.NewProc("ScreenToClient")
 	_ShowWindow                  = user32.NewProc("ShowWindow")
 	_SetCapture                  = user32.NewProc("SetCapture")
+	_SetClipboardData            = user32.NewProc("SetClipboardData")
 	_SetForegroundWindow         = user32.NewProc("SetForegroundWindow")
 	_SetFocus                    = user32.NewProc("SetFocus")
 	_SetProcessDPIAware          = user32.NewProc("SetProcessDPIAware")
@@ -217,14 +241,6 @@ var (
 	_GetDeviceCaps = gdi32.NewProc("GetDeviceCaps")
 )
 
-func GetModuleHandle() (syscall.Handle, error) {
-	h, _, err := _GetModuleHandleW.Call(uintptr(0))
-	if h == 0 {
-		return 0, fmt.Errorf("GetModuleHandleW failed: %v", err)
-	}
-	return syscall.Handle(h), nil
-}
-
 func AdjustWindowRectEx(r *Rect, dwStyle uint32, bMenu int, dwExStyle uint32) {
 	_AdjustWindowRectEx.Call(uintptr(unsafe.Pointer(r)), uintptr(dwStyle), uintptr(bMenu), uintptr(dwExStyle))
 	issue34474KeepAlive(r)
@@ -234,6 +250,14 @@ func CallMsgFilter(m *Msg, nCode uintptr) bool {
 	r, _, _ := _CallMsgFilter.Call(uintptr(unsafe.Pointer(m)), nCode)
 	issue34474KeepAlive(m)
 	return r != 0
+}
+
+func CloseClipboard() error {
+	r, _, err := _CloseClipboard.Call()
+	if r == 0 {
+		return fmt.Errorf("CloseClipboard: %v", err)
+	}
+	return nil
 }
 
 func CreateWindowEx(dwExStyle uint32, lpClassName uint16, lpWindowName string, dwStyle uint32, x, y, w, h int32, hWndParent, hMenu, hInstance syscall.Handle, lpParam uintptr) (syscall.Handle, error) {
@@ -270,9 +294,25 @@ func DispatchMessage(m *Msg) {
 	issue34474KeepAlive(m)
 }
 
+func EmptyClipboard() error {
+	r, _, err := _EmptyClipboard.Call()
+	if r == 0 {
+		return fmt.Errorf("EmptyClipboard: %v", err)
+	}
+	return nil
+}
+
 func GetClientRect(hwnd syscall.Handle, r *Rect) {
 	_GetClientRect.Call(uintptr(hwnd), uintptr(unsafe.Pointer(r)))
 	issue34474KeepAlive(r)
+}
+
+func GetClipboardData(format uint32) (syscall.Handle, error) {
+	r, _, err := _GetClipboardData.Call(uintptr(format))
+	if r == 0 {
+		return 0, fmt.Errorf("GetClipboardData: %v", err)
+	}
+	return syscall.Handle(r), nil
 }
 
 func GetDC(hwnd syscall.Handle) (syscall.Handle, error) {
@@ -281,6 +321,14 @@ func GetDC(hwnd syscall.Handle) (syscall.Handle, error) {
 		return 0, fmt.Errorf("GetDC failed: %v", err)
 	}
 	return syscall.Handle(hdc), nil
+}
+
+func GetModuleHandle() (syscall.Handle, error) {
+	h, _, err := _GetModuleHandleW.Call(uintptr(0))
+	if h == 0 {
+		return 0, fmt.Errorf("GetModuleHandleW failed: %v", err)
+	}
+	return syscall.Handle(h), nil
 }
 
 func getDeviceCaps(hdc syscall.Handle, index int32) int {
@@ -296,7 +344,7 @@ func getDpiForMonitor(hmonitor syscall.Handle, dpiType uint32) int {
 
 // GetSystemDPI returns the effective DPI of the system.
 func GetSystemDPI() int {
-	// Check for getDpiForMonitor, introduced in Windows 8.1.
+	// Check for GetDpiForMonitor, introduced in Windows 8.1.
 	if _GetDpiForMonitor.Find() == nil {
 		hmon := monitorFromPoint(Point{}, MONITOR_DEFAULTTOPRIMARY)
 		return getDpiForMonitor(hmon, MDT_EFFECTIVE_DPI)
@@ -330,6 +378,41 @@ func GetMessageTime() time.Duration {
 	return time.Duration(r) * time.Millisecond
 }
 
+// GetWindowDPI returns the effective DPI of the window.
+func GetWindowDPI(hwnd syscall.Handle) int {
+	// Check for GetDpiForWindow, introduced in Windows 10.
+	if _GetDpiForWindow.Find() == nil {
+		dpi, _, _ := _GetDpiForWindow.Call(uintptr(hwnd))
+		return int(dpi)
+	} else {
+		return GetSystemDPI()
+	}
+}
+
+func GlobalAlloc(size int) (syscall.Handle, error) {
+	r, _, err := _GlobalAlloc.Call(GHND, uintptr(size))
+	if r == 0 {
+		return 0, fmt.Errorf("GlobalAlloc: %v", err)
+	}
+	return syscall.Handle(r), nil
+}
+
+func GlobalFree(h syscall.Handle) {
+	_GlobalFree.Call(uintptr(h))
+}
+
+func GlobalLock(h syscall.Handle) (uintptr, error) {
+	r, _, err := _GlobalLock.Call(uintptr(h))
+	if r == 0 {
+		return 0, fmt.Errorf("GlobalLock: %v", err)
+	}
+	return r, nil
+}
+
+func GlobalUnlock(h syscall.Handle) {
+	_GlobalUnlock.Call(uintptr(h))
+}
+
 func KillTimer(hwnd syscall.Handle, nIDEvent uintptr) error {
 	r, _, err := _SetTimer.Call(uintptr(hwnd), uintptr(nIDEvent), 0, 0)
 	if r == 0 {
@@ -358,6 +441,14 @@ func MsgWaitForMultipleObjectsEx(nCount uint32, pHandles uintptr, millis, mask, 
 		return 0, fmt.Errorf("MsgWaitForMultipleObjectsEx failed: %v", err)
 	}
 	return res, nil
+}
+
+func OpenClipboard(hwnd syscall.Handle) error {
+	r, _, err := _OpenClipboard.Call(uintptr(hwnd))
+	if r == 0 {
+		return fmt.Errorf("OpenClipboard: %v", err)
+	}
+	return nil
 }
 
 func PeekMessage(m *Msg, hwnd syscall.Handle, wMsgFilterMin, wMsgFilterMax, wRemoveMsg uint32) bool {
@@ -411,6 +502,14 @@ func SetProcessDPIAware() {
 func SetCapture(hwnd syscall.Handle) syscall.Handle {
 	r, _, _ := _SetCapture.Call(uintptr(hwnd))
 	return syscall.Handle(r)
+}
+
+func SetClipboardData(format uint32, mem syscall.Handle) error {
+	r, _, err := _SetClipboardData.Call(uintptr(format), uintptr(mem))
+	if r == 0 {
+		return fmt.Errorf("SetClipboardData: %v", err)
+	}
+	return nil
 }
 
 func SetTimer(hwnd syscall.Handle, nIDEvent uintptr, uElapse uint32, timerProc uintptr) error {

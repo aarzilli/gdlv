@@ -4,48 +4,68 @@
 
 @import AppKit;
 
-#include "os_macos.h"
 #include "_cgo_export.h"
 
-@interface GioDelegate : NSObject<NSApplicationDelegate, NSWindowDelegate>
-@property (strong,nonatomic) NSWindow *window;
+@interface GioAppDelegate : NSObject<NSApplicationDelegate>
 @end
 
-@implementation GioDelegate
-- (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
-	[[NSRunningApplication currentApplication] activateWithOptions:(NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps)];
-	[self.window makeKeyAndOrderFront:self];
-	gio_onShow((__bridge CFTypeRef)self.window.contentView);
-}
-- (void)applicationDidHide:(NSNotification *)aNotification {
-	gio_onHide((__bridge CFTypeRef)self.window.contentView);
-}
-- (void)applicationWillUnhide:(NSNotification *)notification {
-	gio_onShow((__bridge CFTypeRef)self.window.contentView);
-}
+@interface GioWindowDelegate : NSObject<NSWindowDelegate>
+@end
+
+@implementation GioWindowDelegate
 - (void)windowWillMiniaturize:(NSNotification *)notification {
-	gio_onHide((__bridge CFTypeRef)self.window.contentView);
+	NSWindow *window = (NSWindow *)[notification object];
+	gio_onHide((__bridge CFTypeRef)window.contentView);
 }
 - (void)windowDidDeminiaturize:(NSNotification *)notification {
-	gio_onShow((__bridge CFTypeRef)self.window.contentView);
+	NSWindow *window = (NSWindow *)[notification object];
+	gio_onShow((__bridge CFTypeRef)window.contentView);
 }
 - (void)windowDidChangeScreen:(NSNotification *)notification {
-	CGDirectDisplayID dispID = [[[self.window screen] deviceDescription][@"NSScreenNumber"] unsignedIntValue];
-	CFTypeRef view = (__bridge CFTypeRef)self.window.contentView;
-	gio_updateDisplayLink(view, dispID);
+	NSWindow *window = (NSWindow *)[notification object];
+	CGDirectDisplayID dispID = [[[window screen] deviceDescription][@"NSScreenNumber"] unsignedIntValue];
+	CFTypeRef view = (__bridge CFTypeRef)window.contentView;
+	gio_onChangeScreen(view, dispID);
 }
 - (void)windowDidBecomeKey:(NSNotification *)notification {
-	gio_onFocus((__bridge CFTypeRef)self.window.contentView, YES);
+	NSWindow *window = (NSWindow *)[notification object];
+	gio_onFocus((__bridge CFTypeRef)window.contentView, YES);
 }
 - (void)windowDidResignKey:(NSNotification *)notification {
-	gio_onFocus((__bridge CFTypeRef)self.window.contentView, NO);
+	NSWindow *window = (NSWindow *)[notification object];
+	gio_onFocus((__bridge CFTypeRef)window.contentView, NO);
 }
 - (void)windowWillClose:(NSNotification *)notification {
-	gio_onTerminate((__bridge CFTypeRef)self.window.contentView);
-	self.window.delegate = nil;
-	[NSApp terminate:nil];
+	NSWindow *window = (NSWindow *)[notification object];
+	window.delegate = nil;
+	gio_onClose((__bridge CFTypeRef)window.contentView);
 }
 @end
+
+// Delegates are weakly referenced from their peers. Nothing
+// else holds a strong reference to our window delegate, so
+// keep a single global reference instead.
+static GioWindowDelegate *globalWindowDel;
+
+void gio_writeClipboard(unichar *chars, NSUInteger length) {
+	@autoreleasepool {
+		NSString *s = [NSString string];
+		if (length > 0) {
+			s = [NSString stringWithCharacters:chars length:length];
+		}
+		NSPasteboard *p = NSPasteboard.generalPasteboard;
+		[p declareTypes:@[NSPasteboardTypeString] owner:nil];
+		[p setString:s forType:NSPasteboardTypeString];
+	}
+}
+
+CFTypeRef gio_readClipboard(void) {
+	@autoreleasepool {
+		NSPasteboard *p = NSPasteboard.generalPasteboard;
+		NSString *content = [p stringForType:NSPasteboardTypeString];
+		return (__bridge_retained CFTypeRef)content;
+	}
+}
 
 CGFloat gio_viewHeight(CFTypeRef viewRef) {
 	NSView *view = (__bridge NSView *)viewRef;
@@ -57,15 +77,105 @@ CGFloat gio_viewWidth(CFTypeRef viewRef) {
 	return [view bounds].size.width;
 }
 
+CGFloat gio_getScreenBackingScale(void) {
+	return [NSScreen.mainScreen backingScaleFactor];
+}
+
 CGFloat gio_getViewBackingScale(CFTypeRef viewRef) {
 	NSView *view = (__bridge NSView *)viewRef;
 	return [view.window backingScaleFactor];
 }
 
-void gio_main(CFTypeRef viewRef, const char *title, CGFloat width, CGFloat height) {
+static CVReturn displayLinkCallback(CVDisplayLinkRef dl, const CVTimeStamp *inNow, const CVTimeStamp *inOutputTime, CVOptionFlags flagsIn, CVOptionFlags *flagsOut, void *displayLinkContext) {
+	gio_onFrameCallback(dl);
+	return kCVReturnSuccess;
+}
+
+CFTypeRef gio_createDisplayLink(void) {
+	CVDisplayLinkRef dl;
+	CVDisplayLinkCreateWithActiveCGDisplays(&dl);
+	CVDisplayLinkSetOutputCallback(dl, displayLinkCallback, nil);
+	return dl;
+}
+
+int gio_startDisplayLink(CFTypeRef dl) {
+	return CVDisplayLinkStart((CVDisplayLinkRef)dl);
+}
+
+int gio_stopDisplayLink(CFTypeRef dl) {
+	return CVDisplayLinkStop((CVDisplayLinkRef)dl);
+}
+
+void gio_releaseDisplayLink(CFTypeRef dl) {
+	CVDisplayLinkRelease((CVDisplayLinkRef)dl);
+}
+
+void gio_setDisplayLinkDisplay(CFTypeRef dl, uint64_t did) {
+	CVDisplayLinkSetCurrentCGDisplay((CVDisplayLinkRef)dl, (CGDirectDisplayID)did);
+}
+
+NSPoint gio_cascadeTopLeftFromPoint(CFTypeRef windowRef, NSPoint topLeft) {
+	NSWindow *window = (__bridge NSWindow *)windowRef;
+	return [window cascadeTopLeftFromPoint:topLeft];
+}
+
+void gio_makeKeyAndOrderFront(CFTypeRef windowRef) {
+	NSWindow *window = (__bridge NSWindow *)windowRef;
+	[window makeKeyAndOrderFront:nil];
+}
+
+CFTypeRef gio_createWindow(CFTypeRef viewRef, const char *title, CGFloat width, CGFloat height, CGFloat minWidth, CGFloat minHeight, CGFloat maxWidth, CGFloat maxHeight) {
 	@autoreleasepool {
-		NSView *view = (NSView *)CFBridgingRelease(viewRef);
+		NSRect rect = NSMakeRect(0, 0, width, height);
+		NSUInteger styleMask = NSTitledWindowMask |
+			NSResizableWindowMask |
+			NSMiniaturizableWindowMask |
+			NSClosableWindowMask;
+
+		NSWindow* window = [[NSWindow alloc] initWithContentRect:rect
+													   styleMask:styleMask
+														 backing:NSBackingStoreBuffered
+														   defer:NO];
+		if (minWidth > 0 || minHeight > 0) {
+			window.contentMinSize = NSMakeSize(minWidth, minHeight);
+		}
+		if (maxWidth > 0 || maxHeight > 0) {
+			window.contentMaxSize = NSMakeSize(maxWidth, maxHeight);
+		}
+		[window setAcceptsMouseMovedEvents:YES];
+		window.title = [NSString stringWithUTF8String: title];
+		NSView *view = (__bridge NSView *)viewRef;
+		[window setContentView:view];
+		[window makeFirstResponder:view];
+		window.releasedWhenClosed = NO;
+		window.delegate = globalWindowDel;
+		return (__bridge_retained CFTypeRef)window;
+	}
+}
+
+void gio_close(CFTypeRef windowRef) {
+  NSWindow* window = (__bridge NSWindow *)windowRef;
+  [window performClose:nil];
+}
+
+@implementation GioAppDelegate
+- (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
+	[[NSRunningApplication currentApplication] activateWithOptions:(NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps)];
+	gio_onFinishLaunching();
+}
+- (void)applicationDidHide:(NSNotification *)aNotification {
+	gio_onAppHide();
+}
+- (void)applicationWillUnhide:(NSNotification *)notification {
+	gio_onAppShow();
+}
+@end
+
+void gio_main() {
+	@autoreleasepool {
 		[NSApplication sharedApplication];
+		GioAppDelegate *del = [[GioAppDelegate alloc] init];
+		[NSApp setDelegate:del];
 		[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 
 		NSMenuItem *mainMenu = [NSMenuItem new];
@@ -84,27 +194,7 @@ void gio_main(CFTypeRef viewRef, const char *title, CGFloat width, CGFloat heigh
 		[menuBar addItem:mainMenu];
 		[NSApp setMainMenu:menuBar];
 
-		NSRect rect = NSMakeRect(0, 0, width, height);
-		NSUInteger styleMask = NSTitledWindowMask |
-			NSResizableWindowMask |
-			NSMiniaturizableWindowMask |
-			NSClosableWindowMask;
-		NSWindow* window = [[NSWindow alloc] initWithContentRect:rect
-													   styleMask:styleMask
-														 backing:NSBackingStoreBuffered
-														   defer:NO];
-		window.title = [NSString stringWithUTF8String: title];
-		[window cascadeTopLeftFromPoint:NSMakePoint(20,20)];
-		[window setAcceptsMouseMovedEvents:YES];
-
-		gio_onCreate((__bridge CFTypeRef)view);
-		GioDelegate *del = [[GioDelegate alloc] init];
-		del.window = window;
-		[window setDelegate:del];
-		[NSApp setDelegate:del];
-		[window setContentView:view];
-		[window makeFirstResponder:view];
-
+		globalWindowDel = [[GioWindowDelegate alloc] init];
 
 		[NSApp run];
 	}

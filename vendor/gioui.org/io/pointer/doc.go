@@ -8,6 +8,23 @@ object such as a finger.
 The InputOp operation is used to declare a handler ready for pointer
 events. Use an event.Queue to receive events.
 
+Types
+
+Only events that match a specified list of types are delivered to a handler.
+
+For example, to receive Press, Drag, and Release events (but not Move, Enter,
+Leave, or Scroll):
+
+	var ops op.Ops
+	var h *Handler = ...
+
+	pointer.InputOp{
+		Tag:   h,
+		Types: pointer.Press | pointer.Drag | pointer.Release,
+	}.Add(ops)
+
+Cancel events are always delivered.
+
 Areas
 
 The area operations are used for specifying the area where
@@ -15,12 +32,9 @@ subsequent InputOp are active.
 
 For example, to set up a rectangular hit area:
 
-	var ops op.Ops
-	var h *Handler = ...
-
 	r := image.Rectangle{...}
 	pointer.Rect(r).Add(ops)
-	pointer.InputOp{Key: h}.Add(ops)
+	pointer.InputOp{Tag: h}.Add(ops)
 
 Note that areas compound: the effective area of multiple area
 operations is the intersection of the areas.
@@ -37,12 +51,12 @@ For example:
 	var stack op.StackOp
 	var h1, h2 *Handler
 
-	stack.Push(ops)
-	pointer.InputOp{Key: h1}.Add(Ops)
+	stack := op.Push(ops)
+	pointer.InputOp{Tag: h1}.Add(Ops)
 	stack.Pop()
 
-	stack.Push(ops)
-	pointer.InputOp{Key: h2}.Add(ops)
+	stack = op.Push(ops)
+	pointer.InputOp{Tag: h2}.Add(ops)
 	stack.Pop()
 
 implies a tree of two inner nodes, each with one pointer handler.

@@ -31,11 +31,6 @@ type Event struct {
 	Time time.Duration
 	// Buttons are the set of pressed mouse buttons for this event.
 	Buttons Buttons
-	// Hit is set when the event was within the registered
-	// area for the handler. Hit can be false when a pointer
-	// was pressed within the hit area, and then dragged
-	// outside it.
-	Hit bool
 	// Position is the position of the event, relative to
 	// the current transformation, as set by op.TransformOp.
 	Position f32.Point
@@ -57,10 +52,12 @@ type AreaOp struct {
 // InputOp declares an input handler ready for pointer
 // events.
 type InputOp struct {
-	Key event.Key
+	Tag event.Tag
 	// Grab, if set, request that the handler get
 	// Grabbed priority.
 	Grab bool
+	// Types is a bitwise-or of event types to receive.
+	Types Type
 }
 
 // PassOp sets the pass-through mode.
@@ -88,13 +85,21 @@ type areaKind uint8
 const (
 	// A Cancel event is generated when the current gesture is
 	// interrupted by other handlers or the system.
-	Cancel Type = iota
+	Cancel Type = (1 << iota) >> 1
 	// Press of a pointer.
 	Press
 	// Release of a pointer.
 	Release
 	// Move of a pointer.
 	Move
+	// Drag of a pointer.
+	Drag
+	// Pointer enters an area watching for pointer input
+	Enter
+	// Pointer leaves an area watching for pointer input
+	Leave
+	// Scroll of a pointer.
+	Scroll
 )
 
 const (
@@ -108,6 +113,9 @@ const (
 	// Shared priority is for handlers that
 	// are part of a matching set larger than 1.
 	Shared Priority = iota
+	// Foremost priority is like Shared, but the
+	// handler is the foremost of the matching set.
+	Foremost
 	// Grabbed is used for matching sets of size 1.
 	Grabbed
 )
@@ -151,11 +159,12 @@ func (op AreaOp) Add(o *op.Ops) {
 }
 
 func (h InputOp) Add(o *op.Ops) {
-	data := o.Write(opconst.TypePointerInputLen, h.Key)
+	data := o.Write(opconst.TypePointerInputLen, h.Tag)
 	data[0] = byte(opconst.TypePointerInput)
 	if h.Grab {
 		data[1] = 1
 	}
+	data[2] = byte(h.Types)
 }
 
 func (op PassOp) Add(o *op.Ops) {
@@ -176,6 +185,14 @@ func (t Type) String() string {
 		return "Cancel"
 	case Move:
 		return "Move"
+	case Drag:
+		return "Drag"
+	case Enter:
+		return "Enter"
+	case Leave:
+		return "Leave"
+	case Scroll:
+		return "Scroll"
 	default:
 		panic("unknown Type")
 	}
@@ -185,6 +202,8 @@ func (p Priority) String() string {
 	switch p {
 	case Shared:
 		return "Shared"
+	case Foremost:
+		return "Foremost"
 	case Grabbed:
 		return "Grabbed"
 	default:

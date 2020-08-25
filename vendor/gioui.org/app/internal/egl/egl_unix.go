@@ -11,7 +11,7 @@ package egl
 #cgo freebsd LDFLAGS: -L/usr/local/lib
 #cgo openbsd CFLAGS: -I/usr/X11R6/include
 #cgo openbsd LDFLAGS: -L/usr/X11R6/lib
-#cgo CFLAGS: -DMESA_EGL_NO_X11_HEADERS
+#cgo CFLAGS: -DEGL_NO_X11
 
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
@@ -36,7 +36,7 @@ func eglChooseConfig(disp _EGLDisplay, attribs []_EGLint) (_EGLConfig, bool) {
 	var cfg C.EGLConfig
 	var ncfg C.EGLint
 	if C.eglChooseConfig(disp, &attribs[0], &cfg, 1, &ncfg) != C.EGL_TRUE {
-		return nil, false
+		return nilEGLConfig, false
 	}
 	return _EGLConfig(cfg), true
 }

@@ -14,9 +14,14 @@ import (
 	"gioui.org/op"
 )
 
-// ImageOp sets the material to an image.
+// ImageOp sets the brush to an image.
+//
+// Note: the ImageOp may keep a reference to the backing image.
+// See NewImageOp for details.
 type ImageOp struct {
-	Rect    image.Rectangle
+	// Rect is the section if the backing image to use.
+	Rect image.Rectangle
+
 	uniform bool
 	color   color.RGBA
 	src     *image.RGBA
@@ -26,17 +31,27 @@ type ImageOp struct {
 	handle interface{}
 }
 
-// ColorOp sets the material to a constant color.
+// ColorOp sets the brush to a constant color.
 type ColorOp struct {
 	Color color.RGBA
 }
 
-// PaintOp draws the current material, respecting the
-// clip path and transformation.
+// PaintOp fills an area with the current brush, respecting the
+// current clip path and transformation.
 type PaintOp struct {
+	// Rect is the destination area to paint. If necessary, the brush is
+	// scaled to cover the rectangle area.
 	Rect f32.Rectangle
 }
 
+// NewImageOp creates an ImageOp backed by src. See
+// gioui.org/io/system.FrameEvent for a description of when data
+// referenced by operations is safe to re-use.
+//
+// NewImageOp assumes the backing image is immutable, and may cache a
+// copy of its contents in a GPU-friendly way. Create new ImageOps to
+// ensure that changes to an image is reflected in the display of
+// it.
 func NewImageOp(src image.Image) ImageOp {
 	switch src := src.(type) {
 	case *image.Uniform:

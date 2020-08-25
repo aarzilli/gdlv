@@ -6,13 +6,14 @@ package gpu
 // Pathfinder (https://github.com/servo/pathfinder).
 
 import (
+	"encoding/binary"
 	"image"
+	"math"
 	"unsafe"
 
 	"gioui.org/f32"
 	"gioui.org/gpu/backend"
 	"gioui.org/internal/f32color"
-	"gioui.org/internal/path"
 	gunsafe "gioui.org/internal/unsafe"
 )
 
@@ -53,7 +54,8 @@ type coverColUniforms struct {
 type coverUniforms struct {
 	transform        [4]float32
 	uvCoverTransform [4]float32
-	uvTransform      [4]float32
+	uvTransformR1    [4]float32
+	uvTransformR2    [4]float32
 	z                float32
 }
 
@@ -104,9 +106,33 @@ type pathData struct {
 	data    backend.Buffer
 }
 
+// vertex data suitable for passing to vertex programs.
+type vertex struct {
+	// Corner encodes the corner: +0.5 for south, +.25 for east.
+	Corner       float32
+	MaxY         float32
+	FromX, FromY float32
+	CtrlX, CtrlY float32
+	ToX, ToY     float32
+}
+
+func (v vertex) encode(d []byte, maxy uint32) {
+	bo := binary.LittleEndian
+	bo.PutUint32(d[0:], math.Float32bits(v.Corner))
+	bo.PutUint32(d[4:], maxy)
+	bo.PutUint32(d[8:], math.Float32bits(v.FromX))
+	bo.PutUint32(d[12:], math.Float32bits(v.FromY))
+	bo.PutUint32(d[16:], math.Float32bits(v.CtrlX))
+	bo.PutUint32(d[20:], math.Float32bits(v.CtrlY))
+	bo.PutUint32(d[24:], math.Float32bits(v.ToX))
+	bo.PutUint32(d[28:], math.Float32bits(v.ToY))
+}
+
 const (
 	// Number of path quads per draw batch.
 	pathBatchSize = 10000
+	// Size of a vertex as sent to gpu
+	vertStride = 7*4 + 2*2
 )
 
 func newPather(ctx backend.Device) *pather {
@@ -152,11 +178,11 @@ func newStenciler(ctx backend.Device) *stenciler {
 		panic(err)
 	}
 	progLayout, err := ctx.NewInputLayout(shader_stencil_vert, []backend.InputDesc{
-		{Type: backend.DataTypeFloat, Size: 1, Offset: int(unsafe.Offsetof((*(*path.Vertex)(nil)).Corner))},
-		{Type: backend.DataTypeFloat, Size: 1, Offset: int(unsafe.Offsetof((*(*path.Vertex)(nil)).MaxY))},
-		{Type: backend.DataTypeFloat, Size: 2, Offset: int(unsafe.Offsetof((*(*path.Vertex)(nil)).FromX))},
-		{Type: backend.DataTypeFloat, Size: 2, Offset: int(unsafe.Offsetof((*(*path.Vertex)(nil)).CtrlX))},
-		{Type: backend.DataTypeFloat, Size: 2, Offset: int(unsafe.Offsetof((*(*path.Vertex)(nil)).ToX))},
+		{Type: backend.DataTypeFloat, Size: 1, Offset: int(unsafe.Offsetof((*(*vertex)(nil)).Corner))},
+		{Type: backend.DataTypeFloat, Size: 1, Offset: int(unsafe.Offsetof((*(*vertex)(nil)).MaxY))},
+		{Type: backend.DataTypeFloat, Size: 2, Offset: int(unsafe.Offsetof((*(*vertex)(nil)).FromX))},
+		{Type: backend.DataTypeFloat, Size: 2, Offset: int(unsafe.Offsetof((*(*vertex)(nil)).CtrlX))},
+		{Type: backend.DataTypeFloat, Size: 2, Offset: int(unsafe.Offsetof((*(*vertex)(nil)).ToX))},
 	})
 	if err != nil {
 		panic(err)
@@ -263,18 +289,18 @@ func (c *coverer) release() {
 	c.layout.Release()
 }
 
-func buildPath(ctx backend.Device, p []byte) *pathData {
+func buildPath(ctx backend.Device, p []byte) pathData {
 	buf, err := ctx.NewImmutableBuffer(backend.BufferBindingVertices, p)
 	if err != nil {
 		panic(err)
 	}
-	return &pathData{
-		ncurves: len(p) / path.VertStride,
+	return pathData{
+		ncurves: len(p) / vertStride,
 		data:    buf,
 	}
 }
 
-func (p *pathData) release() {
+func (p pathData) release() {
 	p.data.Release()
 }
 
@@ -282,7 +308,7 @@ func (p *pather) begin(sizes []image.Point) {
 	p.stenciler.begin(sizes)
 }
 
-func (p *pather) stencilPath(bounds image.Rectangle, offset f32.Point, uv image.Point, data *pathData) {
+func (p *pather) stencilPath(bounds image.Rectangle, offset f32.Point, uv image.Point, data pathData) {
 	p.stenciler.stencilPath(bounds, offset, uv, data)
 }
 
@@ -312,7 +338,7 @@ func (s *stenciler) begin(sizes []image.Point) {
 	s.ctx.BindIndexBuffer(s.indexBuf)
 }
 
-func (s *stenciler) stencilPath(bounds image.Rectangle, offset f32.Point, uv image.Point, data *pathData) {
+func (s *stenciler) stencilPath(bounds image.Rectangle, offset f32.Point, uv image.Point, data pathData) {
 	s.ctx.Viewport(uv.X, uv.Y, bounds.Dx(), bounds.Dy())
 	// Transform UI coordinates to OpenGL coordinates.
 	texSize := f32.Point{X: float32(bounds.Dx()), Y: float32(bounds.Dy())}
@@ -329,18 +355,18 @@ func (s *stenciler) stencilPath(bounds image.Rectangle, offset f32.Point, uv ima
 		if max := pathBatchSize; batch > max {
 			batch = max
 		}
-		off := path.VertStride * start * 4
-		s.ctx.BindVertexBuffer(data.data, path.VertStride, off)
+		off := vertStride * start * 4
+		s.ctx.BindVertexBuffer(data.data, vertStride, off)
 		s.ctx.DrawElements(backend.DrawModeTriangles, 0, batch*6)
 		start += batch
 	}
 }
 
-func (p *pather) cover(z float32, mat materialType, col f32color.RGBA, scale, off, uvScale, uvOff, coverScale, coverOff f32.Point) {
-	p.coverer.cover(z, mat, col, scale, off, uvScale, uvOff, coverScale, coverOff)
+func (p *pather) cover(z float32, mat materialType, col f32color.RGBA, scale, off f32.Point, uvTrans f32.Affine2D, coverScale, coverOff f32.Point) {
+	p.coverer.cover(z, mat, col, scale, off, uvTrans, coverScale, coverOff)
 }
 
-func (c *coverer) cover(z float32, mat materialType, col f32color.RGBA, scale, off, uvScale, uvOff, coverScale, coverOff f32.Point) {
+func (c *coverer) cover(z float32, mat materialType, col f32color.RGBA, scale, off f32.Point, uvTrans f32.Affine2D, coverScale, coverOff f32.Point) {
 	p := c.prog[mat]
 	c.ctx.BindProgram(p.prog)
 	var uniforms *coverUniforms
@@ -349,7 +375,9 @@ func (c *coverer) cover(z float32, mat materialType, col f32color.RGBA, scale, o
 		c.colUniforms.frag.color = col
 		uniforms = &c.colUniforms.vert.coverUniforms
 	case materialTexture:
-		c.texUniforms.vert.uvTransform = [4]float32{uvScale.X, uvScale.Y, uvOff.X, uvOff.Y}
+		t1, t2, t3, t4, t5, t6 := uvTrans.Elems()
+		c.texUniforms.vert.uvTransformR1 = [4]float32{t1, t2, t3, 0}
+		c.texUniforms.vert.uvTransformR2 = [4]float32{t4, t5, t6, 0}
 		uniforms = &c.texUniforms.vert.coverUniforms
 	}
 	uniforms.z = z
@@ -357,4 +385,12 @@ func (c *coverer) cover(z float32, mat materialType, col f32color.RGBA, scale, o
 	uniforms.uvCoverTransform = [4]float32{coverScale.X, coverScale.Y, coverOff.X, coverOff.Y}
 	p.UploadUniforms()
 	c.ctx.DrawArrays(backend.DrawModeTriangleStrip, 0, 4)
+}
+
+func init() {
+	// Check that struct vertex has the expected size and
+	// that it contains no padding.
+	if unsafe.Sizeof(*(*vertex)(nil)) != vertStride {
+		panic("unexpected struct size")
+	}
 }

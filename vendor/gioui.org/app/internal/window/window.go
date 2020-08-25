@@ -6,8 +6,6 @@ package window
 
 import (
 	"errors"
-	"math"
-	"time"
 
 	"gioui.org/gpu/backend"
 	"gioui.org/io/event"
@@ -16,8 +14,10 @@ import (
 )
 
 type Options struct {
-	Width, Height unit.Value
-	Title         string
+	Width, Height       unit.Value
+	MinWidth, MinHeight unit.Value
+	MaxWidth, MaxHeight unit.Value
+	Title               string
 }
 
 type FrameEvent struct {
@@ -54,6 +54,14 @@ type Driver interface {
 	// ShowTextInput updates the virtual keyboard state.
 	ShowTextInput(show bool)
 	NewContext() (Context, error)
+
+	// ReadClipboard requests the clipboard content.
+	ReadClipboard()
+	// WriteClipboard requests a clipboard write.
+	WriteClipboard(s string)
+
+	// Close the window.
+	Close()
 }
 
 type windowRendezvous struct {
@@ -65,34 +73,6 @@ type windowRendezvous struct {
 type windowAndOptions struct {
 	window Callbacks
 	opts   *Options
-}
-
-// config implements the system.Config interface.
-type config struct {
-	// Device pixels per dp.
-	pxPerDp float32
-	// Device pixels per sp.
-	pxPerSp float32
-	now     time.Time
-}
-
-func (c *config) Now() time.Time {
-	return c.now
-}
-
-func (c *config) Px(v unit.Value) int {
-	var r float32
-	switch v.U {
-	case unit.UnitPx:
-		r = v.V
-	case unit.UnitDp:
-		r = c.pxPerDp * v.V
-	case unit.UnitSp:
-		r = c.pxPerSp * v.V
-	default:
-		panic("unknown unit")
-	}
-	return int(math.Round(float64(r)))
 }
 
 func newWindowRendezvous() *windowRendezvous {

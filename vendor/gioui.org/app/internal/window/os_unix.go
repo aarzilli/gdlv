@@ -8,10 +8,8 @@ import (
 	"errors"
 )
 
-var mainDone = make(chan struct{})
-
 func Main() {
-	<-mainDone
+	select {}
 }
 
 // instead of creating files with build tags for each combination of wayland +/- x11

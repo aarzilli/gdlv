@@ -12,16 +12,18 @@ import android.app.Fragment;
 import android.app.FragmentManager;
 import android.app.FragmentTransaction;
 import android.content.Context;
+import android.graphics.Color;
 import android.graphics.Rect;
 import android.os.Build;
-import android.os.Handler;
 import android.text.Editable;
 import android.util.AttributeSet;
+import android.util.TypedValue;
 import android.view.Choreographer;
 import android.view.KeyCharacterMap;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.View;
+import android.view.ViewConfiguration;
 import android.view.WindowInsets;
 import android.view.Surface;
 import android.view.SurfaceView;
@@ -33,32 +35,17 @@ import android.view.inputmethod.EditorInfo;
 
 import java.io.UnsupportedEncodingException;
 
-public class GioView extends SurfaceView implements Choreographer.FrameCallback {
+public final class GioView extends SurfaceView implements Choreographer.FrameCallback {
 	private final static Object initLock = new Object();
 	private static boolean jniLoaded;
 
-	private final SurfaceHolder.Callback callbacks;
+	private final SurfaceHolder.Callback surfCallbacks;
+	private final View.OnFocusChangeListener focusCallback;
 	private final InputMethodManager imm;
-	private final Handler handler;
-	private long nhandle;
+	private final float scrollXScale;
+	private final float scrollYScale;
 
-	private static synchronized void initialize(Context appCtx) {
-		synchronized (initLock) {
-			if (jniLoaded) {
-				return;
-			}
-			String dataDir = appCtx.getFilesDir().getAbsolutePath();
-			byte[] dataDirUTF8;
-			try {
-				dataDirUTF8 = dataDir.getBytes("UTF-8");
-			} catch (UnsupportedEncodingException e) {
-				throw new RuntimeException(e);
-			}
-			System.loadLibrary("gio");
-			runGoMain(dataDirUTF8, appCtx);
-			jniLoaded = true;
-		}
-	}
+	private long nhandle;
 
 	public GioView(Context context) {
 		this(context, null);
@@ -67,20 +54,42 @@ public class GioView extends SurfaceView implements Choreographer.FrameCallback 
 	public GioView(Context context, AttributeSet attrs) {
 		super(context, attrs);
 
-		handler = new Handler();
 		// Late initialization of the Go runtime to wait for a valid context.
-		initialize(context.getApplicationContext());
+		Gio.init(context.getApplicationContext());
+
+		// Set background color to transparent to avoid a flickering
+		// issue on ChromeOS.
+		setBackgroundColor(Color.argb(0, 0, 0, 0));
+
+		ViewConfiguration conf = ViewConfiguration.get(context);
+		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+			scrollXScale = conf.getScaledHorizontalScrollFactor();
+			scrollYScale = conf.getScaledVerticalScrollFactor();
+
+			// The platform focus highlight is not aware of Gio's widgets.
+			setDefaultFocusHighlightEnabled(false);
+		} else {
+			float listItemHeight = 48; // dp
+			float px = TypedValue.applyDimension(
+				TypedValue.COMPLEX_UNIT_DIP,
+				listItemHeight,
+				getResources().getDisplayMetrics()
+			);
+			scrollXScale = px;
+			scrollYScale = px;
+		}
 
 		nhandle = onCreateView(this);
 		imm = (InputMethodManager)context.getSystemService(Context.INPUT_METHOD_SERVICE);
 		setFocusable(true);
 		setFocusableInTouchMode(true);
-		setOnFocusChangeListener(new View.OnFocusChangeListener() {
+		focusCallback = new View.OnFocusChangeListener() {
 			@Override public void onFocusChange(View v, boolean focus) {
 				GioView.this.onFocusChange(nhandle, focus);
 			}
-		});
-		callbacks = new SurfaceHolder.Callback() {
+		};
+		setOnFocusChangeListener(focusCallback);
+		surfCallbacks = new SurfaceHolder.Callback() {
 			@Override public void surfaceCreated(SurfaceHolder holder) {
 				// Ignore; surfaceChanged is guaranteed to be called immediately after this.
 			}
@@ -91,7 +100,7 @@ public class GioView extends SurfaceView implements Choreographer.FrameCallback 
 				onSurfaceDestroyed(nhandle);
 			}
 		};
-		getHolder().addCallback(callbacks);
+		getHolder().addCallback(surfCallbacks);
 	}
 
 	@Override public boolean onKeyDown(int keyCode, KeyEvent event) {
@@ -99,13 +108,23 @@ public class GioView extends SurfaceView implements Choreographer.FrameCallback 
 		return false;
 	}
 
+	@Override public boolean onGenericMotionEvent(MotionEvent event) {
+		dispatchMotionEvent(event);
+		return true;
+	}
+
 	@Override public boolean onTouchEvent(MotionEvent event) {
-		// Ask for unbuffered events. Flutter and Chrome does it
-		// so I assume its good for us as well.
+		// Ask for unbuffered events. Flutter and Chrome do it
+		// so assume it's good for us as well.
 		if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
 			requestUnbufferedDispatch(event);
 		}
 
+		dispatchMotionEvent(event);
+		return true;
+	}
+
+	private void dispatchMotionEvent(MotionEvent event) {
 		for (int j = 0; j < event.getHistorySize(); j++) {
 			long time = event.getHistoricalEventTime(j);
 			for (int i = 0; i < event.getPointerCount(); i++) {
@@ -116,6 +135,8 @@ public class GioView extends SurfaceView implements Choreographer.FrameCallback 
 						event.getToolType(i),
 						event.getHistoricalX(i, j),
 						event.getHistoricalY(i, j),
+						scrollXScale*event.getHistoricalAxisValue(MotionEvent.AXIS_HSCROLL, i, j),
+						scrollYScale*event.getHistoricalAxisValue(MotionEvent.AXIS_VSCROLL, i, j),
 						event.getButtonState(),
 						time);
 			}
@@ -129,15 +150,15 @@ public class GioView extends SurfaceView implements Choreographer.FrameCallback 
 			}
 			onTouchEvent(
 					nhandle,
-					act,
+					pact,
 					event.getPointerId(i),
 					event.getToolType(i),
-					event.getX(i),
-					event.getY(i),
+					event.getX(i), event.getY(i),
+					scrollXScale*event.getAxisValue(MotionEvent.AXIS_HSCROLL, i),
+					scrollYScale*event.getAxisValue(MotionEvent.AXIS_VSCROLL, i),
 					event.getButtonState(),
 					event.getEventTime());
 		}
-		return true;
 	}
 
 	@Override public InputConnection onCreateInputConnection(EditorInfo outAttrs) {
@@ -157,14 +178,6 @@ public class GioView extends SurfaceView implements Choreographer.FrameCallback 
 		post(new Runnable() {
 			@Override public void run() {
 				imm.hideSoftInputFromWindow(getWindowToken(), 0);
-			}
-		});
-	}
-
-	void postFrameCallbackOnMainThread() {
-		handler.post(new Runnable() {
-			@Override public void run() {
-				postFrameCallback();
 			}
 		});
 	}
@@ -200,7 +213,8 @@ public class GioView extends SurfaceView implements Choreographer.FrameCallback 
 	}
 
 	void destroy() {
-		getHolder().removeCallback(callbacks);
+		setOnFocusChangeListener(null);
+		getHolder().removeCallback(surfCallbacks);
 		onDestroyView(nhandle);
 		nhandle = 0;
 	}
@@ -217,35 +231,6 @@ public class GioView extends SurfaceView implements Choreographer.FrameCallback 
 		return onBack(nhandle);
 	}
 
-	public void registerFragment(String del) {
-		final Class cls;
-		try {
-			cls = getContext().getClassLoader().loadClass(del);
-		} catch (ClassNotFoundException e) {
-			throw new RuntimeException("RegisterFragment: fragment class not found: " + e.getMessage());
-		}
-
-		handler.post(new Runnable() {
-			public void run() {
-				final Fragment frag;
-				try {
-					frag = (Fragment)cls.newInstance();
-				} catch (IllegalAccessException | InstantiationException | ExceptionInInitializerError | SecurityException | ClassCastException e) {
-					throw new RuntimeException("RegisterFragment: error instantiating fragment: " + e.getMessage());
-				}
-				final FragmentManager fm;
-				try {
-					fm = ((Activity)getContext()).getFragmentManager();
-				} catch (ClassCastException e) {
-					throw new RuntimeException("RegisterFragment: cannot get fragment manager from View Context: " + e.getMessage());
-				}
-				FragmentTransaction ft = fm.beginTransaction();
-				ft.add(frag, del);
-				ft.commitNow();
-			}
-		});
-	}
-
 	static private native long onCreateView(GioView view);
 	static private native void onDestroyView(long handle);
 	static private native void onStartView(long handle);
@@ -255,12 +240,11 @@ public class GioView extends SurfaceView implements Choreographer.FrameCallback 
 	static private native void onConfigurationChanged(long handle);
 	static private native void onWindowInsets(long handle, int top, int right, int bottom, int left);
 	static private native void onLowMemory();
-	static private native void onTouchEvent(long handle, int action, int pointerID, int tool, float x, float y, int buttons, long time);
+	static private native void onTouchEvent(long handle, int action, int pointerID, int tool, float x, float y, float scrollX, float scrollY, int buttons, long time);
 	static private native void onKeyEvent(long handle, int code, int character, long time);
 	static private native void onFrameCallback(long handle, long nanos);
 	static private native boolean onBack(long handle);
 	static private native void onFocusChange(long handle, boolean focus);
-	static private native void runGoMain(byte[] dataDir, Context context);
 
 	private static class InputConnection extends BaseInputConnection {
 		private final Editable editable;
