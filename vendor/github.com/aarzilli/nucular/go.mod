@@ -1,7 +1,7 @@
 module github.com/aarzilli/nucular
 
 require (
-	gioui.org v0.0.0-20200824174209-9543b5f8f3ff
+	gioui.org v0.0.0-20200825104353-4821472ea1c9
 	github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802
 	github.com/golang/freetype v0.0.0-20161208064710-d9be45aaf745
 	github.com/hashicorp/golang-lru v0.0.0-20160813221303-0a025b7e63ad
