@@ -236,6 +236,7 @@ func guiUpdate(w *nucular.Window) {
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):
 			mw.ActivateEditor(&commandLineEditor)
+			mw.Changed()
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeF5):
 			if !client.Running() && client != nil {
