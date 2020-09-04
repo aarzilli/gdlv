@@ -1,13 +1,13 @@
 package prettyprint
 
 import (
-	"io"
 	"bytes"
 	"fmt"
+	"io"
 	"reflect"
 	"strings"
 	"unicode"
-	
+
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
 
@@ -448,7 +448,7 @@ func shortenTypeEx(typ string) (string, bool) {
 		slashnum := 0
 		slash := -1
 		for i, ch := range typ {
-			if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' && ch != '.' && ch != '/' && ch != '@' && ch != '%' {
+			if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' && ch != '.' && ch != '/' && ch != '@' && ch != '%' && ch != '-' {
 				return "", false
 			}
 			if ch == '/' {

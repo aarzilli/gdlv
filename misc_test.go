@@ -29,6 +29,7 @@ func TestShortenType(t *testing.T) {
 	c("map[uint64]*github.com/aarzilli/dwarf5/dwarf.typeUnit", "map[uint64]*dwarf.typeUnit")
 	c("uint8", "uint8")
 	c("encoding/binary", "encoding/binary")
+	c("*github.com/go-delve/delve/pkg/proc.Target", "*proc.Target")
 }
 
 func TestCurrentColumn(t *testing.T) {
