@@ -298,7 +298,12 @@ func updateGoroutines(container *nucular.Window) {
 
 	w.MenubarBegin()
 	w.Row(20).Static(130, 300)
-	w.PropertyInt("Limit:", 1, &goroutinesPanel.limit, 1000000000, 1, 1)
+	if w.PropertyInt("Limit:", 1, &goroutinesPanel.limit, 1000000000, 1, 1) {
+		go func() {
+			goroutinesPanel.asyncLoad.clear()
+			wnd.Changed()
+		}()
+	}
 	if w := w.Combo(label.T(goroutineLocations[goroutinesPanel.goroutineLocation]), 500, nil); w != nil {
 		w.Row(22).Dynamic(1)
 		for i := range goroutineLocations {
