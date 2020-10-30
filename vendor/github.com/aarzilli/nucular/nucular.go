@@ -600,6 +600,9 @@ func panelEnd(ctx *context, window *Window) {
 			scroll_inc = float64(layout.Clip.H) * 0.01
 			scroll_target = float64(layout.AtY - layout.Clip.Y)
 			scroll_offset = doScrollbarv(window, bounds, layout.Bounds, scroll_offset, scroll_target, scroll_step, scroll_inc, &ctx.Style.Scrollv, in, style.Font)
+			if layout.Offset.Y != int(scroll_offset) {
+				ctx.trashFrame = true
+			}
 			layout.Offset.Y = int(scroll_offset)
 		}
 		if layout.Flags&WindowNoHScrollbar == 0 {
@@ -629,6 +632,9 @@ func panelEnd(ctx *context, window *Window) {
 			scroll_step = float64(layout.MaxX) * 0.05
 			scroll_inc = float64(layout.MaxX) * 0.005
 			scroll_offset = doScrollbarh(window, bounds, scroll_offset, scroll_target, scroll_step, scroll_inc, &ctx.Style.Scrollh, in, style.Font)
+			if layout.Offset.X != int(scroll_offset) {
+				ctx.trashFrame = true
+			}
 			layout.Offset.X = int(scroll_offset)
 		}
 	}
