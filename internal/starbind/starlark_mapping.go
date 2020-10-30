@@ -1,5 +1,4 @@
-// DO NOT EDIT: auto-generated using scripts/gen-starlark-bindings.go
-
+// DO NOT EDIT: auto-generated using _scripts/gen-starlark-bindings.go
 package starbind
 
 import (
@@ -450,6 +449,44 @@ func (env *Env) starlarkPredeclare() starlark.StringDict {
 		}
 		return env.interfaceToStarlarkValue(rpcRet), nil
 	})
+	r["examine_memory"] = starlark.NewBuiltin("examine_memory", func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+		if err := isCancelled(thread); err != nil {
+			return starlark.None, decorateError(thread, err)
+		}
+		var rpcArgs rpc2.ExamineMemoryIn
+		var rpcRet rpc2.ExaminedMemoryOut
+		if len(args) > 0 && args[0] != starlark.None {
+			err := unmarshalStarlarkValue(args[0], &rpcArgs.Address, "Address")
+			if err != nil {
+				return starlark.None, decorateError(thread, err)
+			}
+		}
+		if len(args) > 1 && args[1] != starlark.None {
+			err := unmarshalStarlarkValue(args[1], &rpcArgs.Length, "Length")
+			if err != nil {
+				return starlark.None, decorateError(thread, err)
+			}
+		}
+		for _, kv := range kwargs {
+			var err error
+			switch kv[0].(starlark.String) {
+			case "Address":
+				err = unmarshalStarlarkValue(kv[1], &rpcArgs.Address, "Address")
+			case "Length":
+				err = unmarshalStarlarkValue(kv[1], &rpcArgs.Length, "Length")
+			default:
+				err = fmt.Errorf("unknown argument %q", kv[0])
+			}
+			if err != nil {
+				return starlark.None, decorateError(thread, err)
+			}
+		}
+		err := env.ctx.Client().CallAPI("ExamineMemory", &rpcArgs, &rpcRet)
+		if err != nil {
+			return starlark.None, err
+		}
+		return env.interfaceToStarlarkValue(rpcRet), nil
+	})
 	r["find_location"] = starlark.NewBuiltin("find_location", func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		if err := isCancelled(thread); err != nil {
 			return starlark.None, decorateError(thread, err)
@@ -470,6 +507,12 @@ func (env *Env) starlarkPredeclare() starlark.StringDict {
 				return starlark.None, decorateError(thread, err)
 			}
 		}
+		if len(args) > 2 && args[2] != starlark.None {
+			err := unmarshalStarlarkValue(args[2], &rpcArgs.IncludeNonExecutableLines, "IncludeNonExecutableLines")
+			if err != nil {
+				return starlark.None, decorateError(thread, err)
+			}
+		}
 		for _, kv := range kwargs {
 			var err error
 			switch kv[0].(starlark.String) {
@@ -477,6 +520,8 @@ func (env *Env) starlarkPredeclare() starlark.StringDict {
 				err = unmarshalStarlarkValue(kv[1], &rpcArgs.Scope, "Scope")
 			case "Loc":
 				err = unmarshalStarlarkValue(kv[1], &rpcArgs.Loc, "Loc")
+			case "IncludeNonExecutableLines":
+				err = unmarshalStarlarkValue(kv[1], &rpcArgs.IncludeNonExecutableLines, "IncludeNonExecutableLines")
 			default:
 				err = fmt.Errorf("unknown argument %q", kv[0])
 			}
@@ -840,6 +885,36 @@ func (env *Env) starlarkPredeclare() starlark.StringDict {
 		}
 		return env.interfaceToStarlarkValue(rpcRet), nil
 	})
+	r["packages_build_info"] = starlark.NewBuiltin("packages_build_info", func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+		if err := isCancelled(thread); err != nil {
+			return starlark.None, decorateError(thread, err)
+		}
+		var rpcArgs rpc2.ListPackagesBuildInfoIn
+		var rpcRet rpc2.ListPackagesBuildInfoOut
+		if len(args) > 0 && args[0] != starlark.None {
+			err := unmarshalStarlarkValue(args[0], &rpcArgs.IncludeFiles, "IncludeFiles")
+			if err != nil {
+				return starlark.None, decorateError(thread, err)
+			}
+		}
+		for _, kv := range kwargs {
+			var err error
+			switch kv[0].(starlark.String) {
+			case "IncludeFiles":
+				err = unmarshalStarlarkValue(kv[1], &rpcArgs.IncludeFiles, "IncludeFiles")
+			default:
+				err = fmt.Errorf("unknown argument %q", kv[0])
+			}
+			if err != nil {
+				return starlark.None, decorateError(thread, err)
+			}
+		}
+		err := env.ctx.Client().CallAPI("ListPackagesBuildInfo", &rpcArgs, &rpcRet)
+		if err != nil {
+			return starlark.None, err
+		}
+		return env.interfaceToStarlarkValue(rpcRet), nil
+	})
 	r["registers"] = starlark.NewBuiltin("registers", func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		if err := isCancelled(thread); err != nil {
 			return starlark.None, decorateError(thread, err)
@@ -858,6 +933,15 @@ func (env *Env) starlarkPredeclare() starlark.StringDict {
 				return starlark.None, decorateError(thread, err)
 			}
 		}
+		if len(args) > 2 && args[2] != starlark.None {
+			err := unmarshalStarlarkValue(args[2], &rpcArgs.Scope, "Scope")
+			if err != nil {
+				return starlark.None, decorateError(thread, err)
+			}
+		} else {
+			scope := env.ctx.Scope()
+			rpcArgs.Scope = &scope
+		}
 		for _, kv := range kwargs {
 			var err error
 			switch kv[0].(starlark.String) {
@@ -865,6 +949,8 @@ func (env *Env) starlarkPredeclare() starlark.StringDict {
 				err = unmarshalStarlarkValue(kv[1], &rpcArgs.ThreadID, "ThreadID")
 			case "IncludeFp":
 				err = unmarshalStarlarkValue(kv[1], &rpcArgs.IncludeFp, "IncludeFp")
+			case "Scope":
+				err = unmarshalStarlarkValue(kv[1], &rpcArgs.Scope, "Scope")
 			default:
 				err = fmt.Errorf("unknown argument %q", kv[0])
 			}
@@ -1004,6 +1090,18 @@ func (env *Env) starlarkPredeclare() starlark.StringDict {
 				return starlark.None, decorateError(thread, err)
 			}
 		}
+		if len(args) > 4 && args[4] != starlark.None {
+			err := unmarshalStarlarkValue(args[4], &rpcArgs.Rebuild, "Rebuild")
+			if err != nil {
+				return starlark.None, decorateError(thread, err)
+			}
+		}
+		if len(args) > 5 && args[5] != starlark.None {
+			err := unmarshalStarlarkValue(args[5], &rpcArgs.NewRedirects, "NewRedirects")
+			if err != nil {
+				return starlark.None, decorateError(thread, err)
+			}
+		}
 		for _, kv := range kwargs {
 			var err error
 			switch kv[0].(starlark.String) {
@@ -1015,6 +1113,10 @@ func (env *Env) starlarkPredeclare() starlark.StringDict {
 				err = unmarshalStarlarkValue(kv[1], &rpcArgs.NewArgs, "NewArgs")
 			case "Rerecord":
 				err = unmarshalStarlarkValue(kv[1], &rpcArgs.Rerecord, "Rerecord")
+			case "Rebuild":
+				err = unmarshalStarlarkValue(kv[1], &rpcArgs.Rebuild, "Rebuild")
+			case "NewRedirects":
+				err = unmarshalStarlarkValue(kv[1], &rpcArgs.NewRedirects, "NewRedirects")
 			default:
 				err = fmt.Errorf("unknown argument %q", kv[0])
 			}

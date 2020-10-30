@@ -653,7 +653,7 @@ func pseudoCommandWrap(cmd func(io.Writer) error) {
 
 func doRestart(out io.Writer, restartCheckpoint string, resetArgs bool, args []string, rerecord bool) error {
 	shouldFinishRestart := client == nil || !client.Recorded() || rerecord
-	_, err := client.RestartFrom(restartCheckpoint, resetArgs, args, rerecord)
+	_, err := client.RestartFrom(rerecord, restartCheckpoint, resetArgs, args, [3]string{}, false)
 	if err != nil {
 		return err
 	}
@@ -676,7 +676,7 @@ func doRebuild(out io.Writer, resetArgs bool, args []string) error {
 	updateFrozenBreakpoints()
 	clearFrozenBreakpoints()
 
-	discarded, err := client.RestartFrom("", resetArgs, args, rerecord)
+	discarded, err := client.RestartFrom(rerecord, "", resetArgs, args, [3]string{}, false)
 	if err != nil {
 		fmt.Fprintf(out, "error on restart\n")
 		return err
@@ -1511,7 +1511,7 @@ func goroutinesCommand(out io.Writer, args string) error {
 	if lim == 0 {
 		lim = 100
 	}
-	gs, err := client.ListGoroutines(0, lim)
+	gs, _, err := client.ListGoroutines(0, lim)
 	if err != nil {
 		return err
 	}

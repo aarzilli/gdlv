@@ -18,7 +18,7 @@ import (
 
 type formatterFn func(*Variable)
 
-var varFormat = map[uintptr]formatterFn{}
+var varFormat = map[uint64]formatterFn{}
 
 type detailViewer struct {
 	asyncLoad asyncLoad

@@ -32,7 +32,7 @@ type RestartIn struct {
 	// otherwise it's an event number. Only valid for recorded targets.
 	Position string
 
-	// ResetArgs tell whether NewArgs should take effect.
+	// ResetArgs tell whether NewArgs and NewRedirects should take effect.
 	ResetArgs bool
 	// NewArgs are arguments to launch a new process.  They replace only the
 	// argv[1] and later. Argv[0] cannot be changed.
@@ -40,6 +40,11 @@ type RestartIn struct {
 
 	// When Rerecord is set the target will be rerecorded
 	Rerecord bool
+
+	// When Rebuild is set the process will be build again
+	Rebuild bool
+
+	NewRedirects [3]string
 }
 
 type RestartOut struct {
@@ -72,13 +77,23 @@ type StacktraceIn struct {
 	Id     int
 	Depth  int
 	Full   bool
-	Defers bool // read deferred functions
+	Defers bool // read deferred functions (equivalent to passing StacktraceReadDefers in Opts)
 	Opts   api.StacktraceOptions
 	Cfg    *api.LoadConfig
 }
 
 type StacktraceOut struct {
 	Locations []api.Stackframe
+}
+
+type AncestorsIn struct {
+	GoroutineID  int
+	NumAncestors int
+	Depth        int
+}
+
+type AncestorsOut struct {
+	Ancestors []api.Ancestor
 }
 
 type ListBreakpointsIn struct {
@@ -145,6 +160,7 @@ type ListPackageVarsOut struct {
 type ListRegistersIn struct {
 	ThreadID  int
 	IncludeFp bool
+	Scope     *api.EvalScope
 }
 
 type ListRegistersOut struct {
@@ -280,14 +296,12 @@ type ClearCheckpointIn struct {
 type ClearCheckpointOut struct {
 }
 
-type AncestorsIn struct {
-	GoroutineID  int
-	NumAncestors int
-	Depth        int
+type IsMulticlientIn struct {
 }
 
-type AncestorsOut struct {
-	Ancestors []api.Ancestor
+type IsMulticlientOut struct {
+	// IsMulticlient returns true if the headless instance was started with --accept-multiclient
+	IsMulticlient bool
 }
 
 // FunctionReturnLocationsIn holds arguments for the
@@ -308,14 +322,6 @@ type FunctionReturnLocationsOut struct {
 	Addrs []uint64
 }
 
-type IsMulticlientIn struct {
-}
-
-type IsMulticlientOut struct {
-	// IsMulticlient returns true if the headless instance was started with --accept-multiclient
-	IsMulticlient bool
-}
-
 // ListDynamicLibrariesIn holds the arguments of ListDynamicLibraries
 type ListDynamicLibrariesIn struct {
 }
@@ -323,6 +329,28 @@ type ListDynamicLibrariesIn struct {
 // ListDynamicLibrariesOut holds the return values of ListDynamicLibraries
 type ListDynamicLibrariesOut struct {
 	List []api.Image
+}
+
+// ListPackagesBuildInfoIn holds the arguments of ListPackages.
+type ListPackagesBuildInfoIn struct {
+	IncludeFiles bool
+}
+
+// ListPackagesBuildInfoOut holds the return values of ListPackages.
+type ListPackagesBuildInfoOut struct {
+	List []api.PackageBuildInfo
+}
+
+// ExamineMemoryIn holds the arguments of ExamineMemory
+type ExamineMemoryIn struct {
+	Address uint64
+	Length  int
+}
+
+// ExaminedMemoryOut holds the return values of ExamineMemory
+type ExaminedMemoryOut struct {
+	Mem            []byte
+	IsLittleEndian bool
 }
 
 type StopRecordingIn struct {

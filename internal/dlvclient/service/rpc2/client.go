@@ -1,56 +1,12 @@
 package rpc2
 
 import (
-	"errors"
 	"fmt"
-	"io"
-	"net"
-	"net/rpc"
-	"net/rpc/jsonrpc"
-	"sync"
+
 	"time"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
-
-// Client is a RPC service.Client.
-type RPCClient struct {
-	addr   string
-	client *rpc.Client
-
-	mu sync.Mutex
-
-	running, recording bool
-
-	retValLoadCfg *api.LoadConfig
-
-	recordedCache *bool
-}
-
-// NewClient creates a new RPCClient.
-func NewClient(addr string, logFile io.Writer) (*RPCClient, error) {
-	netclient, err := net.Dial("tcp", addr)
-	if err != nil {
-		return nil, err
-	}
-	var rwc io.ReadWriteCloser = netclient
-	if logFile != nil {
-		rwc = &LogClient{netclient, logFile}
-	}
-	client := jsonrpc.NewClient(rwc)
-	c := &RPCClient{addr: addr, client: client}
-	c.call("SetApiVersion", api.SetAPIVersionIn{2}, &api.SetAPIVersionOut{})
-	return c, nil
-}
-
-func (c *RPCClient) Running() bool {
-	if c == nil {
-		return false
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.running || c.recording
-}
 
 func (c *RPCClient) ProcessPid() int {
 	out := new(ProcessPidOut)
@@ -70,15 +26,27 @@ func (c *RPCClient) Detach(kill bool) error {
 	return c.call("Detach", DetachIn{kill}, out)
 }
 
-func (c *RPCClient) RestartFrom(pos string, resetArgs bool, newArgs []string, rerecord bool) ([]api.DiscardedBreakpoint, error) {
+func (c *RPCClient) Restart(rebuild bool) ([]api.DiscardedBreakpoint, error) {
 	out := new(RestartOut)
-	err := c.call("Restart", RestartIn{pos, resetArgs, newArgs, rerecord}, out)
+	err := c.call("Restart", RestartIn{"", false, nil, false, rebuild, [3]string{}}, out)
+	return out.DiscardedBreakpoints, err
+}
+
+func (c *RPCClient) RestartFrom(rerecord bool, pos string, resetArgs bool, newArgs []string, newRedirects [3]string, rebuild bool) ([]api.DiscardedBreakpoint, error) {
+	out := new(RestartOut)
+	err := c.call("Restart", RestartIn{pos, resetArgs, newArgs, rerecord, rebuild, newRedirects}, out)
 	return out.DiscardedBreakpoints, err
 }
 
 func (c *RPCClient) GetState() (*api.DebuggerState, error) {
 	var out StateOut
-	err := c.call("State", StateIn{}, &out)
+	err := c.call("State", StateIn{NonBlocking: false}, &out)
+	return out.State, err
+}
+
+func (c *RPCClient) GetStateNonBlocking() (*api.DebuggerState, error) {
+	var out StateOut
+	err := c.call("State", StateIn{NonBlocking: true}, &out)
 	return out.State, err
 }
 
@@ -90,12 +58,8 @@ func (c *RPCClient) Rewind() <-chan *api.DebuggerState {
 	return c.continueDir(api.Rewind)
 }
 
-type ProcessExitedError struct {
-	pid, exitStatus int
-}
-
-func (err *ProcessExitedError) Error() string {
-	return fmt.Sprintf("Process %d has exited with status %d", err.pid, err.exitStatus)
+func (c *RPCClient) DirectionCongruentContinue() <-chan *api.DebuggerState {
+	return c.continueDir(api.DirectionCongruentContinue)
 }
 
 func (c *RPCClient) continueDir(cmd string) <-chan *api.DebuggerState {
@@ -109,8 +73,8 @@ func (c *RPCClient) continueDir(cmd string) <-chan *api.DebuggerState {
 				state.Err = err
 			}
 			if state.Exited {
-				// Error types apparantly cannot be marshalled by Go correctly. Must reset error here.
-				state.Err = &ProcessExitedError{c.ProcessPid(), state.ExitStatus}
+				// Error types apparently cannot be marshalled by Go correctly. Must reset error here.
+				state.Err = fmt.Errorf("Process %d has exited with status %d", c.ProcessPid(), state.ExitStatus)
 			}
 			ch <- &state
 			if err != nil || state.Exited {
@@ -123,7 +87,7 @@ func (c *RPCClient) continueDir(cmd string) <-chan *api.DebuggerState {
 			for i := range state.Threads {
 				if state.Threads[i].Breakpoint != nil {
 					isbreakpoint = true
-					istracepoint = istracepoint && state.Threads[i].Breakpoint.Tracepoint
+					istracepoint = istracepoint && (state.Threads[i].Breakpoint.Tracepoint || state.Threads[i].Breakpoint.TraceReturn)
 				}
 			}
 
@@ -136,20 +100,15 @@ func (c *RPCClient) continueDir(cmd string) <-chan *api.DebuggerState {
 	return ch
 }
 
-// exitedToError returns an error if out.State says that the process exited.
-func (c *RPCClient) exitedToError(out *CommandOut, err error) (*api.DebuggerState, error) {
-	if err != nil {
-		return nil, err
-	}
-	if out.State.Exited {
-		return nil, &ProcessExitedError{c.ProcessPid(), out.State.ExitStatus}
-	}
-	return &out.State, nil
-}
-
 func (c *RPCClient) Next() (*api.DebuggerState, error) {
 	var out CommandOut
 	err := c.call("Command", api.DebuggerCommand{Name: api.Next, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
+	return c.exitedToError(&out, err)
+}
+
+func (c *RPCClient) ReverseNext() (*api.DebuggerState, error) {
+	var out CommandOut
+	err := c.call("Command", api.DebuggerCommand{Name: api.ReverseNext, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
 	return c.exitedToError(&out, err)
 }
 
@@ -159,15 +118,39 @@ func (c *RPCClient) Step() (*api.DebuggerState, error) {
 	return c.exitedToError(&out, err)
 }
 
+func (c *RPCClient) ReverseStep() (*api.DebuggerState, error) {
+	var out CommandOut
+	err := c.call("Command", api.DebuggerCommand{Name: api.ReverseStep, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
+	return c.exitedToError(&out, err)
+}
+
 func (c *RPCClient) StepOut() (*api.DebuggerState, error) {
 	var out CommandOut
-	err := c.call("Command", &api.DebuggerCommand{Name: api.StepOut, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
+	err := c.call("Command", api.DebuggerCommand{Name: api.StepOut, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
+	return c.exitedToError(&out, err)
+}
+
+func (c *RPCClient) ReverseStepOut() (*api.DebuggerState, error) {
+	var out CommandOut
+	err := c.call("Command", api.DebuggerCommand{Name: api.ReverseStepOut, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
+	return c.exitedToError(&out, err)
+}
+
+func (c *RPCClient) Call(goroutineID int, expr string, unsafe bool) (*api.DebuggerState, error) {
+	var out CommandOut
+	err := c.call("Command", api.DebuggerCommand{Name: api.Call, ReturnInfoLoadConfig: c.retValLoadCfg, Expr: expr, UnsafeCall: unsafe, GoroutineID: goroutineID}, &out)
 	return c.exitedToError(&out, err)
 }
 
 func (c *RPCClient) StepInstruction() (*api.DebuggerState, error) {
 	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.StepInstruction, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
+	err := c.call("Command", api.DebuggerCommand{Name: api.StepInstruction}, &out)
+	return c.exitedToError(&out, err)
+}
+
+func (c *RPCClient) ReverseStepInstruction() (*api.DebuggerState, error) {
+	var out CommandOut
+	err := c.call("Command", api.DebuggerCommand{Name: api.ReverseStepInstruction}, &out)
 	return c.exitedToError(&out, err)
 }
 
@@ -297,9 +280,15 @@ func (c *RPCClient) ListLocalVariables(scope api.EvalScope, cfg api.LoadConfig) 
 	return out.Variables, err
 }
 
-func (c *RPCClient) ListRegisters(threadID int, includeFp bool) (api.Registers, error) {
+func (c *RPCClient) ListThreadRegisters(threadID int, includeFp bool) (api.Registers, error) {
 	out := new(ListRegistersOut)
-	err := c.call("ListRegisters", ListRegistersIn{ThreadID: threadID, IncludeFp: includeFp}, out)
+	err := c.call("ListRegisters", ListRegistersIn{ThreadID: threadID, IncludeFp: includeFp, Scope: nil}, out)
+	return out.Regs, err
+}
+
+func (c *RPCClient) ListScopeRegisters(scope api.EvalScope, includeFp bool) (api.Registers, error) {
+	out := new(ListRegistersOut)
+	err := c.call("ListRegisters", ListRegistersIn{ThreadID: 0, IncludeFp: includeFp, Scope: &scope}, out)
 	return out.Regs, err
 }
 
@@ -309,17 +298,22 @@ func (c *RPCClient) ListFunctionArgs(scope api.EvalScope, cfg api.LoadConfig) ([
 	return out.Args, err
 }
 
-func (c *RPCClient) ListGoroutines(start, count int) ([]*api.Goroutine, error) {
+func (c *RPCClient) ListGoroutines(start, count int) ([]*api.Goroutine, int, error) {
 	var out ListGoroutinesOut
-	err := c.call("ListGoroutines", ListGoroutinesIn{Start: start, Count: count}, &out)
-	return out.Goroutines, err
+	err := c.call("ListGoroutines", ListGoroutinesIn{start, count}, &out)
+	return out.Goroutines, out.Nextg, err
 }
 
 func (c *RPCClient) Stacktrace(goroutineId, depth int, opts api.StacktraceOptions, cfg *api.LoadConfig) ([]api.Stackframe, error) {
 	var out StacktraceOut
-	readDefers := opts&api.StacktraceReadDefers != 0
-	err := c.call("Stacktrace", StacktraceIn{goroutineId, depth, false, readDefers, opts, cfg}, &out)
+	err := c.call("Stacktrace", StacktraceIn{goroutineId, depth, false, false, opts, cfg}, &out)
 	return out.Locations, err
+}
+
+func (c *RPCClient) Ancestors(goroutineID int, numAncestors int, depth int) ([]api.Ancestor, error) {
+	var out AncestorsOut
+	err := c.call("Ancestors", AncestorsIn{goroutineID, numAncestors, depth}, &out)
+	return out.Ancestors, err
 }
 
 func (c *RPCClient) AttachedToExistingProcess() bool {
@@ -328,9 +322,9 @@ func (c *RPCClient) AttachedToExistingProcess() bool {
 	return out.Answer
 }
 
-func (c *RPCClient) FindLocation(scope api.EvalScope, loc string, findInstruction bool) ([]api.Location, error) {
+func (c *RPCClient) FindLocation(scope api.EvalScope, loc string, findInstructions bool) ([]api.Location, error) {
 	var out FindLocationOut
-	err := c.call("FindLocation", FindLocationIn{scope, loc, !findInstruction}, &out)
+	err := c.call("FindLocation", FindLocationIn{scope, loc, !findInstructions}, &out)
 	return out.Locations, err
 }
 
@@ -346,17 +340,6 @@ func (c *RPCClient) DisassemblePC(scope api.EvalScope, pc uint64, flavour api.As
 	var out DisassembleOut
 	err := c.call("Disassemble", DisassembleIn{scope, pc, 0, flavour}, &out)
 	return out.Disassemble, err
-}
-
-// Recorded returns true if the debugger target is a recording.
-func (c *RPCClient) Recorded() bool {
-	if c.recordedCache != nil {
-		return *c.recordedCache
-	}
-	out := new(RecordedOut)
-	c.call("Recorded", RecordedIn{}, out)
-	c.recordedCache = &out.Recorded
-	return out.Recorded
 }
 
 // TraceDirectory returns the path to the trace directory for a recording.
@@ -387,59 +370,14 @@ func (c *RPCClient) ClearCheckpoint(id int) error {
 	return err
 }
 
-func (c *RPCClient) Ancestors(goroutineID int, numAncestors int, depth int) ([]api.Ancestor, error) {
-	var out AncestorsOut
-	err := c.call("Ancestors", AncestorsIn{goroutineID, numAncestors, depth}, &out)
-	return out.Ancestors, err
-}
-
 func (c *RPCClient) SetReturnValuesLoadConfig(cfg *api.LoadConfig) {
 	c.retValLoadCfg = cfg
 }
 
-var errRunning = errors.New("running")
-
-func (c *RPCClient) call(method string, args, reply interface{}) error {
-	argsAsCmd := func() api.DebuggerCommand {
-		cmd, ok := args.(api.DebuggerCommand)
-		if !ok {
-			pcmd := args.(*api.DebuggerCommand)
-			cmd = *pcmd
-		}
-		return cmd
-	}
-	switch method {
-	case "Command":
-		cmd := argsAsCmd()
-		switch cmd.Name {
-		case api.SwitchThread, api.SwitchGoroutine, api.Halt:
-			// those don't start the process
-		default:
-			c.mu.Lock()
-			c.running = true
-			c.mu.Unlock()
-			defer func() {
-				c.mu.Lock()
-				c.running = false
-				c.mu.Unlock()
-			}()
-		}
-	case "Restart":
-		c.mu.Lock()
-		c.running = true
-		c.mu.Unlock()
-		defer func() {
-			c.mu.Lock()
-			c.running = false
-			c.mu.Unlock()
-		}()
-	}
-
-	return c.client.Call("RPCServer."+method, args, reply)
-}
-
-func (c *RPCClient) CallAPI(method string, args, reply interface{}) error {
-	return c.call(method, args, reply)
+func (c *RPCClient) FunctionReturnLocations(fnName string) ([]uint64, error) {
+	var out FunctionReturnLocationsOut
+	err := c.call("FunctionReturnLocations", FunctionReturnLocationsIn{fnName}, &out)
+	return out.Addrs, err
 }
 
 func (c *RPCClient) IsMulticlient() bool {
@@ -456,50 +394,26 @@ func (c *RPCClient) Disconnect(cont bool) error {
 	return c.client.Close()
 }
 
-func (c *RPCClient) GetStateNonBlocking() (*api.DebuggerState, error) {
-	var out StateOut
-	err := c.call("State", StateIn{NonBlocking: true}, &out)
-	return out.State, err
+func (c *RPCClient) ListDynamicLibraries() ([]api.Image, error) {
+	var out ListDynamicLibrariesOut
+	c.call("ListDynamicLibraries", ListDynamicLibrariesIn{}, &out)
+	return out.List, nil
 }
 
-func (c *RPCClient) WaitForRecordingDone() {
-	c.mu.Lock()
-	c.recording = true
-	c.mu.Unlock()
-	c.GetState()
-	c.mu.Lock()
-	c.recording = false
-	c.mu.Unlock()
+func (c *RPCClient) ExamineMemory(address uint64, count int) ([]byte, bool, error) {
+	out := &ExaminedMemoryOut{}
+
+	err := c.call("ExamineMemory", ExamineMemoryIn{Length: count, Address: address}, out)
+	if err != nil {
+		return nil, false, err
+	}
+	return out.Mem, out.IsLittleEndian, nil
 }
 
 func (c *RPCClient) StopRecording() error {
 	return c.call("StopRecording", StopRecordingIn{}, &StopRecordingOut{})
 }
 
-func (c *RPCClient) ReverseStep() (*api.DebuggerState, error) {
-	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.ReverseNext, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
-	return &out.State, err
-}
-
-func (c *RPCClient) ReverseNext() (*api.DebuggerState, error) {
-	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.ReverseNext, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
-	return &out.State, err
-}
-
-func (c *RPCClient) ReverseStepOut() (*api.DebuggerState, error) {
-	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.ReverseStepOut, ReturnInfoLoadConfig: c.retValLoadCfg}, &out)
-	return &out.State, err
-}
-
-func (c *RPCClient) ReverseStepInstruction() (*api.DebuggerState, error) {
-	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.ReverseStepInstruction}, &out)
-	return &out.State, err
-}
-
-func (c *RPCClient) DirectionCongruentContinue() <-chan *api.DebuggerState {
-	return c.continueDir(api.DirectionCongruentContinue)
+func (c *RPCClient) CallAPI(method string, args, reply interface{}) error {
+	return c.call(method, args, reply)
 }

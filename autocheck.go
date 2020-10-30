@@ -280,14 +280,14 @@ func autoCheckpointsReset() {
 
 	addcheckpointsloop(+1, 1)
 
-	_, err := client.RestartFrom(fmt.Sprintf("c%d", startCheckpoint), false, nil, false)
+	_, err := client.RestartFrom(false, fmt.Sprintf("c%d", startCheckpoint), false, nil, [3]string{}, false)
 	if err != nil {
 		panic(fmt.Errorf(" (resetting before backward motion): %v", err))
 	}
 
 	addcheckpointsloop(-1, 1)
 
-	_, err = client.RestartFrom(fmt.Sprintf("c%d", startCheckpoint), false, nil, false)
+	_, err = client.RestartFrom(false, fmt.Sprintf("c%d", startCheckpoint), false, nil, [3]string{}, false)
 	if err != nil {
 		panic(fmt.Errorf(" (resetting before stopping): %v", err))
 	}
@@ -394,7 +394,7 @@ func autoCheckpointsLoadMore(dir int) {
 		check = autoCheckpointsPanel.checkpoints[len(autoCheckpointsPanel.checkpoints)-1]
 	}
 
-	_, err := client.RestartFrom(fmt.Sprintf("c%d", check.ID), false, nil, false)
+	_, err := client.RestartFrom(false, fmt.Sprintf("c%d", check.ID), false, nil, [3]string{}, false)
 	if err != nil {
 		panic(fmt.Errorf(" (moving to end): %v", err))
 	}

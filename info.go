@@ -226,7 +226,7 @@ func loadGoroutines(p *asyncLoad) {
 	if lim == 0 {
 		lim = 100
 	}
-	gs, err := client.ListGoroutines(0, lim)
+	gs, _, err := client.ListGoroutines(0, lim)
 	if err != nil {
 		p.done(err)
 		return
@@ -627,7 +627,7 @@ func updateThreads(container *nucular.Window) {
 }
 
 func loadRegs(p *asyncLoad) {
-	regs, err := client.ListRegisters(0, regsPanel.allRegs)
+	regs, err := client.ListThreadRegisters(0, regsPanel.allRegs)
 	regsPanel.regs = expandTabs(regs.String())
 	regsPanel.lines = 1
 	lineStart := 0
@@ -832,7 +832,7 @@ func execRestartCheckpoint(id int, gid int, where string) {
 }
 
 func restartCheckpointToGoroutine(id, gid int) error {
-	_, err := client.RestartFrom(fmt.Sprintf("c%d", id), false, nil, false)
+	_, err := client.RestartFrom(false, fmt.Sprintf("c%d", id), false, nil, [3]string{}, false)
 	if err != nil {
 		return err
 	}
