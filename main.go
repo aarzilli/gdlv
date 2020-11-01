@@ -952,8 +952,9 @@ Executes "gdlv run" using mozilla rr has a backend.
 
 Options must appear before the command and include:
 
-	-d <dir>	builds inside the specified directory instead of the current directory (for debug and test)
-	-tags <taglist>	list of tags to pass to 'go build'
+	-d <dir>			builds inside the specified directory instead of the current directory (for debug and test)
+	-tags <taglist>			list of tags to pass to 'go build'
+	-r [stdin|stdout|stderr:]path	redirects a standard file descriptor to a file, if none is specified stdin is implied
 `)
 	os.Exit(1)
 }
@@ -980,6 +981,27 @@ optionsLoop:
 			}
 			opts.tags = args[i]
 			i++
+		case "-r":
+			i++
+			if i >= len(args) {
+				usage("wrong number of arguments after -r")
+			}
+			redirect := args[i]
+			i++
+			idx := 0
+			names := []string{"stdin", "stdout", "stderr"}
+			for j, name := range names {
+				pfx := name + ":"
+				if strings.HasPrefix(redirect, pfx) {
+					idx = j
+					redirect = redirect[len(pfx):]
+					break
+				}
+			}
+			if opts.redirects[idx] != "" {
+				usage(fmt.Sprintf("redirect error: %s redirected twice", names[idx]))
+			}
+			opts.redirects[idx] = redirect
 		default:
 			break optionsLoop
 		}
@@ -1013,6 +1035,7 @@ type commandLineOptions struct {
 	defaultBackend bool
 	buildDir       string
 	tags           string
+	redirects      [3]string
 }
 
 func main() {

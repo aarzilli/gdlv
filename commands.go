@@ -137,6 +137,12 @@ Restarts the recording at the specified (optional) breakpoint.
 	restart -r
 
 Re-records the program, any arguments specified after '-r' are passed to the target program. Pass '--' to clear the arguments passed to the program.
+
+All forms of restart that support specifying a list of arguments to pass to the target program (i.e. 'restart' on a live process or 'restart -r' on a recording) also support specifying a list of redirects for the target process:
+
+	<input.txt	redirects the standard input of the target process from input.txt
+	>output.txt	redirects the standard output of the target process to output.txt
+	2>error.txt	redirects the standard error of the target process to error.txt
 `},
 		{aliases: []string{"continue", "c"}, group: runCmds, cmdFn: cont, helpMsg: "Run until breakpoint or program termination."},
 		{aliases: []string{"rewind", "rw"}, group: revCmds, cmdFn: rewind, helpMsg: "Run backwards until breakpoint or program termination."},
@@ -651,9 +657,13 @@ func pseudoCommandWrap(cmd func(io.Writer) error) {
 	}
 }
 
-func doRestart(out io.Writer, restartCheckpoint string, resetArgs bool, args []string, rerecord bool) error {
+func doRestart(out io.Writer, restartCheckpoint string, resetArgs bool, argsAndRedirects []string, rerecord bool) error {
+	args, redirects, err := parseRedirects(argsAndRedirects)
+	if err != nil {
+		return err
+	}
 	shouldFinishRestart := client == nil || !client.Recorded() || rerecord
-	_, err := client.RestartFrom(rerecord, restartCheckpoint, resetArgs, args, [3]string{}, false)
+	_, err = client.RestartFrom(rerecord, restartCheckpoint, resetArgs, args, redirects, false)
 	if err != nil {
 		return err
 	}
@@ -664,7 +674,11 @@ func doRestart(out io.Writer, restartCheckpoint string, resetArgs bool, args []s
 	return nil
 }
 
-func doRebuild(out io.Writer, resetArgs bool, args []string) error {
+func doRebuild(out io.Writer, resetArgs bool, argsAndRedirects []string) error {
+	args, redirects, err := parseRedirects(argsAndRedirects)
+	if err != nil {
+		return err
+	}
 	rerecord := client != nil && client.Recorded()
 
 	dorestart := BackendServer.serverProcess != nil
@@ -676,7 +690,7 @@ func doRebuild(out io.Writer, resetArgs bool, args []string) error {
 	updateFrozenBreakpoints()
 	clearFrozenBreakpoints()
 
-	discarded, err := client.RestartFrom(rerecord, "", resetArgs, args, [3]string{}, false)
+	discarded, err := client.RestartFrom(rerecord, "", resetArgs, args, redirects, false)
 	if err != nil {
 		fmt.Fprintf(out, "error on restart\n")
 		return err
@@ -692,6 +706,45 @@ func doRebuild(out io.Writer, resetArgs bool, args []string) error {
 
 	refreshState(refreshToFrameZero, clearStop, nil)
 	return nil
+}
+
+func parseRedirects(w []string) (args []string, redirects [3]string, err error) {
+	for len(w) > 0 {
+		var found bool
+		var err error
+		w, found, err = parseOneRedirect(w, &redirects)
+		if err != nil {
+			return nil, [3]string{}, err
+		}
+		if !found {
+			break
+		}
+	}
+	return w, redirects, nil
+}
+
+func parseOneRedirect(w []string, redirs *[3]string) ([]string, bool, error) {
+	prefixes := []string{"<", ">", "2>"}
+	names := []string{"stdin", "stdout", "stderr"}
+	if len(w) >= 2 {
+		for _, prefix := range prefixes {
+			if w[len(w)-2] == prefix {
+				w[len(w)-2] += w[len(w)-1]
+				w = w[:len(w)-1]
+				break
+			}
+		}
+	}
+	for i, prefix := range prefixes {
+		if strings.HasPrefix(w[len(w)-1], prefix) {
+			if redirs[i] != "" {
+				return nil, false, fmt.Errorf("redirect error: %s redirected twice", names[i])
+			}
+			redirs[i] = w[len(w)-1][len(prefix):]
+			return w[:len(w)-1], true, nil
+		}
+	}
+	return w, false, nil
 }
 
 func cont(out io.Writer, args string) error {

@@ -137,6 +137,7 @@ func parseArguments() (descr ServerDescr) {
 		}
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		args := make([]string, 0, len(opts.cmdArgs)+4)
+		args = append(args, opts.redirectArgs()...)
 		args = append(args, opts.backend, "--headless", "exec", descr.exe, "--")
 		args = append(args, opts.cmdArgs...)
 		finish(true, args...)
@@ -157,6 +158,7 @@ func parseArguments() (descr ServerDescr) {
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		descr.buildcmd = append(descr.buildcmd, opts.cmdArgs[0])
 		args := make([]string, 0, len(opts.cmdArgs[1:])+4)
+		args = append(args, opts.redirectArgs()...)
 		args = append(args, opts.backend, "--headless", "exec", descr.exe, "--")
 		args = append(args, opts.cmdArgs[1:]...)
 		finish(true, args...)
@@ -173,6 +175,7 @@ func parseArguments() (descr ServerDescr) {
 		}
 		descr.debugid, _ = filepath.Abs(opts.cmdArgs[0])
 		args := make([]string, 0, len(opts.cmdArgs[1:])+5)
+		args = append(args, opts.redirectArgs()...)
 		args = append(args, opts.backend, "--headless", "exec", opts.cmdArgs[0], "--")
 		args = append(args, opts.cmdArgs[1:]...)
 		finish(true, args...)
@@ -191,6 +194,7 @@ func parseArguments() (descr ServerDescr) {
 		descr.buildcmd = append(descr.buildcmd, optflags...)
 		descr.buildcmd = append(descr.buildcmd, "-c", "-o", descr.exe)
 		args := make([]string, 0, len(opts.cmdArgs)+4)
+		args = append(args, opts.redirectArgs()...)
 		args = append(args, opts.backend, "--headless", "exec", descr.exe, "--")
 		args = append(args, addTestPrefix(opts.cmdArgs)...)
 		finish(true, args...)
@@ -236,6 +240,17 @@ func parseArguments() (descr ServerDescr) {
 	}
 
 	return
+}
+
+func (opts *commandLineOptions) redirectArgs() []string {
+	r := []string{}
+	names := []string{"stdin", "stdout", "stderr"}
+	for i := range opts.redirects {
+		if opts.redirects[i] != "" {
+			r = append(r, "-r", names[i]+":"+opts.redirects[i])
+		}
+	}
+	return r
 }
 
 const apiServerPrefix = "API server listening at: "
