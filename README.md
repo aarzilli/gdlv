@@ -17,7 +17,7 @@ then install gdlv:
 go get -u github.com/aarzilli/gdlv
 ```
 
-Use Ctrl+plus and Ctrl+minus, or `config zoom 1.5` to change font size.
+Use Ctrl+plus and Ctrl+minus, or `config zoom 1.5` to change font size. See `help` for a list of available commands.
 
 ## Other backends
 

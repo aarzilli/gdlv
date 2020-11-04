@@ -205,7 +205,7 @@ Loads the specified layout.
 
 	layout save <name> <descr>
 	
-Saves the current layout.
+Saves the current layout. Overwrite "default" to change the default layout.
 
 	layout list
 	
