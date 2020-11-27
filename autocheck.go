@@ -18,12 +18,20 @@ var autoCheckpointsPanel = struct {
 	asyncLoad asyncLoad
 	mu        sync.Mutex
 	loading   bool
+	id        int
 
 	selected    int
 	checkpoints []autoCheckpoint
 
+	forwardLimit, backwardLimit int
+	timeoutEdit                 nucular.TextEditor
+
 	doneBackward, doneForward bool
-}{}
+}{
+	forwardLimit:  10,
+	backwardLimit: 10,
+	timeoutEdit:   nucular.TextEditor{Buffer: []rune("1s")},
+}
 
 type autoCheckpoint struct {
 	ID          int
@@ -56,13 +64,17 @@ func updateAutoCheckpoints(container *nucular.Window) {
 		return
 	}
 
-	{
-		w.MenubarBegin()
-		w.Row(20).Static(0, 200)
-		if w.ButtonText("Create checkpoints") {
-			go autoCheckpointsReset()
-		}
-		w.MenubarEnd()
+	w.Row(20).Static(180, 180)
+
+	w.PropertyInt("Backward:", 0, &autoCheckpointsPanel.backwardLimit, 200, 1, 1)
+	w.PropertyInt("Forward:", 0, &autoCheckpointsPanel.forwardLimit, 200, 1, 1)
+
+	w.Row(20).Static(80, 80, 100, 100)
+	w.Label("Timeout: ", "RT")
+	autoCheckpointsPanel.timeoutEdit.Edit(w)
+	w.Spacing(1)
+	if w.ButtonText("Create") {
+		go autoCheckpointsReset()
 	}
 
 	if !autoCheckpointsPanel.doneBackward && len(autoCheckpointsPanel.checkpoints) > 0 {
@@ -79,81 +91,93 @@ func updateAutoCheckpoints(container *nucular.Window) {
 		style.GroupWindow = savedGroupWindowStyle
 	}()
 
-	w.Row(0).Dynamic(1)
-	if w := w.GroupBegin("auto-checkpoints-list", 0); w != nil {
-		{
-			w.MenubarBegin()
-			w.Row(varRowHeight).Static(100, 100, 100)
+	const (
+		checkpointIDMinWidht   = 100
+		goroutineIDMinWidth    = 40
+		breakpointNameMinWidth = 40
+		positionMinWidth       = 100
+	)
 
-			w.Label("Checkpoint ID", "LT")
-			w.Label("Goroutine ID", "LT")
-			w.Label("Breakpoint", "LT")
+	w.Row(varRowHeight).Static()
 
-			w.MenubarEnd()
-		}
+	w.LayoutFitWidth(autoCheckpointsPanel.id, checkpointIDMinWidht)
+	w.Label("checkid", "LT")
+	w.LayoutFitWidth(autoCheckpointsPanel.id, goroutineIDMinWidth)
+	w.Label("goid", "LT")
+	w.LayoutFitWidth(autoCheckpointsPanel.id, breakpointNameMinWidth)
+	w.Label("bpid", "LT")
+	w.LayoutFitWidth(autoCheckpointsPanel.id, positionMinWidth)
+	w.Spacing(1)
 
-		for _, check := range autoCheckpointsPanel.checkpoints {
-			selected := autoCheckpointsPanel.selected == check.ID
-			w.Row(varRowHeight).Static(100, 100, 100, varRowHeight)
+	for _, check := range autoCheckpointsPanel.checkpoints {
+		selected := autoCheckpointsPanel.selected == check.ID
+		w.Row(varRowHeight).Static()
 
-			w.SelectableLabel(fmt.Sprintf("c%d,%s", check.ID, check.Where), "LT", &selected)
-			bounds := w.LastWidgetBounds
-			bounds.W = w.Bounds.W
+		w.LayoutFitWidth(autoCheckpointsPanel.id, checkpointIDMinWidht)
+		w.SelectableLabel(fmt.Sprintf("c%d,%s", check.ID, check.Where), "LT", &selected)
+		bounds := w.LastWidgetBounds
+		bounds.W = w.Bounds.W
 
-			w.SelectableLabel(fmt.Sprintf("%d", check.GoroutineID), "LT", &selected)
+		w.LayoutFitWidth(autoCheckpointsPanel.id, goroutineIDMinWidth)
+		w.SelectableLabel(fmt.Sprintf("%d", check.GoroutineID), "LT", &selected)
 
-			if check.Breakpoint != nil {
-				w.SelectableLabel(formatBreakpointName(check.Breakpoint, false), "LT", &selected)
+		w.LayoutFitWidth(autoCheckpointsPanel.id, breakpointNameMinWidth)
+		if check.Breakpoint != nil {
+			w.SelectableLabel(formatBreakpointName2(check.Breakpoint), "LT", &selected)
+		} else {
+			if check.Where == "acp+0" {
+				w.SelectableLabel("START", "LT", &selected)
 			} else {
-				if check.Where == "acp+0" {
-					w.SelectableLabel("START", "LT", &selected)
-				} else {
-					w.SelectableLabel("", "LT", &selected)
-				}
+				w.SelectableLabel("", "LT", &selected)
 			}
+		}
 
-			if !client.Running() {
-				if selected {
-					autoCheckpointsPanel.selected = check.ID
-				}
+		w.LayoutFitWidth(autoCheckpointsPanel.id, positionMinWidth)
+		if check.Breakpoint != nil {
+			w.SelectableLabel(fmt.Sprintf("at %s\n", formatBreakpointLocation(check.Breakpoint, true)), "LT", &selected)
 
-				if w := w.ContextualOpen(0, image.Point{}, bounds, nil); w != nil {
-					autoCheckpointsPanel.selected = check.ID
+			for _, v := range check.Variables {
+				w.Row(varRowHeight).Static()
 
-					w.Row(20).Dynamic(1)
-					if w.MenuItem(label.TA("Restart from checkpoint", "LC")) {
-						go execRestartCheckpoint(check.ID, check.GoroutineID, check.Where)
-					}
-				}
-			}
-
-			if check.Breakpoint != nil {
-				// Second line, breakpoint informations
-				w.Row(varRowHeight).Static(100, 0)
+				w.LayoutFitWidth(autoCheckpointsPanel.id, checkpointIDMinWidht)
 				w.Spacing(1)
-				w.Label(fmt.Sprintf("at %s\n", formatBreakpointLocation(check.Breakpoint)), "LT")
+				w.LayoutFitWidth(autoCheckpointsPanel.id, goroutineIDMinWidth)
+				w.Spacing(1)
+				w.LayoutFitWidth(autoCheckpointsPanel.id, breakpointNameMinWidth)
+				w.Spacing(1)
 
-				for _, v := range check.Variables {
-					w.Row(varRowHeight).Static(100, 0)
-					w.Spacing(1)
-					if v.Value != "" {
-						w.Label(fmt.Sprintf("%s = %s", v.Name, v.Value), "LT")
-					} else {
-						w.Label(fmt.Sprintf("%s = %s", v.Name, v.SinglelineString(false, false)), "LT")
-					}
+				w.LayoutFitWidth(autoCheckpointsPanel.id, positionMinWidth)
+				if v.Value != "" {
+					w.Label(fmt.Sprintf("%s = %s", v.Name, v.Value), "LT")
+				} else {
+					w.Label(fmt.Sprintf("%s = %s", v.Name, v.SinglelineString(false, false)), "LT")
 				}
 			}
-
+		} else {
+			w.Spacing(1)
 		}
 
-		if !autoCheckpointsPanel.doneForward && len(autoCheckpointsPanel.checkpoints) > 0 {
-			w.Row(varRowHeight).Static(100)
-			if w.ButtonText("More...") {
-				go autoCheckpointsLoadMore(+1)
+		if !client.Running() {
+			if selected {
+				autoCheckpointsPanel.selected = check.ID
+			}
+
+			if w := w.ContextualOpen(0, image.Point{}, bounds, nil); w != nil {
+				autoCheckpointsPanel.selected = check.ID
+
+				w.Row(20).Dynamic(1)
+				if w.MenuItem(label.TA("Restart from checkpoint", "LC")) {
+					go execRestartCheckpoint(check.ID, check.GoroutineID, check.Where)
+				}
 			}
 		}
+	}
 
-		w.GroupEnd()
+	if !autoCheckpointsPanel.doneForward && len(autoCheckpointsPanel.checkpoints) > 0 {
+		w.Row(varRowHeight).Static(100)
+		if w.ButtonText("More...") {
+			go autoCheckpointsLoadMore(+1)
+		}
 	}
 }
 
@@ -197,11 +221,15 @@ func addcheckpoints(pcnt *int, statech <-chan *api.DebuggerState, dir int, ticke
 				}
 				return false, false
 			}
-			if state.Err != nil {
-				panic(fmt.Errorf(" (continuing in backward motion): %v", state.Err))
-			}
 			if state.Exited {
 				return true, true
+			}
+			if state.Err != nil {
+				if dir < 0 {
+					panic(fmt.Errorf(" (continuing in backward motion): %v", state.Err))
+				} else {
+					panic(fmt.Errorf(" (continuing in forward motion): %v", state.Err))
+				}
 			}
 			for _, th := range state.Threads {
 				if th.Breakpoint != nil {
@@ -217,10 +245,10 @@ func addcheckpoints(pcnt *int, statech <-chan *api.DebuggerState, dir int, ticke
 	}
 }
 
-func addcheckpointsloop(dir int, cntstart int) {
-	ticker := time.NewTicker(1 * time.Second)
+func addcheckpointsloop(dir int, cntstart, limit int) {
+	ticker := time.NewTicker(autoCheckpointsTimeout())
 
-	for cnt := cntstart; cnt < cntstart+10; {
+	for cnt := cntstart; cnt < cntstart+limit; {
 		var statech <-chan *api.DebuggerState
 		if dir < 0 {
 			statech = client.Rewind()
@@ -252,10 +280,12 @@ func autoCheckpointsReset() {
 	autoCheckpointsPanel.mu.Unlock()
 	wnd.Changed()
 
+	autoCheckpointsPanel.id++
+
 	defer func() {
 		ierr := recover()
 		if ierr != nil {
-			fmt.Fprintf(&out, "Error creating automatic checkpoints %v", ierr)
+			fmt.Fprintf(&out, "Error creating automatic checkpoints:%v\n", ierr)
 		}
 		autoCheckpointsPanel.mu.Lock()
 		autoCheckpointsPanel.loading = false
@@ -278,18 +308,20 @@ func autoCheckpointsReset() {
 	addcheck(0, curGid, nil, nil)
 	startCheckpoint := autoCheckpointsPanel.checkpoints[0].ID
 
-	addcheckpointsloop(+1, 1)
-
-	_, err := client.RestartFrom(false, fmt.Sprintf("c%d", startCheckpoint), false, nil, [3]string{}, false)
-	if err != nil {
-		panic(fmt.Errorf(" (resetting before backward motion): %v", err))
+	if autoCheckpointsPanel.forwardLimit > 0 {
+		addcheckpointsloop(+1, 1, autoCheckpointsPanel.forwardLimit)
+		_, err := client.RestartFrom(false, fmt.Sprintf("c%d", startCheckpoint), false, nil, [3]string{}, false)
+		if err != nil {
+			panic(fmt.Errorf(" (resetting before backward motion): %v", err))
+		}
 	}
 
-	addcheckpointsloop(-1, 1)
-
-	_, err = client.RestartFrom(false, fmt.Sprintf("c%d", startCheckpoint), false, nil, [3]string{}, false)
-	if err != nil {
-		panic(fmt.Errorf(" (resetting before stopping): %v", err))
+	if autoCheckpointsPanel.backwardLimit > 0 {
+		addcheckpointsloop(-1, 1, autoCheckpointsPanel.backwardLimit)
+		_, err := client.RestartFrom(false, fmt.Sprintf("c%d", startCheckpoint), false, nil, [3]string{}, false)
+		if err != nil {
+			panic(fmt.Errorf(" (resetting before stopping): %v", err))
+		}
 	}
 
 	sort.Slice(autoCheckpointsPanel.checkpoints, func(i, j int) bool {
@@ -312,6 +344,8 @@ func autoCheckpointsReloadVars() {
 	autoCheckpointsPanel.loading = true
 	autoCheckpointsPanel.mu.Unlock()
 	wnd.Changed()
+
+	autoCheckpointsPanel.id++
 
 	defer func() {
 		ierr := recover()
@@ -371,10 +405,12 @@ func autoCheckpointsLoadMore(dir int) {
 	autoCheckpointsPanel.mu.Unlock()
 	wnd.Changed()
 
+	autoCheckpointsPanel.id++
+
 	defer func() {
 		ierr := recover()
 		if ierr != nil {
-			fmt.Fprintf(&out, "Error loading more checkpoints %v", ierr)
+			fmt.Fprintf(&out, "Error loading more checkpoints:%v\n", ierr)
 		}
 		autoCheckpointsPanel.mu.Lock()
 		autoCheckpointsPanel.loading = false
@@ -387,10 +423,13 @@ func autoCheckpointsLoadMore(dir int) {
 	}
 
 	var check autoCheckpoint
+	var limit int
 
 	if dir < 0 {
+		limit = autoCheckpointsPanel.backwardLimit
 		check = autoCheckpointsPanel.checkpoints[0]
 	} else {
+		limit = autoCheckpointsPanel.forwardLimit
 		check = autoCheckpointsPanel.checkpoints[len(autoCheckpointsPanel.checkpoints)-1]
 	}
 
@@ -399,9 +438,48 @@ func autoCheckpointsLoadMore(dir int) {
 		panic(fmt.Errorf(" (moving to end): %v", err))
 	}
 
-	addcheckpointsloop(dir, check.Counter()*dir+1)
+	if limit <= 0 {
+		limit = 10
+	}
+
+	addcheckpointsloop(dir, check.Counter()*dir+1, limit)
 
 	sort.Slice(autoCheckpointsPanel.checkpoints, func(i, j int) bool {
 		return autoCheckpointsPanel.checkpoints[i].Counter() < autoCheckpointsPanel.checkpoints[j].Counter()
 	})
+}
+
+var timeoutSuffixes = []string{"s", "sec", "m", "min", "h"}
+
+func autoCheckpointsTimeout() time.Duration {
+	timeoutstr := string(autoCheckpointsPanel.timeoutEdit.Buffer)
+
+	convert := func(t string, kind byte) time.Duration {
+		n, _ := strconv.Atoi(t)
+		if n <= 0 {
+			autoCheckpointsPanel.timeoutEdit.Buffer = []rune("1s")
+			wnd.Changed()
+			return 1 * time.Second
+		}
+
+		switch kind {
+		case 's':
+			return time.Duration(n) * time.Second
+		case 'm':
+			return time.Duration(n) * 60 * time.Second
+		case 'h':
+			return time.Duration(n) * 60 * 60 * time.Second
+		}
+
+		return 1 * time.Second
+	}
+
+	for _, suffix := range timeoutSuffixes {
+		if strings.HasSuffix(timeoutstr, suffix) {
+			t := timeoutstr[:len(timeoutstr)-len(suffix)]
+			return convert(t, suffix[0])
+		}
+	}
+
+	return convert(timeoutstr, 's')
 }

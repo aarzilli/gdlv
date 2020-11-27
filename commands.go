@@ -19,6 +19,7 @@ import (
 	"golang.org/x/mobile/event/key"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
+	"github.com/aarzilli/gdlv/internal/prettyprint"
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/label"
@@ -404,7 +405,7 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 	}
 
 	requestedBp.Tracepoint = tracepoint
-	locs, err := client.FindLocation(currentEvalScope(), locspec, true)
+	locs, err := client.FindLocation(currentEvalScope(), locspec, true, nil)
 	if err != nil {
 		if requestedBp.Name == "" {
 			return err
@@ -412,7 +413,7 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 		requestedBp.Name = ""
 		locspec = argstr
 		var err2 error
-		locs, err2 = client.FindLocation(currentEvalScope(), locspec, true)
+		locs, err2 = client.FindLocation(currentEvalScope(), locspec, true, nil)
 		if err2 != nil {
 			return err
 		}
@@ -446,7 +447,7 @@ func setBreakpointEx(out io.Writer, requestedBp *api.Breakpoint) {
 		fmt.Fprintf(out, "Could not create breakpoint: %v\n", err)
 	}
 
-	fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
+	fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp, false))
 	if len(bp.Addrs) > 1 {
 		fmt.Fprintf(out, "\tother addresses:")
 		for _, addr := range bp.Addrs {
@@ -501,7 +502,7 @@ func clear(out io.Writer, args string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(out, "%s cleared at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp))
+	fmt.Fprintf(out, "%s cleared at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp, false))
 	return nil
 }
 
@@ -697,7 +698,7 @@ func doRebuild(out io.Writer, resetArgs bool, argsAndRedirects []string) error {
 	}
 	fmt.Fprintln(out, "Process restarted with PID", client.ProcessPid())
 	for i := range discarded {
-		fmt.Fprintf(out, "Discarded %s at %s: %v\n", formatBreakpointName(discarded[i].Breakpoint, false), formatBreakpointLocation(discarded[i].Breakpoint), discarded[i].Reason)
+		fmt.Fprintf(out, "Discarded %s at %s: %v\n", formatBreakpointName(discarded[i].Breakpoint, false), formatBreakpointLocation(discarded[i].Breakpoint, false), discarded[i].Reason)
 	}
 
 	restoreFrozenBreakpoints(out)
@@ -1094,7 +1095,7 @@ func detailsVar(out io.Writer, args string) error {
 }
 
 func listCommand(out io.Writer, args string) error {
-	locs, err := client.FindLocation(currentEvalScope(), args, false)
+	locs, err := client.FindLocation(currentEvalScope(), args, false, nil)
 	if err != nil {
 		return err
 	}
@@ -1612,10 +1613,21 @@ func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
 	return fmt.Sprintf("%s %s", thing, id)
 }
 
-func formatBreakpointLocation(bp *api.Breakpoint) string {
+func formatBreakpointName2(bp *api.Breakpoint) string {
+	if bp.Name != "" {
+		return bp.Name
+	}
+	return strconv.Itoa(bp.ID)
+}
+
+func formatBreakpointLocation(bp *api.Breakpoint, shortenFnName bool) string {
 	p := ShortenFilePath(bp.File)
 	if bp.FunctionName != "" {
-		return fmt.Sprintf("%#v for %s() %s:%d", bp.Addr, bp.FunctionName, p, bp.Line)
+		fnname := bp.FunctionName
+		if shortenFnName {
+			fnname = prettyprint.ShortenType(fnname)
+		}
+		return fmt.Sprintf("%#v for %s() %s:%d", bp.Addr, fnname, p, bp.Line)
 	}
 	return fmt.Sprintf("%#v for %s:%d", bp.Addr, p, bp.Line)
 }

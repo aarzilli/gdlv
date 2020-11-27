@@ -1150,7 +1150,7 @@ func (p *stringSlicePanel) update(container *nucular.Window) {
 
 func funcInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int, bounds rect.Rect) {
 	if clicked {
-		locs, err := client.FindLocation(currentEvalScope(), p.slice[p.selected], true)
+		locs, err := client.FindLocation(currentEvalScope(), p.slice[p.selected], true, nil)
 		if err == nil && len(locs) == 1 {
 			listingPanel.pinnedLoc = &locs[0]
 			go refreshState(refreshToSameFrame, clearNothing, nil)
