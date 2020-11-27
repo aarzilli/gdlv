@@ -72,9 +72,9 @@ func syncTypes() {
 			if isgendecl && gendecl.Tok == token.CONST {
 				if gendecl.Specs[0].(*ast.ValueSpec).Names[0].Name == "GNUFlavour" {
 					gendecl.Specs[0].(*ast.ValueSpec).Values[0].(*ast.CallExpr).Args[0] = &ast.Ident{Name: "iota"}
+					gendecl.Specs[1].(*ast.ValueSpec).Values = nil
+					gendecl.Specs[2].(*ast.ValueSpec).Values = nil
 				}
-				gendecl.Specs[1].(*ast.ValueSpec).Values = nil
-				gendecl.Specs[2].(*ast.ValueSpec).Values = nil
 			}
 
 			f.Decls = append(f.Decls, decl)

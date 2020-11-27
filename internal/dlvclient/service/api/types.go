@@ -368,9 +368,9 @@ const (
 	// Continue resumes process execution.
 	Continue = "continue"
 	// Rewind resumes process execution backwards (target must be a recording).
-	Rewind
+	Rewind = "rewind"
 	// DirecitonCongruentContinue resumes process execution, if a reverse next, step or stepout operation is in progress it will resume execution backward.
-	DirectionCongruentContinue
+	DirectionCongruentContinue = "directionCongruentContinue"
 	// Step continues to next source line, entering function calls.
 	Step = "step"
 	// ReverseStep continues backward to the previous line of source code, entering function calls.
