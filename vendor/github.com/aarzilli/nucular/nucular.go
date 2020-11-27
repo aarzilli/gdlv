@@ -49,8 +49,6 @@ type Window struct {
 	parent *Window
 	// helper windows to implement groups
 	groupWnd map[string]*Window
-	// editor of the active property widget (see PropertyInt, PropertyFloat)
-	editor *TextEditor
 	// update function
 	updateFn      UpdateFn
 	usingSub      bool
@@ -60,6 +58,7 @@ type Window struct {
 	lastLayoutCnt int
 	adjust        map[int]map[int]*adjustCol
 	undockedSz    image.Point
+	editors       map[string]*TextEditor
 }
 
 type FittingWidthFn func(width int)
@@ -161,6 +160,7 @@ func createTreeNode(initialState bool, parent *treeNode) *treeNode {
 func createWindow(ctx *context, title string) *Window {
 	rootNode := createTreeNode(false, nil)
 	r := &Window{ctx: ctx, title: title, rootNode: rootNode, curNode: rootNode, groupWnd: map[string]*Window{}, first: true}
+	r.editors = make(map[string]*TextEditor)
 	r.rowCtor.win = r
 	r.widgets.cur = make(map[rect.Rect]frozenWidget)
 	return r
@@ -2500,8 +2500,8 @@ func (win *Window) doProperty(property rect.Rect, name string, text string, filt
 
 	ws := win.widgets.PrevState(property)
 	oldws := ws
-	if ws == nstyle.WidgetStateActive && win.editor != nil {
-		ed = win.editor
+	if ws == nstyle.WidgetStateActive && win.editors[name] != nil {
+		ed = win.editors[name]
 	} else {
 		ed = &TextEditor{}
 		ed.init(win)
@@ -2533,9 +2533,9 @@ func (win *Window) doProperty(property rect.Rect, name string, text string, filt
 	}
 	if ws == nstyle.WidgetStateActive {
 		ed.Active = true
-		win.editor = ed
+		win.editors[name] = ed
 	} else if oldws == nstyle.WidgetStateActive {
-		win.editor = nil
+		delete(win.editors, name)
 	}
 	ed.win.widgets.Add(ws, property)
 	drawProperty(ed.win, style, property, lblrect, ws, name)
