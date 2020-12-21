@@ -11,7 +11,7 @@
 // It's a minimal implementation with scope limited to
 // supporting mtldriver.
 //
-// It was copied from dmitri.shuralyov.com/gpu/mtl/example/movingtriangle/internal/ns.
+// It was copied from dmitri.shuralyov.com/gpu/mtl/example/movingtriangle/internal/appkit.
 package appkit
 
 import (
@@ -21,6 +21,7 @@ import (
 )
 
 /*
+#include <stdbool.h>
 #include "appkit.h"
 */
 import "C"
@@ -63,12 +64,5 @@ func (v View) SetLayer(l coreanim.Layer) {
 //
 // Reference: https://developer.apple.com/documentation/appkit/nsview/1483695-wantslayer.
 func (v View) SetWantsLayer(wantsLayer bool) {
-	C.View_SetWantsLayer(v.view, toCBool(wantsLayer))
-}
-
-func toCBool(b bool) C.BOOL {
-	if b {
-		return 1
-	}
-	return 0
+	C.View_SetWantsLayer(v.view, C.bool(wantsLayer))
 }
