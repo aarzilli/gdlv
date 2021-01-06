@@ -10,10 +10,10 @@ import (
 	"runtime"
 	"strings"
 
-	"gioui.org/app/internal/glimpl"
 	"gioui.org/app/internal/srgb"
 	"gioui.org/gpu/backend"
 	"gioui.org/gpu/gl"
+	"gioui.org/internal/glimpl"
 )
 
 type Context struct {
@@ -106,20 +106,20 @@ func NewContext(disp NativeDisplayType) (*Context, error) {
 	if err != nil {
 		return nil, err
 	}
+	f, err := glimpl.NewFunctions(nil)
+	if err != nil {
+		return nil, err
+	}
 	c := &Context{
 		disp:   eglDisp,
 		eglCtx: eglCtx,
-		c:      new(glimpl.Functions),
+		c:      f,
 	}
 	return c, nil
 }
 
-func (c *Context) Functions() *glimpl.Functions {
-	return c.c
-}
-
 func (c *Context) Backend() (backend.Device, error) {
-	return gl.NewBackend(c.c)
+	return gl.NewBackend(nil)
 }
 
 func (c *Context) ReleaseSurface() {
@@ -164,7 +164,7 @@ func (c *Context) MakeCurrent() error {
 	}
 	if c.srgbFBO == nil {
 		var err error
-		c.srgbFBO, err = srgb.New(c.c)
+		c.srgbFBO, err = srgb.New(nil)
 		if err != nil {
 			c.ReleaseCurrent()
 			return err
@@ -230,11 +230,18 @@ func createContext(disp _EGLDisplay) (*eglContext, error) {
 		return nil, fmt.Errorf("eglChooseConfig failed: 0x%x", eglGetError())
 	}
 	if eglCfg == nilEGLConfig {
-		return nil, errors.New("eglChooseConfig returned 0 configs")
+		supportsNoCfg := hasExtension(exts, "EGL_KHR_no_config_context")
+		if !supportsNoCfg {
+			return nil, errors.New("eglChooseConfig returned no configs")
+		}
 	}
-	visID, ret := eglGetConfigAttrib(disp, eglCfg, _EGL_NATIVE_VISUAL_ID)
-	if !ret {
-		return nil, errors.New("newContext: eglGetConfigAttrib for _EGL_NATIVE_VISUAL_ID failed")
+	var visID _EGLint
+	if eglCfg != nilEGLConfig {
+		var ok bool
+		visID, ok = eglGetConfigAttrib(disp, eglCfg, _EGL_NATIVE_VISUAL_ID)
+		if !ok {
+			return nil, errors.New("newContext: eglGetConfigAttrib for _EGL_NATIVE_VISUAL_ID failed")
+		}
 	}
 	ctxAttribs := []_EGLint{
 		_EGL_CONTEXT_CLIENT_VERSION, 3,

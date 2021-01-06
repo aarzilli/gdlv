@@ -19,14 +19,16 @@ import (
 	"time"
 	"unsafe"
 
+	syscall "golang.org/x/sys/unix"
+
 	"gioui.org/app/internal/xkb"
 	"gioui.org/f32"
 	"gioui.org/internal/fling"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
 	"gioui.org/unit"
-	syscall "golang.org/x/sys/unix"
 )
 
 // Use wayland-scanner to generate glue code for the xdg-shell and xdg-decoration extensions.
@@ -764,16 +766,7 @@ func gio_onPointerEnter(data unsafe.Pointer, pointer *C.struct_wl_pointer, seria
 	s.serial = serial
 	w := callbackLoad(unsafe.Pointer(surf)).(*window)
 	s.pointerFocus = w
-	// Get images[0].
-	img := *w.cursor.cursor.images
-	buf := C.wl_cursor_image_get_buffer(img)
-	if buf == nil {
-		return
-	}
-	C.wl_pointer_set_cursor(pointer, serial, w.cursor.surf, C.int32_t(img.hotspot_x), C.int32_t(img.hotspot_y))
-	C.wl_surface_attach(w.cursor.surf, buf, 0, 0)
-	C.wl_surface_damage(w.cursor.surf, 0, 0, C.int32_t(img.width), C.int32_t(img.height))
-	C.wl_surface_commit(w.cursor.surf)
+	w.setCursor(pointer, serial)
 	w.lastPos = f32.Point{X: fromFixed(x), Y: fromFixed(y)}
 }
 
@@ -917,6 +910,50 @@ func (w *window) WriteClipboard(s string) {
 	w.disp.wakeup()
 }
 
+func (w *window) SetCursor(name pointer.CursorName) {
+	if name == pointer.CursorNone {
+		C.wl_pointer_set_cursor(w.disp.seat.pointer, w.serial, nil, 0, 0)
+		return
+	}
+	switch name {
+	default:
+		fallthrough
+	case pointer.CursorDefault:
+		name = "left_ptr"
+	case pointer.CursorText:
+		name = "xterm"
+	case pointer.CursorPointer:
+		name = "hand1"
+	case pointer.CursorCrossHair:
+		name = "crosshair"
+	case pointer.CursorRowResize:
+		name = "top_side"
+	case pointer.CursorColResize:
+		name = "left_side"
+	}
+	cname := C.CString(string(name))
+	defer C.free(unsafe.Pointer(cname))
+	c := C.wl_cursor_theme_get_cursor(w.cursor.theme, cname)
+	if c == nil {
+		return
+	}
+	w.cursor.cursor = c
+	w.setCursor(w.disp.seat.pointer, w.serial)
+}
+
+func (w *window) setCursor(pointer *C.struct_wl_pointer, serial C.uint32_t) {
+	// Get images[0].
+	img := *w.cursor.cursor.images
+	buf := C.wl_cursor_image_get_buffer(img)
+	if buf == nil {
+		return
+	}
+	C.wl_pointer_set_cursor(pointer, serial, w.cursor.surf, C.int32_t(img.hotspot_x), C.int32_t(img.hotspot_y))
+	C.wl_surface_attach(w.cursor.surf, buf, 0, 0)
+	C.wl_surface_damage(w.cursor.surf, 0, 0, C.int32_t(img.width), C.int32_t(img.height))
+	C.wl_surface_commit(w.cursor.surf)
+}
+
 func (w *window) resetFling() {
 	w.fling.start = false
 	w.fling.anim = fling.Animation{}
@@ -964,12 +1001,13 @@ func gio_onKeyboardKey(data unsafe.Pointer, keyboard *C.struct_wl_keyboard, seri
 	t := time.Duration(timestamp) * time.Millisecond
 	s.disp.repeat.Stop(t)
 	w.resetFling()
+	kc := mapXKBKeycode(uint32(keyCode))
+	ks := mapXKBKeyState(uint32(state))
+	for _, e := range w.disp.xkb.DispatchKey(kc, ks) {
+		w.w.Event(e)
+	}
 	if state != C.WL_KEYBOARD_KEY_STATE_PRESSED {
 		return
-	}
-	kc := mapXKBKeycode(uint32(keyCode))
-	for _, e := range w.disp.xkb.DispatchKey(kc) {
-		w.w.Event(e)
 	}
 	if w.disp.xkb.IsRepeatKey(kc) {
 		w.disp.repeat.Start(w, kc, t)
@@ -979,6 +1017,15 @@ func gio_onKeyboardKey(data unsafe.Pointer, keyboard *C.struct_wl_keyboard, seri
 func mapXKBKeycode(keyCode uint32) uint32 {
 	// According to the xkb_v1 spec: "to determine the xkb keycode, clients must add 8 to the key event keycode."
 	return keyCode + 8
+}
+
+func mapXKBKeyState(state uint32) key.State {
+	switch state {
+	case C.WL_KEYBOARD_KEY_STATE_RELEASED:
+		return key.Release
+	default:
+		return key.Press
+	}
 }
 
 func (r *repeatState) Start(w *window, keyCode uint32, t time.Duration) {
@@ -1046,7 +1093,7 @@ func (r *repeatState) Repeat(d *wlDisplay) {
 		if r.last+delay > now {
 			break
 		}
-		for _, e := range d.xkb.DispatchKey(r.key) {
+		for _, e := range d.xkb.DispatchKey(r.key, key.Press) {
 			r.win.Event(e)
 		}
 		r.last += delay
@@ -1089,14 +1136,14 @@ func (w *window) process() {
 		r, err := w.disp.readClipboard()
 		// Send empty responses on unavailable clipboards or errors.
 		if r == nil || err != nil {
-			w.w.Event(system.ClipboardEvent{})
+			w.w.Event(clipboard.Event{})
 			return
 		}
 		// Don't let slow clipboard transfers block event loop.
 		go func() {
 			defer r.Close()
 			data, _ := ioutil.ReadAll(r)
-			w.w.Event(system.ClipboardEvent{Text: string(data)})
+			w.w.Event(clipboard.Event{Text: string(data)})
 		}()
 	}
 	if writeClipboard != nil {
@@ -1399,7 +1446,7 @@ func (w *window) setStage(s system.Stage) {
 		return
 	}
 	w.stage = s
-	w.w.Event(system.StageEvent{s})
+	w.w.Event(system.StageEvent{Stage: s})
 }
 
 func (w *window) display() *C.struct_wl_display {

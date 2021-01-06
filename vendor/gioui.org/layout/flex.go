@@ -65,9 +65,10 @@ func Rigid(widget Widget) FlexChild {
 	}
 }
 
-// Flexed returns a Flex child forced to take up w fraction of the
-// of the space left over from Rigid children. The fraction is weight
-// divided by the weight sum of all Flexed children.
+// Flexed returns a Flex child forced to take up weight fraction of the
+// space left over from Rigid children. The fraction is weight
+// divided by either the weight sum of all Flexed children or the Flex
+// WeightSum if non zero.
 func Flexed(weight float32, widget Widget) FlexChild {
 	return FlexChild{
 		flex:   true,
@@ -86,6 +87,7 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 	crossMin, crossMax := axisCrossConstraint(f.Axis, cs)
 	remaining := mainMax
 	var totalWeight float32
+	cgtx := gtx
 	// Lay out Rigid children.
 	for i, child := range children {
 		if child.flex {
@@ -93,9 +95,8 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 			continue
 		}
 		macro := op.Record(gtx.Ops)
-		gtx := gtx
-		gtx.Constraints = axisConstraints(f.Axis, 0, remaining, crossMin, crossMax)
-		dims := child.widget(gtx)
+		cgtx.Constraints = axisConstraints(f.Axis, 0, remaining, crossMin, crossMax)
+		dims := child.widget(cgtx)
 		c := macro.Stop()
 		sz := axisMain(f.Axis, dims.Size)
 		size += sz
@@ -129,9 +130,8 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 			}
 		}
 		macro := op.Record(gtx.Ops)
-		gtx := gtx
-		gtx.Constraints = axisConstraints(f.Axis, flexSize, flexSize, crossMin, crossMax)
-		dims := child.widget(gtx)
+		cgtx.Constraints = axisConstraints(f.Axis, flexSize, flexSize, crossMin, crossMax)
+		dims := child.widget(cgtx)
 		c := macro.Stop()
 		sz := axisMain(f.Axis, dims.Size)
 		size += sz
@@ -165,7 +165,9 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 	case SpaceEvenly:
 		mainSize += space / (1 + len(children))
 	case SpaceAround:
-		mainSize += space / (len(children) * 2)
+		if len(children) > 0 {
+			mainSize += space / (len(children) * 2)
+		}
 	}
 	for i, child := range children {
 		dims := child.dims
@@ -191,9 +193,13 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 			case SpaceEvenly:
 				mainSize += space / (1 + len(children))
 			case SpaceAround:
-				mainSize += space / len(children)
+				if len(children) > 0 {
+					mainSize += space / len(children)
+				}
 			case SpaceBetween:
-				mainSize += space / (len(children) - 1)
+				if len(children) > 1 {
+					mainSize += space / (len(children) - 1)
+				}
 			}
 		}
 	}
@@ -205,7 +211,9 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 	case SpaceEvenly:
 		mainSize += space / (1 + len(children))
 	case SpaceAround:
-		mainSize += space / (len(children) * 2)
+		if len(children) > 0 {
+			mainSize += space / (len(children) * 2)
+		}
 	}
 	sz := axisPoint(f.Axis, mainSize, maxCross)
 	return Dimensions{Size: sz, Baseline: sz.Y - maxBaseline}

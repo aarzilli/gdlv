@@ -26,7 +26,10 @@ type opCache struct {
 }
 
 type opCacheValue struct {
-	data   pathData
+	data pathData
+	// computePath is the encoded path for compute.
+	computePath encoder
+
 	bounds f32.Rectangle
 	// the fields below are handled by opCache
 	key  ops.Key

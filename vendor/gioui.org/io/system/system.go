@@ -60,12 +60,6 @@ type DestroyEvent struct {
 	Err error
 }
 
-// ClipboardEvent is sent once for each request for the
-// clipboard content.
-type ClipboardEvent struct {
-	Text string
-}
-
 // Insets is the space taken up by
 // system decoration such as translucent
 // system bars and software keyboards.
@@ -79,10 +73,11 @@ type StageEvent struct {
 	Stage Stage
 }
 
-// CommandEvent is a system event.
+// CommandEvent is a system event. Unlike most other events, CommandEvent is
+// delivered as a pointer to allow Cancel to suppress it.
 type CommandEvent struct {
 	Type CommandType
-	// Suppress the default action of the command.
+	// Cancel suppress the default action of the command.
 	Cancel bool
 }
 
@@ -117,8 +112,7 @@ func (l Stage) String() string {
 	}
 }
 
-func (FrameEvent) ImplementsEvent()     {}
-func (StageEvent) ImplementsEvent()     {}
-func (*CommandEvent) ImplementsEvent()  {}
-func (DestroyEvent) ImplementsEvent()   {}
-func (ClipboardEvent) ImplementsEvent() {}
+func (FrameEvent) ImplementsEvent()    {}
+func (StageEvent) ImplementsEvent()    {}
+func (*CommandEvent) ImplementsEvent() {}
+func (DestroyEvent) ImplementsEvent()  {}

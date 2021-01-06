@@ -10,6 +10,7 @@ import (
 
 	"gioui.org/app/internal/window"
 	"gioui.org/io/event"
+	"gioui.org/io/pointer"
 	"gioui.org/io/profile"
 	"gioui.org/io/router"
 	"gioui.org/io/system"
@@ -25,6 +26,7 @@ type Option func(opts *window.Options)
 // Window represents an operating system window.
 type Window struct {
 	driver window.Driver
+	ctx    window.Context
 	loop   *renderLoop
 
 	// driverFuncs is a channel of functions to run when
@@ -46,7 +48,8 @@ type Window struct {
 	nextFrame    time.Time
 	delayedDraw  *time.Timer
 
-	queue queue
+	queue  queue
+	cursor pointer.CursorName
 
 	callbacks callbacks
 }
@@ -132,14 +135,14 @@ func (w *Window) validateAndProcess(frameStart time.Time, size image.Point, sync
 			}
 		}
 		if w.loop == nil {
-			var ctx window.Context
-			ctx, err := w.driver.NewContext()
+			var err error
+			w.ctx, err = w.driver.NewContext()
 			if err != nil {
 				return err
 			}
-			w.loop, err = newLoop(ctx)
+			w.loop, err = newLoop(w.ctx)
 			if err != nil {
-				ctx.Release()
+				w.ctx.Release()
 				return err
 			}
 		}
@@ -165,6 +168,12 @@ func (w *Window) processFrame(frameStart time.Time, size image.Point, frame *op.
 		w.driver.ShowTextInput(true)
 	case router.TextInputClose:
 		w.driver.ShowTextInput(false)
+	}
+	if txt, ok := w.queue.q.WriteClipboard(); ok {
+		go w.WriteClipboard(txt)
+	}
+	if w.queue.q.ReadClipboard() {
+		go w.ReadClipboard()
 	}
 	if w.queue.q.Profiling() {
 		frameDur := time.Since(frameStart)
@@ -193,7 +202,7 @@ func (w *Window) Invalidate() {
 }
 
 // ReadClipboard initiates a read of the clipboard in the form
-// of a system.ClipboardEvent. Multiple reads may be coalesced
+// of a clipboard.Event. Multiple reads may be coalesced
 // to a single event.
 func (w *Window) ReadClipboard() {
 	go w.driverDo(func() {
@@ -205,6 +214,13 @@ func (w *Window) ReadClipboard() {
 func (w *Window) WriteClipboard(s string) {
 	go w.driverDo(func() {
 		w.driver.WriteClipboard(s)
+	})
+}
+
+// SetCursorName changes the current window cursor to name.
+func (w *Window) SetCursorName(name pointer.CursorName) {
+	go w.driverDo(func() {
+		w.driver.SetCursor(name)
 	})
 }
 
@@ -294,6 +310,10 @@ func (w *Window) destroyGPU() {
 	if w.loop != nil {
 		w.loop.Release()
 		w.loop = nil
+	}
+	if w.ctx != nil {
+		w.ctx.Release()
+		w.ctx = nil
 	}
 }
 
@@ -394,6 +414,10 @@ func (w *Window) run(opts *window.Options) {
 				if w.queue.q.Add(e2) {
 					w.setNextFrame(time.Time{})
 					w.updateAnimation()
+				}
+				if c := w.queue.q.Cursor(); c != w.cursor {
+					w.cursor = c
+					w.SetCursorName(c)
 				}
 				w.out <- e
 			}

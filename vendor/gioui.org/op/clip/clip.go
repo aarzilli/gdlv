@@ -5,6 +5,7 @@ package clip
 import (
 	"encoding/binary"
 	"image"
+	"math"
 
 	"gioui.org/f32"
 	"gioui.org/internal/opconst"
@@ -12,9 +13,65 @@ import (
 	"gioui.org/op"
 )
 
+// Op represents a clip area. Op intersects the current clip area with
+// itself.
+type Op struct {
+	bounds image.Rectangle
+	path   PathSpec
+
+	outline bool
+	stroke  StrokeStyle
+	dashes  DashSpec
+}
+
+func (p Op) Add(o *op.Ops) {
+	if p.path.quads > 0 {
+		data := o.Write(opconst.TypePathLen)
+		data[0] = byte(opconst.TypePath)
+		bo := binary.LittleEndian
+		bo.PutUint32(data[1:], p.path.quads)
+		p.path.spec.Add(o)
+	}
+
+	if p.stroke.Width > 0 {
+		data := o.Write(opconst.TypeStrokeLen)
+		data[0] = byte(opconst.TypeStroke)
+		bo := binary.LittleEndian
+		bo.PutUint32(data[1:], math.Float32bits(p.stroke.Width))
+		bo.PutUint32(data[5:], math.Float32bits(p.stroke.Miter))
+		data[9] = uint8(p.stroke.Cap)
+		data[10] = uint8(p.stroke.Join)
+	}
+
+	if p.dashes.phase != 0 || p.dashes.size > 0 {
+		data := o.Write(opconst.TypeDashLen)
+		data[0] = byte(opconst.TypeDash)
+		bo := binary.LittleEndian
+		bo.PutUint32(data[1:], math.Float32bits(p.dashes.phase))
+		data[5] = p.dashes.size // FIXME(sbinet) uint16? uint32?
+		p.dashes.spec.Add(o)
+	}
+
+	data := o.Write(opconst.TypeClipLen)
+	data[0] = byte(opconst.TypeClip)
+	bo := binary.LittleEndian
+	bo.PutUint32(data[1:], uint32(p.bounds.Min.X))
+	bo.PutUint32(data[5:], uint32(p.bounds.Min.Y))
+	bo.PutUint32(data[9:], uint32(p.bounds.Max.X))
+	bo.PutUint32(data[13:], uint32(p.bounds.Max.Y))
+	if p.outline {
+		data[17] = byte(1)
+	}
+}
+
+type PathSpec struct {
+	spec  op.CallOp
+	quads uint32 // quads is the number Bézier segments in that path.
+}
+
 // Path constructs a Op clip path described by lines and
 // Bézier curves, where drawing outside the Path is discarded.
-// The inside-ness of a pixel is determines by the even-odd rule,
+// The inside-ness of a pixel is determines by the non-zero winding rule,
 // similar to the SVG rule of the same name.
 //
 // Path generates no garbage and can be used for dynamic paths; path
@@ -25,28 +82,11 @@ type Path struct {
 	pen     f32.Point
 	macro   op.MacroOp
 	start   f32.Point
+	quads   uint32
 }
 
-// Op sets the current clip to the intersection of
-// the existing clip with this clip.
-//
-// If you need to reset the clip to its previous values after
-// applying a Op, use op.StackOp.
-type Op struct {
-	call   op.CallOp
-	bounds image.Rectangle
-}
-
-func (p Op) Add(o *op.Ops) {
-	p.call.Add(o)
-	data := o.Write(opconst.TypeClipLen)
-	data[0] = byte(opconst.TypeClip)
-	bo := binary.LittleEndian
-	bo.PutUint32(data[1:], uint32(p.bounds.Min.X))
-	bo.PutUint32(data[5:], uint32(p.bounds.Min.Y))
-	bo.PutUint32(data[9:], uint32(p.bounds.Max.X))
-	bo.PutUint32(data[13:], uint32(p.bounds.Max.Y))
-}
+// Pos returns the current pen position.
+func (p *Path) Pos() f32.Point { return p.pen }
 
 // Begin the path, storing the path data and final Op into ops.
 func (p *Path) Begin(ops *op.Ops) {
@@ -57,9 +97,23 @@ func (p *Path) Begin(ops *op.Ops) {
 	data[0] = byte(opconst.TypeAux)
 }
 
-// MoveTo moves the pen to the given position.
-func (p *Path) Move(to f32.Point) {
-	to = to.Add(p.pen)
+// End returns a PathSpec ready to use in clipping operations.
+func (p *Path) End() PathSpec {
+	c := p.macro.Stop()
+	return PathSpec{
+		spec:  c,
+		quads: p.quads,
+	}
+}
+
+// Move moves the pen by the amount specified by delta.
+func (p *Path) Move(delta f32.Point) {
+	to := delta.Add(p.pen)
+	p.MoveTo(to)
+}
+
+// MoveTo moves the pen to the specified absolute coordinate.
+func (p *Path) MoveTo(to f32.Point) {
 	p.end()
 	p.pen = to
 	p.start = to
@@ -68,7 +122,7 @@ func (p *Path) Move(to f32.Point) {
 // end completes the current contour.
 func (p *Path) end() {
 	if p.pen != p.start {
-		p.lineTo(p.start)
+		p.LineTo(p.start)
 	}
 	p.contour++
 }
@@ -76,12 +130,13 @@ func (p *Path) end() {
 // Line moves the pen by the amount specified by delta, recording a line.
 func (p *Path) Line(delta f32.Point) {
 	to := delta.Add(p.pen)
-	p.lineTo(to)
+	p.LineTo(to)
 }
 
-func (p *Path) lineTo(to f32.Point) {
+// LineTo moves the pen to the absolute point specified, recording a line.
+func (p *Path) LineTo(to f32.Point) {
 	// Model lines as degenerate quadratic Béziers.
-	p.quadTo(to.Add(p.pen).Mul(.5), to)
+	p.QuadTo(to.Add(p.pen).Mul(.5), to)
 }
 
 // Quad records a quadratic Bézier from the pen to end
@@ -89,10 +144,12 @@ func (p *Path) lineTo(to f32.Point) {
 func (p *Path) Quad(ctrl, to f32.Point) {
 	ctrl = ctrl.Add(p.pen)
 	to = to.Add(p.pen)
-	p.quadTo(ctrl, to)
+	p.QuadTo(ctrl, to)
 }
 
-func (p *Path) quadTo(ctrl, to f32.Point) {
+// QuadTo records a quadratic Bézier from the pen to end
+// with the control point ctrl, with absolute coordinates.
+func (p *Path) QuadTo(ctrl, to f32.Point) {
 	data := p.ops.Write(ops.QuadSize + 4)
 	bo := binary.LittleEndian
 	bo.PutUint32(data[0:], uint32(p.contour))
@@ -102,11 +159,141 @@ func (p *Path) quadTo(ctrl, to f32.Point) {
 		To:   to,
 	})
 	p.pen = to
+	p.quads++
+}
+
+// Arc adds an elliptical arc to the path. The implied ellipse is defined
+// by its focus points f1 and f2.
+// The arc starts in the current point and ends angle radians along the ellipse boundary.
+// The sign of angle determines the direction; positive being counter-clockwise,
+// negative clockwise.
+func (p *Path) Arc(f1, f2 f32.Point, angle float32) {
+	f1 = f1.Add(p.pen)
+	f2 = f2.Add(p.pen)
+	c, rx, ry, beg, alpha := arcFrom(f1, f2, p.pen)
+	p.arc(alpha, c, rx, ry, beg, float64(angle))
+}
+
+func dist(p1, p2 f32.Point) float64 {
+	var (
+		x1 = float64(p1.X)
+		y1 = float64(p1.Y)
+		x2 = float64(p2.X)
+		y2 = float64(p2.Y)
+		dx = x2 - x1
+		dy = y2 - y1
+	)
+	return math.Hypot(dx, dy)
+}
+
+func arcFrom(f1, f2, p f32.Point) (c f32.Point, rx, ry, start, alpha float64) {
+	c = f32.Point{
+		X: 0.5 * (f1.X + f2.X),
+		Y: 0.5 * (f1.Y + f2.Y),
+	}
+
+	// semi-major axis: 2a = |PF1| + |PF2|
+	a := 0.5 * (dist(f1, p) + dist(f2, p))
+
+	// semi-minor axis: c^2 = a^2+b^2 (c: focal distance)
+	f := dist(f1, c)
+	b := math.Sqrt(a*a - f*f)
+
+	switch {
+	case a > b:
+		rx = a
+		ry = b
+	default:
+		rx = b
+		ry = a
+	}
+
+	var x float64
+	switch {
+	case f1 == c || f2 == c:
+		// degenerate case of a circle.
+		alpha = 0
+	default:
+		switch {
+		case f1.X > c.X:
+			x = float64(f1.X - c.X)
+			alpha = math.Acos(x / f)
+		case f1.X < c.X:
+			x = float64(f2.X - c.X)
+			alpha = math.Acos(x / f)
+		case f1.X == c.X:
+			// special case of a "vertical" ellipse.
+			alpha = math.Pi / 2
+			if f1.Y < c.Y {
+				alpha = -alpha
+			}
+		}
+	}
+
+	start = math.Acos(float64(p.X-c.X) / dist(c, p))
+	if c.Y > p.Y {
+		start = -start
+	}
+	start -= alpha
+
+	return c, rx, ry, start, alpha
+}
+
+// arc records an elliptical arc centered at c, with radii rx and ry,
+// starting at angle beg and stopping at end, in radians.
+//
+// The math is extracted from the following paper:
+//  "Drawing an elliptical arc using polylines, quadratic or
+//   cubic Bezier curves", L. Maisonobe
+// An electronic version may be found at:
+//  http://spaceroots.org/documents/ellipse/elliptical-arc.pdf
+func (p *Path) arc(alpha float64, c f32.Point, rx, ry, beg, delta float64) {
+	const n = 16
+	var (
+		θ   = delta / n
+		ref f32.Affine2D // transform from absolute frame to ellipse-based one
+		rot f32.Affine2D // rotation matrix for each segment
+		inv f32.Affine2D // transform from ellipse-based frame to absolute one
+	)
+	ref = ref.Offset(f32.Point{}.Sub(c))
+	ref = ref.Rotate(f32.Point{}, float32(-alpha))
+	ref = ref.Scale(f32.Point{}, f32.Point{
+		X: float32(1 / rx),
+		Y: float32(1 / ry),
+	})
+	inv = ref.Invert()
+	rot = rot.Rotate(f32.Point{}, float32(0.5*θ))
+
+	// Instead of invoking math.Sincos for every segment, compute a rotation
+	// matrix once and apply for each segment.
+	// Before applying the rotation matrix rot, transform the coordinates
+	// to a frame centered to the ellipse (and warped into a unit circle), then rotate.
+	// Finally, transform back into the original frame.
+	step := func(p f32.Point) f32.Point {
+		q := ref.Transform(p)
+		q = rot.Transform(q)
+		q = inv.Transform(q)
+		return q
+	}
+
+	for i := 0; i < n; i++ {
+		p0 := p.pen
+		p1 := step(p0)
+		p2 := step(p1)
+		ctl := f32.Pt(
+			2*p1.X-0.5*(p0.X+p2.X),
+			2*p1.Y-0.5*(p0.Y+p2.Y),
+		)
+		p.QuadTo(ctl, p2)
+	}
 }
 
 // Cube records a cubic Bézier from the pen through
 // two control points ending in to.
 func (p *Path) Cube(ctrl0, ctrl1, to f32.Point) {
+	if ctrl0 == (f32.Point{}) && ctrl1 == (f32.Point{}) && to == (f32.Point{}) {
+		return
+	}
 	ctrl0 = ctrl0.Add(p.pen)
 	ctrl1 = ctrl1.Add(p.pen)
 	to = to.Add(p.pen)
@@ -153,7 +340,7 @@ func (p *Path) approxCubeTo(splits int, maxDist float32, ctrl0, ctrl1, to f32.Po
 	c := ctrl0.Mul(3).Sub(p.pen).Add(ctrl1.Mul(3)).Sub(to).Mul(1.0 / 4.0)
 	const maxSplits = 32
 	if splits >= maxSplits {
-		p.quadTo(c, to)
+		p.QuadTo(c, to)
 		return splits
 	}
 	// The maximum distance between the cubic P and its approximation Q given t
@@ -165,7 +352,7 @@ func (p *Path) approxCubeTo(splits int, maxDist float32, ctrl0, ctrl1, to f32.Po
 	v := to.Sub(ctrl1.Mul(3)).Add(ctrl0.Mul(3)).Sub(p.pen)
 	d2 := (v.X*v.X + v.Y*v.Y) * 3 / (36 * 36)
 	if d2 <= maxDist*maxDist {
-		p.quadTo(c, to)
+		p.QuadTo(c, to)
 		return splits
 	}
 	// De Casteljau split the curve and approximate the halves.
@@ -182,19 +369,37 @@ func (p *Path) approxCubeTo(splits int, maxDist float32, ctrl0, ctrl1, to f32.Po
 	return splits
 }
 
-// End the path and return a clip operation that represents it.
-func (p *Path) End() Op {
+// Close closes the path.
+func (p *Path) Close() {
 	p.end()
-	c := p.macro.Stop()
+}
+
+// Outline represents the area inside of a path, according to the
+// non-zero winding rule.
+type Outline struct {
+	Path PathSpec
+}
+
+// Op returns a clip operation representing the outline.
+func (o Outline) Op() Op {
 	return Op{
-		call: c,
+		path:    o.Path,
+		outline: true,
 	}
 }
 
 // Rect represents the clip area of a pixel-aligned rectangle.
 type Rect image.Rectangle
 
+// Op returns the op for the rectangle.
+func (r Rect) Op() Op {
+	return Op{
+		bounds:  image.Rectangle(r),
+		outline: true,
+	}
+}
+
 // Add the clip operation.
 func (r Rect) Add(ops *op.Ops) {
-	Op{bounds: image.Rectangle(r)}.Add(ops)
+	r.Op().Add(ops)
 }

@@ -7,8 +7,8 @@ package window
 /*
 #cgo openbsd CFLAGS: -I/usr/X11R6/include -I/usr/local/include
 #cgo openbsd LDFLAGS: -L/usr/X11R6/lib -L/usr/local/lib
-#cgo freebsd openbsd LDFLAGS: -lX11 -lxkbcommon -lxkbcommon-x11 -lX11-xcb
-#cgo linux pkg-config: x11 xkbcommon xkbcommon-x11 x11-xcb
+#cgo freebsd openbsd LDFLAGS: -lX11 -lxkbcommon -lxkbcommon-x11 -lX11-xcb -lXcursor -lXfixes
+#cgo linux pkg-config: x11 xkbcommon xkbcommon-x11 x11-xcb xcursor xfixes
 
 #include <stdlib.h>
 #include <locale.h>
@@ -18,6 +18,8 @@ package window
 #include <X11/Xresource.h>
 #include <X11/XKBlib.h>
 #include <X11/Xlib-xcb.h>
+#include <X11/extensions/Xfixes.h>
+#include <X11/Xcursor/Xcursor.h>
 #include <xkbcommon/xkbcommon-x11.h>
 
 */
@@ -34,13 +36,15 @@ import (
 	"unsafe"
 
 	"gioui.org/f32"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
 	"gioui.org/unit"
 
-	"gioui.org/app/internal/xkb"
 	syscall "golang.org/x/sys/unix"
+
+	"gioui.org/app/internal/xkb"
 )
 
 type x11Window struct {
@@ -53,6 +57,8 @@ type x11Window struct {
 	atoms struct {
 		// "UTF8_STRING".
 		utf8string C.Atom
+		// "text/plain;charset=utf-8".
+		plaintext C.Atom
 		// "TARGETS"
 		targets C.Atom
 		// "CLIPBOARD".
@@ -63,6 +69,8 @@ type x11Window struct {
 		evDelWindow C.Atom
 		// "ATOM"
 		atom C.Atom
+		// "GTK_TEXT_BUFFER_CONTENTS"
+		gtk_text_buffer_contents C.Atom
 	}
 	stage  system.Stage
 	cfg    unit.Metric
@@ -83,6 +91,7 @@ type x11Window struct {
 		write   *string
 		content []byte
 	}
+	cursor pointer.CursorName
 }
 
 func (w *x11Window) SetAnimating(anim bool) {
@@ -106,6 +115,27 @@ func (w *x11Window) WriteClipboard(s string) {
 	w.clipboard.write = &s
 	w.mu.Unlock()
 	w.wakeup()
+}
+
+func (w *x11Window) SetCursor(name pointer.CursorName) {
+	if name == pointer.CursorNone {
+		w.cursor = name
+		C.XFixesHideCursor(w.x, w.xw)
+		return
+	}
+	if w.cursor == pointer.CursorNone {
+		C.XFixesShowCursor(w.x, w.xw)
+	}
+	cname := C.CString(string(name))
+	defer C.free(unsafe.Pointer(cname))
+	c := C.XcursorLibraryLoadCursor(w.x, cname)
+	if c == 0 {
+		name = pointer.CursorDefault
+	}
+	w.cursor = name
+	// If c if null (i.e. name was not found),
+	// XDefineCursor will use the default cursor.
+	C.XDefineCursor(w.x, w.xw, c)
 }
 
 func (w *x11Window) ShowTextInput(show bool) {}
@@ -151,7 +181,7 @@ func (w *x11Window) setStage(s system.Stage) {
 		return
 	}
 	w.stage = s
-	w.w.Event(system.StageEvent{s})
+	w.w.Event(system.StageEvent{Stage: s})
 }
 
 func (w *x11Window) loop() {
@@ -301,12 +331,15 @@ func (h *x11EventHandler) handleEvents() bool {
 				h.w.xkb.UpdateMask(uint32(state.base_mods), uint32(state.latched_mods), uint32(state.locked_mods),
 					uint32(state.base_group), uint32(state.latched_group), uint32(state.locked_group))
 			}
-		case C.KeyPress:
+		case C.KeyPress, C.KeyRelease:
+			ks := key.Press
+			if _type == C.KeyRelease {
+				ks = key.Release
+			}
 			kevt := (*C.XKeyPressedEvent)(unsafe.Pointer(xev))
-			for _, e := range h.w.xkb.DispatchKey(uint32(kevt.keycode)) {
+			for _, e := range h.w.xkb.DispatchKey(uint32(kevt.keycode), ks) {
 				w.w.Event(e)
 			}
-		case C.KeyRelease:
 		case C.ButtonPress, C.ButtonRelease:
 			bevt := (*C.XButtonEvent)(unsafe.Pointer(xev))
 			ev := pointer.Event{
@@ -339,6 +372,15 @@ func (h *x11EventHandler) handleEvents() bool {
 				// scroll down
 				ev.Type = pointer.Scroll
 				ev.Scroll.Y = +scrollScale
+			case 6:
+				// http://xahlee.info/linux/linux_x11_mouse_button_number.html
+				// scroll left
+				ev.Type = pointer.Scroll
+				ev.Scroll.X = -scrollScale * 2
+			case 7:
+				// scroll right
+				ev.Type = pointer.Scroll
+				ev.Scroll.X = +scrollScale * 2
 			default:
 				continue
 			}
@@ -394,7 +436,7 @@ func (h *x11EventHandler) handleEvents() bool {
 				break
 			}
 			str := C.GoStringN((*C.char)(unsafe.Pointer(text.value)), C.int(text.nitems))
-			w.w.Event(system.ClipboardEvent{Text: str})
+			w.w.Event(clipboard.Event{Text: str})
 		case C.SelectionRequest:
 			cevt := (*C.XSelectionRequestEvent)(unsafe.Pointer(xev))
 			if cevt.selection != w.atoms.clipboard || cevt.property == C.None {
@@ -418,21 +460,27 @@ func (h *x11EventHandler) handleEvents() bool {
 			switch cevt.target {
 			case w.atoms.targets:
 				// The requestor wants the supported clipboard
-				// formats. First write the formats...
-				formats := []uint32{uint32(w.atoms.utf8string)}
+				// formats. First write the targets...
+				formats := [...]C.long{
+					C.long(w.atoms.targets),
+					C.long(w.atoms.utf8string),
+					C.long(w.atoms.plaintext),
+					// GTK clients need this.
+					C.long(w.atoms.gtk_text_buffer_contents),
+				}
 				C.XChangeProperty(w.x, cevt.requestor, cevt.property, w.atoms.atom,
 					32 /* bitwidth of formats */, C.PropModeReplace,
-					(*C.uchar)(unsafe.Pointer(&formats[0])), C.int(len(formats)),
+					(*C.uchar)(unsafe.Pointer(&formats)), C.int(len(formats)),
 				)
 				// ...then notify the requestor.
 				notify()
-			case w.atoms.utf8string:
+			case w.atoms.plaintext, w.atoms.utf8string, w.atoms.gtk_text_buffer_contents:
 				content := w.clipboard.content
 				var ptr *C.uchar
 				if len(content) > 0 {
 					ptr = (*C.uchar)(unsafe.Pointer(&content[0]))
 				}
-				C.XChangeProperty(w.x, cevt.requestor, cevt.property, w.atoms.utf8string,
+				C.XChangeProperty(w.x, cevt.requestor, cevt.property, cevt.target,
 					8 /* bitwidth */, C.PropModeReplace,
 					ptr, C.int(len(content)),
 				)
@@ -554,6 +602,8 @@ func newX11Window(gioWin Callbacks, opts *Options) error {
 	C.XSetClassHint(dpy, win, &wmhints)
 
 	w.atoms.utf8string = w.atom("UTF8_STRING", false)
+	w.atoms.plaintext = w.atom("text/plain;charset=utf-8", false)
+	w.atoms.gtk_text_buffer_contents = w.atom("GTK_TEXT_BUFFER_CONTENTS", false)
 	w.atoms.evDelWindow = w.atom("WM_DELETE_WINDOW", false)
 	w.atoms.clipboard = w.atom("CLIPBOARD", false)
 	w.atoms.clipboardContent = w.atom("CLIPBOARD_CONTENT", false)

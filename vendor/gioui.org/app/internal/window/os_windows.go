@@ -22,6 +22,7 @@ import (
 	"gioui.org/unit"
 
 	"gioui.org/f32"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
@@ -44,8 +45,8 @@ type window struct {
 	width       int
 	height      int
 	stage       system.Stage
-	dead        bool
 	pointerBtns pointer.Buttons
+	cursor      syscall.Handle
 
 	mu        sync.Mutex
 	animating bool
@@ -69,13 +70,16 @@ var backends []gpuAPI
 // winMap maps win32 HWNDs to *windows.
 var winMap sync.Map
 
+// iconID is the ID of the icon in the resource file.
+const iconID = 1
+
 var resources struct {
 	once sync.Once
 	// handle is the module handle from GetModuleHandle.
 	handle syscall.Handle
 	// class is the Gio window class from RegisterClassEx.
 	class uint16
-	// cursor is the arrow cursor resource
+	// cursor is the arrow cursor resource.
 	cursor syscall.Handle
 }
 
@@ -86,7 +90,10 @@ func Main() {
 func NewWindow(window Callbacks, opts *Options) error {
 	cerr := make(chan error)
 	go func() {
-		// Call win32 API from a single OS thread.
+		// GetMessage and PeekMessage can filter on a window HWND, but
+		// then thread-specific messages such as WM_QUIT are ignored.
+		// Instead lock the thread so window messages arrive through
+		// unfiltered GetMessage calls.
 		runtime.LockOSThread()
 		w, err := createNativeWindow(opts)
 		if err != nil {
@@ -103,6 +110,9 @@ func NewWindow(window Callbacks, opts *Options) error {
 		windows.ShowWindow(w.hwnd, windows.SW_SHOWDEFAULT)
 		windows.SetForegroundWindow(w.hwnd)
 		windows.SetFocus(w.hwnd)
+		// Since the window class for the cursor is null,
+		// set it here to show the cursor.
+		w.SetCursor(pointer.CursorDefault)
 		if err := w.loop(); err != nil {
 			panic(err)
 		}
@@ -118,17 +128,18 @@ func initResources() error {
 		return err
 	}
 	resources.handle = hInst
-	curs, err := windows.LoadCursor(windows.IDC_ARROW)
+	c, err := windows.LoadCursor(windows.IDC_ARROW)
 	if err != nil {
 		return err
 	}
-	resources.cursor = curs
+	resources.cursor = c
+	icon, _ := windows.LoadImage(hInst, iconID, windows.IMAGE_ICON, 0, 0, windows.LR_DEFAULTSIZE|windows.LR_SHARED)
 	wcls := windows.WndClassEx{
 		CbSize:        uint32(unsafe.Sizeof(windows.WndClassEx{})),
 		Style:         windows.CS_HREDRAW | windows.CS_VREDRAW | windows.CS_OWNDC,
 		LpfnWndProc:   syscall.NewCallback(windowProc),
 		HInstance:     hInst,
-		HCursor:       curs,
+		HIcon:         icon,
 		LpszClassName: syscall.StringToUTF16Ptr("GioWindow"),
 	}
 	cls, err := windows.RegisterClassEx(&wcls)
@@ -226,9 +237,17 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 	case windows.WM_ERASEBKGND:
 		// Avoid flickering between GPU content and background color.
 		return 1
-	case windows.WM_KEYDOWN, windows.WM_SYSKEYDOWN:
+	case windows.WM_KEYDOWN, windows.WM_KEYUP, windows.WM_SYSKEYDOWN, windows.WM_SYSKEYUP:
 		if n, ok := convertKeyCode(wParam); ok {
-			w.w.Event(key.Event{Name: n, Modifiers: getModifiers()})
+			e := key.Event{
+				Name:      n,
+				Modifiers: getModifiers(),
+				State:     key.Press,
+			}
+			if msg == windows.WM_KEYUP || msg == windows.WM_SYSKEYUP {
+				e.State = key.Release
+			}
+			w.w.Event(e)
 		}
 	case windows.WM_LBUTTONDOWN:
 		w.pointerButton(pointer.ButtonLeft, true, lParam, getModifiers())
@@ -261,9 +280,11 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 			Time:     windows.GetMessageTime(),
 		})
 	case windows.WM_MOUSEWHEEL:
-		w.scrollEvent(wParam, lParam)
+		w.scrollEvent(wParam, lParam, false)
+	case windows.WM_MOUSEHWHEEL:
+		w.scrollEvent(wParam, lParam, true)
 	case windows.WM_DESTROY:
-		w.dead = true
+		windows.PostQuitMessage(0)
 	case windows.WM_PAINT:
 		w.draw(true)
 	case windows.WM_SIZE:
@@ -277,16 +298,18 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 		mm := (*windows.MinMaxInfo)(unsafe.Pointer(uintptr(lParam)))
 		if w.minmax.minWidth > 0 || w.minmax.minHeight > 0 {
 			mm.PtMinTrackSize = windows.Point{
-				w.minmax.minWidth + w.deltas.width,
-				w.minmax.minHeight + w.deltas.height,
+				X: w.minmax.minWidth + w.deltas.width,
+				Y: w.minmax.minHeight + w.deltas.height,
 			}
 		}
 		if w.minmax.maxWidth > 0 || w.minmax.maxHeight > 0 {
 			mm.PtMaxTrackSize = windows.Point{
-				w.minmax.maxWidth + w.deltas.width,
-				w.minmax.maxHeight + w.deltas.height,
+				X: w.minmax.maxWidth + w.deltas.width,
+				Y: w.minmax.maxHeight + w.deltas.height,
 			}
 		}
+	case windows.WM_SETCURSOR:
+		windows.SetCursor(w.cursor)
 	}
 
 	return windows.DefWindowProc(hwnd, msg, wParam, lParam)
@@ -342,7 +365,7 @@ func coordsFromlParam(lParam uintptr) (int, int) {
 	return x, y
 }
 
-func (w *window) scrollEvent(wParam, lParam uintptr) {
+func (w *window) scrollEvent(wParam, lParam uintptr, horizontal bool) {
 	x, y := coordsFromlParam(lParam)
 	// The WM_MOUSEWHEEL coordinates are in screen coordinates, in contrast
 	// to other mouse events.
@@ -350,12 +373,18 @@ func (w *window) scrollEvent(wParam, lParam uintptr) {
 	windows.ScreenToClient(w.hwnd, &np)
 	p := f32.Point{X: float32(np.X), Y: float32(np.Y)}
 	dist := float32(int16(wParam >> 16))
+	var sp f32.Point
+	if horizontal {
+		sp.X = dist
+	} else {
+		sp.Y = -dist
+	}
 	w.w.Event(pointer.Event{
 		Type:     pointer.Scroll,
 		Source:   pointer.Mouse,
 		Position: p,
 		Buttons:  w.pointerBtns,
-		Scroll:   f32.Point{Y: -dist},
+		Scroll:   sp,
 		Time:     windows.GetMessageTime(),
 	})
 }
@@ -363,18 +392,21 @@ func (w *window) scrollEvent(wParam, lParam uintptr) {
 // Adapted from https://blogs.msdn.microsoft.com/oldnewthing/20060126-00/?p=32513/
 func (w *window) loop() error {
 	msg := new(windows.Msg)
-	for !w.dead {
+loop:
+	for {
 		w.mu.Lock()
 		anim := w.animating
 		w.mu.Unlock()
-		if anim && !windows.PeekMessage(msg, w.hwnd, 0, 0, windows.PM_NOREMOVE) {
+		if anim && !windows.PeekMessage(msg, 0, 0, 0, windows.PM_NOREMOVE) {
 			w.draw(false)
 			continue
 		}
-		windows.GetMessage(msg, w.hwnd, 0, 0)
-		if msg.Message == windows.WM_QUIT {
-			windows.PostQuitMessage(msg.WParam)
-			break
+		switch ret := windows.GetMessage(msg, 0, 0, 0); ret {
+		case -1:
+			return errors.New("GetMessage failed")
+		case 0:
+			// WM_QUIT received.
+			break loop
 		}
 		windows.TranslateMessage(msg)
 		windows.DispatchMessage(msg)
@@ -489,7 +521,7 @@ func (w *window) readClipboard() error {
 	hdr.Len = n
 	content := string(utf16.Decode(u16))
 	go func() {
-		w.w.Event(system.ClipboardEvent{Text: content})
+		w.w.Event(clipboard.Event{Text: content})
 	}()
 	return nil
 }
@@ -531,6 +563,37 @@ func (w *window) writeClipboard(s string) error {
 		return err
 	}
 	return nil
+}
+
+func (w *window) SetCursor(name pointer.CursorName) {
+	c, err := loadCursor(name)
+	if err != nil {
+		c = resources.cursor
+	}
+	w.cursor = c
+}
+
+func loadCursor(name pointer.CursorName) (syscall.Handle, error) {
+	var curID uint16
+	switch name {
+	default:
+		fallthrough
+	case pointer.CursorDefault:
+		return resources.cursor, nil
+	case pointer.CursorText:
+		curID = windows.IDC_IBEAM
+	case pointer.CursorPointer:
+		curID = windows.IDC_HAND
+	case pointer.CursorCrossHair:
+		curID = windows.IDC_CROSS
+	case pointer.CursorColResize:
+		curID = windows.IDC_SIZEWE
+	case pointer.CursorRowResize:
+		curID = windows.IDC_SIZENS
+	case pointer.CursorNone:
+		return 0, nil
+	}
+	return windows.LoadCursor(curID)
 }
 
 func (w *window) ShowTextInput(show bool) {}

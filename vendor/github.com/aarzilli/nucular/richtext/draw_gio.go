@@ -60,8 +60,8 @@ func (rtxt *RichText) calcAdvances(partial int) {
 
 			txt := fontFace2fontFace(&siter.styleSel.Face).layout(chunk.s[:len], 1e6)
 			for _, line := range txt {
-				for i := range line.Layout {
-					rtxt.adv = append(rtxt.adv, line.Layout[i].Advance)
+				for i := range line.Layout.Advances {
+					rtxt.adv = append(rtxt.adv, line.Layout.Advances[i])
 				}
 			}
 

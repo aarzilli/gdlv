@@ -7,16 +7,29 @@ import (
 	"unsafe"
 )
 
+// StructView returns a byte slice view of a struct.
+func StructView(s interface{}) []byte {
+	v := reflect.ValueOf(s).Elem()
+	sz := int(v.Type().Size())
+	var res []byte
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	h.Data = uintptr(unsafe.Pointer(v.UnsafeAddr()))
+	h.Cap = sz
+	h.Len = sz
+	return res
+}
+
 // BytesView returns a byte slice view of a slice.
 func BytesView(s interface{}) []byte {
 	v := reflect.ValueOf(s)
 	first := v.Index(0)
 	sz := int(first.Type().Size())
-	return *(*[]byte)(unsafe.Pointer(&reflect.SliceHeader{
-		Data: uintptr(unsafe.Pointer((*reflect.SliceHeader)(unsafe.Pointer(first.UnsafeAddr())))),
-		Len:  v.Len() * sz,
-		Cap:  v.Cap() * sz,
-	}))
+	var res []byte
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	h.Data = first.UnsafeAddr()
+	h.Cap = v.Cap() * sz
+	h.Len = v.Len() * sz
+	return res
 }
 
 // SliceOf returns a slice from a (native) pointer.
@@ -24,23 +37,20 @@ func SliceOf(s uintptr) []byte {
 	if s == 0 {
 		return nil
 	}
-	sh := reflect.SliceHeader{
-		Data: s,
-		Len:  1 << 30,
-		Cap:  1 << 30,
-	}
-	return *(*[]byte)(unsafe.Pointer(&sh))
+	var res []byte
+	h := (*reflect.SliceHeader)(unsafe.Pointer(&res))
+	h.Data = s
+	h.Cap = 1 << 30
+	return res
 }
 
 // GoString convert a NUL-terminated C string
 // to a Go string.
 func GoString(s []byte) string {
-	i := 0
-	for {
-		if s[i] == 0 {
-			break
+	for i, v := range s {
+		if v == 0 {
+			return string(s[:i])
 		}
-		i++
 	}
-	return string(s[:i])
+	return string(s)
 }

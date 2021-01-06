@@ -77,7 +77,6 @@ func (l *renderLoop) renderLoop(ctx window.Context) error {
 			return
 		}
 		defer g.Release()
-		defer ctx.Release()
 		initErr <- nil
 	loop:
 		for {
@@ -89,10 +88,11 @@ func (l *renderLoop) renderLoop(ctx window.Context) error {
 				g.Collect(frame.viewport, frame.ops)
 				// Signal that we're done with the frame ops.
 				l.ack <- struct{}{}
-				g.BeginFrame()
 				var res frameResult
-				res.err = ctx.Present()
-				g.EndFrame()
+				res.err = g.Frame()
+				if res.err == nil {
+					res.err = ctx.Present()
+				}
 				res.profile = g.Profile()
 				ctx.Unlock()
 				l.results <- res

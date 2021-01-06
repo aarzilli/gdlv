@@ -38,6 +38,7 @@ import (
 	"unsafe"
 
 	"gioui.org/f32"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
@@ -51,6 +52,7 @@ type window struct {
 
 	layer   C.CFTypeRef
 	visible atomic.Value
+	cursor  pointer.CursorName
 
 	pointerMap []C.CFTypeRef
 }
@@ -222,7 +224,7 @@ func onTouch(last C.int, view, touchRef C.CFTypeRef, phase C.NSInteger, x, y C.C
 func (w *window) ReadClipboard() {
 	runOnMain(func() {
 		content := nsstringToString(C.gio_readClipboard())
-		w.w.Event(system.ClipboardEvent{Text: content})
+		w.w.Event(clipboard.Event{Text: content})
 	})
 }
 
@@ -247,6 +249,10 @@ func (w *window) SetAnimating(anim bool) {
 	} else {
 		w.displayLink.Stop()
 	}
+}
+
+func (w *window) SetCursor(name pointer.CursorName) {
+	w.cursor = windowSetCursor(w.cursor, name)
 }
 
 func (w *window) onKeyCommand(name string) {

@@ -5,15 +5,14 @@ package text
 import (
 	"io"
 
-	"gioui.org/op"
 	"golang.org/x/image/math/fixed"
+
+	"gioui.org/op"
 )
 
 // A Line contains the measurements of a line of text.
 type Line struct {
-	Layout []Glyph
-	// Len is the length in UTF8 bytes of the line.
-	Len int
+	Layout Layout
 	// Width is the width of the line.
 	Width fixed.Int26_6
 	// Ascent is the height above the baseline.
@@ -25,15 +24,16 @@ type Line struct {
 	Bounds fixed.Rectangle26_6
 }
 
-type Glyph struct {
-	Rune    rune
-	Advance fixed.Int26_6
+type Layout struct {
+	Text     string
+	Advances []fixed.Int26_6
 }
 
 // Style is the font style.
 type Style int
 
-// Weight is a font weight, in CSS units.
+// Weight is a font weight, in CSS units subtracted 400 so the zero value
+// is normal text weight.
 type Weight int
 
 // Font specify a particular typeface variant, style and weight.
@@ -49,7 +49,7 @@ type Font struct {
 // methods must be safe for concurrent use.
 type Face interface {
 	Layout(ppem fixed.Int26_6, maxWidth int, txt io.Reader) ([]Line, error)
-	Shape(ppem fixed.Int26_6, str []Glyph) op.CallOp
+	Shape(ppem fixed.Int26_6, str Layout) op.CallOp
 }
 
 // Typeface identifies a particular typeface design. The empty
@@ -73,9 +73,9 @@ const (
 )
 
 const (
-	Normal Weight = 400
-	Medium Weight = 500
-	Bold   Weight = 600
+	Normal Weight = 400 - 400
+	Medium Weight = 500 - 400
+	Bold   Weight = 600 - 400
 )
 
 func (a Alignment) String() string {

@@ -12,6 +12,7 @@ import (
 	"gioui.org/f32"
 	"gioui.org/internal/opconst"
 	"gioui.org/op"
+	"gioui.org/op/clip"
 )
 
 // ImageOp sets the brush to an image.
@@ -19,11 +20,8 @@ import (
 // Note: the ImageOp may keep a reference to the backing image.
 // See NewImageOp for details.
 type ImageOp struct {
-	// Rect is the section if the backing image to use.
-	Rect image.Rectangle
-
 	uniform bool
-	color   color.RGBA
+	color   color.NRGBA
 	src     *image.RGBA
 
 	// handle is a key to uniquely identify this ImageOp
@@ -33,15 +31,20 @@ type ImageOp struct {
 
 // ColorOp sets the brush to a constant color.
 type ColorOp struct {
-	Color color.RGBA
+	Color color.NRGBA
 }
 
-// PaintOp fills an area with the current brush, respecting the
-// current clip path and transformation.
+// LinearGradientOp sets the brush to a gradient starting at stop1 with color1 and
+// ending at stop2 with color2.
+type LinearGradientOp struct {
+	Stop1  f32.Point
+	Color1 color.NRGBA
+	Stop2  f32.Point
+	Color2 color.NRGBA
+}
+
+// PaintOp fills fills the current clip area with the current brush.
 type PaintOp struct {
-	// Rect is the destination area to paint. If necessary, the brush is
-	// scaled to cover the rectangle area.
-	Rect f32.Rectangle
 }
 
 // NewImageOp creates an ImageOp backed by src. See
@@ -55,7 +58,7 @@ type PaintOp struct {
 func NewImageOp(src image.Image) ImageOp {
 	switch src := src.(type) {
 	case *image.Uniform:
-		col := color.RGBAModel.Convert(src.C).(color.RGBA)
+		col := color.NRGBAModel.Convert(src.C).(color.NRGBA)
 		return ImageOp{
 			uniform: true,
 			color:   col,
@@ -64,7 +67,6 @@ func NewImageOp(src image.Image) ImageOp {
 		bounds := src.Bounds()
 		if bounds.Min == (image.Point{}) && src.Stride == bounds.Dx()*4 {
 			return ImageOp{
-				Rect:   src.Bounds(),
 				src:    src,
 				handle: new(int),
 			}
@@ -78,7 +80,6 @@ func NewImageOp(src image.Image) ImageOp {
 	})
 	draw.Draw(dst, dst.Bounds(), src, src.Bounds().Min, draw.Src)
 	return ImageOp{
-		Rect:   dst.Bounds(),
 		src:    dst,
 		handle: new(int),
 	}
@@ -98,13 +99,8 @@ func (i ImageOp) Add(o *op.Ops) {
 		}.Add(o)
 		return
 	}
-	data := o.Write(opconst.TypeImageLen, i.src, i.handle)
+	data := o.Write2(opconst.TypeImageLen, i.src, i.handle)
 	data[0] = byte(opconst.TypeImage)
-	bo := binary.LittleEndian
-	bo.PutUint32(data[1:], uint32(i.Rect.Min.X))
-	bo.PutUint32(data[5:], uint32(i.Rect.Min.Y))
-	bo.PutUint32(data[9:], uint32(i.Rect.Max.X))
-	bo.PutUint32(data[13:], uint32(i.Rect.Max.Y))
 }
 
 func (c ColorOp) Add(o *op.Ops) {
@@ -116,12 +112,44 @@ func (c ColorOp) Add(o *op.Ops) {
 	data[4] = c.Color.A
 }
 
+func (c LinearGradientOp) Add(o *op.Ops) {
+	data := o.Write(opconst.TypeLinearGradientLen)
+	data[0] = byte(opconst.TypeLinearGradient)
+
+	bo := binary.LittleEndian
+	bo.PutUint32(data[1:], math.Float32bits(c.Stop1.X))
+	bo.PutUint32(data[5:], math.Float32bits(c.Stop1.Y))
+	bo.PutUint32(data[9:], math.Float32bits(c.Stop2.X))
+	bo.PutUint32(data[13:], math.Float32bits(c.Stop2.Y))
+
+	data[17+0] = c.Color1.R
+	data[17+1] = c.Color1.G
+	data[17+2] = c.Color1.B
+	data[17+3] = c.Color1.A
+	data[21+0] = c.Color2.R
+	data[21+1] = c.Color2.G
+	data[21+2] = c.Color2.B
+	data[21+3] = c.Color2.A
+}
+
 func (d PaintOp) Add(o *op.Ops) {
 	data := o.Write(opconst.TypePaintLen)
 	data[0] = byte(opconst.TypePaint)
-	bo := binary.LittleEndian
-	bo.PutUint32(data[1:], math.Float32bits(d.Rect.Min.X))
-	bo.PutUint32(data[5:], math.Float32bits(d.Rect.Min.Y))
-	bo.PutUint32(data[9:], math.Float32bits(d.Rect.Max.X))
-	bo.PutUint32(data[13:], math.Float32bits(d.Rect.Max.Y))
+}
+
+// FillShape fills the clip shape with a color.
+func FillShape(ops *op.Ops, c color.NRGBA, shape clip.Op) {
+	defer op.Push(ops).Pop()
+	shape.Add(ops)
+	Fill(ops, c)
+}
+
+// Fill paints an infinitely large plane with the provided color. It
+// is intended to be used with a clip.Op already in place to limit
+// the painted area. Use FillShape unless you need to paint several
+// times within the same clip.Op.
+func Fill(ops *op.Ops, c color.NRGBA) {
+	defer op.Push(ops).Pop()
+	ColorOp{Color: c}.Add(ops)
+	PaintOp{}.Add(ops)
 }

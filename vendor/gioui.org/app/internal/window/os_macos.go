@@ -14,6 +14,7 @@ import (
 	"unsafe"
 
 	"gioui.org/f32"
+	"gioui.org/io/clipboard"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
@@ -58,6 +59,7 @@ type window struct {
 	w           Callbacks
 	stage       system.Stage
 	displayLink *displayLink
+	cursor      pointer.CursorName
 
 	scale float32
 }
@@ -74,7 +76,7 @@ var launched = make(chan struct{})
 // cascadeTopLeftFromPoint.
 var nextTopLeft C.NSPoint
 
-// mustView is like lookoupView, except that it panics
+// mustView is like lookupView, except that it panics
 // if the view isn't mapped.
 func mustView(view C.CFTypeRef) *window {
 	w, ok := lookupView(view)
@@ -107,7 +109,7 @@ func (w *window) contextView() C.CFTypeRef {
 func (w *window) ReadClipboard() {
 	runOnMain(func() {
 		content := nsstringToString(C.gio_readClipboard())
-		w.w.Event(system.ClipboardEvent{Text: content})
+		w.w.Event(clipboard.Event{Text: content})
 	})
 }
 
@@ -120,6 +122,10 @@ func (w *window) WriteClipboard(s string) {
 		}
 		C.gio_writeClipboard(chars, C.NSUInteger(len(u16)))
 	})
+}
+
+func (w *window) SetCursor(name pointer.CursorName) {
+	w.cursor = windowSetCursor(w.cursor, name)
 }
 
 func (w *window) ShowTextInput(show bool) {}
@@ -151,15 +157,20 @@ func (w *window) setStage(stage system.Stage) {
 }
 
 //export gio_onKeys
-func gio_onKeys(view C.CFTypeRef, cstr *C.char, ti C.double, mods C.NSUInteger) {
+func gio_onKeys(view C.CFTypeRef, cstr *C.char, ti C.double, mods C.NSUInteger, keyDown C.bool) {
 	str := C.GoString(cstr)
 	kmods := convertMods(mods)
+	ks := key.Release
+	if keyDown {
+		ks = key.Press
+	}
 	w := mustView(view)
 	for _, k := range str {
 		if n, ok := convertKey(k); ok {
 			w.w.Event(key.Event{
 				Name:      n,
 				Modifiers: kmods,
+				State:     ks,
 			})
 		}
 	}
@@ -219,9 +230,10 @@ func gio_onDraw(view C.CFTypeRef) {
 }
 
 //export gio_onFocus
-func gio_onFocus(view C.CFTypeRef, focus C.BOOL) {
+func gio_onFocus(view C.CFTypeRef, focus C.int) {
 	w := mustView(view)
-	w.w.Event(key.FocusEvent{Focus: focus == C.YES})
+	w.w.Event(key.FocusEvent{Focus: focus == 1})
+	w.SetCursor(w.cursor)
 }
 
 //export gio_onChangeScreen

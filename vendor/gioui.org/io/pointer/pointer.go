@@ -49,6 +49,11 @@ type AreaOp struct {
 	rect image.Rectangle
 }
 
+// CursorNameOp sets the cursor for the current area.
+type CursorNameOp struct {
+	Name CursorName
+}
+
 // InputOp declares an input handler ready for pointer
 // events.
 type InputOp struct {
@@ -79,8 +84,28 @@ type Source uint8
 // Buttons is a set of mouse buttons
 type Buttons uint8
 
+// CursorName is the name of a cursor.
+type CursorName string
+
 // Must match app/internal/input.areaKind
 type areaKind uint8
+
+const (
+	// CursorDefault is the default cursor.
+	CursorDefault CursorName = ""
+	// CursorText is the cursor for text.
+	CursorText CursorName = "text"
+	// CursorPointer is the cursor for a link.
+	CursorPointer CursorName = "pointer"
+	// CursorCrossHair is the cursor for precise location.
+	CursorCrossHair CursorName = "crosshair"
+	// CursorColResize is the cursor for vertical resize.
+	CursorColResize CursorName = "col-resize"
+	// CursorRowResize is the cursor for horizontal resize.
+	CursorRowResize CursorName = "row-resize"
+	// CursorNone hides the cursor. To show it again, use any other cursor.
+	CursorNone CursorName = "none"
+)
 
 const (
 	// A Cancel event is generated when the current gesture is
@@ -158,8 +183,13 @@ func (op AreaOp) Add(o *op.Ops) {
 	bo.PutUint32(data[14:], uint32(op.rect.Max.Y))
 }
 
+func (op CursorNameOp) Add(o *op.Ops) {
+	data := o.Write1(opconst.TypeCursorLen, op.Name)
+	data[0] = byte(opconst.TypeCursor)
+}
+
 func (h InputOp) Add(o *op.Ops) {
-	data := o.Write(opconst.TypePointerInputLen, h.Tag)
+	data := o.Write1(opconst.TypePointerInputLen, h.Tag)
 	data[0] = byte(opconst.TypePointerInput)
 	if h.Grab {
 		data[1] = 1
@@ -240,6 +270,13 @@ func (b Buttons) String() string {
 		strs = append(strs, "ButtonMiddle")
 	}
 	return strings.Join(strs, "|")
+}
+
+func (c CursorName) String() string {
+	if c == CursorDefault {
+		return "default"
+	}
+	return string(c)
 }
 
 func (Event) ImplementsEvent() {}

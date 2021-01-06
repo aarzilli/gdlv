@@ -6,21 +6,19 @@ import (
 	"io"
 	"strings"
 
-	"gioui.org/op"
 	"golang.org/x/image/math/fixed"
+
+	"gioui.org/op"
 )
 
 // Shaper implements layout and shaping of text.
 type Shaper interface {
 	// Layout a text according to a set of options.
 	Layout(font Font, size fixed.Int26_6, maxWidth int, txt io.Reader) ([]Line, error)
-	// Shape a line of text and return a clipping operation for its outline.
-	Shape(font Font, size fixed.Int26_6, layout []Glyph) op.CallOp
-
-	// LayoutString is like Layout, but for strings.
+	// LayoutString is Layout for strings.
 	LayoutString(font Font, size fixed.Int26_6, maxWidth int, str string) []Line
-	// ShapeString is like Shape for lines previously laid out by LayoutString.
-	ShapeString(font Font, size fixed.Int26_6, str string, layout []Glyph) op.CallOp
+	// Shape a line of text and return a clipping operation for its outline.
+	Shape(font Font, size fixed.Int26_6, layout Layout) op.CallOp
 }
 
 // A FontFace is a Font and a matching Face.
@@ -83,9 +81,6 @@ func NewCache(collection []FontFace) *Cache {
 		faces: make(map[Font]*faceCache),
 	}
 	for i, ff := range collection {
-		if ff.Font.Weight == 0 {
-			ff.Font.Weight = Normal
-		}
 		if i == 0 {
 			c.def = ff.Font.Typeface
 		}
@@ -94,24 +89,23 @@ func NewCache(collection []FontFace) *Cache {
 	return c
 }
 
+// Layout implements the Shaper interface.
 func (s *Cache) Layout(font Font, size fixed.Int26_6, maxWidth int, txt io.Reader) ([]Line, error) {
 	cache := s.lookup(font)
 	return cache.face.Layout(size, maxWidth, txt)
 }
 
-func (s *Cache) Shape(font Font, size fixed.Int26_6, layout []Glyph) op.CallOp {
-	cache := s.lookup(font)
-	return cache.face.Shape(size, layout)
-}
-
+// LayoutString is a caching implementation of the Shaper interface.
 func (s *Cache) LayoutString(font Font, size fixed.Int26_6, maxWidth int, str string) []Line {
 	cache := s.lookup(font)
 	return cache.layout(size, maxWidth, str)
 }
 
-func (s *Cache) ShapeString(font Font, size fixed.Int26_6, str string, layout []Glyph) op.CallOp {
+// Shape is a caching implementation of the Shaper interface. Shape assumes that the layout
+// argument is unchanged from a call to Layout or LayoutString.
+func (s *Cache) Shape(font Font, size fixed.Int26_6, layout Layout) op.CallOp {
 	cache := s.lookup(font)
-	return cache.shape(size, str, layout)
+	return cache.shape(size, layout)
 }
 
 func (f *faceCache) layout(ppem fixed.Int26_6, maxWidth int, str string) []Line {
@@ -131,13 +125,13 @@ func (f *faceCache) layout(ppem fixed.Int26_6, maxWidth int, str string) []Line 
 	return l
 }
 
-func (f *faceCache) shape(ppem fixed.Int26_6, str string, layout []Glyph) op.CallOp {
+func (f *faceCache) shape(ppem fixed.Int26_6, layout Layout) op.CallOp {
 	if f == nil {
 		return op.CallOp{}
 	}
 	pk := pathKey{
 		ppem: ppem,
-		str:  str,
+		str:  layout.Text,
 	}
 	if clip, ok := f.pathCache.Get(pk); ok {
 		return clip

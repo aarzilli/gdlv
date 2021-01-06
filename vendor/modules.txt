@@ -1,11 +1,10 @@
 # dmitri.shuralyov.com/gpu/mtl v0.0.0-20201218220906-28db891af037
 dmitri.shuralyov.com/gpu/mtl
-# gioui.org v0.0.0-20200825104353-4821472ea1c9
+# gioui.org v0.0.0-20210106084211-c030065af7bc
 gioui.org/app
 gioui.org/app/internal/cocoainit
 gioui.org/app/internal/d3d11
 gioui.org/app/internal/egl
-gioui.org/app/internal/glimpl
 gioui.org/app/internal/log
 gioui.org/app/internal/srgb
 gioui.org/app/internal/window
@@ -19,9 +18,11 @@ gioui.org/gpu/backend
 gioui.org/gpu/gl
 gioui.org/internal/f32color
 gioui.org/internal/fling
+gioui.org/internal/glimpl
 gioui.org/internal/opconst
 gioui.org/internal/ops
 gioui.org/internal/unsafe
+gioui.org/io/clipboard
 gioui.org/io/event
 gioui.org/io/key
 gioui.org/io/pointer
@@ -39,7 +40,7 @@ github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/render
 github.com/BurntSushi/xgb/shm
 github.com/BurntSushi/xgb/xproto
-# github.com/aarzilli/nucular v0.0.0-20201127105623-d4ea44397db9
+# github.com/aarzilli/nucular v0.0.0-20210106145941-eb3df9f7ea0b
 ## explicit
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard

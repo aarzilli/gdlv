@@ -17,6 +17,8 @@ import (
 type pointerQueue struct {
 	hitTree  []hitNode
 	areas    []areaNode
+	cursors  []cursorNode
+	cursor   pointer.CursorName
 	handlers map[event.Tag]*pointerHandler
 	pointers []pointerInfo
 	reader   ops.Reader
@@ -32,6 +34,11 @@ type hitNode struct {
 
 	// For handler nodes.
 	tag event.Tag
+}
+
+type cursorNode struct {
+	name pointer.CursorName
+	area int
 }
 
 type pointerInfo struct {
@@ -76,8 +83,7 @@ func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents, t f
 		case opconst.TypePop:
 			return
 		case opconst.TypePass:
-			op := decodePassOp(encOp.Data)
-			pass = op.Pass
+			pass = encOp.Data[1] != 0
 		case opconst.TypeArea:
 			var op areaOp
 			op.Decode(encOp.Data)
@@ -93,7 +99,11 @@ func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents, t f
 			dop := ops.DecodeTransform(encOp.Data)
 			t = t.Mul(dop)
 		case opconst.TypePointerInput:
-			op := decodePointerInputOp(encOp.Data, encOp.Refs)
+			op := pointer.InputOp{
+				Tag:   encOp.Refs[0].(event.Tag),
+				Grab:  encOp.Data[1] != 0,
+				Types: pointer.Type(encOp.Data[2]),
+			}
 			q.hitTree = append(q.hitTree, hitNode{
 				next: node,
 				area: area,
@@ -111,6 +121,11 @@ func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents, t f
 			h.area = area
 			h.wantsGrab = h.wantsGrab || op.Grab
 			h.types = h.types | op.Types
+		case opconst.TypeCursor:
+			q.cursors = append(q.cursors, cursorNode{
+				name: encOp.Refs[0].(pointer.CursorName),
+				area: len(q.areas) - 1,
+			})
 		}
 	}
 }
@@ -162,6 +177,7 @@ func (q *pointerQueue) init() {
 	if q.handlers == nil {
 		q.handlers = make(map[event.Tag]*pointerHandler)
 	}
+	q.cursor = pointer.CursorDefault
 }
 
 func (q *pointerQueue) Frame(root *op.Ops, events *handlerEvents) {
@@ -174,6 +190,7 @@ func (q *pointerQueue) Frame(root *op.Ops, events *handlerEvents) {
 	}
 	q.hitTree = q.hitTree[:0]
 	q.areas = q.areas[:0]
+	q.cursors = q.cursors[:0]
 	q.reader.Reset(root)
 	q.collectHandlers(&q.reader, events, f32.Affine2D{}, -1, -1, false)
 	for k, h := range q.handlers {
@@ -273,6 +290,11 @@ func (q *pointerQueue) Push(e pointer.Event, events *handlerEvents) {
 		// No longer need to track pointer.
 		q.pointers = append(q.pointers[:pidx], q.pointers[pidx+1:]...)
 	}
+
+	for _, k := range p.entered {
+		h := q.handlers[k]
+		q.hitCursor(h.area)
+	}
 }
 
 func (q *pointerQueue) deliverEvent(p *pointerInfo, events *handlerEvents, e pointer.Event) {
@@ -329,6 +351,15 @@ func (q *pointerQueue) deliverEnterLeaveEvents(p *pointerInfo, hits []event.Tag,
 	p.entered = append(p.entered[:0], hits...)
 }
 
+func (q *pointerQueue) hitCursor(want int) {
+	for _, c := range q.cursors {
+		if c.area == want {
+			q.cursor = c.name
+			return
+		}
+	}
+}
+
 func searchTag(tags []event.Tag, tag event.Tag) (int, bool) {
 	for i, t := range tags {
 		if t == tag {
@@ -380,25 +411,5 @@ func (op *areaOp) Hit(pos f32.Point) bool {
 		return (xh*xh)/(rx*rx)+(yk*yk)/(ry*ry) <= 1
 	default:
 		panic("invalid area kind")
-	}
-}
-
-func decodePointerInputOp(d []byte, refs []interface{}) pointer.InputOp {
-	if opconst.OpType(d[0]) != opconst.TypePointerInput {
-		panic("invalid op")
-	}
-	return pointer.InputOp{
-		Tag:   refs[0].(event.Tag),
-		Grab:  d[1] != 0,
-		Types: pointer.Type(d[2]),
-	}
-}
-
-func decodePassOp(d []byte) pointer.PassOp {
-	if opconst.OpType(d[0]) != opconst.TypePass {
-		panic("invalid op")
-	}
-	return pointer.PassOp{
-		Pass: d[1] != 0,
 	}
 }
