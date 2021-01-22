@@ -31,7 +31,7 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
-## 2020-01-10 / Version 1.5
+## 2021-01-10 / Version 1.5
 * Better disassembly view
 * File descriptor redirects
 * Miscellaneous bug fixes
