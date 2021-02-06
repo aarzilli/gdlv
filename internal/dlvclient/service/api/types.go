@@ -22,6 +22,8 @@ type DebuggerState struct {
 	// sending a StopRecording request will halt the recording, every other
 	// request will block until the process has been recorded.
 	Recording bool
+	// Core dumping currently in progress.
+	CoreDumping bool
 	// CurrentThread is the currently selected debugger thread.
 	CurrentThread *Thread `json:"currentThread,omitempty"`
 	// SelectedGoroutine is the currently selected goroutine
@@ -126,6 +128,8 @@ type Thread struct {
 
 	// ReturnValues contains the return values of the function we just stepped out of
 	ReturnValues []Variable
+	// CallReturn is true if ReturnValues are the return values of an injected call.
+	CallReturn bool
 }
 
 // Location holds program location information.
@@ -310,10 +314,18 @@ type Goroutine struct {
 	StartLoc Location `json:"startLoc"`
 	// ID of the associated thread for running goroutines
 	ThreadID   int    `json:"threadID"`
+	Status     uint64 `json:"status"`
+	WaitSince  int64  `json:"waitSince"`
+	WaitReason int64  `json:"waitReason"`
 	Unreadable string `json:"unreadable"`
 	// Goroutine's pprof labels
 	Labels map[string]string `json:"labels,omitempty"`
 }
+
+const (
+	GoroutineWaiting = 4
+	GoroutineSyscall = 3
+)
 
 // DebuggerCommand is a command which changes the debugger's execution state.
 type DebuggerCommand struct {
@@ -531,4 +543,15 @@ type PackageBuildInfo struct {
 	ImportPath    string
 	DirectoryPath string
 	Files         []string
+}
+
+// DumpState describes the state of a core dump in progress
+type DumpState struct {
+	Dumping bool
+	AllDone bool
+
+	ThreadsDone, ThreadsTotal int
+	MemDone, MemTotal         uint64
+
+	Err string
 }

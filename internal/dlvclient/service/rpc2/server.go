@@ -365,3 +365,25 @@ type StopRecordingIn struct {
 
 type StopRecordingOut struct {
 }
+
+type DumpStartIn struct {
+	Destination string
+}
+
+type DumpStartOut struct {
+	State api.DumpState
+}
+
+type DumpWaitIn struct {
+	Wait int
+}
+
+type DumpWaitOut struct {
+	State api.DumpState
+}
+
+type DumpCancelIn struct {
+}
+
+type DumpCancelOut struct {
+}
