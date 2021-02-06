@@ -13,6 +13,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"text/tabwriter"
 	"time"
 	"unicode"
@@ -263,6 +264,12 @@ Prints the current stack trace. If depth is omitted it defaults to 5, all other 
 		{aliases: []string{"goroutines"}, cmdFn: goroutinesCommand, helpMsg: `Prints the list of currently running goroutines.
 
 All parameters are copied from the goroutines panel.`},
+
+		{aliases: []string{"dump"}, cmdFn: dump, helpMsg: `Creates a core dump from the current process state
+
+	dump <output file>
+
+The core dump is always written in ELF, even on systems (windows, macOS) where this is not customary. For environments other than linux/amd64 threads and registers are dumped in a format that only Delve can read back.`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -1655,6 +1662,65 @@ var waitReasonStrings = [...]string{
 	"GC worker (idle)",
 	"preempted",
 	"debug call",
+}
+
+func dump(out io.Writer, args string) error {
+	var mu sync.Mutex
+	dumpState, err := client.CoreDumpStart(args)
+	if err != nil {
+		return err
+	}
+
+	wnd.PopupOpen("Dumping", dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, func(w *nucular.Window) {
+		mu.Lock()
+		defer mu.Unlock()
+		w.Row(20).Dynamic(1)
+		if dumpState.ThreadsDone != dumpState.ThreadsTotal {
+			w.Label("Dumping threads...", "LT")
+			n := int(dumpState.ThreadsDone)
+			w.Progress(&n, int(dumpState.ThreadsTotal), false)
+		} else {
+			w.Label("Dumping memory...", "LT")
+			n := int(dumpState.MemDone)
+			w.Progress(&n, int(dumpState.MemTotal), false)
+		}
+		w.Row(20).Static(0, 100)
+		w.Spacing(1)
+		if w.ButtonText("Cancel Dump") {
+			client.CoreDumpCancel()
+			w.Close()
+		}
+		if !dumpState.Dumping {
+			w.Close()
+		}
+	})
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			ds := client.CoreDumpWait(100)
+			mu.Lock()
+			dumpState = ds
+			mu.Unlock()
+			if !dumpState.Dumping {
+				return
+			}
+		}
+	}()
+
+	<-done
+
+	if dumpState.Err != "" {
+		fmt.Fprintf(out, "error dumping: %s\n", dumpState.Err)
+	} else if !dumpState.AllDone {
+		fmt.Fprintf(out, "canceled\n")
+	} else if dumpState.MemDone != dumpState.MemTotal {
+		fmt.Fprintf(out, "core dump could not be completed\n")
+	} else {
+		fmt.Fprintf(out, "done\n")
+	}
+
+	return nil
 }
 
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
