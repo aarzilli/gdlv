@@ -116,6 +116,7 @@ const (
 type wrappedGoroutine struct {
 	api.Goroutine
 	atBreakpoint bool
+	waitReason   string
 }
 
 var goroutineLocations = []string{currentGoroutineLocation, userGoroutineLocation, goStatementLocation, startLocation}
@@ -258,7 +259,7 @@ func loadGoroutines(p *asyncLoad) {
 			}
 		}
 
-		goroutinesPanel.goroutines = append(goroutinesPanel.goroutines, wrappedGoroutine{*g, atbp})
+		goroutinesPanel.goroutines = append(goroutinesPanel.goroutines, wrappedGoroutine{*g, atbp, goroutineFormatWaitReason(g)})
 	}
 
 	if LogOutputNice != nil {
@@ -384,6 +385,9 @@ func updateGoroutines(container *nucular.Window) {
 
 		w.LayoutFitWidth(goroutinesPanel.id, 100)
 		loc := formatLocation2(goroutineGetDisplayLiocation(&g.Goroutine))
+		if g.waitReason != "" {
+			loc += fmt.Sprintf(" [%s]", g.waitReason)
+		}
 		if len(g.Labels) > 0 {
 			loc += fmt.Sprintf("\nLabels: %s", writeGoroutineLabels(g.Labels))
 		}

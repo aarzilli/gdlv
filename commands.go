@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 	"unicode"
 
 	"golang.org/x/mobile/event/key"
@@ -1592,10 +1593,68 @@ func goroutinesCommand(out io.Writer, args string) error {
 		loc := goroutineGetDisplayLiocation(g)
 		c.Text(fmt.Sprintf("Goroutine %d - %s: ", g.ID, locType))
 		writeLinkToLocation(c, style, loc.File, loc.Line, loc.PC)
-		c.Text(fmt.Sprintf(" %s (%#x)\n", loc.Function.Name(), loc.PC))
+		c.Text(fmt.Sprintf(" %s (%#x)", loc.Function.Name(), loc.PC))
+
+		if g.ThreadID != 0 {
+			c.Text(fmt.Sprintf(" (thread %d)", g.ThreadID))
+		}
+
+		if wr := goroutineFormatWaitReason(g); wr != "" {
+			c.Text(fmt.Sprintf(" [%s]", wr))
+		}
+
+		c.Text("\n")
 	}
 
 	return nil
+}
+
+func goroutineFormatWaitReason(g *api.Goroutine) string {
+	if !((g.Status == api.GoroutineWaiting || g.Status == api.GoroutineSyscall) && g.WaitReason != 0) {
+		return ""
+	}
+
+	var wr string
+	if g.WaitReason > 0 && g.WaitReason < int64(len(waitReasonStrings)) {
+		wr = waitReasonStrings[g.WaitReason]
+	} else {
+		wr = fmt.Sprintf("unknown wait reason %d", g.WaitReason)
+	}
+	if g.WaitSince > 0 {
+		return fmt.Sprintf("%s %s", wr, time.Since(time.Unix(0, g.WaitSince)).String())
+	}
+
+	return wr
+}
+
+var waitReasonStrings = [...]string{
+	"",
+	"GC assist marking",
+	"IO wait",
+	"chan receive (nil chan)",
+	"chan send (nil chan)",
+	"dumping heap",
+	"garbage collection",
+	"garbage collection scan",
+	"panicwait",
+	"select",
+	"select (no cases)",
+	"GC assist wait",
+	"GC sweep wait",
+	"GC scavenge wait",
+	"chan receive",
+	"chan send",
+	"finalizer wait",
+	"force gc (idle)",
+	"semacquire",
+	"sleep",
+	"sync.Cond.Wait",
+	"timer goroutine (idle)",
+	"trace reader (blocked)",
+	"wait for GC cycle",
+	"GC worker (idle)",
+	"preempted",
+	"debug call",
 }
 
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
