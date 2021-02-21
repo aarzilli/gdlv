@@ -8,13 +8,20 @@ Gdlv is a graphical frontend to [Delve](https://github.com/go-delve/delve) for L
 
 # Setup
 
-First make sure you have the current version of delve installed:
+First install the current version of Delve, following [Delve's install instructions](https://github.com/go-delve/delve/tree/master/Documentation/installation).
+
+Once Delve is installed, clone the repository and use `go install` to install gdlv:
+
 ```
-go get -u github.com/go-delve/delve/cmd/dlv
+$ git clone https://github.com/aarzilli/gdlv
+$ cd gdlv
+$ go install
 ```
-then install gdlv:
+
+If you are on Go 1.16 or later you can also use the new global install command, without cloning the repository first:
+
 ```
-go get -u github.com/aarzilli/gdlv
+$ go install github.com/aarzilli/gdlv@latest
 ```
 
 Use Ctrl+plus and Ctrl+minus, or `config zoom 1.5` to change font size. See `help` for a list of available commands.
