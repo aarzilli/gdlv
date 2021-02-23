@@ -252,6 +252,19 @@ func init() {
 	runeToCode[key.NamePageUp] = mkey.CodePageUp
 	runeToCode[key.NamePageDown] = mkey.CodePageDown
 	runeToCode[key.NameTab] = mkey.CodeTab
+
+	runeToCode["F1"] = mkey.CodeF1
+	runeToCode["F2"] = mkey.CodeF2
+	runeToCode["F3"] = mkey.CodeF3
+	runeToCode["F4"] = mkey.CodeF4
+	runeToCode["F5"] = mkey.CodeF5
+	runeToCode["F6"] = mkey.CodeF6
+	runeToCode["F7"] = mkey.CodeF7
+	runeToCode["F8"] = mkey.CodeF8
+	runeToCode["F9"] = mkey.CodeF9
+	runeToCode["F10"] = mkey.CodeF10
+	runeToCode["F11"] = mkey.CodeF11
+	runeToCode["F12"] = mkey.CodeF12
 }
 
 func gio2mobileKey(e key.Event) mkey.Event {
