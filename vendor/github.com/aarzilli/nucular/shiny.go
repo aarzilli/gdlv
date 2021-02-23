@@ -1,4 +1,4 @@
-// +build !darwin,!nucular_gio nucular_shiny
+// +build !darwin,!windows,!nucular_gio nucular_shiny
 
 package nucular
 
@@ -167,20 +167,22 @@ func (w *masterWindow) handleEventLocked(ei interface{}) bool {
 		}
 	case size.Event:
 		sz := e.Size()
-		bb := w.wndb.Bounds()
-		if sz.X <= bb.Dx() && sz.Y <= bb.Dy() {
-			w.bounds = w.wndb.Bounds()
-			w.bounds.Max.Y = w.bounds.Min.Y + sz.Y
-			w.bounds.Max.X = w.bounds.Min.X + sz.X
-		} else {
-			if w.wndb != nil {
-				w.wndb.Release()
+		if sz.X > 0 && sz.Y > 0 {
+			bb := w.wndb.Bounds()
+			if sz.X <= bb.Dx() && sz.Y <= bb.Dy() {
+				w.bounds = w.wndb.Bounds()
+				w.bounds.Max.Y = w.bounds.Min.Y + sz.Y
+				w.bounds.Max.X = w.bounds.Min.X + sz.X
+			} else {
+				if w.wndb != nil {
+					w.wndb.Release()
+				}
+				w.setupBuffer(sz)
 			}
-			w.setupBuffer(sz)
-		}
-		w.prevCmds = w.prevCmds[:0]
-		if changed := atomic.LoadInt32(&w.ctx.changed); changed < 2 {
-			atomic.StoreInt32(&w.ctx.changed, 2)
+			w.prevCmds = w.prevCmds[:0]
+			if changed := atomic.LoadInt32(&w.ctx.changed); changed < 2 {
+				atomic.StoreInt32(&w.ctx.changed, 2)
+			}
 		}
 
 	case mouse.Event:

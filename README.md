@@ -28,7 +28,7 @@ Use Ctrl+plus and Ctrl+minus, or `config zoom 1.5` to change font size. See `hel
 
 ## Other backends
 
-On Linux and Windows gdlv uses [shiny](https://github.com/golang/exp/tree/master/shiny) to draw its window and receive mouse and keyboard input from the Operating System. On macOS [gio](https://gioui.org/) is used instead. This behavior can be changed using build tags:
+On Linux gdlv uses [shiny](https://github.com/golang/exp/tree/master/shiny) to draw its window and receive mouse and keyboard input from the Operating System. On macOS and Windows [gio](https://gioui.org/) is used instead. This behavior can be changed using build tags:
 
 ```
 go install -tags=nucular_gio github.com/aarzilli/gdlv

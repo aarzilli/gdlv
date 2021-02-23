@@ -1,4 +1,4 @@
-// +build darwin,!nucular_shiny nucular_gio
+// +build darwin,!nucular_shiny windows,!nucular_shiny nucular_gio
 
 package richtext
 
