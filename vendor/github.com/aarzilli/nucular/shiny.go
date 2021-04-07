@@ -52,6 +52,9 @@ type masterWindow struct {
 	wndb   screen.Buffer
 	bounds image.Rectangle
 
+	paintEvent *paint.Event
+	sizeEvent  *size.Event
+
 	initialSize image.Point
 	onClose     func()
 
@@ -132,12 +135,7 @@ func (mw *masterWindow) main(s screen.Screen) {
 func (w *masterWindow) handleEventLocked(ei interface{}) bool {
 	switch e := ei.(type) {
 	case paint.Event:
-		// On darwin we must respond to a paint.Event by reuploading the buffer or
-		// the appplication will freeze.
-		// On windows when the window goes off screen part of the window contents
-		// will be discarded and must be redrawn.
-		w.prevCmds = w.prevCmds[:0]
-		w.updateLocked()
+		w.paintEvent = &e
 
 	case lifecycle.Event:
 		if e.Crosses(lifecycle.StageDead) == lifecycle.CrossOn || e.To == lifecycle.StageDead || w.closing {
@@ -166,24 +164,7 @@ func (w *masterWindow) handleEventLocked(ei interface{}) bool {
 			}
 		}
 	case size.Event:
-		sz := e.Size()
-		if sz.X > 0 && sz.Y > 0 {
-			bb := w.wndb.Bounds()
-			if sz.X <= bb.Dx() && sz.Y <= bb.Dy() {
-				w.bounds = w.wndb.Bounds()
-				w.bounds.Max.Y = w.bounds.Min.Y + sz.Y
-				w.bounds.Max.X = w.bounds.Min.X + sz.X
-			} else {
-				if w.wndb != nil {
-					w.wndb.Release()
-				}
-				w.setupBuffer(sz)
-			}
-			w.prevCmds = w.prevCmds[:0]
-			if changed := atomic.LoadInt32(&w.ctx.changed); changed < 2 {
-				atomic.StoreInt32(&w.ctx.changed, 2)
-			}
-		}
+		w.sizeEvent = &e
 
 	case mouse.Event:
 		changed := atomic.LoadInt32(&w.ctx.changed)
@@ -245,9 +226,42 @@ func (w *masterWindow) updater() {
 			if w.closing {
 				return
 			}
+
+			forceUpdate := false
+
+			if w.paintEvent != nil {
+				w.paintEvent = nil
+				w.prevCmds = w.prevCmds[:0]
+				forceUpdate = true
+			}
+
+			if w.sizeEvent != nil {
+				sz := w.sizeEvent.Size()
+				w.sizeEvent = nil
+				if sz.X > 0 && sz.Y > 0 {
+					bb := w.wndb.Bounds()
+					if sz.X <= bb.Dx() && sz.Y <= bb.Dy() {
+						w.bounds = w.wndb.Bounds()
+						w.bounds.Max.Y = w.bounds.Min.Y + sz.Y
+						w.bounds.Max.X = w.bounds.Min.X + sz.X
+					} else {
+						if w.wndb != nil {
+							w.wndb.Release()
+						}
+						w.setupBuffer(sz)
+					}
+					w.prevCmds = w.prevCmds[:0]
+					if changed := atomic.LoadInt32(&w.ctx.changed); changed < 2 {
+						atomic.StoreInt32(&w.ctx.changed, 2)
+					}
+				}
+			}
+
 			changed := atomic.LoadInt32(&w.ctx.changed)
 			if changed > 0 {
 				atomic.AddInt32(&w.ctx.changed, -1)
+				w.updateLocked()
+			} else if forceUpdate {
 				w.updateLocked()
 			} else {
 				down = false

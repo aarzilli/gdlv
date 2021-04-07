@@ -26,15 +26,6 @@ type keyHandler struct {
 	new     bool
 }
 
-type listenerPriority uint8
-
-const (
-	priDefault listenerPriority = iota
-	priCurrentFocus
-	priNone
-	priNewFocus
-)
-
 const (
 	TextInputKeep TextInputState = iota
 	TextInputClose
@@ -56,25 +47,26 @@ func (q *keyQueue) Frame(root *op.Ops, events *handlerEvents) {
 	}
 	q.reader.Reset(root)
 
-	focus, pri, keyboard := q.resolveFocus(events)
-	if pri == priNone {
-		focus = nil
-	}
+	focus, changed, state := q.resolveFocus(events)
 	for k, h := range q.handlers {
 		if !h.visible {
 			delete(q.handlers, k)
 			if q.focus == k {
 				// Remove the focus from the handler that is no longer visible.
 				q.focus = nil
-				keyboard = TextInputClose
+				state = TextInputClose
 			}
-		}
-		if h.new && k != focus {
-			// Reset the handler on (each) first appearance.
-			events.Add(k, key.FocusEvent{Focus: false})
+		} else if h.new && k != focus {
+			// Reset the handler on (each) first appearance, but don't trigger redraw.
+			events.AddNoRedraw(k, key.FocusEvent{Focus: false})
 		}
 	}
-	if focus != q.focus {
+	if changed && focus != nil {
+		if _, exists := q.handlers[focus]; !exists {
+			focus = nil
+		}
+	}
+	if changed && focus != q.focus {
 		if q.focus != nil {
 			events.Add(q.focus, key.FocusEvent{Focus: false})
 		}
@@ -82,10 +74,10 @@ func (q *keyQueue) Frame(root *op.Ops, events *handlerEvents) {
 		if q.focus != nil {
 			events.Add(q.focus, key.FocusEvent{Focus: true})
 		} else {
-			keyboard = TextInputClose
+			state = TextInputClose
 		}
 	}
-	q.state = keyboard
+	q.state = state
 }
 
 func (q *keyQueue) Push(e event.Event, events *handlerEvents) {
@@ -94,54 +86,31 @@ func (q *keyQueue) Push(e event.Event, events *handlerEvents) {
 	}
 }
 
-func (q *keyQueue) resolveFocus(events *handlerEvents) (tag event.Tag, pri listenerPriority, keyboard TextInputState) {
-loop:
+func (q *keyQueue) resolveFocus(events *handlerEvents) (focus event.Tag, changed bool, state TextInputState) {
 	for encOp, ok := q.reader.Decode(); ok; encOp, ok = q.reader.Decode() {
 		switch opconst.OpType(encOp.Data[0]) {
 		case opconst.TypeKeyFocus:
 			op := decodeFocusOp(encOp.Data, encOp.Refs)
-			if op.Focus {
-				pri = priNewFocus
-			} else {
-				pri, keyboard = priNone, TextInputClose
-			}
+			changed = true
+			focus = op.Tag
 		case opconst.TypeKeySoftKeyboard:
 			op := decodeSoftKeyboardOp(encOp.Data, encOp.Refs)
 			if op.Show {
-				keyboard = TextInputOpen
+				state = TextInputOpen
 			} else {
-				keyboard = TextInputClose
+				state = TextInputClose
 			}
 		case opconst.TypeKeyInput:
 			op := decodeKeyInputOp(encOp.Data, encOp.Refs)
-			if op.Tag == q.focus && pri < priCurrentFocus {
-				pri = priCurrentFocus
-			}
 			h, ok := q.handlers[op.Tag]
 			if !ok {
 				h = &keyHandler{new: true}
 				q.handlers[op.Tag] = h
 			}
 			h.visible = true
-			tag = op.Tag
-		case opconst.TypePush:
-			newK, newPri, newKeyboard := q.resolveFocus(events)
-			if newKeyboard > keyboard {
-				keyboard = newKeyboard
-			}
-			if newPri.replaces(pri) {
-				tag, pri = newK, newPri
-			}
-		case opconst.TypePop:
-			break loop
 		}
 	}
-	return tag, pri, keyboard
-}
-
-func (p listenerPriority) replaces(p2 listenerPriority) bool {
-	// Favor earliest default focus or latest requested focus.
-	return p > p2 || p == p2 && p == priNewFocus
+	return
 }
 
 func decodeKeyInputOp(d []byte, refs []interface{}) key.InputOp {
@@ -167,6 +136,6 @@ func decodeFocusOp(d []byte, refs []interface{}) key.FocusOp {
 		panic("invalid op")
 	}
 	return key.FocusOp{
-		Focus: d[1] != 0,
+		Tag: refs[0],
 	}
 }

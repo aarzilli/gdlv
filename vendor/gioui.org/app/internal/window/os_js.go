@@ -38,9 +38,12 @@ type window struct {
 
 	mu        sync.Mutex
 	size      f32.Point
-	viewport  f32.Point
+	inset     f32.Point
 	scale     float32
 	animating bool
+	// animRequested tracks whether a requestAnimationFrame callback
+	// is pending.
+	animRequested bool
 }
 
 func NewWindow(win Callbacks, opts *Options) error {
@@ -417,6 +420,7 @@ func (w *window) funcOf(f func(this js.Value, args []js.Value) interface{}) js.F
 func (w *window) animCallback() {
 	w.mu.Lock()
 	anim := w.animating
+	w.animRequested = anim
 	if anim {
 		w.requestAnimationFrame.Invoke(w.redraw)
 	}
@@ -429,10 +433,11 @@ func (w *window) animCallback() {
 func (w *window) SetAnimating(anim bool) {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	if anim && !w.animating {
+	w.animating = anim
+	if anim && !w.animRequested {
+		w.animRequested = true
 		w.requestAnimationFrame.Invoke(w.redraw)
 	}
-	w.animating = anim
 }
 
 func (w *window) ReadClipboard() {
@@ -486,7 +491,8 @@ func (w *window) resize() {
 	w.size.Y = float32(rect.Get("height").Float()) * w.scale
 
 	if vx, vy := w.visualViewport.Get("width"), w.visualViewport.Get("height"); !vx.IsUndefined() && !vy.IsUndefined() {
-		w.viewport.X, w.viewport.Y = float32(vx.Float())*w.scale, float32(vy.Float())*w.scale
+		w.inset.X = w.size.X - float32(vx.Float())*w.scale
+		w.inset.Y = w.size.Y - float32(vy.Float())*w.scale
 	}
 
 	if w.size.X == 0 || w.size.Y == 0 {
@@ -522,8 +528,8 @@ func (w *window) config() (int, int, system.Insets, unit.Metric) {
 	defer w.mu.Unlock()
 
 	return int(w.size.X + .5), int(w.size.Y + .5), system.Insets{
-			Bottom: unit.Px(w.size.Y - w.viewport.Y),
-			Right:  unit.Px(w.size.X - w.viewport.X),
+			Bottom: unit.Px(w.inset.Y),
+			Right:  unit.Px(w.inset.X),
 		}, unit.Metric{
 			PxPerDp: w.scale,
 			PxPerSp: w.scale,

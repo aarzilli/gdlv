@@ -141,11 +141,11 @@ func (in Inset) Layout(gtx Context, w Widget) Dimensions {
 	if mcs.Min.Y > mcs.Max.Y {
 		mcs.Min.Y = mcs.Max.Y
 	}
-	stack := op.Push(gtx.Ops)
+	stack := op.Save(gtx.Ops)
 	op.Offset(FPt(image.Point{X: left, Y: top})).Add(gtx.Ops)
 	gtx.Constraints = mcs
 	dims := w(gtx)
-	stack.Pop()
+	stack.Load()
 	return Dimensions{
 		Size:     dims.Size.Add(image.Point{X: right + left, Y: top + bottom}),
 		Baseline: dims.Baseline + bottom,
@@ -186,10 +186,10 @@ func (d Direction) Layout(gtx Context, w Widget) Dimensions {
 	case SW, S, SE:
 		p.Y = sz.Y - dims.Size.Y
 	}
-	stack := op.Push(gtx.Ops)
+	stack := op.Save(gtx.Ops)
 	op.Offset(FPt(p)).Add(gtx.Ops)
 	call.Add(gtx.Ops)
-	stack.Pop()
+	stack.Load()
 	return Dimensions{
 		Size:     sz,
 		Baseline: dims.Baseline + sz.Y - dims.Size.Y - p.Y,
@@ -223,6 +223,40 @@ func (a Alignment) String() string {
 	default:
 		panic("unreachable")
 	}
+}
+
+// Convert a point in (x, y) coordinates to (main, cross) coordinates,
+// or vice versa. Specifically, Convert((x, y)) returns (x, y) unchanged
+// for the horizontal axis, or (y, x) for the vertical axis.
+func (a Axis) Convert(pt image.Point) image.Point {
+	if a == Horizontal {
+		return pt
+	}
+	return image.Pt(pt.Y, pt.X)
+}
+
+// mainConstraint returns the min and max main constraints for axis a.
+func (a Axis) mainConstraint(cs Constraints) (int, int) {
+	if a == Horizontal {
+		return cs.Min.X, cs.Max.X
+	}
+	return cs.Min.Y, cs.Max.Y
+}
+
+// crossConstraint returns the min and max cross constraints for axis a.
+func (a Axis) crossConstraint(cs Constraints) (int, int) {
+	if a == Horizontal {
+		return cs.Min.Y, cs.Max.Y
+	}
+	return cs.Min.X, cs.Max.X
+}
+
+// constraints returns the constraints for axis a.
+func (a Axis) constraints(mainMin, mainMax, crossMin, crossMax int) Constraints {
+	if a == Horizontal {
+		return Constraints{Min: image.Pt(mainMin, crossMin), Max: image.Pt(mainMax, crossMax)}
+	}
+	return Constraints{Min: image.Pt(crossMin, mainMin), Max: image.Pt(crossMax, mainMax)}
 }
 
 func (a Axis) String() string {

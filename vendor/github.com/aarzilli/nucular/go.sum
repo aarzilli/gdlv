@@ -18,6 +18,8 @@ gioui.org v0.0.0-20200825104353-4821472ea1c9 h1:wjaosWGBhqWYSffsg55/LYlqlqmTvgo8
 gioui.org v0.0.0-20200825104353-4821472ea1c9/go.mod h1:Y+uS7hHMvku1Q+ooaoq6fYD5B2LGoT8JtFgvmYmRzTw=
 gioui.org v0.0.0-20210106084211-c030065af7bc h1:0jo2QznfZl35y/Bzqt915yUT1ruaTjmC24iJM/4vA94=
 gioui.org v0.0.0-20210106084211-c030065af7bc/go.mod h1:Y+uS7hHMvku1Q+ooaoq6fYD5B2LGoT8JtFgvmYmRzTw=
+gioui.org v0.0.0-20210222172543-284659d3eac9 h1:rEhi0IMfjyzZu73tiAaPOtprJd9Z3QxJ0/VeY42dLv8=
+gioui.org v0.0.0-20210222172543-284659d3eac9/go.mod h1:Y+uS7hHMvku1Q+ooaoq6fYD5B2LGoT8JtFgvmYmRzTw=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 h1:1BDTz0u9nC3//pOCMdNH+CiXJVYJh5UQNCOBG7jbELc=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/go-gl/glfw v0.0.0-20190409004039-e6da0acd62b1 h1:QbL/5oDUmRBzO9/Z7Seo6zf912W/a6Sr4Eu0G/3Jho0=

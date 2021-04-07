@@ -90,6 +90,7 @@ type Axis uint8
 const (
 	Horizontal Axis = iota
 	Vertical
+	Both
 )
 
 const (
@@ -123,6 +124,16 @@ func (c *Click) Add(ops *op.Ops) {
 		Types: pointer.Press | pointer.Release | pointer.Enter | pointer.Leave,
 	}
 	op.Add(ops)
+}
+
+// Hovered returns whether a pointer is inside the area.
+func (c *Click) Hovered() bool {
+	return c.entered
+}
+
+// Pressed returns whether a pointer is pressing.
+func (c *Click) Pressed() bool {
+	return c.pressed
 }
 
 // Events returns the next click event, if any.
@@ -190,6 +201,8 @@ func (c *Click) Events(q event.Queue) []ClickEvent {
 	}
 	return events
 }
+
+func (ClickEvent) ImplementsEvent() {}
 
 // Add the handler to the operation list to receive scroll events.
 func (s *Scroll) Add(ops *op.Ops) {
@@ -346,6 +359,8 @@ func (d *Drag) Events(cfg unit.Metric, q event.Queue, axis Axis) []pointer.Event
 				e.Position.Y = d.start.Y
 			case Vertical:
 				e.Position.X = d.start.X
+			case Both:
+				// Do nothing
 			}
 			if e.Priority < pointer.Grabbed {
 				diff := e.Position.Sub(d.start)

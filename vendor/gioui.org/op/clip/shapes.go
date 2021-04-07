@@ -3,9 +3,27 @@
 package clip
 
 import (
+	"image"
+
 	"gioui.org/f32"
 	"gioui.org/op"
 )
+
+// Rect represents the clip area of a pixel-aligned rectangle.
+type Rect image.Rectangle
+
+// Op returns the op for the rectangle.
+func (r Rect) Op() Op {
+	return Op{
+		bounds:  image.Rectangle(r),
+		outline: true,
+	}
+}
+
+// Add the clip operation.
+func (r Rect) Add(ops *op.Ops) {
+	r.Op().Add(ops)
+}
 
 // UniformRRect returns an RRect with all corner radii set to the
 // provided radius.
@@ -47,17 +65,20 @@ func (rr RRect) Add(ops *op.Ops) {
 	rr.Op(ops).Add(ops)
 }
 
-// Border represents the clip area of a rectangular border.
+// Border represents a rectangular border.
 type Border struct {
 	// Rect is the bounds of the border.
-	Rect   f32.Rectangle
+	Rect f32.Rectangle
+	// Width of the line tracing Rect.
 	Width  float32
 	Dashes DashSpec
 	// The corner radii.
 	SE, SW, NW, NE float32
 }
 
-// Op returns the Op for the border.
+// Op returns the clip operation for the border. Its area corresponds to a
+// stroked line that traces the border rectangle, optionally with rounded
+// corners and dashes.
 func (b Border) Op(ops *op.Ops) Op {
 	var p Path
 	p.Begin(ops)

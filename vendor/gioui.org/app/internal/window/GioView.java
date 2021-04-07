@@ -124,12 +124,12 @@ public final class GioView extends SurfaceView implements Choreographer.FrameCal
 		return true;
 	}
 
-	private void setCursor(Context ctx, int id) {
+	private void setCursor(int id) {
 		if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
 			return;
 		}
-		PointerIcon pointerIcon = PointerIcon.getSystemIcon(ctx, id);
-		GioView.this.setPointerIcon(pointerIcon);
+		PointerIcon pointerIcon = PointerIcon.getSystemIcon(getContext(), id);
+		setPointerIcon(pointerIcon);
 	}
 
 	private void dispatchMotionEvent(MotionEvent event) {
@@ -174,20 +174,12 @@ public final class GioView extends SurfaceView implements Choreographer.FrameCal
 	}
 
 	void showTextInput() {
-		post(new Runnable() {
-			@Override public void run() {
-				GioView.this.requestFocus();
-				imm.showSoftInput(GioView.this, 0);
-			}
-		});
+		GioView.this.requestFocus();
+		imm.showSoftInput(GioView.this, 0);
 	}
 
 	void hideTextInput() {
-		post(new Runnable() {
-			@Override public void run() {
-				imm.hideSoftInputFromWindow(getWindowToken(), 0);
-			}
-		});
+		imm.hideSoftInputFromWindow(getWindowToken(), 0);
 	}
 
 	@Override protected boolean fitSystemWindows(Rect insets) {

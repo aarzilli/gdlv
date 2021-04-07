@@ -367,9 +367,9 @@ func (mw *masterWindow) updateLocked(perfString string) {
 
 		paintRect := f32.Rectangle{f32.Point{float32(pos.X), float32(pos.Y)}, f32.Point{float32(pos.X + bounds.X), float32(pos.Y + bounds.Y)}}
 
-		stack := op.Push(&mw.ops)
+		stack := op.Save(&mw.ops)
 		paint.FillShape(&mw.ops, color.NRGBA{0xff, 0xff, 0xff, 0xff}, gioclip.UniformRRect(paintRect, 0).Op(&mw.ops))
-		stack.Pop()
+		stack.Load()
 
 		drawText(&mw.ops, txt, font, color.RGBA{0x00, 0x00, 0x00, 0xff}, pos, bounds, paintRect)
 	}
@@ -394,7 +394,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 	pointer.InputOp{ctx, false, pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Scroll}.Add(ops)
 	key.InputOp{ctx}.Add(ops)
 
-	var scissorStack op.StackOp
+	var scissorStack op.StateOp
 	scissorless := true
 
 	for i := range ctx.cmds {
@@ -402,16 +402,16 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 		switch icmd.Kind {
 		case command.ScissorCmd:
 			if !scissorless {
-				scissorStack.Pop()
+				scissorStack.Load()
 			}
-			scissorStack = op.Push(ops)
+			scissorStack = op.Save(ops)
 			gioclip.Rect(icmd.Rect.Rectangle()).Add(ops)
 			scissorless = false
 
 		case command.LineCmd:
 			cmd := icmd.Line
 
-			stack := op.Push(ops)
+			stack := op.Save(ops)
 			paint.ColorOp{Color: toNRGBA(cmd.Color)}.Add(ops)
 
 			h1 := int(cmd.LineThickness / 2)
@@ -460,14 +460,14 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 				paint.PaintOp{}.Add(ops)
 			}
 
-			stack.Pop()
+			stack.Load()
 
 		case command.RectFilledCmd:
 			cmd := icmd.RectFilled
 			// rounding is true if rounding has been requested AND we can draw it
 			rounding := cmd.Rounding > 0 && int(cmd.Rounding*2) < icmd.W && int(cmd.Rounding*2) < icmd.H
 
-			stack := op.Push(ops)
+			stack := op.Save(ops)
 			paint.ColorOp{Color: toNRGBA(cmd.Color)}.Add(ops)
 
 			if rounding {
@@ -491,12 +491,12 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 
 			gioclip.Rect(icmd.Rect.Rectangle()).Add(ops)
 			paint.PaintOp{}.Add(ops)
-			stack.Pop()
+			stack.Load()
 
 		case command.TriangleFilledCmd:
 			cmd := icmd.TriangleFilled
 
-			stack := op.Push(ops)
+			stack := op.Save(ops)
 
 			paint.ColorOp{toNRGBA(cmd.Color)}.Add(ops)
 
@@ -510,10 +510,10 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 
 			paint.PaintOp{}.Add(ops)
 
-			stack.Pop()
+			stack.Load()
 
 		case command.CircleFilledCmd:
-			stack := op.Push(ops)
+			stack := op.Save(ops)
 
 			paint.ColorOp{toNRGBA(icmd.CircleFilled.Color)}.Add(ops)
 
@@ -531,16 +531,16 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 
 			paint.PaintOp{}.Add(ops)
 
-			stack.Pop()
+			stack.Load()
 
 		case command.ImageCmd:
-			stack := op.Push(ops)
+			stack := op.Save(ops)
 			//TODO: this should be retained between frames somehow...
 			paint.NewImageOp(icmd.Image.Img).Add(ops)
 			op.Offset(f32.Point{float32(icmd.Rect.X), float32(icmd.Rect.Y)}).Add(ops)
 			gioclip.Rect{image.Point{0, 0}, image.Point{icmd.Rect.W, icmd.Rect.H}}.Add(ops)
 			paint.PaintOp{}.Add(ops)
-			stack.Pop()
+			stack.Load()
 
 		case command.TextCmd:
 			txt := fontFace2fontFace(&icmd.Text.Face).layout(icmd.Text.String, -1)
@@ -662,7 +662,7 @@ func drawText(ops *op.Ops, txt []text.Line, face font.Face, fgcolor color.RGBA, 
 	clip := textPadding(txt)
 	clip.Max = clip.Max.Add(bounds)
 
-	stack := op.Push(ops)
+	stack := op.Save(ops)
 	paint.ColorOp{toNRGBA(fgcolor)}.Add(ops)
 
 	fc := fontFace2fontFace(&face)
@@ -676,7 +676,7 @@ func drawText(ops *op.Ops, txt []text.Line, face font.Face, fgcolor color.RGBA, 
 		off.X += float32(pos.X)
 		off.Y += float32(pos.Y) + float32(i*FontHeight(face))
 
-		stack := op.Push(ops)
+		stack := op.Save(ops)
 
 		op.Offset(off).Add(ops)
 		fc.shape(txtstr.Layout).Add(ops)
@@ -684,10 +684,10 @@ func drawText(ops *op.Ops, txt []text.Line, face font.Face, fgcolor color.RGBA, 
 		gioclip.UniformRRect(paintRect.Sub(off), 0).Add(ops)
 		paint.PaintOp{}.Add(ops)
 
-		stack.Pop()
+		stack.Load()
 	}
 
-	stack.Pop()
+	stack.Load()
 }
 
 type fontFace struct {

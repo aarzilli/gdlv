@@ -33,21 +33,21 @@ State
 An Ops list can be viewed as a very simple virtual machine: it has an implicit
 mutable state stack and execution flow can be controlled with macros.
 
-The StackOp saves the current state to the state stack and restores it later:
+The Save function saves the current state for later restoring:
 
 	ops := new(op.Ops)
 	// Save the current state, in particular the transform.
-	stack := op.Push(ops)
+	state := op.Save(ops)
 	// Apply a transform to subsequent operations.
 	op.Offset(...).Add(ops)
 	...
 	// Restore the previous transform.
-	stack.Pop()
+	state.Load()
 
 You can also use this one-line to save the current state and restore it at the
 end of a function :
 
-  defer op.Push(ops).Pop()
+  defer op.Save(ops).Load()
 
 The MacroOp records a list of operations to be executed later:
 
@@ -82,17 +82,19 @@ type Ops struct {
 	version int
 	// data contains the serialized operations.
 	data []byte
-	// External references for operations.
+	// refs hold external references for operations.
 	refs []interface{}
+	// nextStateID is the id allocated for the next
+	// StateOp.
+	nextStateID int
 
-	stackStack stack
 	macroStack stack
 }
 
-// StackOp saves and restores the operation state
-// in a stack-like manner.
-type StackOp struct {
-	id      stackID
+// StateOp represents a saved operation snapshop to be restored
+// later.
+type StateOp struct {
+	id      int
 	macroID int
 	ops     *Ops
 }
@@ -123,8 +125,8 @@ type TransformOp struct {
 	t f32.Affine2D
 }
 
-// stack tracks the integer identities of StackOp and MacroOp
-// operations to ensure correct pairing of Push/Pop and Record/End.
+// stack tracks the integer identities of MacroOp
+// operations to ensure correct pairing of Record/End.
 type stack struct {
 	currentID int
 	nextID    int
@@ -140,32 +142,76 @@ type pc struct {
 	refs int
 }
 
-// Push (save) the current operations state.
-func Push(o *Ops) StackOp {
-	s := StackOp{
+// Defer executes c after all other operations have completed,
+// including previously deferred operations.
+// Defer saves the current transformation and restores it prior
+// to execution. All other operation state is reset.
+//
+// Note that deferred operations are executed in first-in-first-out
+// order, unlike the Go facility of the same name.
+func Defer(o *Ops, c CallOp) {
+	if c.ops == nil {
+		return
+	}
+	state := Save(o)
+	// Wrap c in a macro that loads the saved state before execution.
+	m := Record(o)
+	load(o, opconst.InitialStateID, opconst.AllState)
+	load(o, state.id, opconst.TransformState)
+	c.Add(o)
+	c = m.Stop()
+	// A Defer is recorded as a TypeDefer followed by the
+	// wrapped macro.
+	data := o.Write(opconst.TypeDeferLen)
+	data[0] = byte(opconst.TypeDefer)
+	c.Add(o)
+}
+
+// Save the current operations state.
+func Save(o *Ops) StateOp {
+	o.nextStateID++
+	s := StateOp{
 		ops:     o,
-		id:      o.stackStack.push(),
+		id:      o.nextStateID,
 		macroID: o.macroStack.currentID,
 	}
-	data := o.Write(opconst.TypePushLen)
-	data[0] = byte(opconst.TypePush)
+	save(o, s.id)
 	return s
 }
 
-// Pop (restore) a previously Pushed operations state.
-func (s StackOp) Pop() {
+// save records a save of the operations state to
+// id.
+func save(o *Ops, id int) {
+	bo := binary.LittleEndian
+	data := o.Write(opconst.TypeSaveLen)
+	data[0] = byte(opconst.TypeSave)
+	bo.PutUint32(data[1:], uint32(id))
+}
+
+// Load a previously saved operations state.
+func (s StateOp) Load() {
 	if s.ops.macroStack.currentID != s.macroID {
-		panic("pop in a different macro than push")
+		panic("load in a different macro than save")
 	}
-	s.ops.stackStack.pop(s.id)
-	data := s.ops.Write(opconst.TypePopLen)
-	data[0] = byte(opconst.TypePop)
+	if s.id == 0 {
+		panic("zero-value op")
+	}
+	load(s.ops, s.id, opconst.AllState)
+}
+
+// load a previously saved operations state given
+// its ID. Only state included in mask is affected.
+func load(o *Ops, id int, m opconst.StateMask) {
+	bo := binary.LittleEndian
+	data := o.Write(opconst.TypeLoadLen)
+	data[0] = byte(opconst.TypeLoad)
+	data[1] = byte(m)
+	bo.PutUint32(data[2:], uint32(id))
 }
 
 // Reset the Ops, preparing it for re-use. Reset invalidates
 // any recorded macros.
 func (o *Ops) Reset() {
-	o.stackStack = stack{}
 	o.macroStack = stack{}
 	// Leave references to the GC.
 	for i := range o.refs {
@@ -173,6 +219,7 @@ func (o *Ops) Reset() {
 	}
 	o.data = o.data[:0]
 	o.refs = o.refs[:0]
+	o.nextStateID = 0
 	o.version++
 }
 

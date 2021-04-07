@@ -10,6 +10,7 @@ const firstOpIndex = 200
 const (
 	TypeMacro OpType = iota + firstOpIndex
 	TypeCall
+	TypeDefer
 	TypeTransform
 	TypeLayer
 	TypeInvalidate
@@ -25,8 +26,8 @@ const (
 	TypeKeyInput
 	TypeKeyFocus
 	TypeKeySoftKeyboard
-	TypePush
-	TypePop
+	TypeSave
+	TypeLoad
 	TypeAux
 	TypeClip
 	TypeProfile
@@ -39,6 +40,7 @@ const (
 const (
 	TypeMacroLen           = 1 + 4 + 4
 	TypeCallLen            = 1 + 4 + 4
+	TypeDeferLen           = 1
 	TypeTransformLen       = 1 + 4*6
 	TypeLayerLen           = 1
 	TypeRedrawLen          = 1 + 8
@@ -52,10 +54,10 @@ const (
 	TypeClipboardReadLen   = 1
 	TypeClipboardWriteLen  = 1
 	TypeKeyInputLen        = 1
-	TypeKeyFocusLen        = 1 + 1
+	TypeKeyFocusLen        = 1
 	TypeKeySoftKeyboardLen = 1 + 1
-	TypePushLen            = 1
-	TypePopLen             = 1
+	TypeSaveLen            = 1 + 4
+	TypeLoadLen            = 1 + 1 + 4
 	TypeAuxLen             = 1
 	TypeClipLen            = 1 + 4*4 + 1
 	TypeProfileLen         = 1
@@ -65,10 +67,25 @@ const (
 	TypeDashLen            = 1 + 4 + 1
 )
 
+// StateMask is a bitmask of state types a load operation
+// should restore.
+type StateMask uint8
+
+const (
+	TransformState StateMask = 1 << iota
+
+	AllState = ^StateMask(0)
+)
+
+// InitialStateID is the ID for saving and loading
+// the initial operation state.
+const InitialStateID = 0
+
 func (t OpType) Size() int {
 	return [...]int{
 		TypeMacroLen,
 		TypeCallLen,
+		TypeDeferLen,
 		TypeTransformLen,
 		TypeLayerLen,
 		TypeRedrawLen,
@@ -84,8 +101,8 @@ func (t OpType) Size() int {
 		TypeKeyInputLen,
 		TypeKeyFocusLen,
 		TypeKeySoftKeyboardLen,
-		TypePushLen,
-		TypePopLen,
+		TypeSaveLen,
+		TypeLoadLen,
 		TypeAuxLen,
 		TypeClipLen,
 		TypeProfileLen,
@@ -98,7 +115,7 @@ func (t OpType) Size() int {
 
 func (t OpType) NumRefs() int {
 	switch t {
-	case TypeKeyInput, TypePointerInput, TypeProfile, TypeCall, TypeClipboardRead, TypeClipboardWrite, TypeCursor:
+	case TypeKeyInput, TypeKeyFocus, TypePointerInput, TypeProfile, TypeCall, TypeClipboardRead, TypeClipboardWrite, TypeCursor:
 		return 1
 	case TypeImage:
 		return 2

@@ -49,7 +49,7 @@ func (col RGBA) Opaque() RGBA {
 	return col
 }
 
-// LinearFromSRGB converts from SRGBA to RGBA.
+// LinearFromSRGB converts from col in the sRGB colorspace to RGBA.
 func LinearFromSRGB(col color.NRGBA) RGBA {
 	af := float32(col.A) / 0xFF
 	return RGBA{
@@ -73,6 +73,40 @@ func NRGBAToRGBA(col color.NRGBA) color.RGBA {
 		R: uint8(linearTosRGB(c.R)*255 + .5),
 		G: uint8(linearTosRGB(c.G)*255 + .5),
 		B: uint8(linearTosRGB(c.B)*255 + .5),
+		A: col.A,
+	}
+}
+
+// NRGBAToLinearRGBA converts from non-premultiplied sRGB color to premultiplied linear RGBA color.
+//
+// Each component in the result is `c * alpha`, where `c` is the linear color.
+func NRGBAToLinearRGBA(col color.NRGBA) color.RGBA {
+	if col.A == 0xFF {
+		return color.RGBA(col)
+	}
+	c := LinearFromSRGB(col)
+	return color.RGBA{
+		R: uint8(c.R*255 + .5),
+		G: uint8(c.G*255 + .5),
+		B: uint8(c.B*255 + .5),
+		A: col.A,
+	}
+}
+
+// NRGBAToRGBA_PostAlpha converts from non-premultiplied sRGB color to premultiplied sRGB color.
+//
+// Each component in the result is `sRGBToLinear(c) * alpha`, where `c`
+// is the linear color.
+func NRGBAToRGBA_PostAlpha(col color.NRGBA) color.RGBA {
+	if col.A == 0xFF {
+		return color.RGBA(col)
+	} else if col.A == 0x00 {
+		return color.RGBA{}
+	}
+	return color.RGBA{
+		R: uint8(uint32(col.R) * uint32(col.A) / 0xFF),
+		G: uint8(uint32(col.G) * uint32(col.A) / 0xFF),
+		B: uint8(uint32(col.B) * uint32(col.A) / 0xFF),
 		A: col.A,
 	}
 }
@@ -135,6 +169,17 @@ func Disabled(c color.NRGBA) (d color.NRGBA) {
 		G: byte((int(c.G)*r + int(lum)*(256-r)) / 256),
 		B: byte((int(c.B)*r + int(lum)*(256-r)) / 256),
 		A: byte(int(c.A) * (128 + 32) / 256),
+	}
+}
+
+// Hovered blends color towards a brighter color.
+func Hovered(c color.NRGBA) (d color.NRGBA) {
+	const r = 0x20 // lighten ratio
+	return color.NRGBA{
+		R: byte(255 - int(255-c.R)*(255-r)/256),
+		G: byte(255 - int(255-c.G)*(255-r)/256),
+		B: byte(255 - int(255-c.B)*(255-r)/256),
+		A: c.A,
 	}
 }
 

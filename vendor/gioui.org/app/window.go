@@ -180,19 +180,30 @@ func (w *Window) processFrame(frameStart time.Time, size image.Point, frame *op.
 		frameDur = frameDur.Truncate(100 * time.Microsecond)
 		q := 100 * time.Microsecond
 		timings := fmt.Sprintf("tot:%7s %s", frameDur.Round(q), w.loop.Summary())
-		w.queue.q.Add(profile.Event{Timings: timings})
+		w.queue.q.Queue(profile.Event{Timings: timings})
 	}
 	if t, ok := w.queue.q.WakeupTime(); ok {
 		w.setNextFrame(t)
+	}
+	// Opportunistically check whether Invalidate has been called, to avoid
+	// stopping and starting animation mode.
+	select {
+	case <-w.invalidates:
+		w.setNextFrame(time.Time{})
+	default:
 	}
 	w.updateAnimation()
 	// Wait for the GPU goroutine to finish processing frame.
 	<-sync
 }
 
-// Invalidate the window such that a FrameEvent will be generated
-// immediately. If the window is inactive, the event is sent when the
-// window becomes active.
+// Invalidate the window such that a FrameEvent will be generated immediately.
+// If the window is inactive, the event is sent when the window becomes active.
+//
+// Note that Invalidate is intended for externally triggered updates, such as a
+// response from a network request. InvalidateOp is more efficient for animation
+// and similar internal updates.
+//
 // Invalidate is safe for concurrent use.
 func (w *Window) Invalidate() {
 	select {
@@ -235,14 +246,12 @@ func (w *Window) Close() {
 	})
 }
 
-// driverDo calls f as soon as the window has a valid driver attached,
-// or return false if the window was destroyed while waiting.
-func (w *Window) driverDo(f func()) bool {
+// driverDo waits for the window to have a valid driver attached and calls f.
+// It does nothing if the if the window was destroyed while waiting.
+func (w *Window) driverDo(f func()) {
 	select {
 	case w.driverFuncs <- f:
-		return true
 	case <-w.dead:
-		return false
 	}
 }
 
@@ -400,6 +409,7 @@ func (w *Window) run(opts *window.Options) {
 					w.destroy(err)
 					return
 				}
+				w.updateCursor()
 			case *system.CommandEvent:
 				w.out <- e
 				w.waitAck()
@@ -411,18 +421,22 @@ func (w *Window) run(opts *window.Options) {
 				w.ack <- struct{}{}
 				return
 			case event.Event:
-				if w.queue.q.Add(e2) {
+				if w.queue.q.Queue(e2) {
 					w.setNextFrame(time.Time{})
 					w.updateAnimation()
 				}
-				if c := w.queue.q.Cursor(); c != w.cursor {
-					w.cursor = c
-					w.SetCursorName(c)
-				}
+				w.updateCursor()
 				w.out <- e
 			}
 			w.ack <- struct{}{}
 		}
+	}
+}
+
+func (w *Window) updateCursor() {
+	if c := w.queue.q.Cursor(); c != w.cursor {
+		w.cursor = c
+		w.SetCursorName(c)
 	}
 }
 

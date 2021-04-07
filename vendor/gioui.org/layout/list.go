@@ -69,6 +69,11 @@ type Position struct {
 	// Offset is the distance in pixels from the top edge to the child at index
 	// First.
 	Offset int
+	// OffsetLast is the signed distance in pixels from the bottom edge to the
+	// bottom edge of the child at index First+Count.
+	OffsetLast int
+	// Count is the number of visible children.
+	Count int
 }
 
 const (
@@ -98,8 +103,8 @@ func (l *List) init(gtx Context, len int) {
 // Layout the List.
 func (l *List) Layout(gtx Context, len int, w ListElement) Dimensions {
 	l.init(gtx, len)
-	crossMin, crossMax := axisCrossConstraint(l.Axis, gtx.Constraints)
-	gtx.Constraints = axisConstraints(l.Axis, 0, inf, crossMin, crossMax)
+	crossMin, crossMax := l.Axis.crossConstraint(gtx.Constraints)
+	gtx.Constraints = l.Axis.constraints(0, inf, crossMin, crossMax)
 	macro := op.Record(gtx.Ops)
 	for l.next(); l.more(); l.next() {
 		child := op.Record(gtx.Ops)
@@ -155,7 +160,7 @@ func (l *List) more() bool {
 }
 
 func (l *List) nextDir() iterationDir {
-	_, vsize := axisMainConstraint(l.Axis, l.cs)
+	_, vsize := l.Axis.mainConstraint(l.cs)
 	last := l.Position.First + len(l.children)
 	// Clamp offset.
 	if l.maxSize-l.Position.Offset < vsize && last == l.len {
@@ -178,7 +183,7 @@ func (l *List) nextDir() iterationDir {
 // End the current child by specifying its dimensions.
 func (l *List) end(dims Dimensions, call op.CallOp) {
 	child := scrollChild{dims.Size, call}
-	mainSize := axisMain(l.Axis, child.size)
+	mainSize := l.Axis.Convert(child.size).X
 	l.maxSize += mainSize
 	switch l.dir {
 	case iterateForward:
@@ -200,13 +205,14 @@ func (l *List) layout(ops *op.Ops, macro op.MacroOp) Dimensions {
 	if l.more() {
 		panic("unfinished child")
 	}
-	mainMin, mainMax := axisMainConstraint(l.Axis, l.cs)
+	mainMin, mainMax := l.Axis.mainConstraint(l.cs)
 	children := l.children
 	// Skip invisible children
 	for len(children) > 0 {
 		sz := children[0].size
-		mainSize := axisMain(l.Axis, sz)
-		if l.Position.Offset <= mainSize {
+		mainSize := l.Axis.Convert(sz).X
+		if l.Position.Offset < mainSize {
+			// First child is partially visible.
 			break
 		}
 		l.Position.First++
@@ -216,31 +222,33 @@ func (l *List) layout(ops *op.Ops, macro op.MacroOp) Dimensions {
 	size := -l.Position.Offset
 	var maxCross int
 	for i, child := range children {
-		sz := child.size
-		if c := axisCross(l.Axis, sz); c > maxCross {
+		sz := l.Axis.Convert(child.size)
+		if c := sz.Y; c > maxCross {
 			maxCross = c
 		}
-		size += axisMain(l.Axis, sz)
+		size += sz.X
 		if size >= mainMax {
 			children = children[:i+1]
 			break
 		}
 	}
+	l.Position.Count = len(children)
+	l.Position.OffsetLast = mainMax - size
 	pos := -l.Position.Offset
 	// ScrollToEnd lists are end aligned.
-	if space := mainMax - size; l.ScrollToEnd && space > 0 {
+	if space := l.Position.OffsetLast; l.ScrollToEnd && space > 0 {
 		pos += space
 	}
 	for _, child := range children {
-		sz := child.size
+		sz := l.Axis.Convert(child.size)
 		var cross int
 		switch l.Alignment {
 		case End:
-			cross = maxCross - axisCross(l.Axis, sz)
+			cross = maxCross - sz.Y
 		case Middle:
-			cross = (maxCross - axisCross(l.Axis, sz)) / 2
+			cross = (maxCross - sz.Y) / 2
 		}
-		childSize := axisMain(l.Axis, sz)
+		childSize := sz.X
 		max := childSize + pos
 		if max > mainMax {
 			max = mainMax
@@ -250,14 +258,15 @@ func (l *List) layout(ops *op.Ops, macro op.MacroOp) Dimensions {
 			min = 0
 		}
 		r := image.Rectangle{
-			Min: axisPoint(l.Axis, min, -inf),
-			Max: axisPoint(l.Axis, max, inf),
+			Min: l.Axis.Convert(image.Pt(min, -inf)),
+			Max: l.Axis.Convert(image.Pt(max, inf)),
 		}
-		stack := op.Push(ops)
+		stack := op.Save(ops)
 		clip.Rect(r).Add(ops)
-		op.Offset(FPt(axisPoint(l.Axis, pos, cross))).Add(ops)
+		pt := l.Axis.Convert(image.Pt(pos, cross))
+		op.Offset(FPt(pt)).Add(ops)
 		child.call.Add(ops)
-		stack.Pop()
+		stack.Load()
 		pos += childSize
 	}
 	atStart := l.Position.First == 0 && l.Position.Offset <= 0
@@ -272,9 +281,9 @@ func (l *List) layout(ops *op.Ops, macro op.MacroOp) Dimensions {
 	if pos > mainMax {
 		pos = mainMax
 	}
-	dims := axisPoint(l.Axis, pos, maxCross)
+	dims := l.Axis.Convert(image.Pt(pos, maxCross))
 	call := macro.Stop()
-	defer op.Push(ops).Pop()
+	defer op.Save(ops).Load()
 	pointer.Rect(image.Rectangle{Max: dims}).Add(ops)
 	l.scroll.Add(ops)
 	call.Add(ops)

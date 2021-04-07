@@ -23,6 +23,8 @@ type pointerQueue struct {
 	pointers []pointerInfo
 	reader   ops.Reader
 
+	// states holds the storage for save/restore ops.
+	states  []collectState
 	scratch []event.Tag
 }
 
@@ -45,6 +47,9 @@ type pointerInfo struct {
 	id       pointer.ID
 	pressed  bool
 	handlers []event.Tag
+	// last tracks the last pointer event received,
+	// used while processing frame events.
+	last pointer.Event
 
 	// entered tracks the tags that contain the pointer.
 	entered []event.Tag
@@ -70,34 +75,62 @@ type areaNode struct {
 
 type areaKind uint8
 
+// collectState represents the state for collectHandlers
+type collectState struct {
+	t    f32.Affine2D
+	area int
+	node int
+	pass bool
+}
+
 const (
 	areaRect areaKind = iota
 	areaEllipse
 )
 
-func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents, t f32.Affine2D, area, node int, pass bool) {
+func (q *pointerQueue) save(id int, state collectState) {
+	if extra := id - len(q.states) + 1; extra > 0 {
+		q.states = append(q.states, make([]collectState, extra)...)
+	}
+	q.states[id] = state
+}
+
+func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents) {
+	state := collectState{
+		area: -1,
+		node: -1,
+	}
+	q.save(opconst.InitialStateID, state)
 	for encOp, ok := r.Decode(); ok; encOp, ok = r.Decode() {
 		switch opconst.OpType(encOp.Data[0]) {
-		case opconst.TypePush:
-			q.collectHandlers(r, events, t, area, node, pass)
-		case opconst.TypePop:
-			return
+		case opconst.TypeSave:
+			id := ops.DecodeSave(encOp.Data)
+			q.save(id, state)
+		case opconst.TypeLoad:
+			id, mask := ops.DecodeLoad(encOp.Data)
+			s := q.states[id]
+			if mask&opconst.TransformState != 0 {
+				state.t = s.t
+			}
+			if mask&^opconst.TransformState != 0 {
+				state = s
+			}
 		case opconst.TypePass:
-			pass = encOp.Data[1] != 0
+			state.pass = encOp.Data[1] != 0
 		case opconst.TypeArea:
 			var op areaOp
 			op.Decode(encOp.Data)
-			q.areas = append(q.areas, areaNode{trans: t, next: area, area: op})
-			area = len(q.areas) - 1
+			q.areas = append(q.areas, areaNode{trans: state.t, next: state.area, area: op})
+			state.area = len(q.areas) - 1
 			q.hitTree = append(q.hitTree, hitNode{
-				next: node,
-				area: area,
-				pass: pass,
+				next: state.node,
+				area: state.area,
+				pass: state.pass,
 			})
-			node = len(q.hitTree) - 1
+			state.node = len(q.hitTree) - 1
 		case opconst.TypeTransform:
 			dop := ops.DecodeTransform(encOp.Data)
-			t = t.Mul(dop)
+			state.t = state.t.Mul(dop)
 		case opconst.TypePointerInput:
 			op := pointer.InputOp{
 				Tag:   encOp.Refs[0].(event.Tag),
@@ -105,20 +138,22 @@ func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents, t f
 				Types: pointer.Type(encOp.Data[2]),
 			}
 			q.hitTree = append(q.hitTree, hitNode{
-				next: node,
-				area: area,
-				pass: pass,
+				next: state.node,
+				area: state.area,
+				pass: state.pass,
 				tag:  op.Tag,
 			})
-			node = len(q.hitTree) - 1
+			state.node = len(q.hitTree) - 1
 			h, ok := q.handlers[op.Tag]
 			if !ok {
 				h = new(pointerHandler)
 				q.handlers[op.Tag] = h
-				events.Add(op.Tag, pointer.Event{Type: pointer.Cancel})
+				// Cancel handlers on (each) first appearance, but don't
+				// trigger redraw.
+				events.AddNoRedraw(op.Tag, pointer.Event{Type: pointer.Cancel})
 			}
 			h.active = true
-			h.area = area
+			h.area = state.area
 			h.wantsGrab = h.wantsGrab || op.Grab
 			h.types = h.types | op.Types
 		case opconst.TypeCursor:
@@ -173,15 +208,14 @@ func (q *pointerQueue) hit(areaIdx int, p f32.Point) bool {
 	return true
 }
 
-func (q *pointerQueue) init() {
+func (q *pointerQueue) reset() {
 	if q.handlers == nil {
 		q.handlers = make(map[event.Tag]*pointerHandler)
 	}
-	q.cursor = pointer.CursorDefault
 }
 
 func (q *pointerQueue) Frame(root *op.Ops, events *handlerEvents) {
-	q.init()
+	q.reset()
 	for _, h := range q.handlers {
 		// Reset handler.
 		h.active = false
@@ -192,7 +226,7 @@ func (q *pointerQueue) Frame(root *op.Ops, events *handlerEvents) {
 	q.areas = q.areas[:0]
 	q.cursors = q.cursors[:0]
 	q.reader.Reset(root)
-	q.collectHandlers(&q.reader, events, f32.Affine2D{}, -1, -1, false)
+	q.collectHandlers(&q.reader, events)
 	for k, h := range q.handlers {
 		if !h.active {
 			q.dropHandlers(events, k)
@@ -206,6 +240,8 @@ func (q *pointerQueue) Frame(root *op.Ops, events *handlerEvents) {
 				for i, k2 := range p.handlers {
 					if k2 == k {
 						// Drop other handlers that lost their grab.
+						cancelHandlers(events, p.handlers[i+1:]...)
+						cancelHandlers(events, p.handlers[:i]...)
 						q.dropHandlers(events, p.handlers[i+1:]...)
 						q.dropHandlers(events, p.handlers[:i]...)
 						break
@@ -214,11 +250,20 @@ func (q *pointerQueue) Frame(root *op.Ops, events *handlerEvents) {
 			}
 		}
 	}
+	for i := range q.pointers {
+		p := &q.pointers[i]
+		q.deliverEnterLeaveEvents(p, events, p.last)
+	}
+}
+
+func cancelHandlers(events *handlerEvents, tags ...event.Tag) {
+	for _, k := range tags {
+		events.Add(k, pointer.Event{Type: pointer.Cancel})
+	}
 }
 
 func (q *pointerQueue) dropHandlers(events *handlerEvents, tags ...event.Tag) {
 	for _, k := range tags {
-		events.Add(k, pointer.Event{Type: pointer.Cancel})
 		for i := range q.pointers {
 			p := &q.pointers[i]
 			for i := len(p.handlers) - 1; i >= 0; i-- {
@@ -236,10 +281,11 @@ func (q *pointerQueue) dropHandlers(events *handlerEvents, tags ...event.Tag) {
 }
 
 func (q *pointerQueue) Push(e pointer.Event, events *handlerEvents) {
-	q.init()
+	q.reset()
 	if e.Type == pointer.Cancel {
 		q.pointers = q.pointers[:0]
 		for k := range q.handlers {
+			cancelHandlers(events, k)
 			q.dropHandlers(events, k)
 		}
 		return
@@ -256,6 +302,7 @@ func (q *pointerQueue) Push(e pointer.Event, events *handlerEvents) {
 		pidx = len(q.pointers) - 1
 	}
 	p := &q.pointers[pidx]
+	p.last = e
 
 	if e.Type == pointer.Move && p.pressed {
 		e.Type = pointer.Drag
@@ -265,17 +312,7 @@ func (q *pointerQueue) Push(e pointer.Event, events *handlerEvents) {
 		q.deliverEvent(p, events, e)
 		p.pressed = false
 	}
-	q.scratch = q.scratch[:0]
-	q.opHit(&q.scratch, e.Position)
-	if p.pressed {
-		// Filter out non-participating handlers.
-		for i := len(q.scratch) - 1; i >= 0; i-- {
-			if _, found := searchTag(p.handlers, q.scratch[i]); !found {
-				q.scratch = append(q.scratch[:i], q.scratch[i+1:]...)
-			}
-		}
-	}
-	q.deliverEnterLeaveEvents(p, q.scratch, events, e)
+	q.deliverEnterLeaveEvents(p, events, e)
 
 	if !p.pressed {
 		p.handlers = append(p.handlers[:0], q.scratch...)
@@ -290,11 +327,6 @@ func (q *pointerQueue) Push(e pointer.Event, events *handlerEvents) {
 		// No longer need to track pointer.
 		q.pointers = append(q.pointers[:pidx], q.pointers[pidx+1:]...)
 	}
-
-	for _, k := range p.entered {
-		h := q.handlers[k]
-		q.hitCursor(h.area)
-	}
 }
 
 func (q *pointerQueue) deliverEvent(p *pointerInfo, events *handlerEvents, e pointer.Event) {
@@ -308,16 +340,26 @@ func (q *pointerQueue) deliverEvent(p *pointerInfo, events *handlerEvents, e poi
 			e.Priority = pointer.Foremost
 		}
 
-		e.Position = q.invTransform(h.area, e.Position)
-
-		if e.Type&h.types == e.Type {
+		if e.Type&h.types != 0 {
+			e.Position = q.invTransform(h.area, e.Position)
 			foremost = false
 			events.Add(k, e)
 		}
 	}
 }
 
-func (q *pointerQueue) deliverEnterLeaveEvents(p *pointerInfo, hits []event.Tag, events *handlerEvents, e pointer.Event) {
+func (q *pointerQueue) deliverEnterLeaveEvents(p *pointerInfo, events *handlerEvents, e pointer.Event) {
+	q.scratch = q.scratch[:0]
+	q.opHit(&q.scratch, e.Position)
+	if p.pressed {
+		// Filter out non-participating handlers.
+		for i := len(q.scratch) - 1; i >= 0; i-- {
+			if _, found := searchTag(p.handlers, q.scratch[i]); !found {
+				q.scratch = append(q.scratch[:i], q.scratch[i+1:]...)
+			}
+		}
+	}
+	hits := q.scratch
 	if e.Source != pointer.Mouse && !p.pressed && e.Type != pointer.Press {
 		// Consider non-mouse pointers leaving when they're released.
 		hits = nil
@@ -329,35 +371,33 @@ func (q *pointerQueue) deliverEnterLeaveEvents(p *pointerInfo, hits []event.Tag,
 		}
 		h := q.handlers[k]
 		e.Type = pointer.Leave
-		e.Position = q.invTransform(h.area, e.Position)
 
-		if e.Type&h.types == e.Type {
+		if e.Type&h.types != 0 {
+			e.Position = q.invTransform(h.area, e.Position)
 			events.Add(k, e)
 		}
 	}
-	// Deliver Enter events.
+	// Deliver Enter events and update cursor.
+	q.cursor = pointer.CursorDefault
 	for _, k := range hits {
+		h := q.handlers[k]
+		for i := len(q.cursors) - 1; i >= 0; i-- {
+			if c := q.cursors[i]; c.area == h.area {
+				q.cursor = c.name
+				break
+			}
+		}
 		if _, found := searchTag(p.entered, k); found {
 			continue
 		}
-		h := q.handlers[k]
 		e.Type = pointer.Enter
-		e.Position = q.invTransform(h.area, e.Position)
 
-		if e.Type&h.types == e.Type {
+		if e.Type&h.types != 0 {
+			e.Position = q.invTransform(h.area, e.Position)
 			events.Add(k, e)
 		}
 	}
 	p.entered = append(p.entered[:0], hits...)
-}
-
-func (q *pointerQueue) hitCursor(want int) {
-	for _, c := range q.cursors {
-		if c.area == want {
-			q.cursor = c.name
-			return
-		}
-	}
 }
 
 func searchTag(tags []event.Tag, tag event.Tag) (int, bool) {

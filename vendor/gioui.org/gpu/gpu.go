@@ -31,9 +31,17 @@ import (
 )
 
 type GPU interface {
+	// Release non-Go resources. The GPU is no longer valid after Release.
 	Release()
-	Collect(viewport image.Point, frameOps *op.Ops)
+	// Clear sets the clear color for the next Frame.
+	Clear(color color.NRGBA)
+	// Collect the graphics operations from frame, given the viewport.
+	Collect(viewport image.Point, frame *op.Ops)
+	// Frame clears the color buffer and draws the collected operations.
 	Frame() error
+	// Profile returns the last available profiling information. Profiling
+	// information is requested when Collect sees a ProfileOp, and the result
+	// is available through Profile at some later time.
 	Profile() string
 }
 
@@ -61,9 +69,11 @@ type renderer struct {
 type drawOps struct {
 	profile    bool
 	reader     ops.Reader
+	states     []drawState
 	cache      *resourceCache
 	vertCache  []byte
 	viewport   image.Point
+	clear      bool
 	clearColor f32color.RGBA
 	// allImageOps is the combined list of imageOps and
 	// zimageOps, in drawing order.
@@ -87,7 +97,6 @@ type drawState struct {
 	t     f32.Affine2D
 	cpath *pathOp
 	rect  bool
-	z     int
 
 	matType materialType
 	// Current paint.ImageOp
@@ -404,6 +413,11 @@ func (g *gpu) init(ctx backend.Device) error {
 	return nil
 }
 
+func (g *gpu) Clear(col color.NRGBA) {
+	g.drawOps.clear = true
+	g.drawOps.clearColor = f32color.LinearFromSRGB(col)
+}
+
 func (g *gpu) Release() {
 	g.renderer.release()
 	g.drawOps.pathCache.release()
@@ -442,7 +456,10 @@ func (g *gpu) Frame() error {
 	g.ctx.DepthFunc(backend.DepthFuncGreater)
 	// Note that Clear must be before ClearDepth if nothing else is rendered
 	// (len(zimageOps) == 0). If not, the Fairphone 2 will corrupt the depth buffer.
-	g.ctx.Clear(g.drawOps.clearColor.Float32())
+	if g.drawOps.clear {
+		g.drawOps.clear = false
+		g.ctx.Clear(g.drawOps.clearColor.Float32())
+	}
 	g.ctx.ClearDepth(0.0)
 	g.ctx.Viewport(0, 0, viewport.X, viewport.Y)
 	g.renderer.drawZOps(g.cache, g.drawOps.zimageOps)
@@ -698,8 +715,8 @@ func (r *renderer) intersectPath(p *pathOp, clip image.Rectangle) {
 	}
 	fbo := r.pather.stenciler.cover(p.place.Idx)
 	r.ctx.BindTexture(0, fbo.tex)
-	coverScale, coverOff := texSpaceTransform(toRectF(uv), fbo.size)
-	subScale, subOff := texSpaceTransform(toRectF(sub), p.clip.Size())
+	coverScale, coverOff := texSpaceTransform(layout.FRect(uv), fbo.size)
+	subScale, subOff := texSpaceTransform(layout.FRect(sub), p.clip.Size())
 	r.pather.stenciler.iprog.uniforms.vert.uvTransform = [4]float32{coverScale.X, coverScale.Y, coverOff.X, coverOff.Y}
 	r.pather.stenciler.iprog.uniforms.vert.subUVTransform = [4]float32{subScale.X, subScale.Y, subOff.X, subOff.Y}
 	r.pather.stenciler.iprog.prog.UploadUniforms()
@@ -776,19 +793,6 @@ func boundRectF(r f32.Rectangle) image.Rectangle {
 	}
 }
 
-func toRectF(r image.Rectangle) f32.Rectangle {
-	return f32.Rectangle{
-		Min: f32.Point{
-			X: float32(r.Min.X),
-			Y: float32(r.Min.Y),
-		},
-		Max: f32.Point{
-			X: float32(r.Max.X),
-			Y: float32(r.Max.Y),
-		},
-	}
-}
-
 func ceil(v float32) int {
 	return int(math.Ceil(float64(v)))
 }
@@ -799,7 +803,6 @@ func floor(v float32) int {
 
 func (d *drawOps) reset(cache *resourceCache, viewport image.Point) {
 	d.profile = false
-	d.clearColor = f32color.RGBA{R: 1.0, G: 1.0, B: 1.0, A: 1.0}
 	d.cache = cache
 	d.viewport = viewport
 	d.imageOps = d.imageOps[:0]
@@ -869,12 +872,21 @@ func splitTransform(t f32.Affine2D) (srs f32.Affine2D, offset f32.Point) {
 	return
 }
 
-func (d *drawOps) collectOps(r *ops.Reader, state drawState) int {
+func (d *drawOps) save(id int, state drawState) {
+	if extra := id - len(d.states) + 1; extra > 0 {
+		d.states = append(d.states, make([]drawState, extra)...)
+	}
+	d.states[id] = state
+}
+
+func (d *drawOps) collectOps(r *ops.Reader, state drawState) {
 	var (
 		quads  quadsOp
 		stroke clip.StrokeStyle
 		dashes dashOp
+		z      int
 	)
+	d.save(opconst.InitialStateID, state)
 loop:
 	for encOp, ok := r.Decode(); ok; encOp, ok = r.Decode() {
 		switch opconst.OpType(encOp.Data[0]) {
@@ -995,19 +1007,20 @@ loop:
 				d.allImageOps = d.allImageOps[:0]
 				d.zimageOps = d.zimageOps[:0]
 				d.imageOps = d.imageOps[:0]
-				state.z = 0
+				z = 0
 				d.clearColor = mat.color.Opaque()
+				d.clear = true
 				continue
 			}
-			state.z++
-			if state.z != int(uint16(state.z)) {
+			z++
+			if z != int(uint16(z)) {
 				// TODO(eliasnaur) gioui.org/issue/127.
 				panic("more than 65k paint objects not supported")
 			}
 			// Assume 16-bit depth buffer.
 			const zdepth = 1 << 16
 			// Convert z to window-space, assuming depth range [0;1].
-			zf := float32(state.z)*2/zdepth - 1.0
+			zf := float32(z)*2/zdepth - 1.0
 			img := imageOp{
 				z:        zf,
 				path:     state.cpath,
@@ -1026,13 +1039,20 @@ loop:
 				state.cpath = state.cpath.parent
 				state.rect = wasrect
 			}
-		case opconst.TypePush:
-			state.z = d.collectOps(r, state)
-		case opconst.TypePop:
-			break loop
+		case opconst.TypeSave:
+			id := ops.DecodeSave(encOp.Data)
+			d.save(id, state)
+		case opconst.TypeLoad:
+			id, mask := ops.DecodeLoad(encOp.Data)
+			s := d.states[id]
+			if mask&opconst.TransformState != 0 {
+				state.t = s.t
+			}
+			if mask&^opconst.TransformState != 0 {
+				state = s
+			}
 		}
 	}
-	return state.z
 }
 
 func expandPathOp(p *pathOp, clip image.Rectangle) {
@@ -1140,7 +1160,7 @@ func (r *renderer) drawOps(cache *resourceCache, ops []imageOp) {
 			Min: img.place.Pos,
 			Max: img.place.Pos.Add(drc.Size()),
 		}
-		coverScale, coverOff := texSpaceTransform(toRectF(uv), fbo.size)
+		coverScale, coverOff := texSpaceTransform(layout.FRect(uv), fbo.size)
 		r.pather.cover(img.z, m.material, m.color, m.color1, m.color2, scale, off, m.uvTrans, coverScale, coverOff)
 	}
 	r.ctx.DepthMask(true)

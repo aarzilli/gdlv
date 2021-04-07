@@ -103,6 +103,8 @@ const (
 	CursorColResize CursorName = "col-resize"
 	// CursorRowResize is the cursor for horizontal resize.
 	CursorRowResize CursorName = "row-resize"
+	// CursorGrab is the cursor for moving object in any direction.
+	CursorGrab CursorName = "grab"
 	// CursorNone hides the cursor. To show it again, use any other cursor.
 	CursorNone CursorName = "none"
 )
@@ -189,6 +191,9 @@ func (op CursorNameOp) Add(o *op.Ops) {
 }
 
 func (h InputOp) Add(o *op.Ops) {
+	if h.Tag == nil {
+		panic("Tag must be non-nil")
+	}
 	data := o.Write1(opconst.TypePointerInputLen, h.Tag)
 	data[0] = byte(opconst.TypePointerInput)
 	if h.Grab {

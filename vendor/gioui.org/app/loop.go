@@ -4,6 +4,7 @@ package app
 
 import (
 	"image"
+	"image/color"
 	"runtime"
 
 	"gioui.org/app/internal/window"
@@ -85,6 +86,13 @@ func (l *renderLoop) renderLoop(ctx window.Context) error {
 				l.refreshErr <- ctx.MakeCurrent()
 			case frame := <-l.frames:
 				ctx.Lock()
+				if runtime.GOOS == "js" {
+					// Use transparent black when Gio is embedded, to allow mixing of Gio and
+					// foreign content below.
+					g.Clear(color.NRGBA{A: 0x00, R: 0x00, G: 0x00, B: 0x00})
+				} else {
+					g.Clear(color.NRGBA{A: 0xff, R: 0xff, G: 0xff, B: 0xff})
+				}
 				g.Collect(frame.viewport, frame.ops)
 				// Signal that we're done with the frame ops.
 				l.ack <- struct{}{}

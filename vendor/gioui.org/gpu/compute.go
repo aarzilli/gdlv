@@ -9,6 +9,7 @@ import (
 	"image"
 	"image/color"
 	"math"
+	"math/bits"
 	"time"
 	"unsafe"
 
@@ -46,16 +47,34 @@ type compute struct {
 	}
 	output struct {
 		size image.Point
-		// image is the output texture. Note that it is RGBA format,
+		// image is the output texture. Note that it is in RGBA format,
 		// but contains data in sRGB. See blitOutput for more detail.
 		image    backend.Texture
 		blitProg backend.Program
 	}
-	atlas struct {
+	// images contains ImageOp images packed into a texture atlas.
+	images struct {
 		packer packer
 		// positions maps imageOpData.handles to positions inside tex.
 		positions map[interface{}]image.Point
 		tex       backend.Texture
+	}
+	// materials contains the pre-processed materials (transformed images for
+	// now, gradients etc. later) packed in a texture atlas. The atlas is used
+	// as source in kernel4.
+	materials struct {
+		prog   backend.Program
+		layout backend.InputLayout
+
+		packer packer
+
+		texSize image.Point
+		tex     backend.Texture
+		fbo     backend.Framebuffer
+		quads   []materialVertex
+
+		bufSize int
+		buffer  backend.Buffer
 	}
 	timers struct {
 		profile         string
@@ -74,8 +93,15 @@ type compute struct {
 	conf      *config
 }
 
+// materialVertex describes a vertex of a quad used to render a transformed
+// material.
+type materialVertex struct {
+	posX, posY float32
+	u, v       float32
+}
+
 type encoder struct {
-	scene    []byte
+	scene    []sceneElem
 	npath    int
 	npathseg int
 }
@@ -103,6 +129,8 @@ type config struct {
 	anno_alloc      memAlloc
 }
 
+type sceneElem [sceneElemSize / 4]uint32
+
 // memAlloc matches Alloc in mem.h
 type memAlloc struct {
 	offset uint32
@@ -125,9 +153,9 @@ const (
 
 	pathSize      = 12
 	binSize       = 8
-	pathsegSize   = 48
-	annoSize      = 52
-	stateSize     = 56
+	pathsegSize   = 44
+	annoSize      = 28
+	stateSize     = 60
 	stateStride   = 4 + 2*stateSize
 	sceneElemSize = 36
 )
@@ -147,7 +175,11 @@ const (
 	elemTransform
 	elemBeginClip
 	elemEndClip
-	elemFillTexture
+	elemFillImage
+)
+
+const (
+	flagEndPath = 16 // FLAG_END_PATH from elements.comp
 )
 
 // mem.h constants.
@@ -178,6 +210,22 @@ func newCompute(ctx backend.Device) (*compute, error) {
 		return nil, err
 	}
 	g.output.blitProg = blitProg
+
+	materialProg, err := ctx.NewProgram(shader_material_vert, shader_material_frag)
+	if err != nil {
+		g.Release()
+		return nil, err
+	}
+	g.materials.prog = materialProg
+	progLayout, err := ctx.NewInputLayout(shader_material_vert, []backend.InputDesc{
+		{Type: backend.DataTypeFloat, Size: 2, Offset: 0},
+		{Type: backend.DataTypeFloat, Size: 2, Offset: 4 * 2},
+	})
+	if err != nil {
+		g.Release()
+		return nil, err
+	}
+	g.materials.layout = progLayout
 
 	g.drawOps.pathCache = newOpCache()
 	g.drawOps.retainPathData = true
@@ -230,6 +278,11 @@ func (g *compute) Collect(viewport image.Point, ops *op.Ops) {
 	}
 }
 
+func (g *compute) Clear(col color.NRGBA) {
+	g.drawOps.clear = true
+	g.drawOps.clearColor = f32color.LinearFromSRGB(col)
+}
+
 func (g *compute) Frame() error {
 	viewport := g.drawOps.viewport
 	tileDims := image.Point{
@@ -243,7 +296,12 @@ func (g *compute) Frame() error {
 	if err := g.uploadImages(g.drawOps.allImageOps); err != nil {
 		return err
 	}
-	g.encode(viewport)
+	if err := g.encode(viewport); err != nil {
+		return err
+	}
+	if err := g.renderMaterials(); err != nil {
+		return err
+	}
 	if err := g.render(tileDims); err != nil {
 		return err
 	}
@@ -280,14 +338,22 @@ func (g *compute) blitOutput(viewport image.Point) {
 	g.ctx.DrawArrays(backend.DrawModeTriangleStrip, 0, 4)
 }
 
-func (g *compute) encode(viewport image.Point) {
+func (g *compute) encode(viewport image.Point) error {
+	g.materials.packer.maxDim = g.maxTextureDim
+	g.materials.packer.clear()
+	g.materials.packer.newPage()
+	g.materials.quads = g.materials.quads[:0]
 	g.enc.reset()
+
 	// Flip Y-axis.
 	flipY := f32.Affine2D{}.Scale(f32.Pt(0, 0), f32.Pt(1, -1)).Offset(f32.Pt(0, float32(viewport.Y)))
 	g.enc.transform(flipY)
-	g.enc.rect(f32.Rectangle{Max: layout.FPt(viewport)}, false)
-	g.enc.fill(f32color.NRGBAToRGBA(g.drawOps.clearColor.SRGB()))
-	g.encodeOps(flipY, viewport, g.drawOps.allImageOps)
+	if g.drawOps.clear {
+		g.drawOps.clear = false
+		g.enc.rect(f32.Rectangle{Max: layout.FPt(viewport)}, false)
+		g.enc.fill(f32color.NRGBAToRGBA(g.drawOps.clearColor.SRGB()))
+	}
+	return g.encodeOps(flipY, viewport, g.drawOps.allImageOps)
 }
 
 func (g *compute) uploadImages(ops []imageOp) error {
@@ -295,7 +361,7 @@ func (g *compute) uploadImages(ops []imageOp) error {
 	// images, to avoid atlas filtering artifacts.
 	const padding = 1
 
-	a := &g.atlas
+	a := &g.images
 	var uploads map[interface{}]*image.RGBA
 	resize := false
 	reclaimed := false
@@ -312,12 +378,9 @@ restart:
 				size.Y += padding
 				place, fits := a.packer.tryAdd(size)
 				if !fits {
-					maxDim := a.packer.maxDim
 					a.positions = nil
 					uploads = nil
-					a.packer = packer{
-						maxDim: maxDim,
-					}
+					a.packer.clear()
 					if !reclaimed {
 						// Some images may no longer be in use, try again
 						// after clearing existing maps.
@@ -326,14 +389,14 @@ restart:
 						a.packer.maxDim += 256
 						resize = true
 						if a.packer.maxDim > g.maxTextureDim {
-							return errors.New("compute: no space left in atlas texture")
+							return errors.New("compute: no space left in image atlas")
 						}
 					}
 					a.packer.newPage()
 					continue restart
 				}
 				if a.positions == nil {
-					g.atlas.positions = make(map[interface{}]image.Point)
+					g.images.positions = make(map[interface{}]image.Point)
 				}
 				a.positions[m.data.handle] = place.Pos
 				if uploads == nil {
@@ -355,7 +418,7 @@ restart:
 		sz := a.packer.maxDim
 		handle, err := g.ctx.NewTexture(backend.TextureFormatSRGB, sz, sz, backend.FilterLinear, backend.FilterLinear, backend.BufferBindingTexture)
 		if err != nil {
-			return fmt.Errorf("compute: failed to create atlas texture: %v", err)
+			return fmt.Errorf("compute: failed to create image atlas: %v", err)
 		}
 		a.tex = handle
 	}
@@ -374,47 +437,180 @@ restart:
 	return nil
 }
 
-func (g *compute) encodeOps(trans f32.Affine2D, viewport image.Point, ops []imageOp) {
+func (g *compute) renderMaterials() error {
+	m := &g.materials
+	outSize := g.materials.packer.sizes[0]
+	if outSize == (image.Point{}) {
+		return nil
+	}
+	if outSize.X > m.texSize.X || outSize.Y > m.texSize.Y {
+		if m.fbo != nil {
+			m.fbo.Release()
+			m.fbo = nil
+		}
+		if m.tex != nil {
+			m.tex.Release()
+			m.tex = nil
+		}
+		// Round to nearest power of 2 while we're doing an expensive recreation anyway.
+		sz := image.Pt(pow2Ceil(outSize.X), pow2Ceil(outSize.Y))
+		m.texSize = sz
+		handle, err := g.ctx.NewTexture(backend.TextureFormatRGBA8, sz.X, sz.Y, backend.FilterNearest, backend.FilterNearest, backend.BufferBindingShaderStorage|backend.BufferBindingFramebuffer)
+		if err != nil {
+			return fmt.Errorf("compute: failed to create material atlas: %v", err)
+		}
+		m.tex = handle
+		fbo, err := g.ctx.NewFramebuffer(handle, 0)
+		if err != nil {
+			return fmt.Errorf("compute: failed to create material framebuffer: %v", err)
+		}
+		m.fbo = fbo
+	}
+	// TODO: move to shaders.
+	// Transform to clip space: [-1, -1] - [1, 1].
+	clip := f32.Affine2D{}.Scale(f32.Pt(0, 0), f32.Pt(2/float32(m.texSize.X), 2/float32(m.texSize.Y))).Offset(f32.Pt(-1, -1))
+	for i, v := range m.quads {
+		p := clip.Transform(f32.Pt(v.posX, v.posY))
+		m.quads[i].posX = p.X
+		m.quads[i].posY = p.Y
+	}
+	vertexData := gunsafe.BytesView(m.quads)
+	if len(vertexData) > m.bufSize {
+		if m.buffer != nil {
+			m.buffer.Release()
+			m.buffer = nil
+		}
+		// Ditto.
+		n := pow2Ceil(len(vertexData))
+		buf, err := g.ctx.NewBuffer(backend.BufferBindingVertices, n)
+		if err != nil {
+			return err
+		}
+		m.bufSize = n
+		m.buffer = buf
+	}
+	m.buffer.Upload(vertexData)
+	g.ctx.BindTexture(0, g.images.tex)
+	g.ctx.BindFramebuffer(m.fbo)
+	g.ctx.Viewport(0, 0, m.texSize.X, m.texSize.Y)
+	g.ctx.Clear(0, 0, 0, 0)
+	g.ctx.BindProgram(m.prog)
+	g.ctx.BindVertexBuffer(m.buffer, int(unsafe.Sizeof(m.quads[0])), 0)
+	g.ctx.BindInputLayout(m.layout)
+	g.ctx.DrawArrays(backend.DrawModeTriangles, 0, len(m.quads))
+	return nil
+}
+
+func pow2Ceil(v int) int {
+	exp := bits.Len(uint(v))
+	if bits.OnesCount(uint(v)) == 1 {
+		exp--
+	}
+	return 1 << exp
+}
+
+// addMaterialQuad appends a render of an image to materials and returns the pixel offset
+// that maps the material texture to the correct position in the rendered image.
+func (g *compute) addMaterialQuad(M f32.Affine2D, img imageOpData) (image.Point, error) {
+	imgSize := layout.FPt(img.src.Bounds().Size())
+	sx, hx, ox, hy, sy, oy := M.Elems()
+	transOff := f32.Pt(ox, oy)
+	// The 4 corners of the image rectangle transformed by M, excluding its offset, are:
+	//
+	// q0: M * (0, 0)   q3: M * (w, 0)
+	// q1: M * (0, h)   q2: M * (w, h)
+	//
+	// Note that q0 = M*0 = 0, q2 = q1 + q3.
+	q0 := f32.Pt(0, 0)
+	q1 := f32.Pt(hx*imgSize.Y, sy*imgSize.Y)
+	q3 := f32.Pt(sx*imgSize.X, hy*imgSize.X)
+	q2 := q1.Add(q3)
+	q0 = q0.Add(transOff)
+	q1 = q1.Add(transOff)
+	q2 = q2.Add(transOff)
+	q3 = q3.Add(transOff)
+
+	boundsf := f32.Rectangle{
+		Min: min(min(q0, q1), min(q2, q3)),
+		Max: max(max(q0, q1), max(q2, q3)),
+	}
+
+	bounds := boundRectF(boundsf)
+	size := bounds.Size()
+	// A material is clipped to avoid drawing outside its bounds inside the atlas. However,
+	// imprecision in the clipping may cause a single pixel overflow. Be safe.
+	size = size.Add(image.Pt(1, 1))
+	place, fits := g.materials.packer.tryAdd(size)
+	if !fits {
+		return image.Point{}, errors.New("compute: no space left in image atlas")
+	}
+	// Position quad to match place.
+	offset := place.Pos.Sub(bounds.Min)
+	offsetf := layout.FPt(offset)
+	q0 = q0.Add(offsetf)
+	q1 = q1.Add(offsetf)
+	q2 = q2.Add(offsetf)
+	q3 = q3.Add(offsetf)
+	uvPos, ok := g.images.positions[img.handle]
+	if !ok {
+		panic("compute: internal error: image not placed")
+	}
+	uvPosf := layout.FPt(uvPos)
+	atlasScale := 1 / float32(g.images.packer.maxDim)
+	uvBounds := f32.Rectangle{
+		Min: uvPosf.Mul(atlasScale),
+		Max: uvPosf.Add(imgSize).Mul(atlasScale),
+	}
+	quad := [4]materialVertex{
+		{posX: q0.X, posY: q0.Y, u: uvBounds.Min.X, v: uvBounds.Min.Y},
+		{posX: q1.X, posY: q1.Y, u: uvBounds.Min.X, v: uvBounds.Max.Y},
+		{posX: q2.X, posY: q2.Y, u: uvBounds.Max.X, v: uvBounds.Max.Y},
+		{posX: q3.X, posY: q3.Y, u: uvBounds.Max.X, v: uvBounds.Min.Y},
+	}
+	// Draw quad as two triangles.
+	g.materials.quads = append(g.materials.quads, quad[0], quad[1], quad[3], quad[3], quad[1], quad[2])
+	return offset, nil
+}
+
+func max(p1, p2 f32.Point) f32.Point {
+	p := p1
+	if p2.X > p.X {
+		p.X = p2.X
+	}
+	if p2.Y > p.Y {
+		p.Y = p2.Y
+	}
+	return p
+}
+
+func min(p1, p2 f32.Point) f32.Point {
+	p := p1
+	if p2.X < p.X {
+		p.X = p2.X
+	}
+	if p2.Y < p.Y {
+		p.Y = p2.Y
+	}
+	return p
+}
+
+func (g *compute) encodeOps(trans f32.Affine2D, viewport image.Point, ops []imageOp) error {
 	for _, op := range ops {
 		bounds := layout.FRect(op.clip)
 		// clip is the union of all drawing affected by the clipping
-		// operation. TODO: tigthen.
+		// operation. TODO: tighten.
 		clip := f32.Rect(0, 0, float32(viewport.X), float32(viewport.Y))
 		nclips := g.encodeClipStack(clip, bounds, op.path)
 		m := op.material
 		switch m.material {
 		case materialTexture:
-			img := m.data
-			pos, ok := g.atlas.positions[img.handle]
-			if !ok {
-				panic("compute: internal error: image not placed")
+			t := trans.Mul(m.trans)
+			off, err := g.addMaterialQuad(t, m.data)
+			if err != nil {
+				return err
 			}
-			bounds := image.Rectangle{
-				Min: pos,
-				Max: pos.Add(img.src.Bounds().Size()),
-			}
-			maxDim := g.atlas.packer.maxDim
-			atlasSize := f32.Pt(float32(maxDim), float32(maxDim))
-			uvBounds := f32.Rectangle{
-				Min: f32.Point{
-					X: float32(bounds.Min.X) / atlasSize.X,
-					Y: float32(bounds.Min.Y) / atlasSize.Y,
-				},
-				Max: f32.Point{
-					X: float32(bounds.Max.X) / atlasSize.X,
-					Y: float32(bounds.Max.Y) / atlasSize.Y,
-				},
-			}
-			fpos := layout.FPt(pos)
-			texScale := f32.Pt(1.0/atlasSize.X, 1.0/atlasSize.Y)
-			mat := f32.Affine2D{}.
-				Mul(trans.Invert()).
-				Mul(f32.Affine2D{}.Scale(f32.Pt(0, 0), texScale)).
-				Mul(f32.Affine2D{}.Offset(fpos)).
-				Mul(trans.Mul(m.trans).Invert())
-			g.enc.transform(mat)
-			g.enc.fillTexture(uvBounds)
-			g.enc.transform(mat.Invert())
+
+			g.enc.fillImage(0, off)
 		case materialColor:
 			g.enc.fill(f32color.NRGBAToRGBA(op.material.color.SRGB()))
 		case materialLinearGradient:
@@ -428,6 +624,7 @@ func (g *compute) encodeOps(trans f32.Affine2D, viewport image.Point, ops []imag
 			g.enc.endClip(clip)
 		}
 	}
+	return nil
 }
 
 // encodeClips encodes a stack of clip paths and return the stack depth.
@@ -454,6 +651,10 @@ func (g *compute) encodeClipStack(clip, bounds f32.Rectangle, p *pathOp) int {
 // renderer.
 func encodePath(p []byte) encoder {
 	var enc encoder
+	var (
+		prevTo  f32.Point
+		hasPrev bool
+	)
 	for len(p) > 0 {
 		// p contains quadratic curves encoded in vertex structs.
 		vertex := p[:vertStride]
@@ -470,11 +671,19 @@ func encodePath(p []byte) encoder {
 			math.Float32frombits(bo.Uint32(vertex[24:])),
 			math.Float32frombits(bo.Uint32(vertex[28:])),
 		)
+		if hasPrev && from != prevTo {
+			enc.scene[len(enc.scene)-1][0] = (flagEndPath << 16) | enc.scene[len(enc.scene)-1][0]
+		}
+		hasPrev = true
+		prevTo = to
 		enc.quad(from, ctrl, to, false)
 
 		// The vertex is duplicated 4 times, one for each corner of quads drawn
 		// by the old renderer.
 		p = p[vertStride*4:]
+	}
+	if hasPrev {
+		enc.scene[len(enc.scene)-1][0] = (flagEndPath << 16) | enc.scene[len(enc.scene)-1][0]
 	}
 	return enc
 }
@@ -493,18 +702,18 @@ func (g *compute) render(tileDims image.Point) error {
 	}
 
 	// Pad scene with zeroes to avoid reading garbage in elements.comp.
-	scenePadding := partitionSize*sceneElemSize - len(g.enc.scene)%(partitionSize*sceneElemSize)
-	g.enc.scene = append(g.enc.scene, make([]byte, scenePadding)...)
+	scenePadding := partitionSize - len(g.enc.scene)%partitionSize
+	g.enc.scene = append(g.enc.scene, make([]sceneElem, scenePadding)...)
 
 	realloced := false
-	if s := len(g.enc.scene); s > g.buffers.scene.size {
+	if s := len(g.enc.scene) * sceneElemSize; s > g.buffers.scene.size {
 		realloced = true
 		paddedCap := s * 11 / 10
 		if err := g.buffers.scene.ensureCapacity(g.ctx, paddedCap); err != nil {
 			return err
 		}
 	}
-	g.buffers.scene.buffer.Upload(g.enc.scene)
+	g.buffers.scene.buffer.Upload(gunsafe.BytesView(g.enc.scene))
 
 	w, h := tileDims.X*tileWidthPx, tileDims.Y*tileHeightPx
 	if g.output.size.X < w || g.output.size.Y < h {
@@ -513,8 +722,8 @@ func (g *compute) render(tileDims image.Point) error {
 		}
 	}
 	g.ctx.BindImageTexture(kernel4OutputUnit, g.output.image, backend.AccessWrite, backend.TextureFormatRGBA8)
-	if g.atlas.tex != nil {
-		g.ctx.BindTexture(kernel4AtlasUnit, g.atlas.tex)
+	if t := g.materials.tex; t != nil {
+		g.ctx.BindImageTexture(kernel4AtlasUnit, t, backend.AccessRead, backend.TextureFormatRGBA8)
 	}
 
 	// alloc is the number of allocated bytes for static buffers.
@@ -647,7 +856,7 @@ func (g *compute) resizeOutput(size image.Point) error {
 	img, err := g.ctx.NewTexture(backend.TextureFormatRGBA8, size.X, size.Y,
 		backend.FilterNearest,
 		backend.FilterNearest,
-		backend.BufferBindingShaderStorage|backend.BufferBindingFramebuffer)
+		backend.BufferBindingShaderStorage|backend.BufferBindingTexture)
 	if err != nil {
 		return err
 	}
@@ -657,8 +866,12 @@ func (g *compute) resizeOutput(size image.Point) error {
 }
 
 func (g *compute) Release() {
-	g.drawOps.pathCache.release()
-	g.cache.release()
+	if g.drawOps.pathCache != nil {
+		g.drawOps.pathCache.release()
+	}
+	if g.cache != nil {
+		g.cache.release()
+	}
 	progs := []backend.Program{
 		g.programs.elements,
 		g.programs.tileAlloc,
@@ -685,8 +898,23 @@ func (g *compute) Release() {
 	if g.output.image != nil {
 		g.output.image.Release()
 	}
-	if g.atlas.tex != nil {
-		g.atlas.tex.Release()
+	if g.images.tex != nil {
+		g.images.tex.Release()
+	}
+	if g.materials.layout != nil {
+		g.materials.layout.Release()
+	}
+	if g.materials.prog != nil {
+		g.materials.prog.Release()
+	}
+	if g.materials.fbo != nil {
+		g.materials.fbo.Release()
+	}
+	if g.materials.tex != nil {
+		g.materials.tex.Release()
+	}
+	if g.materials.buffer != nil {
+		g.materials.buffer.Release()
 	}
 	if g.timers.t != nil {
 		g.timers.t.release()
@@ -744,7 +972,7 @@ func (e *encoder) reset() {
 }
 
 func (e *encoder) numElements() int {
-	return len(e.scene) / sceneElemSize
+	return len(e.scene)
 }
 
 func (e *encoder) append(e2 encoder) {
@@ -755,118 +983,110 @@ func (e *encoder) append(e2 encoder) {
 
 func (e *encoder) transform(m f32.Affine2D) {
 	sx, hx, ox, hy, sy, oy := m.Elems()
-	cmd := make([]byte, sceneElemSize)
-	bo.PutUint32(cmd[0:4], elemTransform)
-	bo.PutUint32(cmd[4:8], math.Float32bits(sx))
-	bo.PutUint32(cmd[8:12], math.Float32bits(hy))
-	bo.PutUint32(cmd[12:16], math.Float32bits(hx))
-	bo.PutUint32(cmd[16:20], math.Float32bits(sy))
-	bo.PutUint32(cmd[20:24], math.Float32bits(ox))
-	bo.PutUint32(cmd[24:28], math.Float32bits(oy))
-	e.cmd(cmd)
+	e.scene = append(e.scene, sceneElem{
+		0: elemTransform,
+		1: math.Float32bits(sx),
+		2: math.Float32bits(hy),
+		3: math.Float32bits(hx),
+		4: math.Float32bits(sy),
+		5: math.Float32bits(ox),
+		6: math.Float32bits(oy),
+	})
 }
 
 func (e *encoder) lineWidth(width float32) {
-	cmd := make([]byte, sceneElemSize)
-	bo.PutUint32(cmd, elemLineWidth)
-	bo.PutUint32(cmd[4:8], math.Float32bits(width))
-	e.cmd(cmd)
+	e.scene = append(e.scene, sceneElem{
+		0: elemLineWidth,
+		1: math.Float32bits(width),
+	})
 }
 
 func (e *encoder) stroke(col color.RGBA) {
-	cmd := make([]byte, sceneElemSize)
-	bo.PutUint32(cmd, elemStroke)
-	c := uint32(col.R)<<24 | uint32(col.G)<<16 | uint32(col.B)<<8 | uint32(col.A)
-	bo.PutUint32(cmd[4:8], c)
-	e.cmd(cmd)
+	e.scene = append(e.scene, sceneElem{
+		0: elemStroke,
+		1: uint32(col.R)<<24 | uint32(col.G)<<16 | uint32(col.B)<<8 | uint32(col.A),
+	})
 	e.npath++
 }
 
 func (e *encoder) beginClip(bbox f32.Rectangle) {
-	cmd := make([]byte, sceneElemSize)
-	bo.PutUint32(cmd, elemBeginClip)
-	bo.PutUint32(cmd[4:8], math.Float32bits(bbox.Min.X))
-	bo.PutUint32(cmd[8:12], math.Float32bits(bbox.Min.Y))
-	bo.PutUint32(cmd[12:16], math.Float32bits(bbox.Max.X))
-	bo.PutUint32(cmd[16:20], math.Float32bits(bbox.Max.Y))
-	e.cmd(cmd)
+	e.scene = append(e.scene, sceneElem{
+		0: elemBeginClip,
+		1: math.Float32bits(bbox.Min.X),
+		2: math.Float32bits(bbox.Min.Y),
+		3: math.Float32bits(bbox.Max.X),
+		4: math.Float32bits(bbox.Max.Y),
+	})
 	e.npath++
 }
 
 func (e *encoder) endClip(bbox f32.Rectangle) {
-	cmd := make([]byte, sceneElemSize)
-	bo.PutUint32(cmd, elemEndClip)
-	bo.PutUint32(cmd[4:8], math.Float32bits(bbox.Min.X))
-	bo.PutUint32(cmd[8:12], math.Float32bits(bbox.Min.Y))
-	bo.PutUint32(cmd[12:16], math.Float32bits(bbox.Max.X))
-	bo.PutUint32(cmd[16:20], math.Float32bits(bbox.Max.Y))
-	e.cmd(cmd)
+	e.scene = append(e.scene, sceneElem{
+		0: elemEndClip,
+		1: math.Float32bits(bbox.Min.X),
+		2: math.Float32bits(bbox.Min.Y),
+		3: math.Float32bits(bbox.Max.X),
+		4: math.Float32bits(bbox.Max.Y),
+	})
 	e.npath++
 }
 
 func (e *encoder) rect(r f32.Rectangle, stroke bool) {
 	// Rectangle corners, clock-wise.
 	c0, c1, c2, c3 := r.Min, f32.Pt(r.Min.X, r.Max.Y), r.Max, f32.Pt(r.Max.X, r.Min.Y)
-	e.line(c0, c1, stroke)
-	e.line(c1, c2, stroke)
-	e.line(c2, c3, stroke)
-	e.line(c3, c0, stroke)
+	e.line(c0, c1, stroke, 0)
+	e.line(c1, c2, stroke, 0)
+	e.line(c2, c3, stroke, 0)
+	e.line(c3, c0, stroke, flagEndPath)
 }
 
 func (e *encoder) fill(col color.RGBA) {
-	cmd := make([]byte, sceneElemSize)
-	bo.PutUint32(cmd, elemFill)
-	c := uint32(col.R)<<24 | uint32(col.G)<<16 | uint32(col.B)<<8 | uint32(col.A)
-	bo.PutUint32(cmd[4:8], c)
-	e.cmd(cmd)
+	e.scene = append(e.scene, sceneElem{
+		0: elemFill,
+		1: uint32(col.R)<<24 | uint32(col.G)<<16 | uint32(col.B)<<8 | uint32(col.A),
+	})
 	e.npath++
 }
 
-func (e *encoder) fillTexture(uvBounds f32.Rectangle) {
-	cmd := make([]byte, sceneElemSize)
-	bo.PutUint32(cmd, elemFillTexture)
-	umin := uint16(uvBounds.Min.X*math.MaxUint16 + .5)
-	vmin := uint16(uvBounds.Min.Y*math.MaxUint16 + .5)
-	umax := uint16(uvBounds.Max.X*math.MaxUint16 + .5)
-	vmax := uint16(uvBounds.Max.Y*math.MaxUint16 + .5)
-	bo.PutUint32(cmd[4:8], uint32(umin)|uint32(vmin)<<16)
-	bo.PutUint32(cmd[8:12], uint32(umax)|uint32(vmax)<<16)
-	e.cmd(cmd)
+func (e *encoder) fillImage(index int, offset image.Point) {
+	x := int16(offset.X)
+	y := int16(offset.Y)
+	e.scene = append(e.scene, sceneElem{
+		0: elemFillImage,
+		1: uint32(index),
+		2: uint32(uint16(x)) | uint32(uint16(y))<<16,
+	})
 	e.npath++
 }
 
-func (e *encoder) line(start, end f32.Point, stroke bool) {
-	cmd := make([]byte, sceneElemSize)
+func (e *encoder) line(start, end f32.Point, stroke bool, flags uint32) {
+	tag := uint32(elemFillLine)
 	if stroke {
-		bo.PutUint32(cmd, elemStrokeLine)
-	} else {
-		bo.PutUint32(cmd, elemFillLine)
+		tag = elemStrokeLine
 	}
-	bo.PutUint32(cmd[4:8], math.Float32bits(start.X))
-	bo.PutUint32(cmd[8:12], math.Float32bits(start.Y))
-	bo.PutUint32(cmd[12:16], math.Float32bits(end.X))
-	bo.PutUint32(cmd[16:20], math.Float32bits(end.Y))
-	e.cmd(cmd)
+	e.scene = append(e.scene, sceneElem{
+		0: flags<<16 | tag,
+		1: math.Float32bits(start.X),
+		2: math.Float32bits(start.Y),
+		3: math.Float32bits(end.X),
+		4: math.Float32bits(end.Y),
+	})
 	e.npathseg++
 }
 
 func (e *encoder) quad(start, ctrl, end f32.Point, stroke bool) {
-	cmd := make([]byte, sceneElemSize)
+	tag := uint32(elemFillQuad)
 	if stroke {
-		bo.PutUint32(cmd, elemStrokeQuad)
-	} else {
-		bo.PutUint32(cmd, elemFillQuad)
+		tag = elemStrokeQuad
 	}
-	bo.PutUint32(cmd[4:8], math.Float32bits(start.X))
-	bo.PutUint32(cmd[8:12], math.Float32bits(start.Y))
-	bo.PutUint32(cmd[12:16], math.Float32bits(ctrl.X))
-	bo.PutUint32(cmd[16:20], math.Float32bits(ctrl.Y))
-	bo.PutUint32(cmd[20:24], math.Float32bits(end.X))
-	bo.PutUint32(cmd[24:28], math.Float32bits(end.Y))
-	e.cmd(cmd)
+	e.scene = append(e.scene, sceneElem{
+		0: tag,
+		1: math.Float32bits(start.X),
+		2: math.Float32bits(start.Y),
+		3: math.Float32bits(ctrl.X),
+		4: math.Float32bits(ctrl.Y),
+		5: math.Float32bits(end.X),
+		6: math.Float32bits(end.Y),
+	})
 	e.npathseg++
-}
-
-func (e *encoder) cmd(cmd []byte) {
-	e.scene = append(e.scene, cmd...)
 }

@@ -334,6 +334,8 @@ func (b *Backend) BindImageTexture(unit int, tex backend.Texture, access backend
 	switch access {
 	case backend.AccessWrite:
 		acc = glimpl.WRITE_ONLY
+	case backend.AccessRead:
+		acc = glimpl.READ_ONLY
 	default:
 		panic("unsupported access bits")
 	}
@@ -676,6 +678,12 @@ func (b *gpuBuffer) Upload(data []byte) {
 	if b.hasBuffer {
 		firstBinding := firstBufferType(b.typ)
 		b.backend.funcs.BindBuffer(firstBinding, b.obj)
+		if len(data) == b.size {
+			// the iOS GL implementation doesn't recognize when BufferSubData
+			// clears the entire buffer. Tell it and avoid GPU stalls.
+			// See also https://github.com/godotengine/godot/issues/23956.
+			b.backend.funcs.BufferData(firstBinding, b.size, glimpl.DYNAMIC_DRAW)
+		}
 		b.backend.funcs.BufferSubData(firstBinding, 0, data)
 	}
 }

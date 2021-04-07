@@ -18,6 +18,8 @@ gioui.org v0.0.0-20200825104353-4821472ea1c9 h1:wjaosWGBhqWYSffsg55/LYlqlqmTvgo8
 gioui.org v0.0.0-20200825104353-4821472ea1c9/go.mod h1:Y+uS7hHMvku1Q+ooaoq6fYD5B2LGoT8JtFgvmYmRzTw=
 gioui.org v0.0.0-20210106084211-c030065af7bc h1:0jo2QznfZl35y/Bzqt915yUT1ruaTjmC24iJM/4vA94=
 gioui.org v0.0.0-20210106084211-c030065af7bc/go.mod h1:Y+uS7hHMvku1Q+ooaoq6fYD5B2LGoT8JtFgvmYmRzTw=
+gioui.org v0.0.0-20210222172543-284659d3eac9 h1:rEhi0IMfjyzZu73tiAaPOtprJd9Z3QxJ0/VeY42dLv8=
+gioui.org v0.0.0-20210222172543-284659d3eac9/go.mod h1:Y+uS7hHMvku1Q+ooaoq6fYD5B2LGoT8JtFgvmYmRzTw=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 h1:1BDTz0u9nC3//pOCMdNH+CiXJVYJh5UQNCOBG7jbELc=
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/BurntSushi/xgb v0.0.0-20160522221800-27f122750802 h1:otE7gFP0KwnPTKtMvPLOcWDZxx6rXYyJGlrXbhoD7og=
@@ -104,6 +106,8 @@ github.com/aarzilli/nucular v0.0.0-20210223111638-7376405f4454 h1:kA20UjRO6ITrC+
 github.com/aarzilli/nucular v0.0.0-20210223111638-7376405f4454/go.mod h1:QBibXlOFoxEpCak/TJENqnJo8+Pgp1VS06V2Rf/gSQQ=
 github.com/aarzilli/nucular v0.0.0-20210223160212-3b2550372766 h1:GGeV0FX1qMo1SGj/HxSJ/qc20zqxGwCjK7uJnAPZfHk=
 github.com/aarzilli/nucular v0.0.0-20210223160212-3b2550372766/go.mod h1:QBibXlOFoxEpCak/TJENqnJo8+Pgp1VS06V2Rf/gSQQ=
+github.com/aarzilli/nucular v0.0.0-20210406161005-5b7b86bf3de4 h1:YXEzHPGIBohi19hY44mLLLPT6LAEsPdqpofK9Y0giLQ=
+github.com/aarzilli/nucular v0.0.0-20210406161005-5b7b86bf3de4/go.mod h1:xclln5tB2/qDMW4O4l0RBRqLuPsuY1hWgJcpE6f56zc=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e h1:fY5BOSpyZCqRo5OhCuC+XN+r/bBCmeuuJtjz+bCNIf8=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=

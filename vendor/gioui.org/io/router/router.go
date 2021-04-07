@@ -40,7 +40,6 @@ type Router struct {
 	wakeupTime time.Time
 
 	// ProfileOp summary.
-	profiling    bool
 	profHandlers map[event.Tag]struct{}
 	profile      profile.Event
 }
@@ -66,7 +65,6 @@ func (q *Router) Events(k event.Tag) []event.Event {
 func (q *Router) Frame(ops *op.Ops) {
 	q.handlers.Clear()
 	q.wakeup = false
-	q.profiling = false
 	for k := range q.profHandlers {
 		delete(q.profHandlers, k)
 	}
@@ -81,7 +79,8 @@ func (q *Router) Frame(ops *op.Ops) {
 	}
 }
 
-func (q *Router) Add(events ...event.Event) bool {
+// Queue an event and report whether at least one handler had an event queued.
+func (q *Router) Queue(events ...event.Event) bool {
 	for _, e := range events {
 		switch e := e.(type) {
 		case profile.Event:
@@ -134,7 +133,6 @@ func (q *Router) collect() {
 			if q.profHandlers == nil {
 				q.profHandlers = make(map[event.Tag]struct{})
 			}
-			q.profiling = true
 			q.profHandlers[op.Tag] = struct{}{}
 		case opconst.TypeClipboardRead:
 			q.cqueue.ProcessReadClipboard(encOp.Data, encOp.Refs)
@@ -147,7 +145,7 @@ func (q *Router) collect() {
 // Profiling reports whether there was profile handlers in the
 // most recent Frame call.
 func (q *Router) Profiling() bool {
-	return q.profiling
+	return len(q.profHandlers) > 0
 }
 
 // WakeupTime returns the most recent time for doing another frame,
@@ -162,9 +160,13 @@ func (h *handlerEvents) init() {
 	}
 }
 
-func (h *handlerEvents) Add(k event.Tag, e event.Event) {
+func (h *handlerEvents) AddNoRedraw(k event.Tag, e event.Event) {
 	h.init()
 	h.handlers[k] = append(h.handlers[k], e)
+}
+
+func (h *handlerEvents) Add(k event.Tag, e event.Event) {
+	h.AddNoRedraw(k, e)
 	h.hadEvents = true
 }
 

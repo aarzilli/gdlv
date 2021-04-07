@@ -46,7 +46,11 @@ type window struct {
 	height      int
 	stage       system.Stage
 	pointerBtns pointer.Buttons
-	cursor      syscall.Handle
+
+	// cursorIn tracks whether the cursor was inside the window according
+	// to the most recent WM_SETCURSOR.
+	cursorIn bool
+	cursor   syscall.Handle
 
 	mu        sync.Mutex
 	animating bool
@@ -56,7 +60,10 @@ type window struct {
 	opts   *Options
 }
 
-const _WM_REDRAW = windows.WM_USER + 0
+const (
+	_WM_REDRAW = windows.WM_USER + iota
+	_WM_CURSOR
+)
 
 type gpuAPI struct {
 	priority    int
@@ -222,7 +229,7 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 	case windows.WM_UNICHAR:
 		if wParam == windows.UNICODE_NOCHAR {
 			// Tell the system that we accept WM_UNICHAR messages.
-			return 1
+			return windows.TRUE
 		}
 		fallthrough
 	case windows.WM_CHAR:
@@ -230,13 +237,13 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 			w.w.Event(key.EditEvent{Text: string(r)})
 		}
 		// The message is processed.
-		return 1
+		return windows.TRUE
 	case windows.WM_DPICHANGED:
 		// Let Windows know we're prepared for runtime DPI changes.
-		return 1
+		return windows.TRUE
 	case windows.WM_ERASEBKGND:
 		// Avoid flickering between GPU content and background color.
-		return 1
+		return windows.TRUE
 	case windows.WM_KEYDOWN, windows.WM_KEYUP, windows.WM_SYSKEYDOWN, windows.WM_SYSKEYUP:
 		if n, ok := convertKeyCode(wParam); ok {
 			e := key.Event{
@@ -309,7 +316,13 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 			}
 		}
 	case windows.WM_SETCURSOR:
-		windows.SetCursor(w.cursor)
+		w.cursorIn = (lParam & 0xffff) == windows.HTCLIENT
+		fallthrough
+	case _WM_CURSOR:
+		if w.cursorIn {
+			windows.SetCursor(w.cursor)
+			return windows.TRUE
+		}
 	}
 
 	return windows.DefWindowProc(hwnd, msg, wParam, lParam)
@@ -571,6 +584,9 @@ func (w *window) SetCursor(name pointer.CursorName) {
 		c = resources.cursor
 	}
 	w.cursor = c
+	if err := windows.PostMessage(w.hwnd, _WM_CURSOR, 0, 0); err != nil {
+		panic(err)
+	}
 }
 
 func loadCursor(name pointer.CursorName) (syscall.Handle, error) {
@@ -590,6 +606,8 @@ func loadCursor(name pointer.CursorName) (syscall.Handle, error) {
 		curID = windows.IDC_SIZEWE
 	case pointer.CursorRowResize:
 		curID = windows.IDC_SIZENS
+	case pointer.CursorGrab:
+		curID = windows.IDC_SIZEALL
 	case pointer.CursorNone:
 		return 0, nil
 	}

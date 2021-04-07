@@ -282,6 +282,9 @@ func (d *wlDisplay) readClipboard() (io.ReadCloser, error) {
 	if err != nil {
 		return nil, err
 	}
+	// wl_data_offer_receive performs and implicit dup(2) of the write end
+	// of the pipe. Close our version.
+	defer w.Close()
 	cmimeType := C.CString(s.mimeType)
 	defer C.free(unsafe.Pointer(cmimeType))
 	C.wl_data_offer_receive(s.clipboard, cmimeType, C.int(w.Fd()))
@@ -930,6 +933,8 @@ func (w *window) SetCursor(name pointer.CursorName) {
 		name = "top_side"
 	case pointer.CursorColResize:
 		name = "left_side"
+	case pointer.CursorGrab:
+		name = "hand1"
 	}
 	cname := C.CString(string(name))
 	defer C.free(unsafe.Pointer(cname))
