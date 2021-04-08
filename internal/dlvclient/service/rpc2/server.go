@@ -120,6 +120,15 @@ type ClearBreakpointOut struct {
 	Breakpoint *api.Breakpoint
 }
 
+type ToggleBreakpointIn struct {
+	Id   int
+	Name string
+}
+
+type ToggleBreakpointOut struct {
+	Breakpoint *api.Breakpoint
+}
+
 type AmendBreakpointIn struct {
 	Breakpoint api.Breakpoint
 }
