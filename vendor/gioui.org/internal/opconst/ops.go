@@ -12,7 +12,6 @@ const (
 	TypeCall
 	TypeDefer
 	TypeTransform
-	TypeLayer
 	TypeInvalidate
 	TypeImage
 	TypePaint
@@ -34,7 +33,6 @@ const (
 	TypeCursor
 	TypePath
 	TypeStroke
-	TypeDash
 )
 
 const (
@@ -42,14 +40,13 @@ const (
 	TypeCallLen            = 1 + 4 + 4
 	TypeDeferLen           = 1
 	TypeTransformLen       = 1 + 4*6
-	TypeLayerLen           = 1
 	TypeRedrawLen          = 1 + 8
 	TypeImageLen           = 1
 	TypePaintLen           = 1
 	TypeColorLen           = 1 + 4
 	TypeLinearGradientLen  = 1 + 8*2 + 4*2
 	TypeAreaLen            = 1 + 1 + 4*4
-	TypePointerInputLen    = 1 + 1 + 1
+	TypePointerInputLen    = 1 + 1 + 1 + 2*4 + 2*4
 	TypePassLen            = 1 + 1
 	TypeClipboardReadLen   = 1
 	TypeClipboardWriteLen  = 1
@@ -62,9 +59,8 @@ const (
 	TypeClipLen            = 1 + 4*4 + 1
 	TypeProfileLen         = 1
 	TypeCursorLen          = 1 + 1
-	TypePathLen            = 1 + 4
-	TypeStrokeLen          = 1 + 4 + 4 + 1 + 1
-	TypeDashLen            = 1 + 4 + 1
+	TypePathLen            = 1
+	TypeStrokeLen          = 1 + 4
 )
 
 // StateMask is a bitmask of state types a load operation
@@ -87,7 +83,6 @@ func (t OpType) Size() int {
 		TypeCallLen,
 		TypeDeferLen,
 		TypeTransformLen,
-		TypeLayerLen,
 		TypeRedrawLen,
 		TypeImageLen,
 		TypePaintLen,
@@ -109,7 +104,6 @@ func (t OpType) Size() int {
 		TypeCursorLen,
 		TypePathLen,
 		TypeStrokeLen,
-		TypeDashLen,
 	}[t-firstOpIndex]
 }
 

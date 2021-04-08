@@ -4,6 +4,7 @@ package pointer
 
 import (
 	"encoding/binary"
+	"fmt"
 	"image"
 	"strings"
 	"time"
@@ -63,6 +64,12 @@ type InputOp struct {
 	Grab bool
 	// Types is a bitwise-or of event types to receive.
 	Types Type
+	// ScrollBounds describe the maximum scrollable distances in both
+	// axes. Specifically, any Event e delivered to Tag will satisfy
+	//
+	// ScrollBounds.Min.X <= e.Scroll.X <= ScrollBounds.Max.X (horizontal axis)
+	// ScrollBounds.Min.Y <= e.Scroll.Y <= ScrollBounds.Max.Y (vertical axis)
+	ScrollBounds image.Rectangle
 }
 
 // PassOp sets the pass-through mode.
@@ -148,9 +155,14 @@ const (
 )
 
 const (
-	ButtonLeft Buttons = 1 << iota
-	ButtonRight
-	ButtonMiddle
+	// ButtonPrimary is the primary button, usually the left button for a
+	// right-handed user.
+	ButtonPrimary Buttons = 1 << iota
+	// ButtonSecondary is the secondary button, usually the right button for a
+	// right-handed user.
+	ButtonSecondary
+	// ButtonTertiary is the tertiary button, usually the middle button.
+	ButtonTertiary
 )
 
 const (
@@ -190,16 +202,25 @@ func (op CursorNameOp) Add(o *op.Ops) {
 	data[0] = byte(opconst.TypeCursor)
 }
 
-func (h InputOp) Add(o *op.Ops) {
-	if h.Tag == nil {
+// Add panics if the scroll range does not contain zero.
+func (op InputOp) Add(o *op.Ops) {
+	if op.Tag == nil {
 		panic("Tag must be non-nil")
 	}
-	data := o.Write1(opconst.TypePointerInputLen, h.Tag)
+	if b := op.ScrollBounds; b.Min.X > 0 || b.Max.X < 0 || b.Min.Y > 0 || b.Max.Y < 0 {
+		panic(fmt.Errorf("invalid scroll range value %v", b))
+	}
+	data := o.Write1(opconst.TypePointerInputLen, op.Tag)
 	data[0] = byte(opconst.TypePointerInput)
-	if h.Grab {
+	if op.Grab {
 		data[1] = 1
 	}
-	data[2] = byte(h.Types)
+	data[2] = byte(op.Types)
+	bo := binary.LittleEndian
+	bo.PutUint32(data[3:], uint32(op.ScrollBounds.Min.X))
+	bo.PutUint32(data[7:], uint32(op.ScrollBounds.Min.Y))
+	bo.PutUint32(data[11:], uint32(op.ScrollBounds.Max.X))
+	bo.PutUint32(data[15:], uint32(op.ScrollBounds.Max.Y))
 }
 
 func (op PassOp) Add(o *op.Ops) {
@@ -265,14 +286,14 @@ func (b Buttons) Contain(buttons Buttons) bool {
 
 func (b Buttons) String() string {
 	var strs []string
-	if b.Contain(ButtonLeft) {
-		strs = append(strs, "ButtonLeft")
+	if b.Contain(ButtonPrimary) {
+		strs = append(strs, "ButtonPrimary")
 	}
-	if b.Contain(ButtonRight) {
-		strs = append(strs, "ButtonRight")
+	if b.Contain(ButtonSecondary) {
+		strs = append(strs, "ButtonSecondary")
 	}
-	if b.Contain(ButtonMiddle) {
-		strs = append(strs, "ButtonMiddle")
+	if b.Contain(ButtonTertiary) {
+		strs = append(strs, "ButtonTertiary")
 	}
 	return strings.Join(strs, "|")
 }

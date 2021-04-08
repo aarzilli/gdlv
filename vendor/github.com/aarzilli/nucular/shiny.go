@@ -1,4 +1,4 @@
-// +build !darwin,!windows,!nucular_gio nucular_shiny
+// +build !darwin,!nucular_gio nucular_shiny
 
 package nucular
 

@@ -10,6 +10,7 @@ and scrolling.
 package gesture
 
 import (
+	"image"
 	"math"
 	"runtime"
 	"time"
@@ -172,7 +173,7 @@ func (c *Click) Events(q event.Queue) []ClickEvent {
 			if c.pressed {
 				break
 			}
-			if e.Source == pointer.Mouse && e.Buttons != pointer.ButtonLeft {
+			if e.Source == pointer.Mouse && e.Buttons != pointer.ButtonPrimary {
 				break
 			}
 			if !c.entered {
@@ -205,11 +206,12 @@ func (c *Click) Events(q event.Queue) []ClickEvent {
 func (ClickEvent) ImplementsEvent() {}
 
 // Add the handler to the operation list to receive scroll events.
-func (s *Scroll) Add(ops *op.Ops) {
+func (s *Scroll) Add(ops *op.Ops, bounds image.Rectangle) {
 	oph := pointer.InputOp{
-		Tag:   s,
-		Grab:  s.grab,
-		Types: pointer.Press | pointer.Drag | pointer.Release | pointer.Scroll,
+		Tag:          s,
+		Grab:         s.grab,
+		Types:        pointer.Press | pointer.Drag | pointer.Release | pointer.Scroll,
+		ScrollBounds: bounds,
 	}
 	oph.Add(ops)
 	if s.flinger.Active() {
@@ -265,9 +267,6 @@ func (s *Scroll) Scroll(cfg unit.Metric, q event.Queue, t time.Time, axis Axis) 
 			s.dragging = false
 			s.grab = false
 		case pointer.Scroll:
-			if e.Priority < pointer.Foremost {
-				continue
-			}
 			switch s.axis {
 			case Horizontal:
 				s.scroll += e.Scroll.X
@@ -341,7 +340,7 @@ func (d *Drag) Events(cfg unit.Metric, q event.Queue, axis Axis) []pointer.Event
 
 		switch e.Type {
 		case pointer.Press:
-			if !(e.Buttons == pointer.ButtonLeft || e.Source == pointer.Touch) {
+			if !(e.Buttons == pointer.ButtonPrimary || e.Source == pointer.Touch) {
 				continue
 			}
 			if d.dragging {

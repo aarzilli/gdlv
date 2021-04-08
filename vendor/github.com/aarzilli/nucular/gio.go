@@ -1,4 +1,4 @@
-// +build darwin,!nucular_shiny windows,!nucular_shiny nucular_gio
+// +build darwin,!nucular_shiny nucular_gio
 
 package nucular
 
@@ -144,11 +144,19 @@ func (mw *masterWindow) main() {
 			mw.processPointerEvent(e)
 			mw.uilock.Unlock()
 		case key.EditEvent:
+			changed := atomic.LoadInt32(&mw.ctx.changed)
+			if changed < 2 {
+				atomic.StoreInt32(&mw.ctx.changed, 2)
+			}
 			mw.uilock.Lock()
 			io.WriteString(&mw.textbuffer, e.Text)
 			mw.uilock.Unlock()
 
 		case key.Event:
+			changed := atomic.LoadInt32(&mw.ctx.changed)
+			if changed < 2 {
+				atomic.StoreInt32(&mw.ctx.changed, 2)
+			}
 			if e.State == key.Press {
 				mw.uilock.Lock()
 				switch e.Name {
@@ -163,6 +171,10 @@ func (mw *masterWindow) main() {
 }
 
 func (mw *masterWindow) processPointerEvent(e pointer.Event) {
+	changed := atomic.LoadInt32(&mw.ctx.changed)
+	if changed < 2 {
+		atomic.StoreInt32(&mw.ctx.changed, 2)
+	}
 	switch e.Type {
 	case pointer.Release, pointer.Cancel:
 		for i := range mw.ctx.Input.Mouse.Buttons {
@@ -177,11 +189,11 @@ func (mw *masterWindow) processPointerEvent(e pointer.Event) {
 		var button mouse.Button
 
 		switch {
-		case e.Buttons.Contain(pointer.ButtonLeft):
+		case e.Buttons.Contain(pointer.ButtonPrimary):
 			button = mouse.ButtonLeft
-		case e.Buttons.Contain(pointer.ButtonRight):
+		case e.Buttons.Contain(pointer.ButtonSecondary):
 			button = mouse.ButtonRight
-		case e.Buttons.Contain(pointer.ButtonMiddle):
+		case e.Buttons.Contain(pointer.ButtonTertiary):
 			button = mouse.ButtonMiddle
 		}
 
@@ -391,7 +403,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 	if perf {
 		profile.Op{ctx}.Add(ops)
 	}
-	pointer.InputOp{ctx, false, pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Scroll}.Add(ops)
+	pointer.InputOp{ctx, false, pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Scroll, image.Rect(0, 0, 4096, 4096)}.Add(ops)
 	key.InputOp{ctx}.Add(ops)
 
 	var scissorStack op.StateOp
@@ -450,6 +462,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 				pd := f32.Point{-2 * xadv, -2 * yadv}
 				p.Line(pd)
 				p.Line(f32.Point{float32(cmd.Begin.X - cmd.End.X), float32(cmd.Begin.Y - cmd.End.Y)})
+				p.Close()
 
 				gioclip.Outline{Path: p.End()}.Op().Add(ops)
 
@@ -486,6 +499,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 				b.Cube(f32.Point{X: 0, Y: -r * c}, f32.Point{X: r - r*c, Y: -r}, f32.Point{X: r, Y: -r}) // NW
 				b.Line(f32.Point{X: w - r - r, Y: 0})
 				b.Cube(f32.Point{X: r * c, Y: 0}, f32.Point{X: r, Y: r - r*c}, f32.Point{X: r, Y: r}) // NE
+				b.Close()
 				gioclip.Outline{Path: b.End()}.Op().Add(ops)
 			}
 
@@ -506,6 +520,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 			p.Line(f32.Point{float32(cmd.B.X - cmd.A.X), float32(cmd.B.Y - cmd.A.Y)})
 			p.Line(f32.Point{float32(cmd.C.X - cmd.B.X), float32(cmd.C.Y - cmd.B.Y)})
 			p.Line(f32.Point{float32(cmd.A.X - cmd.C.X), float32(cmd.A.Y - cmd.C.Y)})
+			p.Close()
 			gioclip.Outline{Path: p.End()}.Op().Add(ops)
 
 			paint.PaintOp{}.Add(ops)

@@ -60,11 +60,13 @@ type pointerHandler struct {
 	active    bool
 	wantsGrab bool
 	types     pointer.Type
+	// min and max horizontal/vertical scroll
+	scrollRange image.Rectangle
 }
 
 type areaOp struct {
 	kind areaKind
-	rect image.Rectangle
+	rect f32.Rectangle
 }
 
 type areaNode struct {
@@ -156,6 +158,17 @@ func (q *pointerQueue) collectHandlers(r *ops.Reader, events *handlerEvents) {
 			h.area = state.area
 			h.wantsGrab = h.wantsGrab || op.Grab
 			h.types = h.types | op.Types
+			bo := binary.LittleEndian.Uint32
+			h.scrollRange = image.Rectangle{
+				Min: image.Point{
+					X: int(int32(bo(encOp.Data[3:]))),
+					Y: int(int32(bo(encOp.Data[7:]))),
+				},
+				Max: image.Point{
+					X: int(int32(bo(encOp.Data[11:]))),
+					Y: int(int32(bo(encOp.Data[15:]))),
+				},
+			}
 		case opconst.TypeCursor:
 			q.cursors = append(q.cursors, cursorNode{
 				name: encOp.Refs[0].(pointer.CursorName),
@@ -240,10 +253,11 @@ func (q *pointerQueue) Frame(root *op.Ops, events *handlerEvents) {
 				for i, k2 := range p.handlers {
 					if k2 == k {
 						// Drop other handlers that lost their grab.
-						cancelHandlers(events, p.handlers[i+1:]...)
-						cancelHandlers(events, p.handlers[:i]...)
-						q.dropHandlers(events, p.handlers[i+1:]...)
-						q.dropHandlers(events, p.handlers[:i]...)
+						dropped := make([]event.Tag, 0, len(p.handlers)-1)
+						dropped = append(dropped, p.handlers[:i]...)
+						dropped = append(dropped, p.handlers[i+1:]...)
+						cancelHandlers(events, dropped...)
+						q.dropHandlers(events, dropped...)
 						break
 					}
 				}
@@ -320,7 +334,11 @@ func (q *pointerQueue) Push(e pointer.Event, events *handlerEvents) {
 	if e.Type == pointer.Press {
 		p.pressed = true
 	}
-	if e.Type != pointer.Release {
+	switch e.Type {
+	case pointer.Release:
+	case pointer.Scroll:
+		q.deliverScrollEvent(p, events, e)
+	default:
 		q.deliverEvent(p, events, e)
 	}
 	if !p.pressed && len(p.entered) == 0 {
@@ -331,20 +349,47 @@ func (q *pointerQueue) Push(e pointer.Event, events *handlerEvents) {
 
 func (q *pointerQueue) deliverEvent(p *pointerInfo, events *handlerEvents, e pointer.Event) {
 	foremost := true
+	if p.pressed && len(p.handlers) == 1 {
+		e.Priority = pointer.Grabbed
+		foremost = false
+	}
 	for _, k := range p.handlers {
 		h := q.handlers[k]
+		if e.Type&h.types == 0 {
+			continue
+		}
 		e := e
-		if p.pressed && len(p.handlers) == 1 {
-			e.Priority = pointer.Grabbed
-		} else if foremost {
+		if foremost {
+			foremost = false
 			e.Priority = pointer.Foremost
 		}
+		e.Position = q.invTransform(h.area, e.Position)
+		events.Add(k, e)
+	}
+}
 
-		if e.Type&h.types != 0 {
-			e.Position = q.invTransform(h.area, e.Position)
-			foremost = false
-			events.Add(k, e)
+func (q *pointerQueue) deliverScrollEvent(p *pointerInfo, events *handlerEvents, e pointer.Event) {
+	foremost := true
+	if p.pressed && len(p.handlers) == 1 {
+		e.Priority = pointer.Grabbed
+		foremost = false
+	}
+	var sx, sy = e.Scroll.X, e.Scroll.Y
+	for _, k := range p.handlers {
+		if sx == 0 && sy == 0 {
+			return
 		}
+		h := q.handlers[k]
+		// Distribute the scroll to the handler based on its ScrollRange.
+		sx, e.Scroll.X = setScrollEvent(sx, h.scrollRange.Min.X, h.scrollRange.Max.X)
+		sy, e.Scroll.Y = setScrollEvent(sy, h.scrollRange.Min.Y, h.scrollRange.Max.Y)
+		e := e
+		if foremost {
+			foremost = false
+			e.Priority = pointer.Foremost
+		}
+		e.Position = q.invTransform(h.area, e.Position)
+		events.Add(k, e)
 	}
 }
 
@@ -409,19 +454,22 @@ func searchTag(tags []event.Tag, tag event.Tag) (int, bool) {
 	return 0, false
 }
 
+func opDecodeFloat32(d []byte) float32 {
+	return float32(int32(binary.LittleEndian.Uint32(d)))
+}
+
 func (op *areaOp) Decode(d []byte) {
 	if opconst.OpType(d[0]) != opconst.TypeArea {
 		panic("invalid op")
 	}
-	bo := binary.LittleEndian
-	rect := image.Rectangle{
-		Min: image.Point{
-			X: int(int32(bo.Uint32(d[2:]))),
-			Y: int(int32(bo.Uint32(d[6:]))),
+	rect := f32.Rectangle{
+		Min: f32.Point{
+			X: opDecodeFloat32(d[2:]),
+			Y: opDecodeFloat32(d[6:]),
 		},
-		Max: image.Point{
-			X: int(int32(bo.Uint32(d[10:]))),
-			Y: int(int32(bo.Uint32(d[14:]))),
+		Max: f32.Point{
+			X: opDecodeFloat32(d[10:]),
+			Y: opDecodeFloat32(d[14:]),
 		},
 	}
 	*op = areaOp{
@@ -431,19 +479,15 @@ func (op *areaOp) Decode(d []byte) {
 }
 
 func (op *areaOp) Hit(pos f32.Point) bool {
-	min := f32.Point{
-		X: float32(op.rect.Min.X),
-		Y: float32(op.rect.Min.Y),
-	}
-	pos = pos.Sub(min)
+	pos = pos.Sub(op.rect.Min)
 	size := op.rect.Size()
 	switch op.kind {
 	case areaRect:
-		return 0 <= pos.X && pos.X < float32(size.X) &&
-			0 <= pos.Y && pos.Y < float32(size.Y)
+		return 0 <= pos.X && pos.X < size.X &&
+			0 <= pos.Y && pos.Y < size.Y
 	case areaEllipse:
-		rx := float32(size.X) / 2
-		ry := float32(size.Y) / 2
+		rx := size.X / 2
+		ry := size.Y / 2
 		xh := pos.X - rx
 		yk := pos.Y - ry
 		// The ellipse function works in all cases because
@@ -452,4 +496,14 @@ func (op *areaOp) Hit(pos f32.Point) bool {
 	default:
 		panic("invalid area kind")
 	}
+}
+
+func setScrollEvent(scroll float32, min, max int) (left, scrolled float32) {
+	if v := float32(max); scroll > v {
+		return scroll - v, v
+	}
+	if v := float32(min); scroll < v {
+		return scroll - v, v
+	}
+	return 0, scroll
 }

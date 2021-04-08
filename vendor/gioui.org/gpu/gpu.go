@@ -20,14 +20,20 @@ import (
 	"unsafe"
 
 	"gioui.org/f32"
-	"gioui.org/gpu/backend"
+	"gioui.org/gpu/internal/driver"
+	"gioui.org/internal/byteslice"
 	"gioui.org/internal/f32color"
 	"gioui.org/internal/opconst"
 	"gioui.org/internal/ops"
-	gunsafe "gioui.org/internal/unsafe"
+	"gioui.org/internal/scene"
+	"gioui.org/internal/stroke"
 	"gioui.org/layout"
 	"gioui.org/op"
 	"gioui.org/op/clip"
+
+	// Register backends.
+	_ "gioui.org/gpu/internal/d3d11"
+	_ "gioui.org/gpu/internal/opengl"
 )
 
 type GPU interface {
@@ -48,18 +54,17 @@ type GPU interface {
 type gpu struct {
 	cache *resourceCache
 
-	defFBO                                            backend.Framebuffer
 	profile                                           string
 	timers                                            *timers
 	frameStart                                        time.Time
 	zopsTimer, stencilTimer, coverTimer, cleanupTimer *timer
 	drawOps                                           drawOps
-	ctx                                               backend.Device
+	ctx                                               driver.Device
 	renderer                                          *renderer
 }
 
 type renderer struct {
-	ctx           backend.Device
+	ctx           driver.Device
 	blitter       *blitter
 	pather        *pather
 	packer        packer
@@ -89,7 +94,7 @@ type drawOps struct {
 	pathCache   *opCache
 	// hack for the compute renderer to access
 	// converted path data.
-	retainPathData bool
+	compute bool
 }
 
 type drawState struct {
@@ -122,6 +127,10 @@ type pathOp struct {
 	pathVerts []byte
 	parent    *pathOp
 	place     placement
+
+	// For compute
+	trans  f32.Affine2D
+	stroke clip.StrokeStyle
 }
 
 type imageOp struct {
@@ -133,50 +142,20 @@ type imageOp struct {
 	place    placement
 }
 
-type dashOp struct {
-	phase  float32
-	dashes []float32
-}
-
-func decodeDashOp(data []byte) dashOp {
-	_ = data[5]
-	if opconst.OpType(data[0]) != opconst.TypeDash {
-		panic("invalid op")
-	}
-	bo := binary.LittleEndian
-	return dashOp{
-		phase:  math.Float32frombits(bo.Uint32(data[1:])),
-		dashes: make([]float32, data[5]),
-	}
-}
-
 func decodeStrokeOp(data []byte) clip.StrokeStyle {
-	_ = data[10]
+	_ = data[4]
 	if opconst.OpType(data[0]) != opconst.TypeStroke {
 		panic("invalid op")
 	}
 	bo := binary.LittleEndian
 	return clip.StrokeStyle{
 		Width: math.Float32frombits(bo.Uint32(data[1:])),
-		Miter: math.Float32frombits(bo.Uint32(data[5:])),
-		Cap:   clip.StrokeCap(data[9]),
-		Join:  clip.StrokeJoin(data[10]),
 	}
 }
 
 type quadsOp struct {
-	quads uint32
-	key   ops.Key
-	aux   []byte
-}
-
-func decodeQuadsOp(data []byte) uint32 {
-	_ = data[:1+4]
-	if opconst.OpType(data[0]) != opconst.TypePath {
-		panic("invalid op")
-	}
-	bo := binary.LittleEndian
-	return bo.Uint32(data[1:])
+	key ops.Key
+	aux []byte
 }
 
 type material struct {
@@ -299,18 +278,18 @@ type resource interface {
 
 type texture struct {
 	src *image.RGBA
-	tex backend.Texture
+	tex driver.Texture
 }
 
 type blitter struct {
-	ctx                    backend.Device
+	ctx                    driver.Device
 	viewport               image.Point
 	prog                   [3]*program
-	layout                 backend.InputLayout
+	layout                 driver.InputLayout
 	colUniforms            *blitColUniforms
 	texUniforms            *blitTexUniforms
 	linearGradientUniforms *blitLinearGradientUniforms
-	quadVerts              backend.Buffer
+	quadVerts              driver.Buffer
 }
 
 type blitColUniforms struct {
@@ -341,12 +320,12 @@ type blitLinearGradientUniforms struct {
 }
 
 type uniformBuffer struct {
-	buf backend.Buffer
+	buf driver.Buffer
 	ptr []byte
 }
 
 type program struct {
-	prog         backend.Program
+	prog         driver.Program
 	vertUniforms *uniformBuffer
 	fragUniforms *uniformBuffer
 }
@@ -381,24 +360,26 @@ const (
 	materialTexture
 )
 
-func New(ctx backend.Device) (GPU, error) {
+func New(api API) (GPU, error) {
+	d, err := driver.NewDevice(api)
+	if err != nil {
+		return nil, err
+	}
 	forceCompute := os.Getenv("GIORENDERER") == "forcecompute"
-	feats := ctx.Caps().Features
+	feats := d.Caps().Features
 	switch {
-	case !forceCompute && feats.Has(backend.FeatureFloatRenderTargets):
-		return newGPU(ctx)
-	case feats.Has(backend.FeatureCompute):
-		return newCompute(ctx)
+	case !forceCompute && feats.Has(driver.FeatureFloatRenderTargets):
+		return newGPU(d)
+	case feats.Has(driver.FeatureCompute):
+		return newCompute(d)
 	default:
 		return nil, errors.New("gpu: no support for float render targets nor compute")
 	}
 }
 
-func newGPU(ctx backend.Device) (*gpu, error) {
-	defFBO := ctx.CurrentFramebuffer()
+func newGPU(ctx driver.Device) (*gpu, error) {
 	g := &gpu{
-		defFBO: defFBO,
-		cache:  newResourceCache(),
+		cache: newResourceCache(),
 	}
 	g.drawOps.pathCache = newOpCache()
 	if err := g.init(ctx); err != nil {
@@ -407,7 +388,7 @@ func newGPU(ctx backend.Device) (*gpu, error) {
 	return g, nil
 }
 
-func (g *gpu) init(ctx backend.Device) error {
+func (g *gpu) init(ctx driver.Device) error {
 	g.ctx = ctx
 	g.renderer = newRenderer(ctx)
 	return nil
@@ -425,6 +406,7 @@ func (g *gpu) Release() {
 	if g.timers != nil {
 		g.timers.release()
 	}
+	g.ctx.Release()
 }
 
 func (g *gpu) Collect(viewport image.Point, frameOps *op.Ops) {
@@ -433,7 +415,7 @@ func (g *gpu) Collect(viewport image.Point, frameOps *op.Ops) {
 	g.drawOps.reset(g.cache, viewport)
 	g.drawOps.collect(g.ctx, g.cache, frameOps, viewport)
 	g.frameStart = time.Now()
-	if g.drawOps.profile && g.timers == nil && g.ctx.Caps().Features.Has(backend.FeatureTimers) {
+	if g.drawOps.profile && g.timers == nil && g.ctx.Caps().Features.Has(driver.FeatureTimers) {
 		g.timers = newTimers(g.ctx)
 		g.zopsTimer = g.timers.newTimer()
 		g.stencilTimer = g.timers.newTimer()
@@ -443,7 +425,7 @@ func (g *gpu) Collect(viewport image.Point, frameOps *op.Ops) {
 }
 
 func (g *gpu) Frame() error {
-	g.ctx.BeginFrame()
+	defFBO := g.ctx.BeginFrame()
 	defer g.ctx.EndFrame()
 	viewport := g.renderer.blitter.viewport
 	for _, img := range g.drawOps.imageOps {
@@ -452,8 +434,8 @@ func (g *gpu) Frame() error {
 	if g.drawOps.profile {
 		g.zopsTimer.begin()
 	}
-	g.ctx.BindFramebuffer(g.defFBO)
-	g.ctx.DepthFunc(backend.DepthFuncGreater)
+	g.ctx.BindFramebuffer(defFBO)
+	g.ctx.DepthFunc(driver.DepthFuncGreater)
 	// Note that Clear must be before ClearDepth if nothing else is rendered
 	// (len(zimageOps) == 0). If not, the Fairphone 2 will corrupt the depth buffer.
 	if g.drawOps.clear {
@@ -472,13 +454,13 @@ func (g *gpu) Frame() error {
 	g.renderer.intersect(g.drawOps.imageOps)
 	g.stencilTimer.end()
 	g.coverTimer.begin()
-	g.ctx.BindFramebuffer(g.defFBO)
+	g.ctx.BindFramebuffer(defFBO)
 	g.ctx.Viewport(0, 0, viewport.X, viewport.Y)
 	g.renderer.drawOps(g.cache, g.drawOps.imageOps)
 	g.ctx.SetBlend(false)
 	g.renderer.pather.stenciler.invalidateFBO()
 	g.coverTimer.end()
-	g.ctx.BindFramebuffer(g.defFBO)
+	g.ctx.BindFramebuffer(defFBO)
 	g.cleanupTimer.begin()
 	g.cache.frame()
 	g.drawOps.pathCache.frame()
@@ -499,7 +481,7 @@ func (g *gpu) Profile() string {
 	return g.profile
 }
 
-func (r *renderer) texHandle(cache *resourceCache, data imageOpData) backend.Texture {
+func (r *renderer) texHandle(cache *resourceCache, data imageOpData) driver.Texture {
 	var tex *texture
 	t, exists := cache.get(data.handle)
 	if !exists {
@@ -512,11 +494,11 @@ func (r *renderer) texHandle(cache *resourceCache, data imageOpData) backend.Tex
 	if tex.tex != nil {
 		return tex.tex
 	}
-	handle, err := r.ctx.NewTexture(backend.TextureFormatSRGB, data.src.Bounds().Dx(), data.src.Bounds().Dy(), backend.FilterLinear, backend.FilterLinear, backend.BufferBindingTexture)
+	handle, err := r.ctx.NewTexture(driver.TextureFormatSRGB, data.src.Bounds().Dx(), data.src.Bounds().Dy(), driver.FilterLinear, driver.FilterLinear, driver.BufferBindingTexture)
 	if err != nil {
 		panic(err)
 	}
-	backend.UploadImage(handle, image.Pt(0, 0), data.src)
+	driver.UploadImage(handle, image.Pt(0, 0), data.src)
 	tex.tex = handle
 	return tex.tex
 }
@@ -527,7 +509,7 @@ func (t *texture) release() {
 	}
 }
 
-func newRenderer(ctx backend.Device) *renderer {
+func newRenderer(ctx driver.Device) *renderer {
 	r := &renderer{
 		ctx:     ctx,
 		blitter: newBlitter(ctx),
@@ -551,9 +533,9 @@ func (r *renderer) release() {
 	r.blitter.release()
 }
 
-func newBlitter(ctx backend.Device) *blitter {
-	quadVerts, err := ctx.NewImmutableBuffer(backend.BufferBindingVertices,
-		gunsafe.BytesView([]float32{
+func newBlitter(ctx driver.Device) *blitter {
+	quadVerts, err := ctx.NewImmutableBuffer(driver.BufferBindingVertices,
+		byteslice.Slice([]float32{
 			-1, +1, 0, 0,
 			+1, +1, 1, 0,
 			-1, -1, 0, 1,
@@ -590,7 +572,7 @@ func (b *blitter) release() {
 	b.layout.Release()
 }
 
-func createColorPrograms(b backend.Device, vsSrc backend.ShaderSources, fsSrc [3]backend.ShaderSources, vertUniforms, fragUniforms [3]interface{}) ([3]*program, backend.InputLayout, error) {
+func createColorPrograms(b driver.Device, vsSrc driver.ShaderSources, fsSrc [3]driver.ShaderSources, vertUniforms, fragUniforms [3]interface{}) ([3]*program, driver.InputLayout, error) {
 	var progs [3]*program
 	{
 		prog, err := b.NewProgram(vsSrc, fsSrc[materialTexture])
@@ -643,9 +625,9 @@ func createColorPrograms(b backend.Device, vsSrc backend.ShaderSources, fsSrc [3
 		}
 		progs[materialLinearGradient] = newProgram(prog, vertBuffer, fragBuffer)
 	}
-	layout, err := b.NewInputLayout(vsSrc, []backend.InputDesc{
-		{Type: backend.DataTypeFloat, Size: 2, Offset: 0},
-		{Type: backend.DataTypeFloat, Size: 2, Offset: 4 * 2},
+	layout, err := b.NewInputLayout(vsSrc, []driver.InputDesc{
+		{Type: driver.DataTypeFloat, Size: 2, Offset: 0},
+		{Type: driver.DataTypeFloat, Size: 2, Offset: 4 * 2},
 	})
 	if err != nil {
 		progs[materialTexture].Release()
@@ -720,7 +702,7 @@ func (r *renderer) intersectPath(p *pathOp, clip image.Rectangle) {
 	r.pather.stenciler.iprog.uniforms.vert.uvTransform = [4]float32{coverScale.X, coverScale.Y, coverOff.X, coverOff.Y}
 	r.pather.stenciler.iprog.uniforms.vert.subUVTransform = [4]float32{subScale.X, subScale.Y, subOff.X, subOff.Y}
 	r.pather.stenciler.iprog.prog.UploadUniforms()
-	r.ctx.DrawArrays(backend.DrawModeTriangleStrip, 0, 4)
+	r.ctx.DrawArrays(driver.DrawModeTriangleStrip, 0, 4)
 }
 
 func (r *renderer) packIntersections(ops []imageOp) {
@@ -813,7 +795,7 @@ func (d *drawOps) reset(cache *resourceCache, viewport image.Point) {
 	d.vertCache = d.vertCache[:0]
 }
 
-func (d *drawOps) collect(ctx backend.Device, cache *resourceCache, root *op.Ops, viewport image.Point) {
+func (d *drawOps) collect(ctx driver.Device, cache *resourceCache, root *op.Ops, viewport image.Point) {
 	clip := f32.Rectangle{
 		Max: f32.Point{X: float32(viewport.X), Y: float32(viewport.Y)},
 	}
@@ -828,7 +810,7 @@ func (d *drawOps) collect(ctx backend.Device, cache *resourceCache, root *op.Ops
 		if v, exists := d.pathCache.get(p.pathKey); !exists || v.data.data == nil {
 			data := buildPath(ctx, p.pathVerts)
 			var computePath encoder
-			if d.retainPathData {
+			if d.compute {
 				computePath = encodePath(p.pathVerts)
 			}
 			d.pathCache.put(p.pathKey, opCacheValue{
@@ -846,12 +828,14 @@ func (d *drawOps) newPathOp() *pathOp {
 	return &d.pathOpCache[len(d.pathOpCache)-1]
 }
 
-func (d *drawOps) addClipPath(state *drawState, aux []byte, auxKey ops.Key, bounds f32.Rectangle, off f32.Point) {
+func (d *drawOps) addClipPath(state *drawState, aux []byte, auxKey ops.Key, bounds f32.Rectangle, off f32.Point, tr f32.Affine2D, stroke clip.StrokeStyle) {
 	npath := d.newPathOp()
 	*npath = pathOp{
 		parent: state.cpath,
 		bounds: bounds,
 		off:    off,
+		trans:  tr,
+		stroke: stroke,
 	}
 	state.cpath = npath
 	if len(aux) > 0 {
@@ -881,10 +865,9 @@ func (d *drawOps) save(id int, state drawState) {
 
 func (d *drawOps) collectOps(r *ops.Reader, state drawState) {
 	var (
-		quads  quadsOp
-		stroke clip.StrokeStyle
-		dashes dashOp
-		z      int
+		quads quadsOp
+		str   clip.StrokeStyle
+		z     int
 	)
 	d.save(opconst.InitialStateID, state)
 loop:
@@ -896,35 +879,16 @@ loop:
 			dop := ops.DecodeTransform(encOp.Data)
 			state.t = state.t.Mul(dop)
 
-		case opconst.TypeDash:
-			dashes = decodeDashOp(encOp.Data)
-			if len(dashes.dashes) > 0 {
-				encOp, ok = r.Decode()
-				if !ok {
-					panic("gpu: could not decode dashes pattern")
-				}
-				data := encOp.Data[1:]
-				bo := binary.LittleEndian
-				for i := range dashes.dashes {
-					dashes.dashes[i] = math.Float32frombits(bo.Uint32(
-						data[i*4:],
-					))
-				}
-			}
-
 		case opconst.TypeStroke:
-			stroke = decodeStrokeOp(encOp.Data)
+			str = decodeStrokeOp(encOp.Data)
 
 		case opconst.TypePath:
-			quads.quads = decodeQuadsOp(encOp.Data)
-			if quads.quads > 0 {
-				encOp, ok = r.Decode()
-				if !ok {
-					break loop
-				}
-				quads.aux = encOp.Data[opconst.TypeAuxLen:]
-				quads.key = encOp.Key
+			encOp, ok = r.Decode()
+			if !ok {
+				break loop
 			}
+			quads.aux = encOp.Data[opconst.TypeAuxLen:]
+			quads.key = encOp.Key
 
 		case opconst.TypeClip:
 			var op clipOp
@@ -941,9 +905,13 @@ loop:
 					// Why is this not used for the offset shapes?
 					op.bounds = v.bounds
 				} else {
-					quads.aux, op.bounds = d.buildVerts(
-						quads.aux, trans, op.outline, stroke, dashes,
+					pathData, bounds := d.buildVerts(
+						quads.aux, trans, op.outline, str,
 					)
+					op.bounds = bounds
+					if !d.compute {
+						quads.aux = pathData
+					}
 					// add it to the cache, without GPU data, so the transform can be
 					// reused.
 					d.pathCache.put(quads.key, opCacheValue{bounds: op.bounds})
@@ -954,10 +922,9 @@ loop:
 				quads.key.SetTransform(trans)
 			}
 			state.clip = state.clip.Intersect(op.bounds.Add(off))
-			d.addClipPath(&state, quads.aux, quads.key, op.bounds, off)
+			d.addClipPath(&state, quads.aux, quads.key, op.bounds, off, state.t, str)
 			quads = quadsOp{}
-			stroke = clip.StrokeStyle{}
-			dashes = dashOp{}
+			str = clip.StrokeStyle{}
 
 		case opconst.TypeColor:
 			state.matType = materialColor
@@ -985,8 +952,8 @@ loop:
 				dst = layout.FRect(state.image.src.Rect)
 			}
 			clipData, bnd, partialTrans := d.boundsForTransformedRect(dst, trans)
-			clip := state.clip.Intersect(bnd.Add(off))
-			if clip.Empty() {
+			cl := state.clip.Intersect(bnd.Add(off))
+			if cl.Empty() {
 				continue
 			}
 
@@ -995,10 +962,10 @@ loop:
 				// The paint operation is sheared or rotated, add a clip path representing
 				// this transformed rectangle.
 				encOp.Key.SetTransform(trans)
-				d.addClipPath(&state, clipData, encOp.Key, bnd, off)
+				d.addClipPath(&state, clipData, encOp.Key, bnd, off, state.t, clip.StrokeStyle{})
 			}
 
-			bounds := boundRectF(clip)
+			bounds := boundRectF(cl)
 			mat := state.materialFor(bnd, off, partialTrans, bounds, state.t)
 
 			if bounds.Min == (image.Point{}) && bounds.Max == d.viewport && state.rect && mat.opaque && (mat.material == materialColor) {
@@ -1129,10 +1096,10 @@ func (r *renderer) drawZOps(cache *resourceCache, ops []imageOp) {
 func (r *renderer) drawOps(cache *resourceCache, ops []imageOp) {
 	r.ctx.SetDepthTest(true)
 	r.ctx.DepthMask(false)
-	r.ctx.BlendFunc(backend.BlendFactorOne, backend.BlendFactorOneMinusSrcAlpha)
+	r.ctx.BlendFunc(driver.BlendFactorOne, driver.BlendFactorOneMinusSrcAlpha)
 	r.ctx.BindVertexBuffer(r.blitter.quadVerts, 4*4, 0)
 	r.ctx.BindInputLayout(r.pather.coverer.layout)
-	var coverTex backend.Texture
+	var coverTex driver.Texture
 	for _, img := range ops {
 		m := img.material
 		switch m.material {
@@ -1192,18 +1159,18 @@ func (b *blitter) blit(z float32, mat materialType, col f32color.RGBA, col1, col
 	uniforms.z = z
 	uniforms.transform = [4]float32{scale.X, scale.Y, off.X, off.Y}
 	p.UploadUniforms()
-	b.ctx.DrawArrays(backend.DrawModeTriangleStrip, 0, 4)
+	b.ctx.DrawArrays(driver.DrawModeTriangleStrip, 0, 4)
 }
 
 // newUniformBuffer creates a new GPU uniform buffer backed by the
 // structure uniformBlock points to.
-func newUniformBuffer(b backend.Device, uniformBlock interface{}) *uniformBuffer {
+func newUniformBuffer(b driver.Device, uniformBlock interface{}) *uniformBuffer {
 	ref := reflect.ValueOf(uniformBlock)
 	// Determine the size of the uniforms structure, *uniforms.
 	size := ref.Elem().Type().Size()
 	// Map the uniforms structure as a byte slice.
 	ptr := (*[1 << 30]byte)(unsafe.Pointer(ref.Pointer()))[:size:size]
-	ubuf, err := b.NewBuffer(backend.BufferBindingUniforms, len(ptr))
+	ubuf, err := b.NewBuffer(driver.BufferBindingUniforms, len(ptr))
 	if err != nil {
 		panic(err)
 	}
@@ -1219,7 +1186,7 @@ func (u *uniformBuffer) Release() {
 	u.buf = nil
 }
 
-func newProgram(prog backend.Program, vertUniforms, fragUniforms *uniformBuffer) *program {
+func newProgram(prog driver.Program, vertUniforms, fragUniforms *uniformBuffer) *program {
 	if vertUniforms != nil {
 		prog.SetVertexUniforms(vertUniforms.buf)
 	}
@@ -1347,73 +1314,68 @@ func (d *drawOps) writeVertCache(n int) []byte {
 }
 
 // transform, split paths as needed, calculate maxY, bounds and create GPU vertices.
-func (d *drawOps) buildVerts(aux []byte, tr f32.Affine2D, outline bool, stroke clip.StrokeStyle, dashes dashOp) (verts []byte, bounds f32.Rectangle) {
+func (d *drawOps) buildVerts(pathData []byte, tr f32.Affine2D, outline bool, str clip.StrokeStyle) (verts []byte, bounds f32.Rectangle) {
 	inf := float32(math.Inf(+1))
 	d.qs.bounds = f32.Rectangle{
 		Min: f32.Point{X: inf, Y: inf},
 		Max: f32.Point{X: -inf, Y: -inf},
 	}
 	d.qs.d = d
-	bo := binary.LittleEndian
 	startLength := len(d.vertCache)
 
 	switch {
-	case stroke.Width > 0:
+	case str.Width > 0:
 		// Stroke path.
-		quads := make(strokeQuads, 0, 2*len(aux)/(ops.QuadSize+4))
-		for len(aux) >= ops.QuadSize+4 {
-			quad := strokeQuad{
-				contour: bo.Uint32(aux),
-				quad:    ops.DecodeQuad(aux[4:]),
-			}
-			quads = append(quads, quad)
-			aux = aux[ops.QuadSize+4:]
+		ss := stroke.StrokeStyle{
+			Width: str.Width,
+			Miter: str.Miter,
+			Cap:   stroke.StrokeCap(str.Cap),
+			Join:  stroke.StrokeJoin(str.Join),
 		}
-		quads = quads.stroke(stroke, dashes)
+		quads := stroke.StrokePathCommands(ss, stroke.DashOp{}, pathData)
 		for _, quad := range quads {
-			d.qs.contour = quad.contour
-			quad.quad = quad.quad.Transform(tr)
+			d.qs.contour = quad.Contour
+			quad.Quad = quad.Quad.Transform(tr)
 
-			d.qs.splitAndEncode(quad.quad)
+			d.qs.splitAndEncode(quad.Quad)
 		}
 
 	case outline:
-		// Outline path.
-		first := true
-		var firstPt, lastPt f32.Point
-		for len(aux) >= ops.QuadSize+4 {
-			d.qs.contour = bo.Uint32(aux)
-			quad := ops.DecodeQuad(aux[4:])
-			quad = quad.Transform(tr)
-
-			if first {
-				first = false
-				firstPt = quad.From
-				lastPt = quad.From
-			}
-			if quad.From != lastPt {
-				if lastPt != firstPt {
-					// Close outline before starting a new.
-					mid := firstPt.Add(lastPt).Mul(.5)
-					d.qs.splitAndEncode(ops.Quad{From: lastPt, To: firstPt, Ctrl: mid})
-				}
-				firstPt = quad.From
-			}
-			lastPt = quad.To
-
-			d.qs.splitAndEncode(quad)
-
-			aux = aux[ops.QuadSize+4:]
-		}
-		// Close last outline if necessary.
-		if !first && lastPt != firstPt {
-			mid := firstPt.Add(lastPt).Mul(.5)
-			d.qs.splitAndEncode(ops.Quad{From: lastPt, To: firstPt, Ctrl: mid})
-		}
+		decodeToOutlineQuads(&d.qs, tr, pathData)
 	}
 
 	fillMaxY(d.vertCache[startLength:])
 	return d.vertCache[startLength:], d.qs.bounds
+}
+
+// decodeOutlineQuads decodes scene commands, splits them into quadratic béziers
+// as needed and feeds them to the supplied splitter.
+func decodeToOutlineQuads(qs *quadSplitter, tr f32.Affine2D, pathData []byte) {
+	for len(pathData) >= scene.CommandSize+4 {
+		qs.contour = bo.Uint32(pathData)
+		cmd := ops.DecodeCommand(pathData[4:])
+		switch cmd.Op() {
+		case scene.OpLine:
+			var q stroke.QuadSegment
+			q.From, q.To = scene.DecodeLine(cmd)
+			q.Ctrl = q.From.Add(q.To).Mul(.5)
+			q = q.Transform(tr)
+			qs.splitAndEncode(q)
+		case scene.OpQuad:
+			var q stroke.QuadSegment
+			q.From, q.Ctrl, q.To = scene.DecodeQuad(cmd)
+			q = q.Transform(tr)
+			qs.splitAndEncode(q)
+		case scene.OpCubic:
+			for _, q := range stroke.SplitCubic(scene.DecodeCubic(cmd)) {
+				q = q.Transform(tr)
+				qs.splitAndEncode(q)
+			}
+		default:
+			panic("unsupported scene command")
+		}
+		pathData = pathData[scene.CommandSize+4:]
+	}
 }
 
 // create GPU vertices for transformed r, find the bounds and establish texture transform.
@@ -1451,13 +1413,31 @@ func (d *drawOps) boundsForTransformedRect(r f32.Rectangle, tr f32.Affine2D) (au
 
 	// build the GPU vertices
 	l := len(d.vertCache)
-	d.vertCache = append(d.vertCache, make([]byte, vertStride*4*4)...)
-	aux = d.vertCache[l:]
-	encodeQuadTo(aux, 0, corners[0], corners[0].Add(corners[1]).Mul(0.5), corners[1])
-	encodeQuadTo(aux[vertStride*4:], 0, corners[1], corners[1].Add(corners[2]).Mul(0.5), corners[2])
-	encodeQuadTo(aux[vertStride*4*2:], 0, corners[2], corners[2].Add(corners[3]).Mul(0.5), corners[3])
-	encodeQuadTo(aux[vertStride*4*3:], 0, corners[3], corners[3].Add(corners[0]).Mul(0.5), corners[0])
-	fillMaxY(aux)
+	if !d.compute {
+		d.vertCache = append(d.vertCache, make([]byte, vertStride*4*4)...)
+		aux = d.vertCache[l:]
+		encodeQuadTo(aux, 0, corners[0], corners[0].Add(corners[1]).Mul(0.5), corners[1])
+		encodeQuadTo(aux[vertStride*4:], 0, corners[1], corners[1].Add(corners[2]).Mul(0.5), corners[2])
+		encodeQuadTo(aux[vertStride*4*2:], 0, corners[2], corners[2].Add(corners[3]).Mul(0.5), corners[3])
+		encodeQuadTo(aux[vertStride*4*3:], 0, corners[3], corners[3].Add(corners[0]).Mul(0.5), corners[0])
+		fillMaxY(aux)
+	} else {
+		d.vertCache = append(d.vertCache, make([]byte, (scene.CommandSize+4)*4)...)
+		aux = d.vertCache[l:]
+		buf := aux
+		bo := binary.LittleEndian
+		bo.PutUint32(buf, 0) // Contour
+		ops.EncodeCommand(buf[4:], scene.Line(r.Min, f32.Pt(r.Max.X, r.Min.Y)))
+		buf = buf[4+scene.CommandSize:]
+		bo.PutUint32(buf, 0)
+		ops.EncodeCommand(buf[4:], scene.Line(f32.Pt(r.Max.X, r.Min.Y), r.Max))
+		buf = buf[4+scene.CommandSize:]
+		bo.PutUint32(buf, 0)
+		ops.EncodeCommand(buf[4:], scene.Line(r.Max, f32.Pt(r.Min.X, r.Max.Y)))
+		buf = buf[4+scene.CommandSize:]
+		bo.PutUint32(buf, 0)
+		ops.EncodeCommand(buf[4:], scene.Line(f32.Pt(r.Min.X, r.Max.Y), r.Min))
+	}
 
 	// establish the transform mapping from bounds rectangle to transformed corners
 	var P1, P2, P3 f32.Point

@@ -10,6 +10,8 @@ import (
 	"gioui.org/f32"
 	"gioui.org/internal/opconst"
 	"gioui.org/internal/ops"
+	"gioui.org/internal/scene"
+	"gioui.org/internal/stroke"
 	"gioui.org/op"
 )
 
@@ -25,31 +27,31 @@ type Op struct {
 }
 
 func (p Op) Add(o *op.Ops) {
-	if p.path.quads > 0 {
-		data := o.Write(opconst.TypePathLen)
-		data[0] = byte(opconst.TypePath)
-		bo := binary.LittleEndian
-		bo.PutUint32(data[1:], p.path.quads)
-		p.path.spec.Add(o)
+	str := p.stroke
+	dashes := p.dashes
+	path := p.path
+	outline := p.outline
+	approx := str.Width > 0 && !(dashes == DashSpec{} && str.Miter == 0 && str.Join == RoundJoin && str.Cap == RoundCap)
+	if approx {
+		// If the stroke is not natively supported by the compute renderer, construct a filled path
+		// that approximates it.
+		path = p.approximateStroke(o)
+		dashes = DashSpec{}
+		str = StrokeStyle{}
+		outline = true
 	}
 
-	if p.stroke.Width > 0 {
+	if path.hasSegments {
+		data := o.Write(opconst.TypePathLen)
+		data[0] = byte(opconst.TypePath)
+		path.spec.Add(o)
+	}
+
+	if str.Width > 0 {
 		data := o.Write(opconst.TypeStrokeLen)
 		data[0] = byte(opconst.TypeStroke)
 		bo := binary.LittleEndian
-		bo.PutUint32(data[1:], math.Float32bits(p.stroke.Width))
-		bo.PutUint32(data[5:], math.Float32bits(p.stroke.Miter))
-		data[9] = uint8(p.stroke.Cap)
-		data[10] = uint8(p.stroke.Join)
-	}
-
-	if p.dashes.phase != 0 || p.dashes.size > 0 {
-		data := o.Write(opconst.TypeDashLen)
-		data[0] = byte(opconst.TypeDash)
-		bo := binary.LittleEndian
-		bo.PutUint32(data[1:], math.Float32bits(p.dashes.phase))
-		data[5] = p.dashes.size // FIXME(sbinet) uint16? uint32?
-		p.dashes.spec.Add(o)
+		bo.PutUint32(data[1:], math.Float32bits(str.Width))
 	}
 
 	data := o.Write(opconst.TypeClipLen)
@@ -59,14 +61,78 @@ func (p Op) Add(o *op.Ops) {
 	bo.PutUint32(data[5:], uint32(p.bounds.Min.Y))
 	bo.PutUint32(data[9:], uint32(p.bounds.Max.X))
 	bo.PutUint32(data[13:], uint32(p.bounds.Max.Y))
-	if p.outline {
+	if outline {
 		data[17] = byte(1)
 	}
 }
 
+func (p Op) approximateStroke(o *op.Ops) PathSpec {
+	if !p.path.hasSegments {
+		return PathSpec{}
+	}
+
+	var r ops.Reader
+	// Add path op for us to decode. Use a macro to omit it from later decodes.
+	ignore := op.Record(o)
+	r.ResetAt(o, ops.NewPC(o))
+	p.path.spec.Add(o)
+	ignore.Stop()
+	encOp, ok := r.Decode()
+	if !ok || opconst.OpType(encOp.Data[0]) != opconst.TypeAux {
+		panic("corrupt path data")
+	}
+	pathData := encOp.Data[opconst.TypeAuxLen:]
+
+	// Decode dashes in a similar way.
+	var dashes stroke.DashOp
+	if p.dashes.phase != 0 || p.dashes.size > 0 {
+		ignore := op.Record(o)
+		r.ResetAt(o, ops.NewPC(o))
+		p.dashes.spec.Add(o)
+		ignore.Stop()
+		encOp, ok := r.Decode()
+		if !ok || opconst.OpType(encOp.Data[0]) != opconst.TypeAux {
+			panic("corrupt dash data")
+		}
+		dashes.Dashes = make([]float32, p.dashes.size)
+		dashData := encOp.Data[opconst.TypeAuxLen:]
+		bo := binary.LittleEndian
+		for i := range dashes.Dashes {
+			dashes.Dashes[i] = math.Float32frombits(bo.Uint32(dashData[i*4:]))
+		}
+		dashes.Phase = p.dashes.phase
+	}
+
+	// Approximate and output path data.
+	var outline Path
+	outline.Begin(o)
+	ss := stroke.StrokeStyle{
+		Width: p.stroke.Width,
+		Miter: p.stroke.Miter,
+		Cap:   stroke.StrokeCap(p.stroke.Cap),
+		Join:  stroke.StrokeJoin(p.stroke.Join),
+	}
+	quads := stroke.StrokePathCommands(ss, dashes, pathData)
+	pen := f32.Pt(0, 0)
+	for _, quad := range quads {
+		q := quad.Quad
+		if q.From != pen {
+			pen = q.From
+			outline.MoveTo(pen)
+		}
+		outline.contour = int(quad.Contour)
+		outline.QuadTo(q.Ctrl, q.To)
+	}
+	return outline.End()
+}
+
 type PathSpec struct {
-	spec  op.CallOp
-	quads uint32 // quads is the number Bézier segments in that path.
+	spec op.CallOp
+	// open is true if any path contour is not closed. A closed contour starts
+	// and ends in the same point.
+	open bool
+	// hasSegments tracks whether there are any segments in the path.
+	hasSegments bool
 }
 
 // Path constructs a Op clip path described by lines and
@@ -77,12 +143,13 @@ type PathSpec struct {
 // Path generates no garbage and can be used for dynamic paths; path
 // data is stored directly in the Ops list supplied to Begin.
 type Path struct {
-	ops     *op.Ops
-	contour int
-	pen     f32.Point
-	macro   op.MacroOp
-	start   f32.Point
-	quads   uint32
+	ops         *op.Ops
+	open        bool
+	contour     int
+	pen         f32.Point
+	macro       op.MacroOp
+	start       f32.Point
+	hasSegments bool
 }
 
 // Pos returns the current pen position.
@@ -101,8 +168,9 @@ func (p *Path) Begin(ops *op.Ops) {
 func (p *Path) End() PathSpec {
 	c := p.macro.Stop()
 	return PathSpec{
-		spec:  c,
-		quads: p.quads,
+		spec:        c,
+		open:        p.open || p.pen != p.start,
+		hasSegments: p.hasSegments,
 	}
 }
 
@@ -114,6 +182,7 @@ func (p *Path) Move(delta f32.Point) {
 
 // MoveTo moves the pen to the specified absolute coordinate.
 func (p *Path) MoveTo(to f32.Point) {
+	p.open = p.open || p.pen != p.start
 	p.end()
 	p.pen = to
 	p.start = to
@@ -121,9 +190,6 @@ func (p *Path) MoveTo(to f32.Point) {
 
 // end completes the current contour.
 func (p *Path) end() {
-	if p.pen != p.start {
-		p.LineTo(p.start)
-	}
 	p.contour++
 }
 
@@ -135,8 +201,12 @@ func (p *Path) Line(delta f32.Point) {
 
 // LineTo moves the pen to the absolute point specified, recording a line.
 func (p *Path) LineTo(to f32.Point) {
-	// Model lines as degenerate quadratic Béziers.
-	p.QuadTo(to.Add(p.pen).Mul(.5), to)
+	data := p.ops.Write(scene.CommandSize + 4)
+	bo := binary.LittleEndian
+	bo.PutUint32(data[0:], uint32(p.contour))
+	ops.EncodeCommand(data[4:], scene.Line(p.pen, to))
+	p.pen = to
+	p.hasSegments = true
 }
 
 // Quad records a quadratic Bézier from the pen to end
@@ -150,16 +220,12 @@ func (p *Path) Quad(ctrl, to f32.Point) {
 // QuadTo records a quadratic Bézier from the pen to end
 // with the control point ctrl, with absolute coordinates.
 func (p *Path) QuadTo(ctrl, to f32.Point) {
-	data := p.ops.Write(ops.QuadSize + 4)
+	data := p.ops.Write(scene.CommandSize + 4)
 	bo := binary.LittleEndian
 	bo.PutUint32(data[0:], uint32(p.contour))
-	ops.EncodeQuad(data[4:], ops.Quad{
-		From: p.pen,
-		Ctrl: ctrl,
-		To:   to,
-	})
+	ops.EncodeCommand(data[4:], scene.Quad(p.pen, ctrl, to))
 	p.pen = to
-	p.quads++
+	p.hasSegments = true
 }
 
 // Arc adds an elliptical arc to the path. The implied ellipse is defined
@@ -170,120 +236,14 @@ func (p *Path) QuadTo(ctrl, to f32.Point) {
 func (p *Path) Arc(f1, f2 f32.Point, angle float32) {
 	f1 = f1.Add(p.pen)
 	f2 = f2.Add(p.pen)
-	c, rx, ry, beg, alpha := arcFrom(f1, f2, p.pen)
-	p.arc(alpha, c, rx, ry, beg, float64(angle))
-}
+	const segments = 16
+	m := stroke.ArcTransform(p.pen, f1, f2, angle, segments)
 
-func dist(p1, p2 f32.Point) float64 {
-	var (
-		x1 = float64(p1.X)
-		y1 = float64(p1.Y)
-		x2 = float64(p2.X)
-		y2 = float64(p2.Y)
-		dx = x2 - x1
-		dy = y2 - y1
-	)
-	return math.Hypot(dx, dy)
-}
-
-func arcFrom(f1, f2, p f32.Point) (c f32.Point, rx, ry, start, alpha float64) {
-	c = f32.Point{
-		X: 0.5 * (f1.X + f2.X),
-		Y: 0.5 * (f1.Y + f2.Y),
-	}
-
-	// semi-major axis: 2a = |PF1| + |PF2|
-	a := 0.5 * (dist(f1, p) + dist(f2, p))
-
-	// semi-minor axis: c^2 = a^2+b^2 (c: focal distance)
-	f := dist(f1, c)
-	b := math.Sqrt(a*a - f*f)
-
-	switch {
-	case a > b:
-		rx = a
-		ry = b
-	default:
-		rx = b
-		ry = a
-	}
-
-	var x float64
-	switch {
-	case f1 == c || f2 == c:
-		// degenerate case of a circle.
-		alpha = 0
-	default:
-		switch {
-		case f1.X > c.X:
-			x = float64(f1.X - c.X)
-			alpha = math.Acos(x / f)
-		case f1.X < c.X:
-			x = float64(f2.X - c.X)
-			alpha = math.Acos(x / f)
-		case f1.X == c.X:
-			// special case of a "vertical" ellipse.
-			alpha = math.Pi / 2
-			if f1.Y < c.Y {
-				alpha = -alpha
-			}
-		}
-	}
-
-	start = math.Acos(float64(p.X-c.X) / dist(c, p))
-	if c.Y > p.Y {
-		start = -start
-	}
-	start -= alpha
-
-	return c, rx, ry, start, alpha
-}
-
-// arc records an elliptical arc centered at c, with radii rx and ry,
-// starting at angle beg and stopping at end, in radians.
-//
-// The math is extracted from the following paper:
-//  "Drawing an elliptical arc using polylines, quadratic or
-//   cubic Bezier curves", L. Maisonobe
-// An electronic version may be found at:
-//  http://spaceroots.org/documents/ellipse/elliptical-arc.pdf
-func (p *Path) arc(alpha float64, c f32.Point, rx, ry, beg, delta float64) {
-	const n = 16
-	var (
-		θ   = delta / n
-		ref f32.Affine2D // transform from absolute frame to ellipse-based one
-		rot f32.Affine2D // rotation matrix for each segment
-		inv f32.Affine2D // transform from ellipse-based frame to absolute one
-	)
-	ref = ref.Offset(f32.Point{}.Sub(c))
-	ref = ref.Rotate(f32.Point{}, float32(-alpha))
-	ref = ref.Scale(f32.Point{}, f32.Point{
-		X: float32(1 / rx),
-		Y: float32(1 / ry),
-	})
-	inv = ref.Invert()
-	rot = rot.Rotate(f32.Point{}, float32(0.5*θ))
-
-	// Instead of invoking math.Sincos for every segment, compute a rotation
-	// matrix once and apply for each segment.
-	// Before applying the rotation matrix rot, transform the coordinates
-	// to a frame centered to the ellipse (and warped into a unit circle), then rotate.
-	// Finally, transform back into the original frame.
-	step := func(p f32.Point) f32.Point {
-		q := ref.Transform(p)
-		q = rot.Transform(q)
-		q = inv.Transform(q)
-		return q
-	}
-
-	for i := 0; i < n; i++ {
+	for i := 0; i < segments; i++ {
 		p0 := p.pen
-		p1 := step(p0)
-		p2 := step(p1)
-		ctl := f32.Pt(
-			2*p1.X-0.5*(p0.X+p2.X),
-			2*p1.Y-0.5*(p0.Y+p2.Y),
-		)
+		p1 := m.Transform(p0)
+		p2 := m.Transform(p1)
+		ctl := p1.Mul(2).Sub(p0.Add(p2).Mul(.5))
 		p.QuadTo(ctl, p2)
 	}
 }
@@ -291,86 +251,28 @@ func (p *Path) arc(alpha float64, c f32.Point, rx, ry, beg, delta float64) {
 // Cube records a cubic Bézier from the pen through
 // two control points ending in to.
 func (p *Path) Cube(ctrl0, ctrl1, to f32.Point) {
-	if ctrl0 == (f32.Point{}) && ctrl1 == (f32.Point{}) && to == (f32.Point{}) {
+	p.CubeTo(p.pen.Add(ctrl0), p.pen.Add(ctrl1), p.pen.Add(to))
+}
+
+// CubeTo records a cubic Bézier from the pen through
+// two control points ending in to, with absolute coordinates.
+func (p *Path) CubeTo(ctrl0, ctrl1, to f32.Point) {
+	if ctrl0 == p.pen && ctrl1 == p.pen && to == p.pen {
 		return
 	}
-	ctrl0 = ctrl0.Add(p.pen)
-	ctrl1 = ctrl1.Add(p.pen)
-	to = to.Add(p.pen)
-	// Set the maximum distance proportionally to the longest side
-	// of the bounding rectangle.
-	hull := f32.Rectangle{
-		Min: p.pen,
-		Max: ctrl0,
-	}.Canon().Add(ctrl1).Add(to)
-	l := hull.Dx()
-	if h := hull.Dy(); h > l {
-		l = h
-	}
-	p.approxCubeTo(0, l*0.001, ctrl0, ctrl1, to)
+	data := p.ops.Write(scene.CommandSize + 4)
+	bo := binary.LittleEndian
+	bo.PutUint32(data[0:], uint32(p.contour))
+	ops.EncodeCommand(data[4:], scene.Cubic(p.pen, ctrl0, ctrl1, to))
+	p.pen = to
+	p.hasSegments = true
 }
 
-// approxCube approximates a cubic Bézier by a series of quadratic
-// curves.
-func (p *Path) approxCubeTo(splits int, maxDist float32, ctrl0, ctrl1, to f32.Point) int {
-	// The idea is from
-	// https://caffeineowl.com/graphics/2d/vectorial/cubic2quad01.html
-	// where a quadratic approximates a cubic by eliminating its t³ term
-	// from its polynomial expression anchored at the starting point:
-	//
-	// P(t) = pen + 3t(ctrl0 - pen) + 3t²(ctrl1 - 2ctrl0 + pen) + t³(to - 3ctrl1 + 3ctrl0 - pen)
-	//
-	// The control point for the new quadratic Q1 that shares starting point, pen, with P is
-	//
-	// C1 = (3ctrl0 - pen)/2
-	//
-	// The reverse cubic anchored at the end point has the polynomial
-	//
-	// P'(t) = to + 3t(ctrl1 - to) + 3t²(ctrl0 - 2ctrl1 + to) + t³(pen - 3ctrl0 + 3ctrl1 - to)
-	//
-	// The corresponding quadratic Q2 that shares the end point, to, with P has control
-	// point
-	//
-	// C2 = (3ctrl1 - to)/2
-	//
-	// The combined quadratic Bézier, Q, shares both start and end points with its cubic
-	// and use the midpoint between the two curves Q1 and Q2 as control point:
-	//
-	// C = (3ctrl0 - pen + 3ctrl1 - to)/4
-	c := ctrl0.Mul(3).Sub(p.pen).Add(ctrl1.Mul(3)).Sub(to).Mul(1.0 / 4.0)
-	const maxSplits = 32
-	if splits >= maxSplits {
-		p.QuadTo(c, to)
-		return splits
-	}
-	// The maximum distance between the cubic P and its approximation Q given t
-	// can be shown to be
-	//
-	// d = sqrt(3)/36*|to - 3ctrl1 + 3ctrl0 - pen|
-	//
-	// To save a square root, compare d² with the squared tolerance.
-	v := to.Sub(ctrl1.Mul(3)).Add(ctrl0.Mul(3)).Sub(p.pen)
-	d2 := (v.X*v.X + v.Y*v.Y) * 3 / (36 * 36)
-	if d2 <= maxDist*maxDist {
-		p.QuadTo(c, to)
-		return splits
-	}
-	// De Casteljau split the curve and approximate the halves.
-	t := float32(0.5)
-	c0 := p.pen.Add(ctrl0.Sub(p.pen).Mul(t))
-	c1 := ctrl0.Add(ctrl1.Sub(ctrl0).Mul(t))
-	c2 := ctrl1.Add(to.Sub(ctrl1).Mul(t))
-	c01 := c0.Add(c1.Sub(c0).Mul(t))
-	c12 := c1.Add(c2.Sub(c1).Mul(t))
-	c0112 := c01.Add(c12.Sub(c01).Mul(t))
-	splits++
-	splits = p.approxCubeTo(splits, maxDist, c0, c01, c0112)
-	splits = p.approxCubeTo(splits, maxDist, c12, c2, to)
-	return splits
-}
-
-// Close closes the path.
+// Close closes the path contour.
 func (p *Path) Close() {
+	if p.pen != p.start {
+		p.LineTo(p.start)
+	}
 	p.end()
 }
 
@@ -382,6 +284,9 @@ type Outline struct {
 
 // Op returns a clip operation representing the outline.
 func (o Outline) Op() Op {
+	if o.Path.open {
+		panic("not all path contours are closed")
+	}
 	return Op{
 		path:    o.Path,
 		outline: true,
