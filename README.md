@@ -38,6 +38,10 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2021-04-09 / Version 1.6
+* Print goroutine wait wait reason and wait time when available
+* Add dump command, creates core dump of the attached process
+
 ## 2021-01-10 / Version 1.5
 * Better disassembly view
 * File descriptor redirects
