@@ -270,6 +270,21 @@ All parameters are copied from the goroutines panel.`},
 	dump <output file>
 
 The core dump is always written in ELF, even on systems (windows, macOS) where this is not customary. For environments other than linux/amd64 threads and registers are dumped in a format that only Delve can read back.`},
+		{aliases: []string{"watch"}, group: breakCmds, cmdFn: watchpoint, helpMsg: `Set watchpoint.
+	
+	watch [-r|-w|-rw] <expr>
+	
+	-r	stops when the memory location is read
+	-w	stops when the memory location is written
+	-rw	stops when the memory location is read or written
+
+The memory location is specified with the same expression language used by 'print', for example:
+
+	watch v
+
+will watch the address of variable 'v'.
+
+See also: "help print".`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -1723,10 +1738,38 @@ func dump(out io.Writer, args string) error {
 	return nil
 }
 
+func watchpoint(out io.Writer, args string) error {
+	v := strings.SplitN(args, " ", 2)
+	if len(v) != 2 {
+		return errors.New("wrong number of arguments: watch [-r|-w|-rw] <expr>")
+	}
+	var wtype api.WatchType
+	switch v[0] {
+	case "-r":
+		wtype = api.WatchRead
+	case "-w":
+		wtype = api.WatchWrite
+	case "-rw":
+		wtype = api.WatchRead | api.WatchWrite
+	default:
+		return fmt.Errorf("wrong argument %q to watch", v[0])
+	}
+	bp, err := client.CreateWatchpoint(currentEvalScope(), v[1], wtype)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp, false))
+	refreshState(refreshToSameFrame, clearBreakpoint, nil)
+	return nil
+}
+
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
 	thing := "breakpoint"
 	if bp.Tracepoint {
 		thing = "tracepoint"
+	}
+	if bp.WatchExpr != "" {
+		thing = "watchpoint"
 	}
 	if upcase {
 		thing = strings.Title(thing)
@@ -1734,6 +1777,9 @@ func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
 	id := bp.Name
 	if id == "" {
 		id = strconv.Itoa(bp.ID)
+	}
+	if bp.WatchExpr != "" && bp.WatchExpr != bp.Name {
+		return fmt.Sprintf("%s %s on [%s]", thing, id, bp.WatchExpr)
 	}
 	return fmt.Sprintf("%s %s", thing, id)
 }

@@ -278,7 +278,6 @@ func listingToolbar(sw *nucular.Window) {
 		sw.LayoutSetWidthScaled(4096)
 		sw.Label(listingPanel.abbrevFile, "LC")
 	}
-
 }
 
 func commandToolbar(sw *nucular.Window) {

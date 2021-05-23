@@ -396,3 +396,13 @@ type DumpCancelIn struct {
 
 type DumpCancelOut struct {
 }
+
+type CreateWatchpointIn struct {
+	Scope api.EvalScope
+	Expr  string
+	Type  api.WatchType
+}
+
+type CreateWatchpointOut struct {
+	*api.Breakpoint
+}

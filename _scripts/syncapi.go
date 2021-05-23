@@ -70,10 +70,14 @@ func syncTypes() {
 			}
 
 			if isgendecl && gendecl.Tok == token.CONST {
-				if gendecl.Specs[0].(*ast.ValueSpec).Names[0].Name == "GNUFlavour" {
+				switch gendecl.Specs[0].(*ast.ValueSpec).Names[0].Name {
+				case "GNUFlavour":
 					gendecl.Specs[0].(*ast.ValueSpec).Values[0].(*ast.CallExpr).Args[0] = &ast.Ident{Name: "iota"}
 					gendecl.Specs[1].(*ast.ValueSpec).Values = nil
 					gendecl.Specs[2].(*ast.ValueSpec).Values = nil
+				case "GoroutineWaiting":
+					gendecl.Specs[0].(*ast.ValueSpec).Values = []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: "4"}}
+					gendecl.Specs[1].(*ast.ValueSpec).Values = []ast.Expr{&ast.BasicLit{Kind: token.INT, Value: "3"}}
 				}
 			}
 

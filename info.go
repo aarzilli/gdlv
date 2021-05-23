@@ -719,7 +719,16 @@ func updateBreakpoints(container *nucular.Window) {
 		}
 
 		w.LayoutFitWidth(breakpointsPanel.id, 100)
-		w.SelectableLabel(fmt.Sprintf("%s%s%s (hit count: %d)\nat %s:%d (%#v)", disableMark, name, breakpoint.FunctionName, breakpoint.TotalHitCount, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
+		if breakpoint.WatchExpr != "" {
+			name = "watchpoint " + name
+			if breakpoint.WatchExpr != breakpoint.Name {
+				w.SelectableLabel(fmt.Sprintf("%s%s[%s] (hit count %d)\n", disableMark, name, breakpoint.WatchExpr, breakpoint.TotalHitCount), "LT", &selected)
+			} else {
+				w.SelectableLabel(fmt.Sprintf("%s%s (hit count %d)\n", disableMark, name, breakpoint.TotalHitCount), "LT", &selected)
+			}
+		} else {
+			w.SelectableLabel(fmt.Sprintf("%s%s%s (hit count: %d)\nat %s:%d (%#v)", disableMark, name, breakpoint.FunctionName, breakpoint.TotalHitCount, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
+		}
 
 		if !breakpoint.enabled {
 			*style = savedStyle
@@ -744,7 +753,7 @@ func updateBreakpoints(container *nucular.Window) {
 				breakpointsPanel.selected = breakpoint.ID
 			}
 
-			if breakpointsPanel.selected != oldselectedId {
+			if breakpointsPanel.selected != oldselectedId && breakpoint.File != "" {
 				listingPanel.pinnedLoc = &api.Location{File: breakpoint.File, Line: breakpoint.Line, PC: breakpoint.Addr}
 				go refreshState(refreshToSameFrame, clearNothing, nil)
 			}
