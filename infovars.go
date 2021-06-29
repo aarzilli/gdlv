@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"os/exec"
 	"reflect"
 	"sort"
 	"strconv"
@@ -493,6 +494,16 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 
 	if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
 		clipboard.Set(string(clipb))
+	}
+
+	if w.MenuItem(label.TA("Go doc", "LC")) {
+		go goDocCommand(v.Type)
+	}
+
+	if v.Kind == reflect.Interface && len(v.Children) > 0 {
+		if w.MenuItem(label.TA("Go doc (concrete type)", "LC")) {
+			go goDocCommand(v.Children[0].Type)
+		}
 	}
 
 	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
@@ -1123,4 +1134,17 @@ func markChangedVariable(newvar *Variable, oldvar *Variable) {
 
 func changedVariableColor() color.RGBA {
 	return color.RGBA{changedVariableOpacity, 0, 0, changedVariableOpacity}
+}
+
+func goDocCommand(typ string) {
+	for len(typ) > 0 && typ[0] == '*' {
+		typ = typ[1:]
+	}
+	cmd := exec.Command("go", "doc", typ)
+	cmd.Dir = BackendServer.builddir
+	out, _ := cmd.CombinedOutput()
+
+	var scrollbackOut = &editorWriter{true}
+	fmt.Fprintf(scrollbackOut, "Go doc for %s\n", typ)
+	scrollbackOut.Write(out)
 }
