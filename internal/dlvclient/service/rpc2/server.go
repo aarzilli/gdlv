@@ -241,11 +241,16 @@ type ListTypesOut struct {
 type ListGoroutinesIn struct {
 	Start int
 	Count int
+
+	Filters []api.ListGoroutinesFilter
+	api.GoroutineGroupingOptions
 }
 
 type ListGoroutinesOut struct {
-	Goroutines []*api.Goroutine
-	Nextg      int
+	Goroutines    []*api.Goroutine
+	Nextg         int
+	Groups        []api.GoroutineGroup
+	TooManyGroups bool
 }
 
 type AttachedToExistingProcessIn struct {

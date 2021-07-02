@@ -192,6 +192,10 @@ func (c *RPCClient) GetBreakpointByName(name string) (*api.Breakpoint, error) {
 	return &out.Breakpoint, err
 }
 
+// CreateBreakpoint will send a request to the RPC server to create a breakpoint.
+// Please refer to the documentation for `Debugger.CreateBreakpoint` for a description of how
+// the requested breakpoint parameters are interpreted and used:
+// https://pkg.go.dev/github.com/go-delve/delve/service/debugger#Debugger.CreateBreakpoint
 func (c *RPCClient) CreateBreakpoint(breakPoint *api.Breakpoint) (*api.Breakpoint, error) {
 	var out CreateBreakpointOut
 	err := c.call("CreateBreakpoint", CreateBreakpointIn{*breakPoint}, &out)
@@ -318,8 +322,17 @@ func (c *RPCClient) ListFunctionArgs(scope api.EvalScope, cfg api.LoadConfig) ([
 
 func (c *RPCClient) ListGoroutines(start, count int) ([]*api.Goroutine, int, error) {
 	var out ListGoroutinesOut
-	err := c.call("ListGoroutines", ListGoroutinesIn{start, count}, &out)
+	err := c.call("ListGoroutines", ListGoroutinesIn{start, count, nil, api.GoroutineGroupingOptions{}}, &out)
 	return out.Goroutines, out.Nextg, err
+}
+
+func (c *RPCClient) ListGoroutinesWithFilter(start, count int, filters []api.ListGoroutinesFilter, group *api.GoroutineGroupingOptions) ([]*api.Goroutine, []api.GoroutineGroup, int, bool, error) {
+	if group == nil {
+		group = &api.GoroutineGroupingOptions{}
+	}
+	var out ListGoroutinesOut
+	err := c.call("ListGoroutines", ListGoroutinesIn{start, count, filters, *group}, &out)
+	return out.Goroutines, out.Groups, out.Nextg, out.TooManyGroups, err
 }
 
 func (c *RPCClient) Stacktrace(goroutineId, depth int, opts api.StacktraceOptions, cfg *api.LoadConfig) ([]api.Stackframe, error) {

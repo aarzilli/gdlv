@@ -15,6 +15,8 @@ var ErrNotExecutable = errors.New("not an executable file")
 
 // DebuggerState represents the current context of the debugger.
 type DebuggerState struct {
+	// PID of the process we are debugging.
+	Pid int
 	// Running is true if the process is running and no other information can be collected.
 	Running bool
 	// Recording is true if the process is currently being recorded and no other
@@ -65,6 +67,9 @@ type Breakpoint struct {
 
 	// Breakpoint condition
 	Cond string
+	// Breakpoint hit count condition.
+	// Supported hit count conditions are "NUMBER" and "OP NUMBER".
+	HitCond string
 
 	// Tracepoint flag, signifying this is a tracepoint.
 	Tracepoint bool `json:"continue"`
@@ -578,4 +583,42 @@ type DumpState struct {
 	MemDone, MemTotal         uint64
 
 	Err string
+}
+
+// ListGoroutinesFilter describes a filtering condition for the
+// ListGoroutines API call.
+type ListGoroutinesFilter struct {
+	Kind    GoroutineField
+	Negated bool
+	Arg     string
+}
+
+// GoroutineField allows referring to a field of a goroutine object.
+type GoroutineField uint8
+
+const (
+	GoroutineFieldNone  GoroutineField = iota
+	GoroutineCurrentLoc                // the goroutine's CurrentLoc
+	GoroutineUserLoc                   // the goroutine's UserLoc
+	GoroutineGoLoc                     // the goroutine's GoStatementLoc
+	GoroutineStartLoc                  // the goroutine's StartLoc
+	GoroutineLabel                     // the goroutine's label
+	GoroutineRunning                   // the goroutine is running
+	GoroutineUser                      // the goroutine is a user goroutine
+)
+
+// GoroutineGroup represents a group of goroutines in the return value of
+// the ListGoroutines API call.
+type GoroutineGroup struct {
+	Name   string // name of this group
+	Offset int    // start offset in the list of goroutines of this group
+	Count  int    // number of goroutines that belong to this group in the list of goroutines
+	Total  int    // total number of goroutines that belong to this group
+}
+
+type GoroutineGroupingOptions struct {
+	GroupBy         GoroutineField
+	GroupByKey      string
+	MaxGroupMembers int
+	MaxGroups       int
 }
