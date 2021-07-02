@@ -124,16 +124,18 @@ var goroutinesPanel = struct {
 	asyncLoad         asyncLoad
 	goroutineLocation int
 	goroutines        []wrappedGoroutine
+	groups            []api.GoroutineGroup
+	tooManyGroups     bool
 	onlyStopped       bool
 	id                int
 	limit             int
-
-	filterEditor nucular.TextEditor
-	invertFilter bool
+	rules             []*goroutineFilterRule
+	rulesChanged      bool
 }{
 	goroutineLocation: 1,
 	goroutines:        make([]wrappedGoroutine, 0, 10),
 	limit:             100,
+	rules:             []*goroutineFilterRule{newGoroutineFilterRule()},
 }
 
 var stackPanel = struct {
@@ -227,11 +229,48 @@ func loadGoroutines(p *asyncLoad) {
 	if lim == 0 {
 		lim = 100
 	}
-	gs, _, err := client.ListGoroutines(0, lim)
+
+	filters := []api.ListGoroutinesFilter{}
+	groupby := (*api.GoroutineGroupingOptions)(nil)
+
+	rules := goroutinesPanel.rules
+	goroutinesPanel.rules = goroutinesPanel.rules[:0]
+	for i := range rules {
+		if !rules[i].empty() {
+			switch rules[i].kind {
+			case goroutinesRuleKinds[1]: // With
+				filters = append(filters, api.ListGoroutinesFilter{
+					Kind: rules[i].goroutineField(),
+					Arg:  rules[i].arg,
+				})
+			case goroutinesRuleKinds[2]: // Without
+				filters = append(filters, api.ListGoroutinesFilter{
+					Kind:    rules[i].goroutineField(),
+					Negated: true,
+					Arg:     rules[i].arg,
+				})
+			case goroutinesRuleKinds[3]: // Group by
+				groupby = &api.GoroutineGroupingOptions{
+					GroupBy:         rules[i].goroutineField(),
+					GroupByKey:      rules[i].arg,
+					MaxGroupMembers: 5,
+					MaxGroups:       lim,
+				}
+				lim = 0
+			}
+			goroutinesPanel.rules = append(goroutinesPanel.rules, rules[i])
+		}
+	}
+	if len(goroutinesPanel.rules) == 0 || goroutinesPanel.rules[len(goroutinesPanel.rules)-1].empty() {
+		goroutinesPanel.rules = append(goroutinesPanel.rules, newGoroutineFilterRule())
+	}
+
+	gs, groups, _, tooManyGroups, err := client.ListGoroutinesWithFilter(0, lim, filters, groupby)
 	if err != nil {
 		p.done(err)
 		return
 	}
+
 	state, err := client.GetState()
 	if err != nil {
 		p.done(err)
@@ -245,7 +284,9 @@ func loadGoroutines(p *asyncLoad) {
 		}
 	}
 
-	sort.Sort(goroutinesByID(gs))
+	if groupby == nil {
+		sort.Sort(goroutinesByID(gs))
+	}
 
 	goroutinesPanel.goroutines = goroutinesPanel.goroutines[:0]
 	goroutinesPanel.id++
@@ -261,6 +302,9 @@ func loadGoroutines(p *asyncLoad) {
 
 		goroutinesPanel.goroutines = append(goroutinesPanel.goroutines, wrappedGoroutine{*g, atbp, goroutineFormatWaitReason(g)})
 	}
+	goroutinesPanel.groups = groups
+	goroutinesPanel.tooManyGroups = tooManyGroups
+	goroutinesPanel.rulesChanged = false
 
 	if LogOutputNice != nil {
 		logf("Goroutines:\n")
@@ -289,6 +333,13 @@ func goroutineGetDisplayLiocation(g *api.Goroutine) api.Location {
 }
 
 func updateGoroutines(container *nucular.Window) {
+	refresh := func() {
+		go func() {
+			goroutinesPanel.asyncLoad.clear()
+			wnd.Changed()
+		}()
+	}
+
 	w := goroutinesPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
@@ -300,10 +351,7 @@ func updateGoroutines(container *nucular.Window) {
 	w.MenubarBegin()
 	w.Row(20).Static(130, 300)
 	if w.PropertyInt("Limit:", 1, &goroutinesPanel.limit, 1000000000, 1, 1) {
-		go func() {
-			goroutinesPanel.asyncLoad.clear()
-			wnd.Changed()
-		}()
+		refresh()
 	}
 	if w := w.Combo(label.T(goroutineLocations[goroutinesPanel.goroutineLocation]), 500, nil); w != nil {
 		w.Row(22).Dynamic(1)
@@ -314,13 +362,24 @@ func updateGoroutines(container *nucular.Window) {
 		}
 		w.CheckboxText("Only stoppped at breakpoint", &goroutinesPanel.onlyStopped)
 	}
-	w.Row(20).Static(100, 0, 100)
-	w.Label("Filter:", "LC")
-	if goroutinesPanel.filterEditor.Flags == 0 {
-		goroutinesPanel.filterEditor.Flags = nucular.EditClipboard | nucular.EditSelectable
+
+	{ // rules
+		for i := range goroutinesPanel.rules {
+			goroutinesShowRule(w, goroutinesPanel.rules[i])
+		}
+		if len(goroutinesPanel.rules) == 0 || !goroutinesPanel.rules[len(goroutinesPanel.rules)-1].empty() {
+			goroutinesPanel.rules = append(goroutinesPanel.rules, newGoroutineFilterRule())
+			w.Master().Changed()
+		}
+
+		if goroutinesPanel.rulesChanged {
+			w.Row(22).Static(130)
+			if w.ButtonText("Reload") {
+				refresh()
+			}
+		}
 	}
-	goroutinesPanel.filterEditor.Edit(w)
-	w.CheckboxText("Invert", &goroutinesPanel.invertFilter)
+
 	w.MenubarEnd()
 
 	d := 1
@@ -337,29 +396,17 @@ func updateGoroutines(container *nucular.Window) {
 
 	dthread := digits(maxthreadid)
 
-	var filter string
-	if len(goroutinesPanel.filterEditor.Buffer) > 0 {
-		filter = strings.TrimSpace(string(goroutinesPanel.filterEditor.Buffer))
-	}
+	curgroupidx := 0
 
 	for i := range goroutines {
+		if curgroupidx < len(goroutinesPanel.groups) && i == goroutinesPanel.groups[curgroupidx].Offset {
+			w.Row(posRowHeight).Dynamic(1)
+			w.Label(fmt.Sprintf("GROUP %s", goroutinesPanel.groups[curgroupidx].Name), "LC")
+		}
+
 		g := &goroutines[i]
 		if goroutinesPanel.onlyStopped && !g.atBreakpoint {
 			continue
-		}
-
-		if filter != "" {
-			filterMatch := false
-			loc := goroutineGetDisplayLiocation(&g.Goroutine)
-			if strings.Index(loc.File, filter) >= 0 || strings.Index(loc.Function.Name(), filter) >= 0 {
-				filterMatch = true
-			}
-			if goroutinesPanel.invertFilter {
-				filterMatch = !filterMatch
-			}
-			if !filterMatch {
-				continue
-			}
 		}
 
 		rowHeight := posRowHeight
@@ -407,6 +454,95 @@ func updateGoroutines(container *nucular.Window) {
 					go refreshState(refreshto, clearGoroutineSwitch, state)
 				}
 			}(g.ID)
+		}
+
+		if curgroupidx < len(goroutinesPanel.groups) && i >= (goroutinesPanel.groups[curgroupidx].Offset+goroutinesPanel.groups[curgroupidx].Count-1) {
+			w.Row(posRowHeight).Static(50, 0)
+			w.Spacing(1)
+			w.Label(fmt.Sprintf("(%d goroutines)", goroutinesPanel.groups[curgroupidx].Total), "LC")
+			curgroupidx++
+		}
+	}
+}
+
+type goroutineFilterRule struct {
+	kind      string
+	field     string
+	arg       string
+	argEditor *nucular.TextEditor
+}
+
+func newGoroutineFilterRule() *goroutineFilterRule {
+	r := &goroutineFilterRule{kind: goroutinesRuleKinds[0], field: goroutinesRuleFields[0], argEditor: &nucular.TextEditor{}}
+	r.argEditor.Flags = nucular.EditClipboard | nucular.EditSelectable
+	return r
+}
+
+func (rule *goroutineFilterRule) empty() bool {
+	return rule.kind == goroutinesRuleKinds[0] || rule.kind == goroutinesRuleKindsFilled[0]
+}
+
+func (rule *goroutineFilterRule) goroutineField() api.GoroutineField {
+	for i, s := range goroutinesRuleFields {
+		if s == rule.field {
+			return api.GoroutineField(i + 1)
+		}
+	}
+	return api.GoroutineFieldNone
+}
+
+var goroutinesRuleKinds = []string{"Add rule...", "With:", "Without:", "Group by:"}
+var goroutinesRuleKindsFilled = []string{"Remove rule", "With:", "Without:", "Group by:"}
+var goroutinesRuleFields = []string{"Current Location", "User Location", "Go Location", "Start Location", "Label", "Running", "User"}
+
+func goroutinesShowRule(w *nucular.Window, rule *goroutineFilterRule) {
+	find := func(k string, v []string) int {
+		for i, s := range v {
+			if s == k {
+				return i
+			}
+		}
+		return 0
+	}
+
+	combo := func(cur *string, list []string) {
+		curidx := find(*cur, list)
+		newidx := w.ComboSimple(list, curidx, 30)
+		if curidx != newidx {
+			*cur = list[newidx]
+			goroutinesPanel.rulesChanged = true
+		}
+	}
+
+	w.Row(20).Static(130, 300, 0)
+
+	if rule.empty() {
+		combo(&rule.kind, goroutinesRuleKinds)
+	} else {
+		combo(&rule.kind, goroutinesRuleKindsFilled)
+	}
+
+	if !rule.empty() {
+		combo(&rule.field, goroutinesRuleFields)
+		needArg := false
+		if rule.kind == goroutinesRuleKinds[len(goroutinesRuleKinds)-1] { // Group by
+			if rule.goroutineField() == api.GoroutineLabel {
+				needArg = true
+			}
+		} else { // With / Without
+			switch rule.goroutineField() {
+			case api.GoroutineCurrentLoc, api.GoroutineUserLoc, api.GoroutineGoLoc, api.GoroutineStartLoc, api.GoroutineLabel:
+				needArg = true
+			case api.GoroutineRunning, api.GoroutineUser:
+				needArg = false
+			}
+		}
+		if needArg {
+			rule.argEditor.Edit(w)
+			if string(rule.argEditor.Buffer) != rule.arg {
+				rule.arg = string(rule.argEditor.Buffer)
+				goroutinesPanel.rulesChanged = true
+			}
 		}
 	}
 }
