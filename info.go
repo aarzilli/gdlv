@@ -869,9 +869,10 @@ func execClearCheckpoint(id int) {
 }
 
 type breakpointEditor struct {
-	bp          *api.Breakpoint
-	printEditor nucular.TextEditor
-	condEditor  nucular.TextEditor
+	bp            *api.Breakpoint
+	printEditor   nucular.TextEditor
+	condEditor    nucular.TextEditor
+	hitCondEditor nucular.TextEditor
 }
 
 func openBreakpointEditor(mw nucular.MasterWindow, bp *api.Breakpoint) {
@@ -885,6 +886,9 @@ func openBreakpointEditor(mw nucular.MasterWindow, bp *api.Breakpoint) {
 
 	ed.condEditor.Flags = nucular.EditClipboard | nucular.EditSelectable
 	ed.condEditor.Buffer = []rune(ed.bp.Cond)
+
+	ed.hitCondEditor.Flags = nucular.EditClipboard | nucular.EditSelectable
+	ed.hitCondEditor.Buffer = []rune(ed.bp.HitCond)
 
 	mw.PopupOpen(fmt.Sprintf("Editing breakpoint %d", breakpointsPanel.selected), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, ed.update)
 }
@@ -950,6 +954,10 @@ func (bped *breakpointEditor) update(w *nucular.Window) {
 	w.Label("Condition:", "LC")
 	bped.condEditor.Edit(w)
 
+	w.Row(30).Static(100, 0)
+	w.Label("Hit Condition:", "LC")
+	bped.hitCondEditor.Edit(w)
+
 	w.Row(20).Static(0, 80, 80)
 	w.Spacing(1)
 	if w.ButtonText("Cancel") {
@@ -958,6 +966,7 @@ func (bped *breakpointEditor) update(w *nucular.Window) {
 	}
 	if w.ButtonText("OK") {
 		bped.bp.Cond = string(bped.condEditor.Buffer)
+		bped.bp.HitCond = string(bped.hitCondEditor.Buffer)
 		bped.bp.Variables = bped.bp.Variables[:0]
 		for _, p := range strings.Split(string(bped.printEditor.Buffer), "\n") {
 			if p == "" {
