@@ -285,6 +285,23 @@ The memory location is specified with the same expression language used by 'prin
 will watch the address of variable 'v'.
 
 See also: "help print".`},
+
+		{aliases: []string{"call"}, group: runCmds, cmdFn: call, helpMsg: `Resumes process, injecting a function call (EXPERIMENTAL!!!)
+	
+	call [-unsafe] <function call expression>
+	
+Current limitations:
+- only pointers to stack-allocated objects can be passed as argument.
+- only some automatic type conversions are supported.
+- functions can only be called on running goroutines that are not
+  executing the runtime.
+- the current goroutine needs to have at least 256 bytes of free space on
+  the stack.
+- functions can only be called when the goroutine is stopped at a safe
+  point.
+- calling a function will resume execution of all goroutines.
+- only supported on linux's native backend.
+`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -781,6 +798,22 @@ func cont(out io.Writer, args string) error {
 		}
 		printcontext(out, state)
 	}
+	refreshState(refreshToFrameZero, clearStop, state)
+	return nil
+}
+
+func call(out io.Writer, args string) error {
+	const unsafePrefix = "-unsafe "
+	unsafe := false
+	if strings.HasPrefix(args, unsafePrefix) {
+		unsafe = true
+		args = args[len(unsafePrefix):]
+	}
+	state, err := client.Call(curGid, args, unsafe)
+	if err != nil {
+		return err
+	}
+	printcontext(out, state)
 	refreshState(refreshToFrameZero, clearStop, state)
 	return nil
 }
