@@ -843,6 +843,11 @@ func (c *Commands) reverse(out io.Writer, args string) error {
 		return fmt.Errorf("unknown command %q", v[0])
 	}
 
+	args = ""
+	if len(v) > 1 {
+		args = v[1]
+	}
+
 	const revprefix = "-rev "
 
 	switch cmd.aliases[0] {
