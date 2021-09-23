@@ -38,6 +38,13 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2021-09-23 / Version 1.7
+* Add watchpoint support
+* Add `Go doc` menu item, in the variables panel contextual menu, to quickly call `go doc` for a variable's type
+* Add hit count conditions for breakpoints
+* Add `call` command
+* Add goroutines filtering rules
+
 ## 2021-04-09 / Version 1.6
 * Print goroutine wait wait reason and wait time when available
 * Add dump command, creates core dump of the attached process
