@@ -75,6 +75,9 @@ func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool, 
 	r := &Variable{Variable: v}
 	r.Value = v.Value
 	r.Expression = expr
+	if r.Expression == "" {
+		r.Expression = fmt.Sprintf("(*(*%q)(%#x))", v.Type, v.Addr)
+	}
 
 	if name != "" {
 		r.DisplayName = name
