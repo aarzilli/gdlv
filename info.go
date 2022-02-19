@@ -141,6 +141,7 @@ var goroutinesPanel = struct {
 var stackPanel = struct {
 	asyncLoad    asyncLoad
 	stack        []api.Stackframe
+	isnew        []bool
 	ancestors    []api.Ancestor
 	depth        int
 	showDeferPos bool
@@ -591,6 +592,8 @@ func loadStacktrace(p *asyncLoad) {
 	stackPanel.id++
 	stackPanel.deferID++
 
+	oldStack := stackPanel.stack
+
 	var err error
 	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, stacktraceOptions()|api.StacktraceReadDefers, nil)
 	if LogOutputNice != nil {
@@ -606,6 +609,25 @@ func loadStacktrace(p *asyncLoad) {
 	if err != nil {
 		p.done(err)
 		return
+	}
+
+	stackPanel.isnew = make([]bool, len(stackPanel.stack))
+	for i := range stackPanel.stack {
+		found := false
+		for j := range oldStack {
+			if stackPanel.stack[i].FrameOffset == oldStack[j].FrameOffset {
+				found = true
+				break
+			}
+		}
+		stackPanel.isnew[i] = !found
+		if found {
+			break
+		}
+	}
+
+	if len(stackPanel.stack) > 0 && len(oldStack) > 0 && !stackPanel.isnew[0] && stackPanel.stack[0].FrameOffset != oldStack[0].FrameOffset {
+		stackPanel.isnew[0] = true
 	}
 
 	stackPanel.ancestors, _ = client.Ancestors(curGid, NumAncestors, stackPanel.depth)
@@ -650,20 +672,29 @@ func updateStacktrace(container *nucular.Window) {
 	didx := digits(len(stack))
 	d := hexdigits(maxpc)
 
-	showFrame := func(frame api.Stackframe, i int, sl func(string) bool) bool {
+	showFrame := func(frame api.Stackframe, i int, isnew bool, sl func(string) bool) bool {
 		w.Row(posRowHeight).Static()
 		w.LayoutFitWidth(stackPanel.id, 1)
 		sl(fmt.Sprintf("%*d", didx, i))
 		w.LayoutFitWidth(stackPanel.id, 1)
 		sl(fmt.Sprintf("%#0*x\n%+d", d, frame.PC, frame.FrameOffset))
 		w.LayoutFitWidth(stackPanel.id, 100)
-		return sl(formatLocation2(frame.Location))
+		r := sl(formatLocation2(frame.Location))
+		if isnew {
+			rowbounds := w.WidgetBounds()
+			rowbounds.X = w.Bounds.X
+			rowbounds.W = w.Bounds.W
+
+			cmds := w.Commands()
+			cmds.FillRect(rowbounds, 0, changedVariableColor())
+		}
+		return r
 	}
 
 	for i, frame := range stack {
 		selected := curFrame == i
 		prevSelected := selected
-		clicked := showFrame(frame, i, func(lbl string) bool {
+		clicked := showFrame(frame, i, stackPanel.isnew[i], func(lbl string) bool {
 			return w.SelectableLabel(lbl, "LT", &selected)
 		})
 		if clicked && prevSelected && !selected {
@@ -700,7 +731,7 @@ func updateStacktrace(container *nucular.Window) {
 		w.Label(fmt.Sprintf("Created by Goroutine %d", a.ID), "LT")
 
 		for i := range a.Stack {
-			showFrame(a.Stack[i], i, func(lbl string) bool {
+			showFrame(a.Stack[i], i, false, func(lbl string) bool {
 				w.Label(lbl, "LT")
 				return false
 			})
