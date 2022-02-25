@@ -1,3 +1,4 @@
+//go:build (darwin && !nucular_shiny) || nucular_gio
 // +build darwin,!nucular_shiny nucular_gio
 
 package nucular
@@ -219,11 +220,7 @@ func (mw *masterWindow) processPointerEvent(e pointer.Event) {
 		mw.ctx.Input.Mouse.Pos.Y = int(e.Position.Y)
 		mw.ctx.Input.Mouse.Delta = mw.ctx.Input.Mouse.Pos.Sub(mw.ctx.Input.Mouse.Prev)
 
-		if e.Scroll.Y < 0 {
-			mw.ctx.Input.Mouse.ScrollDelta++
-		} else if e.Scroll.Y > 0 {
-			mw.ctx.Input.Mouse.ScrollDelta--
-		}
+		mw.ctx.Input.Mouse.ScrollDelta += -e.Scroll.Y / 10
 	}
 }
 

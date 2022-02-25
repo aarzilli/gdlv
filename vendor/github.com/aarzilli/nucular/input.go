@@ -22,7 +22,7 @@ type MouseInput struct {
 	Pos         image.Point
 	Prev        image.Point
 	Delta       image.Point
-	ScrollDelta int
+	ScrollDelta float32
 }
 
 type KeyboardInput struct {

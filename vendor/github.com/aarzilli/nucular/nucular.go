@@ -1912,9 +1912,9 @@ func scrollwheelBehavior(win *Window, scroll, scrollwheel_bounds rect.Rect, scro
 		used_delta := (scroll_offset - old_scroll_offset) / scroll_step
 		residual := float64(in.Mouse.ScrollDelta) + used_delta
 		if residual < 0 {
-			in.Mouse.ScrollDelta = int(math.Ceil(residual))
+			in.Mouse.ScrollDelta = float32(math.Ceil(residual))
 		} else {
-			in.Mouse.ScrollDelta = int(math.Floor(residual))
+			in.Mouse.ScrollDelta = float32(math.Floor(residual))
 		}
 	}
 	return scroll_offset
