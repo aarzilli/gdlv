@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"strings"
-	"unicode"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
@@ -406,59 +404,4 @@ func getDisplayType(v *api.Variable, fullTypes bool) string {
 		return v.Type
 	}
 	return ShortenType(v.Type)
-}
-
-func ShortenType(typ string) string {
-	out, ok := shortenTypeEx(typ)
-	if !ok {
-		return typ
-	}
-	return out
-}
-
-func shortenTypeEx(typ string) (string, bool) {
-	switch {
-	case strings.HasPrefix(typ, "[]"):
-		sub, ok := shortenTypeEx(typ[2:])
-		return "[]" + sub, ok
-	case strings.HasPrefix(typ, "*"):
-		sub, ok := shortenTypeEx(typ[1:])
-		return "*" + sub, ok
-	case strings.HasPrefix(typ, "map["):
-		depth := 1
-		for i := 4; i < len(typ); i++ {
-			switch typ[i] {
-			case '[':
-				depth++
-			case ']':
-				depth--
-				if depth == 0 {
-					key, keyok := shortenTypeEx(typ[4:i])
-					val, valok := shortenTypeEx(typ[i+1:])
-					return "map[" + key + "]" + val, keyok && valok
-				}
-			}
-		}
-		return "", false
-	case typ == "interface {}" || typ == "interface{}":
-		return typ, true
-	case typ == "struct {}" || typ == "struct{}":
-		return typ, true
-	default:
-		slashnum := 0
-		slash := -1
-		for i, ch := range typ {
-			if !unicode.IsLetter(ch) && !unicode.IsDigit(ch) && ch != '_' && ch != '.' && ch != '/' && ch != '@' && ch != '%' && ch != '-' {
-				return "", false
-			}
-			if ch == '/' {
-				slash = i
-				slashnum++
-			}
-		}
-		if slashnum <= 1 || slash < 0 {
-			return typ, true
-		}
-		return typ[slash+1:], true
-	}
 }

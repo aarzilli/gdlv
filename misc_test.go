@@ -9,11 +9,12 @@ import (
 
 func TestShortenType(t *testing.T) {
 	c := func(src, tgt string) {
+		t.Helper()
 		out := prettyprint.ShortenType(src)
 		if out != tgt {
 			t.Errorf("for %q expected %q got %q", src, tgt, out)
 		} else {
-			t.Logf("for %q go %q (ok)", src, out)
+			t.Logf("for %q got %q (ok)", src, out)
 		}
 	}
 
@@ -30,6 +31,9 @@ func TestShortenType(t *testing.T) {
 	c("uint8", "uint8")
 	c("encoding/binary", "encoding/binary")
 	c("*github.com/go-delve/delve/pkg/proc.Target", "*proc.Target")
+	c("long/package/path/pkg.Parametric[long/package/path/pkg.A, map[long/package/path/pkg.B]long/package/path/pkg.A]", "pkg.Parametric[pkg.A, map[pkg.B]pkg.A]")
+	c("[]long/package/path/pkg.Parametric[long/package/path/pkg.A]", "[]pkg.Parametric[pkg.A]")
+	c("[24]long/package/path/pkg.A", "[24]pkg.A")
 }
 
 func TestCurrentColumn(t *testing.T) {
