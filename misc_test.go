@@ -34,6 +34,7 @@ func TestShortenType(t *testing.T) {
 	c("long/package/path/pkg.Parametric[long/package/path/pkg.A, map[long/package/path/pkg.B]long/package/path/pkg.A]", "pkg.Parametric[pkg.A, map[pkg.B]pkg.A]")
 	c("[]long/package/path/pkg.Parametric[long/package/path/pkg.A]", "[]pkg.Parametric[pkg.A]")
 	c("[24]long/package/path/pkg.A", "[24]pkg.A")
+	c("chan func()", "chan func()")
 }
 
 func TestCurrentColumn(t *testing.T) {

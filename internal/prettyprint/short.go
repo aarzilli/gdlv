@@ -91,8 +91,8 @@ func shortenTypeEx(typ string) (string, bool) {
 func containsAnonymousType(typ string) bool {
 	for _, thing := range []string{"interface {", "interface{", "struct {", "struct{", "func (", "func("} {
 		idx := strings.Index(typ, thing)
-		if idx >= 0 {
-			ch := typ[idx+len(thing)+1]
+		if idx >= 0 && idx+len(thing) < len(typ) {
+			ch := typ[idx+len(thing)]
 			if ch != '}' && ch != ')' {
 				return true
 			}
