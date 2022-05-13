@@ -38,6 +38,11 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2022-05-13 / Version 1.8
+* Extended type shortening rules to support simple generic types
+* Miscellaneous bug fixes
+
+
 ## 2021-09-23 / Version 1.7
 * Add watchpoint support
 * Add `Go doc` menu item, in the variables panel contextual menu, to quickly call `go doc` for a variable's type
