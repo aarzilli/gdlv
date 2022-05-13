@@ -369,7 +369,7 @@ func (rtxt *RichText) Tail(n int) {
 	}
 
 	off := rtxt.lines[len(rtxt.lines)-n].off[0]
-	runeoff := rtxt.lines[len(rtxt.lines)-n].off[0]
+	runeoff := rtxt.lines[len(rtxt.lines)-n].runeoff
 
 	off2 := int32(0)
 	for i, chunk := range rtxt.chunks {
