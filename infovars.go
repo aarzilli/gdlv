@@ -1047,10 +1047,13 @@ func detailsAvailable(v *Variable) openDetailsWindowFn {
 	if v == nil {
 		return nil
 	}
-	switch v.Type {
+	switch v.RealType {
 	case "string", "[]uint8", "[]int32":
 		return newDetailViewer
 	case "[]int", "[]int8", "[]int16", "[]int64", "[]uint", "[]uint16", "[]uint32", "[]uint64":
+		return newDetailViewer
+	}
+	if v.Kind == reflect.String {
 		return newDetailViewer
 	}
 	return nil

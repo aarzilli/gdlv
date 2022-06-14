@@ -82,6 +82,10 @@ func (dv *detailViewer) load(p *asyncLoad) {
 		dv.stringMode = viewByteArray
 	case "[]int32":
 		dv.stringMode = viewRuneArray
+	default:
+		if dv.v.Kind == reflect.String {
+			dv.stringMode = viewString
+		}
 	}
 
 	dv.loaded = fmt.Sprintf("%s (loaded: %d/%d)", expr, dv.length(), dv.v.Len)
@@ -98,14 +102,7 @@ func (dv *detailViewer) setupView() {
 	}
 	switch dv.v.Type {
 	case "string":
-		switch dv.stringMode {
-		case viewString:
-			dv.ed.Buffer = []rune(dv.v.Value)
-		case viewByteArray:
-			dv.viewStringAsByteArray([]byte(dv.v.Value))
-		case viewRuneArray:
-			dv.viewStringAsRuneArray([]rune(dv.v.Value))
-		}
+		dv.setupStringView()
 		return
 
 	case "[]uint8":
@@ -162,7 +159,22 @@ func (dv *detailViewer) setupView() {
 		dv.ed.Buffer = []rune(formatArray(array, dv.numberMode != decMode, dv.numberMode, false, size, 10))
 
 	default:
-		dv.ed.Buffer = []rune(fmt.Sprintf("unsupported type %s", dv.v.Type))
+		if dv.v.Kind == reflect.String {
+			dv.setupStringView()
+		} else {
+			dv.ed.Buffer = []rune(fmt.Sprintf("unsupported type %s", dv.v.Type))
+		}
+	}
+}
+
+func (dv *detailViewer) setupStringView() {
+	switch dv.stringMode {
+	case viewString:
+		dv.ed.Buffer = []rune(dv.v.Value)
+	case viewByteArray:
+		dv.viewStringAsByteArray([]byte(dv.v.Value))
+	case viewRuneArray:
+		dv.viewStringAsRuneArray([]rune(dv.v.Value))
 	}
 }
 
@@ -289,8 +301,12 @@ func (dv *detailViewer) Update(container *nucular.Window) {
 	case "[]int", "[]int8", "[]int16", "[]int64", "[]uint", "[]uint16", "[]uint32", "[]uint64":
 		dv.intArrayUpdate(w)
 	default:
-		w.Row(30).Dynamic(1)
-		w.Label(fmt.Sprintf("Unsupported type %s", dv.v.Type), "LC")
+		if dv.v.Kind == reflect.String {
+			dv.stringUpdate(w)
+		} else {
+			w.Row(30).Dynamic(1)
+			w.Label(fmt.Sprintf("Unsupported type %s", dv.v.Type), "LC")
+		}
 	}
 }
 
