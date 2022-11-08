@@ -1129,6 +1129,9 @@ func printVar(out io.Writer, args string) error {
 		return fmt.Errorf("not enough arguments")
 	}
 	val := evalScopedExpr(args, getVariableLoadConfig())
+	if val.Unreadable != "" {
+		return errors.New(val.Unreadable)
+	}
 	valstr := wrapApiVariableSimple(val).MultilineString("")
 	nlcount := 0
 	for _, ch := range valstr {
