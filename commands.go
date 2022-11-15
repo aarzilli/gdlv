@@ -711,6 +711,7 @@ func doRestart(out io.Writer, restartCheckpoint string, resetArgs bool, argsAndR
 	if shouldFinishRestart {
 		finishRestart(out, true)
 	}
+	firstStop = true
 	refreshState(refreshToFrameZero, clearStop, nil)
 	return nil
 }
@@ -984,6 +985,8 @@ func step(out io.Writer, args string) error {
 		args = conf.DefaultStepBehaviour
 	}
 
+	ignoreFrameChange = true
+
 	switch args {
 	case "", "-first":
 		return stepIntoFirst(out, stepfn)
@@ -1098,6 +1101,7 @@ func stepout(out io.Writer, args string) error {
 	if err != nil {
 		return err
 	}
+	ignoreFrameChange = true
 	printcontext(out, state)
 	return continueUntilCompleteNext(out, state, "stepout", nil)
 }

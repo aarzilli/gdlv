@@ -190,8 +190,11 @@ var wnd nucular.MasterWindow
 
 var nextInProgress bool
 var client *rpc2.RPCClient
-var curThread int
-var curGid int
+var curThread, oldThread int
+var curGid, oldGid int
+var curFrameOffset, oldFrameOffset int64
+var firstStop bool = true
+var ignoreFrameChange bool
 var curFrame int
 var curDeferredCall int
 var curPC uint64
@@ -592,6 +595,12 @@ const (
 func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.DebuggerState) {
 	defer wnd.Changed()
 
+	if clearKind == clearStop {
+		oldGid = curGid
+		oldThread = curThread
+		oldFrameOffset = curFrameOffset
+	}
+
 	var scrollbackOut = editorWriter{false}
 
 	failstate := func(pos string, err error) {
@@ -776,6 +785,25 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 
 	applyBreakpoints(failstate)
 
+	if clearKind == clearStop {
+		frames, _ := client.Stacktrace(curGid, 1, 0, nil)
+		if len(frames) > 0 {
+			curFrameOffset = frames[0].FrameOffset
+		}
+	}
+
+	if clearKind == clearStop && ignoreFrameChange {
+		ignoreFrameChange = false
+		oldFrameOffset = curFrameOffset
+	}
+
+	if clearKind == clearStop && firstStop {
+		firstStop = false
+		oldGid = curGid
+		oldThread = curThread
+		oldFrameOffset = curFrameOffset
+	}
+
 	wnd.Walk(func(title string, data interface{}, docked bool, splitSize int, rect rect.Rect) {
 		if asyncLoad, ok := data.(*asyncLoad); ok && asyncLoad != nil {
 			if title == "Details" && clearKind != clearNothing && clearKind != clearBreakpoint {
@@ -784,7 +812,6 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 			asyncLoad.startLoad()
 		}
 	})
-
 }
 
 func loadDisassembly(p *asyncLoad) {

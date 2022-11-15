@@ -1457,13 +1457,13 @@ func updateListingPanel(container *nucular.Window) {
 		line := listingPanel.listing[gl.Index()]
 		centerline := line.pc || (listingPanel.pinnedLoc != nil && line.lineno == listingPanel.pinnedLoc.Line)
 
-		if centerline {
-			rowbounds := listp.WidgetBounds()
-			rowbounds.X = listp.Bounds.X
-			rowbounds.W = listp.Bounds.W
+		centerlineBounds := listp.WidgetBounds()
+		centerlineBounds.X = listp.Bounds.X
+		centerlineBounds.W = listp.Bounds.W
 
+		if centerline {
 			cmds := listp.Commands()
-			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
+			cmds.FillRect(centerlineBounds, 0, style.Selectable.PressedActive.Data.Color)
 
 			if listingPanel.recenterListing {
 				gl.Center()
@@ -1495,6 +1495,10 @@ func updateListingPanel(container *nucular.Window) {
 		if centerline && listingPanel.recenterListing {
 			listingPanel.recenterListing = false
 			gl.Center()
+		}
+
+		if centerline {
+			showCenterlineChanges(centerlineBounds, listp)
 		}
 
 		// Contextual Menu
@@ -1564,7 +1568,6 @@ func updateListingPanel(container *nucular.Window) {
 
 		// Breakpoint Info
 		if line.bp != nil && (line.bp.Cond != "" || len(line.bp.Variables) > 0) {
-			//TODO: display extra line with breakpoint info
 			listp.Row(lineheight).Static(0)
 			bpcolor := style.Text.Color
 			darken(&bpcolor)
@@ -1584,6 +1587,45 @@ func updateListingPanel(container *nucular.Window) {
 func listingSetBreakpoint(file string, line int) {
 	setBreakpointEx(&editorWriter{true}, &api.Breakpoint{File: file, Line: line})
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
+}
+
+func showCenterlineChanges(centerlineBounds rect.Rect, w *nucular.Window) {
+	msg := ""
+	if curGid < 0 {
+		if oldThread != curThread {
+			msg = "THREAD CHANGED"
+		}
+	}
+	if oldFrameOffset != curFrameOffset {
+		msg = "FRAME CHANGED"
+	}
+	if oldGid != curGid {
+		msg = "GOROUTINE CHANGED"
+	}
+	if msg == "" {
+		return
+	}
+
+	style := w.Master().Style()
+
+	width := nucular.FontWidth(style.Font, msg)
+
+	bounds := centerlineBounds
+	bounds.X = bounds.X + bounds.W - width - 6*style.NormalWindow.ScrollbarSize.X
+	bounds.W = width + 6*style.NormalWindow.ScrollbarSize.X
+
+	bg := color.RGBA{0xff, 0xff, 0x00, 0xff}
+	fg := color.RGBA{0x00, 0x00, 0x00, 0xff}
+
+	cmds := w.Commands()
+	cmds.FillRect(bounds, 0, style.Selectable.PressedActive.Data.Color)
+
+	bounds.X += 2 * style.NormalWindow.ScrollbarSize.X
+	bounds.W -= 4 * style.NormalWindow.ScrollbarSize.X
+	cmds.FillRect(bounds, 0, bg)
+
+	bounds.X += style.NormalWindow.ScrollbarSize.X - style.Text.Padding.X
+	cmds.DrawText(bounds, msg, boldFace, fg)
 }
 
 func updateDisassemblyPanel(container *nucular.Window) {
@@ -1648,12 +1690,13 @@ func updateDisassemblyPanel(container *nucular.Window) {
 
 		centerline := instr.AtPC || instr.Loc.PC == listingPanel.framePC
 
+		centerlineBounds := listp.WidgetBounds()
+		centerlineBounds.X = listp.Bounds.X
+		centerlineBounds.W = listp.Bounds.W
+
 		if centerline {
-			rowbounds := listp.WidgetBounds()
-			rowbounds.X = listp.Bounds.X
-			rowbounds.W = listp.Bounds.W
 			cmds := listp.Commands()
-			cmds.FillRect(rowbounds, 0, style.Selectable.PressedActive.Data.Color)
+			cmds.FillRect(centerlineBounds, 0, style.Selectable.PressedActive.Data.Color)
 		}
 
 		if gl.Index() == listingPanel.disassHoverIdx || gl.Index() == listingPanel.disassHoverClickIdx {
@@ -1688,6 +1731,10 @@ func updateDisassemblyPanel(container *nucular.Window) {
 		listp.Label(instr.op, "LC")
 		listp.LayoutFitWidth(listingPanel.id, 100)
 		listp.Label(instr.args, "LC")
+
+		if centerline {
+			showCenterlineChanges(centerlineBounds, listp)
+		}
 
 		if listp.Input().Mouse.HoveringRect(listp.LastWidgetBounds) {
 			if instr.dstidx >= 0 {
