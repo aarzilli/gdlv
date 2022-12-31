@@ -16,7 +16,6 @@ type frozenBreakpoint struct {
 }
 
 var FrozenBreakpoints []frozenBreakpoint
-var DisabledBreakpoints []frozenBreakpoint
 
 // Saves position information for bp in FrozenBreakpoints
 func freezeBreakpoint(out io.Writer, bp *api.Breakpoint) {
@@ -106,10 +105,7 @@ func clearFrozenBreakpoints() {
 func restoreFrozenBreakpoints(out io.Writer) {
 	// Restore frozen breakpoints
 	for i := range FrozenBreakpoints {
-		FrozenBreakpoints[i].Restore(out, true)
-	}
-	for i := range DisabledBreakpoints {
-		DisabledBreakpoints[i].Restore(out, false)
+		FrozenBreakpoints[i].Restore(out)
 	}
 
 	// Re-freeze breakpoints
@@ -125,7 +121,7 @@ func restoreFrozenBreakpoints(out io.Writer) {
 	}
 }
 
-func (fbp *frozenBreakpoint) Restore(out io.Writer, create bool) {
+func (fbp *frozenBreakpoint) Restore(out io.Writer) {
 	if fbp.Bp.FunctionName == "" || fbp.Bp.File == "" {
 		return
 	}
@@ -187,9 +183,7 @@ func (fbp *frozenBreakpoint) Restore(out io.Writer, create bool) {
 	fbp.Bp.File = functionLoc.File
 	fbp.Bp.Line = bestMatch
 
-	if create {
-		fbp.Set(out, &functionLoc)
-	}
+	fbp.Set(out, &functionLoc)
 }
 
 func (fbp *frozenBreakpoint) Set(out io.Writer, functionLoc *api.Location) {
@@ -199,7 +193,9 @@ func (fbp *frozenBreakpoint) Set(out io.Writer, functionLoc *api.Location) {
 		return
 	}
 
+	savedDisabled := fbp.Bp.Disabled
 	fbp.Bp = *bp
+	fbp.Bp.Disabled = savedDisabled
 
 	if functionLoc != nil {
 		if bp.FunctionName != functionLoc.Function.Name() {
@@ -207,41 +203,35 @@ func (fbp *frozenBreakpoint) Set(out io.Writer, functionLoc *api.Location) {
 			fmt.Fprintf(out, "Could not restore breakpoint %d (function name mismatch)\n", fbp.Bp.ID)
 		}
 	}
+
+	if fbp.Bp.Disabled {
+		client.AmendBreakpoint(&fbp.Bp)
+	}
 }
 
 func disableBreakpoint(bp *api.Breakpoint) {
 	for i := range FrozenBreakpoints {
 		if FrozenBreakpoints[i].Bp.ID == bp.ID {
-			client.ClearBreakpoint(FrozenBreakpoints[i].Bp.ID)
-			FrozenBreakpoints[i].Bp.ID += 1000000 // XXX ugly hack!
-			DisabledBreakpoints = append(DisabledBreakpoints, FrozenBreakpoints[i])
-			copy(FrozenBreakpoints[i:], FrozenBreakpoints[i+1:])
-			FrozenBreakpoints = FrozenBreakpoints[:len(FrozenBreakpoints)-1]
+			FrozenBreakpoints[i].Bp.Disabled = true
+			client.AmendBreakpoint(&FrozenBreakpoints[i].Bp)
 			break
 		}
 	}
+
 	saveConfiguration()
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	wnd.Changed()
 }
 
 func enableBreakpoint(bp *api.Breakpoint) {
-	for i := range DisabledBreakpoints {
-		if DisabledBreakpoints[i].Bp.ID == bp.ID {
-			FrozenBreakpoints = append(FrozenBreakpoints, DisabledBreakpoints[i])
-			fbp := &FrozenBreakpoints[len(FrozenBreakpoints)-1]
-			copy(DisabledBreakpoints[i:], DisabledBreakpoints[i+1:])
-			DisabledBreakpoints = DisabledBreakpoints[:len(DisabledBreakpoints)-1]
-			fbp.Set(&editorWriter{true}, nil)
+	for i := range FrozenBreakpoints {
+		if FrozenBreakpoints[i].Bp.ID == bp.ID {
+			FrozenBreakpoints[i].Bp.Disabled = false
+			client.AmendBreakpoint(&FrozenBreakpoints[i].Bp)
 			break
 		}
 	}
 	saveConfiguration()
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	wnd.Changed()
-}
-
-type anyBreakpoint struct {
-	*api.Breakpoint
-	enabled bool
 }

@@ -916,23 +916,20 @@ func applyBreakpoints(failstate func(string, error)) {
 		return
 	}
 
-	bpmap := map[int]anyBreakpoint{}
+	bpmap := map[int]*api.Breakpoint{}
 	for _, bp := range breakpoints {
 		if bp.File == listingPanel.file {
-			bpmap[bp.Line] = anyBreakpoint{bp, true}
-		}
-	}
-
-	for _, fbp := range DisabledBreakpoints {
-		if fbp.Bp.File == listingPanel.file {
-			bpmap[fbp.Bp.Line] = anyBreakpoint{&fbp.Bp, false}
+			bpmap[bp.Line] = bp
 		}
 	}
 
 	for i := range listingPanel.listing {
 		b := bpmap[listingPanel.listing[i].lineno]
-		listingPanel.listing[i].bp = b.Breakpoint
-		listingPanel.listing[i].bpenabled = b.enabled
+		listingPanel.listing[i].bp = b
+		listingPanel.listing[i].bpenabled = false
+		if b != nil {
+			listingPanel.listing[i].bpenabled = !b.Disabled
+		}
 	}
 }
 
@@ -1095,9 +1092,8 @@ func main() {
 
 	BackendServer = parseArguments()
 
-	if BackendServer.debugid != "" && conf.FrozenBreakpoints != nil && conf.DisabledBreakpoints != nil {
+	if BackendServer.debugid != "" && conf.FrozenBreakpoints != nil {
 		FrozenBreakpoints = append(FrozenBreakpoints[:0], conf.FrozenBreakpoints[BackendServer.debugid]...)
-		DisabledBreakpoints = append(DisabledBreakpoints[:0], conf.DisabledBreakpoints[BackendServer.debugid]...)
 	}
 
 	loadPanelDescrToplevel(conf.Layouts["default"].Layout)
