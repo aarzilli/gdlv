@@ -38,6 +38,10 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2023-01-05 / Version 1.9
+* Show an indicator when the current frame changes between continues
+* Miscellaneous bug fixes
+
 ## 2022-05-13 / Version 1.8
 * Extended type shortening rules to support simple generic types
 * Miscellaneous bug fixes
