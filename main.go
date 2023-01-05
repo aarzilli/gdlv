@@ -664,6 +664,9 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 	case clearFrameSwitch:
 		localsPanel.asyncLoad.clear()
 		listingPanel.pinnedLoc = nil
+		for i := range stackPanel.isnew {
+			stackPanel.isnew[i] = false
+		}
 	case clearGoroutineSwitch:
 		stackPanel.asyncLoad.clear()
 		localsPanel.asyncLoad.clear()
