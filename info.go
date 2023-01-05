@@ -1467,10 +1467,15 @@ func updateListingPanel(container *nucular.Window) {
 			listp.Spacing(1)
 		}
 
+		textColor := style.Text.Color
+		if centerline {
+			textColor = style.Selectable.TextPressedActive
+		}
+
 		listp.LayoutFitWidth(listingPanel.id, 1)
-		listp.Label(line.idx, "LC")
+		listp.LabelColored(line.idx, "LC", textColor)
 		listp.LayoutFitWidth(listingPanel.id, 100)
-		listp.Label(line.text, "LC")
+		listp.LabelColored(line.text, "LC", textColor)
 		textbounds := listp.LastWidgetBounds
 
 		if centerline && listingPanel.recenterListing {
