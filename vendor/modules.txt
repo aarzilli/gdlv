@@ -98,6 +98,7 @@ golang.org/x/exp/shiny/driver/windriver
 golang.org/x/exp/shiny/driver/x11driver
 golang.org/x/exp/shiny/screen
 # golang.org/x/image v0.0.0-20200618115811-c13761719519
+## explicit
 golang.org/x/image/draw
 golang.org/x/image/font
 golang.org/x/image/font/sfnt

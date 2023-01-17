@@ -16,6 +16,7 @@ import (
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/clipboard"
+	ncommand "github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
@@ -706,23 +707,30 @@ func variableHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Va
 
 func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Variable, value string) {
 	style := w.Master().Style()
-	symX := style.Tab.Padding.X
-	symW := nucular.FontHeight(style.Font)
-	item_spacing := style.NormalWindow.Spacing
-	z := symX + symW + item_spacing.X + 2*style.Tab.Spacing.X
-	w.LayoutSetWidthScaled(z)
-	w.Spacing(1)
-	w.LayoutSetWidthScaled(w.LayoutAvailableWidth())
+	var lblrect rect.Rect
+	var out *ncommand.Buffer
+	start := func() {
+		symX := style.Tab.Padding.X
+		symW := nucular.FontHeight(style.Font)
+		item_spacing := style.NormalWindow.Spacing
+		z := symX + symW + item_spacing.X + 2*style.Tab.Spacing.X
+		w.LayoutSetWidthScaled(z)
+		w.Spacing(1)
+		w.LayoutSetWidthScaled(w.LayoutAvailableWidth())
+		lblrect, out = w.Custom(nstyle.WidgetStateActive)
+	}
 
-	//w.Label(fmt.Sprintf("%s %s = %s", v.DisplayName, v.Type, value), "LC")
+	changed := func() {
+		if v.changed {
+			out.FillRect(lblrect, 0, changedVariableColor())
+		}
+	}
 
-	lblrect, out := w.Custom(nstyle.WidgetStateActive)
+	start()
 	if out == nil {
 		return
 	}
-	if v.changed {
-		out.FillRect(lblrect, 0, changedVariableColor())
-	}
+	changed()
 
 	lblrect.Y += style.Text.Padding.Y
 
@@ -742,7 +750,48 @@ func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *
 	}
 	print(v.DisplayName, boldFace)
 	print(getDisplayType(v, fullTypes), style.Font)
-	print("= "+value, style.Font)
+	print("= ", style.Font)
+
+	valuex := lblrect.X
+	valuew := lblrect.W
+
+	clipb = append(clipb, []byte(value)...)
+	clipb = append(clipb, ' ')
+
+	textClamp := func(text []rune, space int) []rune {
+		if nucular.FontWidth(style.Font, string(text)) < space {
+			return text
+		}
+		text_width := 0
+		for i, ch := range text {
+			xw := nucular.FontWidth(style.Font, string(ch))
+			if text_width+xw >= space {
+				return text[:i]
+			}
+			text_width += xw
+		}
+		return text
+	}
+
+	valstr := []rune(value)
+	first := true
+	for len(valstr) > 0 {
+		if !first {
+			showExprMenu(w, exprMenu, v, clipb)
+			w.Row(varRowHeight).Static()
+			start()
+			if out == nil {
+				return
+			}
+			changed()
+			lblrect.X = valuex
+			lblrect.W = valuew
+		}
+		cur := textClamp(valstr, lblrect.W)
+		valstr = valstr[len(cur):]
+		out.DrawText(lblrect, string(cur), style.Font, style.Text.Color)
+		first = false
+	}
 
 	showExprMenu(w, exprMenu, v, clipb)
 }

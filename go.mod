@@ -9,6 +9,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	go.starlark.net v0.0.0-20200821142938-949cc6f4b097
 	golang.org/x/exp v0.0.0-20201221025956-e89b829e73ea // indirect
+	golang.org/x/image v0.0.0-20200618115811-c13761719519 // indirect
 	golang.org/x/mobile v0.0.0-20201217150744-e6ae53a27f4f
 	golang.org/x/text v0.3.2 // indirect
 )
