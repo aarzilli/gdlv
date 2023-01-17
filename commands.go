@@ -10,6 +10,7 @@ import (
 	"go/scanner"
 	"io"
 	"os"
+	"reflect"
 	"sort"
 	"strconv"
 	"strings"
@@ -83,8 +84,8 @@ type Commands struct {
 }
 
 var (
-	LongLoadConfig      = api.LoadConfig{true, 1, 256, 16, -1}
-	LongArrayLoadConfig = api.LoadConfig{true, 1, 256, 64, -1}
+	LongLoadConfig      = api.LoadConfig{true, 1, 128, 16, -1}
+	LongArrayLoadConfig = api.LoadConfig{true, 1, 128, 64, -1}
 	ShortLoadConfig     = api.LoadConfig{false, 0, 64, 0, 3}
 )
 
@@ -1132,18 +1133,18 @@ func printVar(out io.Writer, args string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("not enough arguments")
 	}
-	val := evalScopedExpr(args, getVariableLoadConfig())
+	val, sfmt := evalScopedExpr(args, getVariableLoadConfig(), false)
 	if val.Unreadable != "" {
 		return errors.New(val.Unreadable)
 	}
-	valstr := wrapApiVariableSimple(val).MultilineString("")
+	valstr := val.MultilineString("", sfmt)
 	nlcount := 0
 	for _, ch := range valstr {
 		if ch == '\n' {
 			nlcount++
 		}
 	}
-	if nlcount > 20 {
+	if nlcount > 20 && val.Kind != reflect.String {
 		fmt.Fprintln(out, "Expression added to variables panel")
 		addExpression(args)
 	} else {
@@ -1889,7 +1890,7 @@ func printReturnValues(c *richtext.Ctor, th *api.Thread) {
 	}
 	c.Text("Values returned:\n")
 	for _, v := range th.ReturnValues {
-		c.Text(fmt.Sprintf("\t%s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t")))
+		c.Text(fmt.Sprintf("\t%s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("\t", nil)))
 	}
 	c.Text("\n")
 }
@@ -1952,12 +1953,12 @@ func printcontextThread(th *api.Thread) {
 		}
 
 		for _, v := range bpi.Variables {
-			c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("        ")))
+			c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("        ", nil)))
 		}
 
 		for _, v := range bpi.Locals {
 			if *bp.LoadLocals == LongLoadConfig {
-				c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("        ")))
+				c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("        ", nil)))
 			} else {
 				c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).SinglelineString(true, true)))
 			}
@@ -1965,7 +1966,7 @@ func printcontextThread(th *api.Thread) {
 
 		if bp.LoadArgs != nil && *bp.LoadArgs == LongLoadConfig {
 			for _, v := range bpi.Arguments {
-				c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("        ")))
+				c.Text(fmt.Sprintf("    %s: %s\n", v.Name, wrapApiVariableSimple(&v).MultilineString("        ", nil)))
 			}
 		}
 

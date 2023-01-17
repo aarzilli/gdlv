@@ -11,20 +11,25 @@ import (
 	"go.starlark.net/starlark"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
+	"github.com/aarzilli/gdlv/internal/prettyprint"
 	"github.com/aarzilli/gdlv/internal/starbind"
 )
 
 // ScopedExpr represents an expression to be evaluated in a specified scope.
 type ScopedExpr struct {
-	Kind ScopeExprKind
-	Gid  int            // goroutine id (-1 for current goroutine)
-	Fid  int            // frame id (-1 for current goroutine)
-	Foff int            // frame offset (will search for this specified frame offset or return an error otherwise)
-	Fre  *regexp.Regexp // frame regular expression (will search for a frame in a function matching this regular expression)
+	Kind   ScopeExprKind
+	Gid    int            // goroutine id (-1 for current goroutine)
+	Fid    int            // frame id (-1 for current goroutine)
+	Foff   int            // frame offset (will search for this specified frame offset or return an error otherwise)
+	Fre    *regexp.Regexp // frame regular expression (will search for a frame in a function matching this regular expression)
+	Frestr string
 
 	DeferredCall int // deferred call index
 
 	EvalExpr string // expression to evaluate
+
+	MaxStringLen int // maximum string length if > 0
+	Fmt          prettyprint.SimpleFormat
 }
 
 type ScopeExprKind uint8
@@ -37,68 +42,95 @@ const (
 )
 
 func ParseScopedExpr(in string) ScopedExpr {
-	for i, ch := range in {
-		if unicode.IsSpace(ch) {
-			continue
+	r := ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, DeferredCall: -1}
+	first := true
+
+	for len(in) > 0 {
+		for i, ch := range in {
+			if unicode.IsSpace(ch) {
+				continue
+			}
+			if ch != '@' && ch != '%' {
+				r.EvalExpr = strings.TrimSpace(in)
+				return r
+			} else {
+				in = in[i:]
+				break
+			}
 		}
-		if ch != '@' {
-			return ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, DeferredCall: -1, EvalExpr: strings.TrimSpace(in)}
-		} else {
-			in = in[i:]
-			break
+
+		if len(in) < 2 {
+			return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "not long enough"}
+		}
+
+		switch in[0] {
+		case '@':
+			if first {
+				r.DeferredCall = 0
+			}
+			first = false
+			in = parseScopedExprScope(in, &r)
+		case '%':
+			in = parseScopedExprLoad(in, &r)
 		}
 	}
+	return r
+}
 
-	if len(in) < 2 {
-		return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "not long enough"}
-	}
-
+func parseScopedExprScope(in string, r *ScopedExpr) string {
 	in = in[1:]
 
-	r := ScopedExpr{Kind: NormalScopeExpr, Gid: -1, Fid: -1, DeferredCall: 0}
 	first := true
 	var gseen, fseen, dseen bool
 
 	for {
 		if len(in) == 0 {
-			return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no expression"}
+			*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no expression"}
+			return ""
 		}
 		switch in[0] {
 		case 'g':
 			in = in[1:]
 			if gseen || len(in) == 0 {
-				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no argument for 'g'"}
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no argument for 'g'"}
+				return ""
 			}
 			gseen = true
 			var ok bool
 			in, r.Gid, ok = scopeReadNumber(in)
 			if !ok {
-				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid argument for 'g'"}
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid argument for 'g'"}
+				return ""
 			}
 			if r.Gid < 0 {
-				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid (negative) argument for 'g'"}
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid (negative) argument for 'g'"}
+				return ""
 			}
 
 		case 'f':
 			in = in[1:]
 			if fseen || len(in) == 0 {
-				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no argument for 'f'"}
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no argument for 'f'"}
+				return ""
 			}
 			fseen = true
 			if in[0] == '/' {
 				var s string
 				s, in = scopeReadDelim('/', in[1:])
+				r.Frestr = s
 				var err error
 				r.Fre, err = regexp.Compile(s)
 				if err != nil {
-					return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("could not compile regexp: %v", err)}
+					*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("could not compile regexp: %v", err)}
+					return ""
 				}
 				r.Kind = FrameRegexScopeExpr
 			} else {
 				var ok bool
 				in, r.Fid, ok = scopeReadNumber(in)
 				if !ok {
-					return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid argument for 'f'"}
+					*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid argument for 'f'"}
+					return ""
 				}
 				if r.Fid < 0 {
 					r.Foff = r.Fid
@@ -110,31 +142,71 @@ func ParseScopedExpr(in string) ScopedExpr {
 		case 'd':
 			in = in[1:]
 			if dseen || len(in) == 0 {
-				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no argument for 'd'"}
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "no argument for 'd'"}
+				return ""
 			}
 			dseen = true
 			var ok bool
 			in, r.DeferredCall, ok = scopeReadNumber(in)
 			if !ok {
-				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid argument for 'd'"}
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid argument for 'd'"}
+				return ""
 			}
 			if r.DeferredCall < 0 {
-				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid (negative) argument for 'd'"}
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid (negative) argument for 'd'"}
+				return ""
 			}
 
 		case ' ':
 			if first {
-				return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "nothing after @"}
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "nothing after @"}
+				return ""
 			}
 			in = in[1:]
-			r.EvalExpr = strings.TrimSpace(in)
-			return r
+			return strings.TrimSpace(in)
 
 		default:
-			return ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("unknown character %c", in[0])}
+			*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("unknown character %c", in[0])}
+			return ""
 		}
 		first = false
 	}
+}
+
+func parseScopedExprLoad(in string, r *ScopedExpr) string {
+	for i := range in {
+		if (in[i] < '0' || in[i] > '9') && in[i] != '%' && in[i] != '#' && in[i] != '+' && in[i] != '.' {
+			switch in[i] {
+			case 's':
+				s := in[:i+1]
+				s = s[1:]
+				if s[0] == '#' {
+					r.Fmt.HexdumpString = true
+					s = s[1:]
+				}
+				s = s[:len(s)-1]
+				if s != "" {
+					n, err := strconv.Atoi(s)
+					if err != nil {
+						*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("invalid formatter %q", in[1:])}
+					}
+					r.MaxStringLen = n
+				}
+				return in[i+1:]
+			case 'x', 'X', 'o', 'O', 'd':
+				r.Fmt.IntFormat = in[:i+1]
+				return in[i+1:]
+			case 'e', 'f', 'g', 'E', 'F', 'G':
+				r.Fmt.FloatFormat = in[:i+1]
+				return in[i+1:]
+			default:
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("unknown format string character '%c'", in[i])}
+				return ""
+			}
+		}
+	}
+	*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("non-termianted format string %q", in)}
+	return ""
 }
 
 func scopeReadNumber(in string) (rest string, n int, ok bool) {
@@ -233,7 +305,11 @@ func exprIsScoped(expr string) bool {
 	}
 }
 
-func evalScopedExpr(expr string, cfg api.LoadConfig) *api.Variable {
+func evalScopedExpr(expr string, cfg api.LoadConfig, customFormatters bool) (*Variable, *prettyprint.SimpleFormat) {
+	unreadable := func(err string) (*Variable, *prettyprint.SimpleFormat) {
+		return &Variable{Variable: &api.Variable{Name: expr, Unreadable: err}}, nil
+	}
+
 	se := ParseScopedExpr(expr)
 
 	var gid, frame, deferredCall int
@@ -245,7 +321,7 @@ func evalScopedExpr(expr string, cfg api.LoadConfig) *api.Variable {
 
 	switch se.Kind {
 	case InvalidScopeExpr:
-		return &api.Variable{Name: expr, Unreadable: "syntax error: " + se.EvalExpr}
+		return unreadable("syntax error: " + se.EvalExpr)
 
 	case NormalScopeExpr:
 		frame = se.Fid
@@ -269,23 +345,28 @@ func evalScopedExpr(expr string, cfg api.LoadConfig) *api.Variable {
 	}
 
 	if frame < 0 {
-		return &api.Variable{Name: expr, Unreadable: "could not find specified frame"}
+		return unreadable("could not find specified frame")
+	}
+
+	if se.MaxStringLen > 0 {
+		cfg.MaxStringLen = se.MaxStringLen
 	}
 
 	if len(se.EvalExpr) == 0 || se.EvalExpr[0] != '$' {
 		v, err := client.EvalVariable(api.EvalScope{gid, frame, deferredCall}, se.EvalExpr, cfg)
 		if err != nil {
-			return &api.Variable{Name: expr, Unreadable: err.Error()}
+			return unreadable(err.Error())
 		}
-		return v
+		return wrapApiVariable("", v, v.Name, v.Name, customFormatters, &se.Fmt, 0), &se.Fmt
 	}
 
 	sv, err := StarlarkEnv.Execute(&editorWriter{true}, "<expr>", strings.TrimLeft(se.EvalExpr[1:], " "), "<expr>", nil, nil)
 	if err != nil {
-		return &api.Variable{Name: expr, Unreadable: err.Error()}
+		return unreadable(err.Error())
 	}
 
-	return convertStarlarkToVariable(expr, sv)
+	v := convertStarlarkToVariable(expr, sv)
+	return wrapApiVariable("", v, v.Name, v.Name, customFormatters, &se.Fmt, 0), &se.Fmt
 }
 
 func convertStarlarkToVariable(expr string, sv starlark.Value) *api.Variable {
@@ -329,4 +410,91 @@ func findFrameOffset(gid int, frameOffset int64, rx *regexp.Regexp) (frame int) 
 		}
 	}
 	return -1
+}
+
+func (se *ScopedExpr) String() string {
+	var buf strings.Builder
+
+	started := false
+	start := func() {
+		if started {
+			return
+		}
+		buf.WriteByte('@')
+		started = true
+	}
+
+	if se.Gid > 0 {
+		start()
+		fmt.Fprintf(&buf, "g%d", se.Gid)
+	}
+
+	switch se.Kind {
+	case NormalScopeExpr:
+		if se.Fid >= 0 {
+			start()
+			fmt.Fprintf(&buf, "f%#x", se.Fid)
+		}
+	case FrameOffsetScopeExpr:
+		start()
+		fmt.Fprintf(&buf, "f%#x", se.Foff)
+	case FrameRegexScopeExpr:
+		start()
+		fmt.Fprintf(&buf, "f/%s/", escapeSlash(se.Frestr))
+
+	}
+
+	if se.DeferredCall > 0 {
+		start()
+		fmt.Fprintf(&buf, "d%d", se.DeferredCall)
+	}
+
+	if started {
+		buf.WriteByte(' ')
+	}
+
+	oldlen := buf.Len()
+
+	if se.MaxStringLen > 0 || se.Fmt.HexdumpString {
+		buf.WriteByte('%')
+		if se.Fmt.HexdumpString {
+			buf.WriteByte('#')
+		}
+		if se.MaxStringLen > 0 {
+			fmt.Fprintf(&buf, "%d", se.MaxStringLen)
+		}
+		buf.WriteByte('s')
+	}
+
+	buf.WriteString(se.Fmt.IntFormat)
+	buf.WriteString(se.Fmt.FloatFormat)
+
+	if buf.Len() != oldlen {
+		buf.WriteByte(' ')
+	}
+
+	buf.WriteString(se.EvalExpr)
+	return buf.String()
+}
+
+func escapeSlash(s string) string {
+	found := false
+	for i := range s {
+		if s[i] == '/' {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return s
+	}
+
+	var b []byte
+	for i := range s {
+		if s[i] == '/' || s[i] == '\\' {
+			b = append(b, '\\')
+		}
+		b = append(b, s[i])
+	}
+	return string(b)
 }

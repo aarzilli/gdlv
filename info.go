@@ -22,6 +22,7 @@ import (
 	nstyle "github.com/aarzilli/nucular/style"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
+	"github.com/aarzilli/gdlv/internal/prettyprint"
 
 	"golang.org/x/mobile/event/mouse"
 )
@@ -670,7 +671,7 @@ func updateStacktrace(container *nucular.Window) {
 	}
 
 	didx := digits(len(stack))
-	d := hexdigits(maxpc)
+	d := prettyprint.Hexdigits(maxpc)
 
 	showFrame := func(frame api.Stackframe, i int, isnew bool, sl func(string) bool) bool {
 		w.Row(posRowHeight).Static()
@@ -1241,7 +1242,7 @@ func updateDeferredCalls(container *nucular.Window) {
 	}
 
 	didx := digits(len(stack[curFrame].Defers))
-	d := hexdigits(maxpc)
+	d := prettyprint.Hexdigits(maxpc)
 
 	for i, deferredCall := range stack[curFrame].Defers {
 		loc := deferredCall.DeferredLoc

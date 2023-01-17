@@ -522,13 +522,6 @@ func digits(n int) int {
 	return int(math.Floor(math.Log10(float64(n)))) + 1
 }
 
-func hexdigits(n uint64) int {
-	if n <= 0 {
-		return 1
-	}
-	return int(math.Floor(math.Log10(float64(n))/math.Log10(16))) + 1
-}
-
 func expandTabsEx(in string, colno int) (string, int) {
 	hastab := false
 	for _, c := range in {

@@ -41,13 +41,12 @@ const minChangedVariableOpacity = 0x10
 var drawStartTime time.Time
 
 type Variable struct {
+	fnname string
 	*api.Variable
-	Width    int
-	Value    string
-	IntMode  numberMode
-	FloatFmt string
-	loading  bool
-	Varname  string
+	Width   int
+	Value   string
+	loading bool
+	Varname string
 
 	ShortType   string
 	DisplayName string
@@ -56,6 +55,9 @@ type Variable struct {
 	changed bool
 
 	Children []*Variable
+
+	ed   *nucular.TextEditor
+	sfmt *prettyprint.SimpleFormat
 }
 
 // SinglelineString returns a representation of v on a single line.
@@ -64,15 +66,15 @@ func (v *Variable) SinglelineString(includeType, fullTypes bool) string {
 }
 
 // MultilineString returns a representation of v on multiple lines.
-func (v *Variable) MultilineString(indent string) string {
-	return prettyprint.Multiline(v.Variable, indent)
+func (v *Variable) MultilineString(indent string, sfmt *prettyprint.SimpleFormat) string {
+	return prettyprint.Multiline(v.Variable, indent, sfmt)
 }
 
 func wrapApiVariableSimple(v *api.Variable) *Variable {
-	return wrapApiVariable(v, v.Name, v.Name, false, 0)
+	return wrapApiVariable("", v, v.Name, v.Name, false, nil, 0)
 }
 
-func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool, depth int) *Variable {
+func wrapApiVariable(fnname string, v *api.Variable, name, expr string, customFormatters bool, sfmt *prettyprint.SimpleFormat, depth int) *Variable {
 	r := &Variable{Variable: v}
 	r.Value = v.Value
 	r.Expression = expr
@@ -90,7 +92,7 @@ func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool, 
 
 	r.Varname = r.DisplayName
 
-	r.Children = wrapApiVariables(v.Children, v.Kind, 0, r.Expression, customFormatters, depth+1)
+	r.Children = wrapApiVariables("", v.Children, v.Kind, 0, r.Expression, customFormatters, sfmt, depth+1)
 
 	if v.Kind == reflect.Interface {
 		if len(r.Children) > 0 && r.Children[0].Kind == reflect.Ptr {
@@ -100,8 +102,12 @@ func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool, 
 		}
 	}
 
-	if f := varFormat[v.Addr]; f != nil {
-		f(r)
+	r.fnname = fnname
+	if sfmt != nil && *sfmt != (prettyprint.SimpleFormat{}) {
+		r.Value = sfmt.Apply(v)
+	} else if f := varFormat[getVarFormatKey(r)]; f != (prettyprint.SimpleFormat{}) {
+		sfmt = &f
+		r.Value = sfmt.Apply(v)
 	} else if (v.Kind == reflect.Int || v.Kind == reflect.Uint) && ((v.Type == "uint8") || (v.Type == "int32")) {
 		n, _ := strconv.Atoi(v.Value)
 		if n >= ' ' && n <= '~' {
@@ -111,6 +117,11 @@ func wrapApiVariable(v *api.Variable, name, expr string, customFormatters bool, 
 		f.Format(r)
 	} else if v.Type == "time.Time" {
 		r.Value = formatTime(v)
+	}
+
+	r.sfmt = sfmt
+	if r.sfmt == nil {
+		r.sfmt = &prettyprint.SimpleFormat{}
 	}
 
 	return r
@@ -164,7 +175,7 @@ func fieldVariable(v *api.Variable, name string) *api.Variable {
 	return nil
 }
 
-func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr string, customFormatters bool, depth int) []*Variable {
+func wrapApiVariables(fnname string, vs []api.Variable, kind reflect.Kind, start int, expr string, customFormatters bool, sfmt *prettyprint.SimpleFormat, depth int) []*Variable {
 	r := make([]*Variable, 0, len(vs))
 
 	const minInlineKeyValueLen = 20
@@ -183,15 +194,15 @@ func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr stri
 				}
 				if keyname != "" {
 					value.Name = keyname[1 : len(keyname)-1]
-					r = append(r, wrapApiVariable(value, keyname, "", customFormatters, depth))
+					r = append(r, wrapApiVariable("", value, keyname, "", customFormatters, sfmt, depth))
 					r = append(r, nil)
 					ok = true
 				}
 			}
 
 			if !ok {
-				r = append(r, wrapApiVariable(key, fmt.Sprintf("[%d key]", start+i/2), "", customFormatters, depth))
-				r = append(r, wrapApiVariable(value, fmt.Sprintf("[%d value]", start+i/2), "", customFormatters, depth))
+				r = append(r, wrapApiVariable("", key, fmt.Sprintf("[%d key]", start+i/2), "", customFormatters, sfmt, depth))
+				r = append(r, wrapApiVariable("", value, fmt.Sprintf("[%d value]", start+i/2), "", customFormatters, sfmt, depth))
 			}
 		}
 		return r
@@ -230,7 +241,7 @@ func wrapApiVariables(vs []api.Variable, kind reflect.Kind, start int, expr stri
 			childName = vs[i].Name
 			childExpr = ""
 		}
-		r = append(r, wrapApiVariable(&vs[i], childName, childExpr, customFormatters, depth))
+		r = append(r, wrapApiVariable(fnname, &vs[i], childName, childExpr, customFormatters, sfmt, depth))
 	}
 	return r
 }
@@ -266,12 +277,11 @@ type Expr struct {
 	Expr                         string
 	maxArrayValues, maxStringLen int
 	traced                       bool
-	fmt                          formatterFn
 }
 
 func loadGlobals(p *asyncLoad) {
 	globals, err := client.ListPackageVariables("", getVariableLoadConfig())
-	globalsPanel.globals = wrapApiVariables(globals, 0, 0, "", true, 0)
+	globalsPanel.globals = wrapApiVariables("", globals, 0, 0, "", true, nil, 0)
 	sort.Sort(variablesByName(globalsPanel.globals))
 	p.done(err)
 }
@@ -315,10 +325,18 @@ func loadLocals(p *asyncLoad) {
 	oldv := append([]*Variable{}, localsPanel.v...)
 	drawStartTime = time.Now()
 
-	args, errloc := client.ListFunctionArgs(currentEvalScope(), getVariableLoadConfig())
-	localsPanel.locals = wrapApiVariables(args, 0, 0, "", true, 0)
-	locals, errarg := client.ListLocalVariables(currentEvalScope(), getVariableLoadConfig())
-	localsPanel.locals = append(localsPanel.locals, wrapApiVariables(locals, 0, 0, "", true, 0)...)
+	scope := currentEvalScope()
+
+	frames, _ := client.Stacktrace(scope.GoroutineID, 1, 0, nil)
+	var fnname = ""
+	if len(frames) > 0 {
+		fnname = frames[0].Function.Name()
+	}
+
+	args, errloc := client.ListFunctionArgs(scope, getVariableLoadConfig())
+	localsPanel.locals = wrapApiVariables(fnname, args, 0, 0, "", true, nil, 0)
+	locals, errarg := client.ListLocalVariables(scope, getVariableLoadConfig())
+	localsPanel.locals = append(localsPanel.locals, wrapApiVariables(fnname, locals, 0, 0, "", true, nil, 0)...)
 
 	sort.SliceStable(localsPanel.locals, func(i, j int) bool { return localsPanel.locals[i].DeclLine < localsPanel.locals[j].DeclLine })
 
@@ -347,10 +365,10 @@ func loadLocals(p *asyncLoad) {
 	if LogOutputNice != nil {
 		logf("Local variables (%#v):\n", currentEvalScope())
 		for i := range localsPanel.locals {
-			fmt.Fprintf(LogOutputNice, "\t%s = %s\n", localsPanel.locals[i].Name, localsPanel.locals[i].MultilineString("\t"))
+			fmt.Fprintf(LogOutputNice, "\t%s = %s\n", localsPanel.locals[i].Name, localsPanel.locals[i].MultilineString("\t", nil))
 		}
 		for i := range localsPanel.v {
-			fmt.Fprintf(LogOutputNice, "\t%s = %s\n", localsPanel.v[i].Name, localsPanel.v[i].MultilineString("\t"))
+			fmt.Fprintf(LogOutputNice, "\t%s = %s\n", localsPanel.v[i].Name, localsPanel.v[i].MultilineString("\t", nil))
 		}
 	}
 
@@ -442,13 +460,10 @@ func loadOneExpr(i int) {
 		cfg.MaxStringLen = localsPanel.expressions[i].maxStringLen
 	}
 
-	v := evalScopedExpr(localsPanel.expressions[i].Expr, cfg)
-	v.Name = localsPanel.expressions[i].Expr
+	localsPanel.v[i], _ = evalScopedExpr(localsPanel.expressions[i].Expr, cfg, true)
 
-	localsPanel.v[i] = wrapApiVariable(v, v.Name, v.Name, true, 0)
-	if localsPanel.expressions[i].fmt != nil {
-		localsPanel.expressions[i].fmt(localsPanel.v[i])
-	}
+	localsPanel.v[i].Name = localsPanel.expressions[i].Expr
+	localsPanel.v[i].DisplayName = localsPanel.expressions[i].Expr
 }
 
 func exprsEditor(w *nucular.Window) {
@@ -568,50 +583,33 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 	}
 
-	setVarFormat := func(f formatterFn) {
+	setVarFormat := func(f *prettyprint.SimpleFormat) {
 		if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
-			localsPanel.expressions[exprMenuIdx].fmt = f
+			expr := ParseScopedExpr(localsPanel.expressions[exprMenuIdx].Expr)
+			expr.Fmt = *f
+			localsPanel.expressions[exprMenuIdx].Expr = expr.String()
 		} else {
-			varFormat[v.Addr] = f
+			varFormat[getVarFormatKey(v)] = *f
 		}
 	}
 
 	switch v.Kind {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		mode := v.IntMode
-		oldmode := mode
-		if w.OptionText("Hexadecimal", mode == hexMode) {
-			mode = hexMode
-		}
-		if w.OptionText("Octal", mode == octMode) {
-			mode = octMode
-		}
-		if w.OptionText("Decimal", mode == decMode) {
-			mode = decMode
-		}
-		if mode != oldmode {
-			f := intFormatter[mode]
-			setVarFormat(f)
-			f(v)
-			v.Width = 0
-		}
-
+		fallthrough
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
-		mode := v.IntMode
-		oldmode := mode
-		if w.OptionText("Hexadecimal", mode == hexMode) {
-			mode = hexMode
+		mode := v.sfmt.IntFormat
+		if w.OptionText("Hexadecimal", v.sfmt.IntFormat == "%#x") {
+			v.sfmt.IntFormat = "%#x"
 		}
-		if w.OptionText("Octal", mode == octMode) {
-			mode = octMode
+		if w.OptionText("Octal", v.sfmt.IntFormat == "%#o") {
+			v.sfmt.IntFormat = "%#o"
 		}
-		if w.OptionText("Decimal", mode == decMode) {
-			mode = decMode
+		if w.OptionText("Decimal", v.sfmt.IntFormat == "" || v.sfmt.IntFormat == "%d") {
+			v.sfmt.IntFormat = ""
 		}
-		if mode != oldmode {
-			f := uintFormatter[mode]
-			setVarFormat(f)
-			f(v)
+		if mode != v.sfmt.IntFormat {
+			setVarFormat(v.sfmt)
+			v.Value = v.sfmt.Apply(v.Variable)
 			v.Width = 0
 		}
 
@@ -695,7 +693,7 @@ func variableHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Va
 	} else {
 		print(v.DisplayName, boldFace)
 		print(getDisplayType(v, fullTypes), style.Font)
-		if v.Value != "" {
+		if v.Value != "" && v.Kind != reflect.Ptr {
 			print("= "+v.Value, style.Font)
 		} else {
 			print("= "+v.SinglelineString(false, fullTypes), style.Font)
@@ -705,23 +703,27 @@ func variableHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Va
 	return isopen
 }
 
-func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Variable, value string) {
+func variableNoHeaderSpacing(w *nucular.Window, n int) int {
+	style := w.Master().Style()
+	symX := style.Tab.Padding.X
+	symW := nucular.FontHeight(style.Font)
+	item_spacing := style.NormalWindow.Spacing
+	return (n + 1) * (symX + symW + item_spacing.X + 2*style.Tab.Spacing.X)
+}
+
+func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Variable, value string, wrap bool) {
 	style := w.Master().Style()
 	var lblrect rect.Rect
 	var out *ncommand.Buffer
 	start := func() {
-		symX := style.Tab.Padding.X
-		symW := nucular.FontHeight(style.Font)
-		item_spacing := style.NormalWindow.Spacing
-		z := symX + symW + item_spacing.X + 2*style.Tab.Spacing.X
-		w.LayoutSetWidthScaled(z)
+		w.LayoutSetWidthScaled(variableNoHeaderSpacing(w, 0))
 		w.Spacing(1)
 		w.LayoutSetWidthScaled(w.LayoutAvailableWidth())
 		lblrect, out = w.Custom(nstyle.WidgetStateActive)
 	}
 
 	changed := func() {
-		if v.changed {
+		if v.changed && out != nil {
 			out.FillRect(lblrect, 0, changedVariableColor())
 		}
 	}
@@ -739,7 +741,9 @@ func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *
 	print := func(str string, font font.Face) {
 		clipb = append(clipb, []byte(str)...)
 		clipb = append(clipb, ' ')
-		out.DrawText(lblrect, str, font, style.Text.Color)
+		if out != nil {
+			out.DrawText(lblrect, str, font, style.Text.Color)
+		}
 		width := nucular.FontWidth(font, str) + spaceWidth
 		lblrect.X += width
 		lblrect.W -= width
@@ -759,13 +763,16 @@ func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *
 	clipb = append(clipb, ' ')
 
 	textClamp := func(text []rune, space int) []rune {
-		if nucular.FontWidth(style.Font, string(text)) < space {
+		if !wrap || nucular.FontWidth(style.Font, string(text)) < space {
 			return text
 		}
 		text_width := 0
 		for i, ch := range text {
 			xw := nucular.FontWidth(style.Font, string(ch))
 			if text_width+xw >= space {
+				if i == 0 {
+					i = 1
+				}
 				return text[:i]
 			}
 			text_width += xw
@@ -829,11 +836,11 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 	}
 
 	cblbl := func(value string) {
-		variableNoHeader(w, addr, fullTypes, exprMenu, v, value)
+		variableNoHeader(w, addr, fullTypes, exprMenu, v, value, false)
 	}
 
 	cblblfmt := func(fmtstr string, args ...interface{}) {
-		variableNoHeader(w, addr, fullTypes, exprMenu, v, fmt.Sprintf(fmtstr, args...))
+		variableNoHeader(w, addr, fullTypes, exprMenu, v, fmt.Sprintf(fmtstr, args...), false)
 	}
 
 	dynlbl := func(s string) {
@@ -882,10 +889,13 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 	case reflect.UnsafePointer:
 		cblblfmt("unsafe.Pointer(%#x)", v.Children[0].Addr)
 	case reflect.String:
-		if v.Len == int64(len(v.Value)) {
-			cblblfmt("%q", v.Value)
+		if v.Value != v.Variable.Value {
+			cblblfmt("(%d/%d)", len(v.Variable.Value), v.Len)
+			hexdumpWindow(w, v)
+		} else if v.Len == int64(len(v.Value)) {
+			variableNoHeader(w, addr, fullTypes, exprMenu, v, fmt.Sprintf("%q", v.Value), true)
 		} else {
-			cblblfmt("%q...", v.Value)
+			variableNoHeader(w, addr, fullTypes, exprMenu, v, fmt.Sprintf("%q...", v.Value), true)
 		}
 	case reflect.Chan:
 		if len(v.Children) == 0 {
@@ -945,7 +955,7 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 	case reflect.Float32, reflect.Float64:
 		cblbl(v.Value)
 	default:
-		if v.Value != "" {
+		if v.Value != "" && v.Kind != reflect.Ptr {
 			cblbl(v.Value)
 		} else {
 			cblblfmt("(unknown %s)", v.Kind)
@@ -1034,7 +1044,7 @@ func loadMoreMap(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children) / 2)
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children, reflect.Map, len(v.Children), v.Expression, true, 0)...)
+				v.Children = append(v.Children, wrapApiVariables("", lv.Children, reflect.Map, len(v.Children), v.Expression, true, nil, 0)...)
 			}
 			wnd.Changed()
 			additionalLoadMu.Lock()
@@ -1056,7 +1066,7 @@ func loadMoreArrayOrSlice(v *Variable) {
 				// prevent further attempts at loading
 				v.Len = int64(len(v.Children))
 			} else {
-				v.Children = append(v.Children, wrapApiVariables(lv.Children, v.Kind, len(v.Children), v.Expression, true, 0)...)
+				v.Children = append(v.Children, wrapApiVariables("", lv.Children, v.Kind, len(v.Children), v.Expression, true, nil, 0)...)
 			}
 			additionalLoadMu.Lock()
 			additionalLoadRunning = false
@@ -1077,7 +1087,7 @@ func loadMoreStruct(v *Variable) {
 				dn := v.DisplayName
 				vn := v.Varname
 				lv.Name = v.Name
-				*v = *wrapApiVariable(lv, lv.Name, v.Expression, true, 0)
+				*v = *wrapApiVariable("", lv, lv.Name, v.Expression, true, nil, 0)
 				v.Varname = vn
 				v.DisplayName = dn
 			}
@@ -1201,4 +1211,15 @@ func goDocCommand(typ string) {
 	var scrollbackOut = &editorWriter{true}
 	fmt.Fprintf(scrollbackOut, "Go doc for %s\n", typ)
 	scrollbackOut.Write(out)
+}
+
+func hexdumpWindow(w *nucular.Window, v *Variable) {
+	w.Row(5*varRowHeight).StaticScaled(variableNoHeaderSpacing(w, 1), 0)
+	w.Spacing(1)
+	if v.ed == nil {
+		v.ed = &nucular.TextEditor{}
+		v.ed.Flags = nucular.EditMultiline | nucular.EditClipboard | nucular.EditSelectable
+		v.ed.Buffer = []rune(v.Value)
+	}
+	v.ed.Edit(w)
 }

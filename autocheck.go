@@ -193,7 +193,7 @@ func addcheck(cnt int, gid int, bp *api.Breakpoint, bpi *api.BreakpointInfo) {
 	if bpi != nil {
 		for i := range bpi.Variables {
 			v := &bpi.Variables[i]
-			vars = append(vars, wrapApiVariable(v, v.Name, v.Name, true, 0))
+			vars = append(vars, wrapApiVariable("", v, v.Name, v.Name, true, nil, 0))
 		}
 	}
 
@@ -392,7 +392,7 @@ func autoCheckpointsReloadVars() {
 			if err != nil {
 				panic(err)
 			}
-			check.Variables[i] = wrapApiVariable(v, v.Name, v.Name, true, 0)
+			check.Variables[i] = wrapApiVariable("", v, v.Name, v.Name, true, nil, 0)
 		}
 	}
 }

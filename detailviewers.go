@@ -14,11 +14,25 @@ import (
 	"github.com/aarzilli/nucular/rect"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
+	"github.com/aarzilli/gdlv/internal/prettyprint"
 )
 
 type formatterFn func(*Variable)
 
-var varFormat = map[uint64]formatterFn{}
+type varFormatKey struct {
+	fnname, varname string
+	declline        int64
+	addr            uint64
+}
+
+var varFormat = map[varFormatKey]prettyprint.SimpleFormat{}
+
+func getVarFormatKey(v *Variable) varFormatKey {
+	if v.fnname == "" {
+		return varFormatKey{addr: v.Addr}
+	}
+	return varFormatKey{fnname: v.fnname, varname: v.Name, declline: v.DeclLine}
+}
 
 type detailViewer struct {
 	asyncLoad asyncLoad
@@ -73,7 +87,7 @@ func (dv *detailViewer) load(p *asyncLoad) {
 		return
 	}
 
-	dv.v = wrapApiVariable(v, v.Name, v.Name, true, 0)
+	dv.v = wrapApiVariable("", v, v.Name, v.Name, true, nil, 0)
 
 	switch dv.v.Type {
 	case "string":
@@ -210,7 +224,7 @@ func formatArray(array []int64, hexaddr bool, mode numberMode, canonical bool, s
 
 	var addrfmtstr string
 	if hexaddr {
-		d := hexdigits(uint64(len(array)))
+		d := prettyprint.Hexdigits(uint64(len(array)))
 		if d < 2 {
 			d = 2
 		}
@@ -368,7 +382,7 @@ func (dv *detailViewer) loadMore() {
 					dv.v.Width = 0
 					dv.v.Value += lv.Value
 				case reflect.Array, reflect.Slice:
-					dv.v.Children = append(dv.v.Children, wrapApiVariables(lv.Children, dv.v.Kind, len(dv.v.Children), dv.v.Expression, true, 0)...)
+					dv.v.Children = append(dv.v.Children, wrapApiVariables("", lv.Children, dv.v.Kind, len(dv.v.Children), dv.v.Expression, true, nil, 0)...)
 				}
 			}
 			additionalLoadMu.Lock()
@@ -411,13 +425,13 @@ func (dv *detailViewer) intArrayUpdate(w *nucular.Window) {
 type floatViewer struct {
 	v            *Variable
 	ed           nucular.TextEditor
-	setVarFormat func(formatterFn)
+	setVarFormat func(*prettyprint.SimpleFormat)
 }
 
-func newFloatViewer(w *nucular.Window, v *Variable, setVarFormat func(formatterFn)) {
+func newFloatViewer(w *nucular.Window, v *Variable, setVarFormat func(*prettyprint.SimpleFormat)) {
 	vw := &floatViewer{v: v, setVarFormat: setVarFormat}
 	vw.ed.Flags = nucular.EditSelectable | nucular.EditClipboard | nucular.EditSigEnter
-	vw.ed.Buffer = []rune(v.FloatFmt)
+	vw.ed.Buffer = []rune(v.sfmt.FloatFormat)
 	w.Master().PopupOpen(fmt.Sprintf("Format %s", v.Name), dynamicPopupFlags|nucular.WindowClosable, rect.Rect{20, 100, 480, 500}, true, vw.Update)
 }
 
@@ -429,11 +443,10 @@ func (vw *floatViewer) Update(w *nucular.Window) {
 	if ev := vw.ed.Edit(w); ev&nucular.EditCommitted != 0 {
 		w.Close()
 	}
-	if newfmt := string(vw.ed.Buffer); newfmt != vw.v.FloatFmt {
-		vw.v.FloatFmt = newfmt
-		f := floatFormatter(vw.v.FloatFmt)
-		vw.setVarFormat(f)
-		f(vw.v)
+	if newfmt := string(vw.ed.Buffer); newfmt != vw.v.sfmt.FloatFormat {
+		vw.v.sfmt.FloatFormat = newfmt
+		vw.setVarFormat(vw.v.sfmt)
+		vw.v.Value = vw.v.sfmt.Apply(vw.v.Variable)
 		vw.v.Width = 0
 	}
 	w.Row(30).Static(0, 100)
@@ -443,43 +456,9 @@ func (vw *floatViewer) Update(w *nucular.Window) {
 	}
 }
 
-var intFormatter = map[numberMode]formatterFn{
-	decMode: func(v *Variable) {
-		v.IntMode = decMode
-		v.Value = v.Variable.Value
-	},
-	hexMode: func(v *Variable) {
-		v.IntMode = hexMode
-		n, _ := strconv.ParseInt(v.Variable.Value, 10, 64)
-		v.Value = fmt.Sprintf("%#x", n)
-	},
-	octMode: func(v *Variable) {
-		v.IntMode = octMode
-		n, _ := strconv.ParseInt(v.Variable.Value, 10, 64)
-		v.Value = fmt.Sprintf("%#o", n)
-	},
-}
-
-var uintFormatter = map[numberMode]formatterFn{
-	decMode: func(v *Variable) {
-		v.IntMode = decMode
-		v.Value = v.Variable.Value
-	},
-	hexMode: func(v *Variable) {
-		v.IntMode = hexMode
-		n, _ := strconv.ParseUint(v.Variable.Value, 10, 64)
-		v.Value = fmt.Sprintf("%#x", n)
-	},
-	octMode: func(v *Variable) {
-		v.IntMode = octMode
-		n, _ := strconv.ParseUint(v.Variable.Value, 10, 64)
-		v.Value = fmt.Sprintf("%#o", n)
-	},
-}
-
 func floatFormatter(format string) formatterFn {
 	return func(v *Variable) {
-		v.FloatFmt = format
+		v.sfmt.FloatFormat = format
 		if format == "" {
 			v.Value = v.Variable.Value
 			return
