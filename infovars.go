@@ -648,16 +648,15 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 	}
 }
 
-const maxVariableHeaderWidth = 4096
-
 func variableHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Variable) bool {
 	style := w.Master().Style()
 
-	w.LayoutSetWidthScaled(maxVariableHeaderWidth)
+	w.LayoutSetWidthScaled(w.LayoutAvailableWidth())
 	lblrect, out, isopen := w.TreePushCustom(nucular.TreeNode, v.Varname, false)
 	if out == nil {
 		return isopen
 	}
+	lblrect.W = w.Bounds.W
 	if v.changed {
 		out.FillRect(lblrect, 0, changedVariableColor())
 	}
@@ -713,7 +712,7 @@ func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *
 	z := symX + symW + item_spacing.X + 2*style.Tab.Spacing.X
 	w.LayoutSetWidthScaled(z)
 	w.Spacing(1)
-	w.LayoutSetWidthScaled(maxVariableHeaderWidth)
+	w.LayoutSetWidthScaled(w.LayoutAvailableWidth())
 
 	//w.Label(fmt.Sprintf("%s %s = %s", v.DisplayName, v.Type, value), "LC")
 

@@ -1007,7 +1007,9 @@ func (win *Window) LayoutReserveRowScaled(height int, num int) {
 
 // Changes row layout and starts a new row.
 // Use the returned value to configure the new row layout:
-//  win.Row(10).Static(100, 120, 100)
+//
+//	win.Row(10).Static(100, 120, 100)
+//
 // If height == 0 all the row is stretched to fill all the remaining space.
 func (win *Window) Row(height int) *rowConstructor {
 	win.rowCtor.height = win.ctx.scale(height)
@@ -1325,8 +1327,7 @@ func (win *Window) LayoutAvailableWidth() int {
 		return win.layout.Clip.W
 	default:
 		style := win.style()
-		panel_spacing := int(float64(win.layout.Row.Columns-1) * float64(style.Spacing.X))
-		return win.layout.Width - style.Padding.X*2 - panel_spacing - win.layout.AtX
+		return win.layout.Width - 2*style.Spacing.X - style.Padding.X*2 - (win.layout.AtX - win.layout.Bounds.X)
 	}
 }
 
