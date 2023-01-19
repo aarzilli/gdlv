@@ -308,7 +308,7 @@ func updateGlobals(container *nucular.Window) {
 
 	for i := range globals {
 		if strings.Index(globals[i].Name, filter) >= 0 {
-			showVariable(w, 0, globalsPanel.showAddr, globalsPanel.fullTypes, -1, globals[i])
+			showVariable(w, 0, newShowVariableFlags(globalsPanel.showAddr, globalsPanel.fullTypes), -1, globals[i])
 		}
 	}
 }
@@ -418,7 +418,7 @@ func updateLocals(container *nucular.Window) {
 						w.Row(varRowHeight).Dynamic(1)
 						w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i].Expr), "LC")
 					} else {
-						showVariable(w, 0, localsPanel.showAddr, localsPanel.fullTypes, i, localsPanel.v[i])
+						showVariable(w, 0, newShowVariableFlags(localsPanel.showAddr, localsPanel.fullTypes), i, localsPanel.v[i])
 					}
 				}
 			}
@@ -430,7 +430,7 @@ func updateLocals(container *nucular.Window) {
 		if w.TreePush(nucular.TreeTab, "Local variables and arguments", true) {
 			for i := range locals {
 				if strings.Index(locals[i].Name, filter) >= 0 {
-					showVariable(w, 0, localsPanel.showAddr, localsPanel.fullTypes, -1, locals[i])
+					showVariable(w, 0, newShowVariableFlags(localsPanel.showAddr, localsPanel.fullTypes), -1, locals[i])
 				}
 			}
 			w.TreePop()
@@ -647,11 +647,16 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 	}
 }
 
-func variableHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Variable) bool {
+func variableHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v *Variable) bool {
+	fullTypes := flags.fullTypes()
 	style := w.Master().Style()
 
 	w.LayoutSetWidthScaled(w.LayoutAvailableWidth())
-	lblrect, out, isopen := w.TreePushCustom(nucular.TreeNode, v.Varname, false)
+	initialOpen := false
+	if flags.parentIsPtr() {
+		initialOpen = true
+	}
+	lblrect, out, isopen := w.TreePushCustom(nucular.TreeNode, v.Varname, initialOpen)
 	if out == nil {
 		return isopen
 	}
@@ -671,7 +676,7 @@ func variableHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Va
 		lblrect.W -= width
 	}
 
-	if addr {
+	if flags.withAddr() {
 		print(fmt.Sprintf("%#x", v.Addr), style.Font)
 	}
 	if isopen {
@@ -711,7 +716,8 @@ func variableNoHeaderSpacing(w *nucular.Window, n int) int {
 	return (n + 1) * (symX + symW + item_spacing.X + 2*style.Tab.Spacing.X)
 }
 
-func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *Variable, value string, wrap bool) {
+func variableNoHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v *Variable, value string, wrap bool) {
+	fullTypes := flags.fullTypes()
 	style := w.Master().Style()
 	var lblrect rect.Rect
 	var out *ncommand.Buffer
@@ -749,7 +755,7 @@ func variableNoHeader(w *nucular.Window, addr, fullTypes bool, exprMenu int, v *
 		lblrect.W -= width
 	}
 
-	if addr {
+	if flags.withAddr() {
 		print(fmt.Sprintf("%#x", v.Addr), style.Font)
 	}
 	print(v.DisplayName, boldFace)
@@ -818,7 +824,32 @@ func darken(p *color.RGBA) {
 	p.B = uint8(float64(p.B) * darken)
 }
 
-func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu int, v *Variable) {
+type showVariableFlags uint8
+
+const (
+	showVariableFullTypes showVariableFlags = 1 << iota
+	showVariableWithAddr
+	showVariableParentIsPtr
+)
+
+func newShowVariableFlags(showAddr, fullTypes bool) (r showVariableFlags) {
+	if showAddr {
+		r |= showVariableWithAddr
+	}
+	if fullTypes {
+		r |= showVariableFullTypes
+	}
+	return r
+}
+
+func (flags showVariableFlags) fullTypes() bool { return (flags & showVariableFullTypes) != 0 }
+func (flags showVariableFlags) showVariableParentIsPtr() bool {
+	return (flags & showVariableParentIsPtr) != 0
+}
+func (flags showVariableFlags) withAddr() bool    { return (flags & showVariableWithAddr) != 0 }
+func (flags showVariableFlags) parentIsPtr() bool { return (flags & showVariableParentIsPtr) != 0 }
+
+func showVariable(w *nucular.Window, depth int, flags showVariableFlags, exprMenu int, v *Variable) {
 	style := w.Master().Style()
 
 	if v.Flags&api.VariableShadowed != 0 || v.Unreadable != "" {
@@ -831,16 +862,19 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 		}
 	}
 
+	curflags := flags
+	flags = flags &^ showVariableParentIsPtr
+
 	hdr := func() bool {
-		return variableHeader(w, addr, fullTypes, exprMenu, v)
+		return variableHeader(w, curflags, exprMenu, v)
 	}
 
 	cblbl := func(value string) {
-		variableNoHeader(w, addr, fullTypes, exprMenu, v, value, false)
+		variableNoHeader(w, curflags, exprMenu, v, value, false)
 	}
 
 	cblblfmt := func(fmtstr string, args ...interface{}) {
-		variableNoHeader(w, addr, fullTypes, exprMenu, v, fmt.Sprintf(fmtstr, args...), false)
+		variableNoHeader(w, curflags, exprMenu, v, fmt.Sprintf(fmtstr, args...), false)
 	}
 
 	dynlbl := func(s string) {
@@ -862,12 +896,12 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 	switch v.Kind {
 	case reflect.Slice:
 		if hdr() {
-			showArrayOrSliceContents(w, depth, addr, fullTypes, v)
+			showArrayOrSliceContents(w, depth, flags, v)
 			w.TreePop()
 		}
 	case reflect.Array:
 		if hdr() {
-			showArrayOrSliceContents(w, depth, addr, fullTypes, v)
+			showArrayOrSliceContents(w, depth, flags, v)
 			w.TreePop()
 		}
 	case reflect.Ptr:
@@ -881,7 +915,7 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 					loadMoreStruct(v.Children[0])
 					dynlbl("Loading...")
 				} else {
-					showVariable(w, depth+1, addr, fullTypes, -1, v.Children[0])
+					showVariable(w, depth+1, flags|showVariableParentIsPtr, -1, v.Children[0])
 				}
 				w.TreePop()
 			}
@@ -893,16 +927,16 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 			cblblfmt("(%d/%d)", len(v.Variable.Value), v.Len)
 			hexdumpWindow(w, v)
 		} else if v.Len == int64(len(v.Value)) {
-			variableNoHeader(w, addr, fullTypes, exprMenu, v, fmt.Sprintf("%q", v.Value), true)
+			variableNoHeader(w, curflags, exprMenu, v, fmt.Sprintf("%q", v.Value), true)
 		} else {
-			variableNoHeader(w, addr, fullTypes, exprMenu, v, fmt.Sprintf("%q...", v.Value), true)
+			variableNoHeader(w, curflags, exprMenu, v, fmt.Sprintf("%q...", v.Value), true)
 		}
 	case reflect.Chan:
 		if len(v.Children) == 0 {
 			cblbl("nil")
 		} else {
 			if hdr() {
-				showStructContents(w, depth, addr, fullTypes, v)
+				showStructContents(w, depth, flags, v)
 				w.TreePop()
 			}
 		}
@@ -912,7 +946,7 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 				loadMoreStruct(v)
 				dynlbl("Loading...")
 			} else {
-				showStructContents(w, depth, addr, fullTypes, v)
+				showStructContents(w, depth, flags, v)
 			}
 			w.TreePop()
 		}
@@ -921,7 +955,7 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 			cblbl("nil")
 		} else {
 			if hdr() {
-				showInterfaceContents(w, depth, addr, fullTypes, v)
+				showInterfaceContents(w, depth, flags, v)
 				w.TreePop()
 			}
 		}
@@ -933,7 +967,7 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 			}
 			for i := range v.Children {
 				if v.Children[i] != nil {
-					showVariable(w, depth+1, addr, fullTypes, -1, v.Children[i])
+					showVariable(w, depth+1, flags, -1, v.Children[i])
 				}
 			}
 			if len(v.Children)/2 != int(v.Len) && v.Addr != 0 {
@@ -963,13 +997,13 @@ func showVariable(w *nucular.Window, depth int, addr, fullTypes bool, exprMenu i
 	}
 }
 
-func showArrayOrSliceContents(w *nucular.Window, depth int, addr, fullTypes bool, v *Variable) {
+func showArrayOrSliceContents(w *nucular.Window, depth int, flags showVariableFlags, v *Variable) {
 	if depth < 10 && !v.loading && len(v.Children) > 0 && autoloadMore(v.Children[0]) {
 		v.loading = true
 		loadMoreStruct(v)
 	}
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, fullTypes, -1, v.Children[i])
+		showVariable(w, depth+1, flags, -1, v.Children[i])
 	}
 	if len(v.Children) != int(v.Len) && v.Addr != 0 {
 		w.Row(varRowHeight).Static(moreBtnWidth)
@@ -992,13 +1026,13 @@ func autoloadMore(v *Variable) bool {
 	return false
 }
 
-func showStructContents(w *nucular.Window, depth int, addr, fullTypes bool, v *Variable) {
+func showStructContents(w *nucular.Window, depth int, flags showVariableFlags, v *Variable) {
 	for i := range v.Children {
-		showVariable(w, depth+1, addr, fullTypes, -1, v.Children[i])
+		showVariable(w, depth+1, flags, -1, v.Children[i])
 	}
 }
 
-func showInterfaceContents(w *nucular.Window, depth int, addr, fullTypes bool, v *Variable) {
+func showInterfaceContents(w *nucular.Window, depth int, flags showVariableFlags, v *Variable) {
 	if len(v.Children) <= 0 {
 		return
 	}
@@ -1021,11 +1055,11 @@ func showInterfaceContents(w *nucular.Window, depth int, addr, fullTypes bool, v
 
 	switch data.Kind {
 	case reflect.Struct:
-		showStructContents(w, depth, addr, fullTypes, data)
+		showStructContents(w, depth, flags, data)
 	case reflect.Array, reflect.Slice:
-		showArrayOrSliceContents(w, depth, addr, fullTypes, data)
+		showArrayOrSliceContents(w, depth, flags, data)
 	default:
-		showVariable(w, depth+1, addr, fullTypes, -1, data)
+		showVariable(w, depth+1, flags, -1, data)
 	}
 }
 

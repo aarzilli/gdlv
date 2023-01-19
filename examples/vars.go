@@ -28,13 +28,14 @@ func main() {
 	var f float64 = 30000000000000000
 	var pointarr = []Point{{1, 1}, {2, 3}, {4, 4}, {1, 5}}
 	var p = Point{1, 2}
+	var pp = &Point{3, 4}
 	var iface interface{} = &Point{1, 2}
 	var iface2 interface{} = &Struct{S: longstr}
 	t0 := time.Now()
 
 	runtime.Breakpoint()
 
-	fmt.Println(longstr, longbytearr, longrunearr, x, y, nx, ux, longintarr, f, pointarr, p, iface, iface2, t0)
+	fmt.Println(longstr, longbytearr, longrunearr, x, y, nx, ux, longintarr, f, pointarr, p, iface, iface2, t0, pp)
 
 	for i := 0; i < 3; i++ {
 		a := []int{1, 2, 3}
