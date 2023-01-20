@@ -207,9 +207,10 @@ func cleanWindowTitle(title string) string {
 }
 
 func (p *infoPanel) Flags(m string) nucular.WindowFlags {
-	flags := nucular.WindowDefaultFlags | nucular.WindowNonmodal | p.flags
+	flags := nucular.WindowDefaultFlags | nucular.WindowNonmodal | nucular.WindowHelp | p.flags
 	if m == infoCommand {
 		flags = flags &^ nucular.WindowClosable
+		flags = flags &^ nucular.WindowHelp
 	}
 	return flags
 }

@@ -175,11 +175,12 @@ Option -first will step into the first function call of the line, -last will ste
 		{aliases: []string{"interrupt"}, group: runCmds, cmdFn: interrupt, helpMsg: "interrupts execution."},
 		{aliases: []string{"print", "p"}, group: dataCmds, complete: completeVariable, cmdFn: printVar, helpMsg: `Evaluate an expression.
 
-	print [@<scope-expr>] <expression>
-	print [@<scope-expr>] $ <starlar-expression>
+	print [@<scope-expr>] [format-expr] <expression>
+	print [@<scope-expr>] [format-expr] $ <starlar-expression>
 
 See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions.
-Type 'help scope-expr' for a description of <scope-expr>.`},
+Type 'help scope-expr' for a description of <scope-expr>.
+Type 'help format-expr' for a description of <format-expr>.`},
 		{aliases: []string{"list", "ls"}, complete: completeLocation, cmdFn: listCommand, helpMsg: `Show source code.
 		
 			list <linespec>
@@ -192,11 +193,12 @@ Type 'help scope-expr' for a description of <scope-expr>.`},
 See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions. Only numerical variables and pointers can be changed.`},
 		{aliases: []string{"display", "disp", "dp"}, group: dataCmds, complete: completeVariable, cmdFn: displayVar, helpMsg: `Adds one expression to the Variables panel.
 	
-	display [@<scope-expr>] <expression>
-	display [@<scope-expr>] $ <starlark-expression>
+	display [@<scope-expr>] [format-expr] <expression>
+	display [@<scope-expr>] [format-expr] $ <starlark-expression>
 
 See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions.
-Type 'help scope-expr' for a description of <scope-expr>.`},
+Type 'help scope-expr' for a description of <scope-expr>.
+Type 'help format-expr' for a description of <format-expr>.`},
 		{aliases: []string{"details", "det", "dt"}, group: dataCmds, complete: completeVariable, cmdFn: detailsVar, helpMsg: `Opens details window for the specified expression.
 	
 	details <expr>
@@ -338,6 +340,31 @@ There are three kinds of frame specifiers:
 2. The character 'f' followed by a negative integer specifies the frame offset for the frame in which the expression should be evaluated. Gdlv will look in the topmost 100 frames for a frame with the same offset as the one specified.
 
 3. The character 'f' followed by a regular expression delimited by the character '/'. This specifies that the expression should be evaluated in the first frame that's executing a function whose name matches the regular expression.`)
+		return nil
+	}
+
+	if args == "format-expr" {
+		fmt.Fprintf(out, `A format expression can be used to change the way print and display format their output. The syntax is similar to the format directives of printf
+		
+print %02x
+	
+	Changes the format of integer numbers to hexadecimal, padding with 0s for two characters
+
+print %0.2f
+	
+	Changes the format of floating point numbers to %0.2f.
+
+print %200s x
+
+	Changes the number of characters retrieved for strings to 200.
+
+print %#s x
+
+	Formats strings like 'hexdump -C'
+
+print %+0.2g%o%1000s x
+
+	Multiple formatting directives can be used simultaneously, in this example integer numbers will be print in octal, floating point numbers will be formatted with %+0.2g and strings will be loaded up to 1000 characters.`)
 		return nil
 	}
 

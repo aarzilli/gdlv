@@ -287,6 +287,9 @@ func loadGlobals(p *asyncLoad) {
 }
 
 func updateGlobals(container *nucular.Window) {
+	if container.HelpClicked {
+		showHelp(container.Master(), "Globals Panel Help", globalsPanelHelp)
+	}
 	w := globalsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
@@ -389,6 +392,9 @@ const (
 )
 
 func updateLocals(container *nucular.Window) {
+	if container.HelpClicked {
+		showHelp(container.Master(), "Locals Panel Help", localsPanelHelp)
+	}
 	w := localsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return

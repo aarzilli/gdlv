@@ -50,6 +50,9 @@ func loadAutoCheckpoints(p *asyncLoad) {
 }
 
 func updateAutoCheckpoints(container *nucular.Window) {
+	if container.HelpClicked {
+		showHelp(container.Master(), "Auto-checkpoints Panel Help", autoCheckpointsPanelHelp)
+	}
 	w := autoCheckpointsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return

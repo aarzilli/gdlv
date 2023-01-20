@@ -342,6 +342,10 @@ func updateGoroutines(container *nucular.Window) {
 		}()
 	}
 
+	if container.HelpClicked {
+		showHelp(container.Master(), "Goroutines Panel Help", goroutinesPanelHelp)
+	}
+
 	w := goroutinesPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
@@ -636,6 +640,9 @@ func loadStacktrace(p *asyncLoad) {
 }
 
 func updateStacktrace(container *nucular.Window) {
+	if container.HelpClicked {
+		showHelp(container.Master(), "Stacktrace Panel Help", stacktracePanelHelp)
+	}
 	w := stackPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
@@ -761,6 +768,9 @@ func loadThreads(p *asyncLoad) {
 }
 
 func updateThreads(container *nucular.Window) {
+	if container.HelpClicked {
+		showHelp(container.Master(), "Threads Panel Help", threadsPanelHelp)
+	}
 	w := threadsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
@@ -818,6 +828,9 @@ func loadRegs(p *asyncLoad) {
 }
 
 func updateRegs(container *nucular.Window) {
+	if container.HelpClicked {
+		showHelp(container.Master(), "Registers Panel Help", registersPanelHelp)
+	}
 	w := regsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
@@ -851,6 +864,9 @@ func loadBreakpoints(p *asyncLoad) {
 }
 
 func updateBreakpoints(container *nucular.Window) {
+	if container.HelpClicked {
+		showHelp(container.Master(), "Breakpoints Panel Help", breakpointsPanelHelp)
+	}
 	w := breakpointsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
@@ -1155,6 +1171,9 @@ func loadCheckpoints(p *asyncLoad) {
 }
 
 func updateCheckpoints(container *nucular.Window) {
+	if container.HelpClicked {
+		showHelp(container.Master(), "Checkpoints Panel Help", checkpointsPanelHelp)
+	}
 	w := checkpointsPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
@@ -1209,6 +1228,9 @@ func updateCheckpoints(container *nucular.Window) {
 }
 
 func updateDeferredCalls(container *nucular.Window) {
+	if container.HelpClicked {
+		showHelp(container.Master(), "Deferred Calls Panel Help", deferredCallsPanelHelp)
+	}
 	w := stackPanel.asyncLoad.showRequest(container)
 	if w == nil {
 		return
@@ -1411,6 +1433,10 @@ func updateListingPanel(container *nucular.Window) {
 	if len(listingPanel.listing) == 0 {
 		updateDisassemblyPanel(container)
 		return
+	}
+
+	if container.HelpClicked {
+		showHelp(container.Master(), "Listing Panel Help", listingPanelHelp)
 	}
 
 	container.Data = nil
@@ -1619,6 +1645,10 @@ func updateDisassemblyPanel(container *nucular.Window) {
 	container = disassemblyPanel.asyncLoad.showRequest(container)
 	if container == nil {
 		return
+	}
+
+	if container.HelpClicked {
+		showHelp(container.Master(), "Disassembly Panel Help", disassemblyPanelHelp)
 	}
 
 	const lineheight = 14
