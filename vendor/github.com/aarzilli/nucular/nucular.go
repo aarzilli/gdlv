@@ -27,6 +27,7 @@ type UpdateFn func(*Window)
 type Window struct {
 	LastWidgetBounds rect.Rect
 	Data             interface{}
+	HelpClicked      bool
 	title            string
 	ctx              *context
 	idx              int
@@ -137,6 +138,7 @@ const (
 	WindowTitle
 	WindowContextualReplace
 	WindowNonmodal
+	WindowHelp
 
 	windowSub
 	windowGroup
@@ -313,6 +315,7 @@ func panelBegin(ctx *context, win *Window, title string) {
 	dwh.Style = win.style()
 
 	var closeButton rect.Rect
+	var helpButton rect.Rect
 
 	if dwh.HeaderActive {
 		/* calculate header bounds */
@@ -367,6 +370,24 @@ func panelBegin(ctx *context, win *Window, title string) {
 				win.close = true
 			}
 		}
+
+		// window help button
+		helpButton.Y = closeButton.Y
+		helpButton.H = closeButton.H
+		helpButton.W = closeButton.H
+		if win.flags&WindowHelp != 0 {
+			spc := wstyle.Header.Spacing.X + 2*wstyle.Header.Padding.X
+			if wstyle.Header.Align == nstyle.HeaderRight {
+				helpButton.X = closeButton.X - spc - helpButton.W
+				dwh.Header.W -= helpButton.W + spc + wstyle.Header.Padding.X
+			} else {
+				helpButton.X = closeButton.X + spc
+				dwh.Header.X += helpButton.W + spc + wstyle.Header.Padding.X
+			}
+
+			win.HelpClicked = doButton(win, label.T("?"), helpButton, &wstyle.Header.CloseButton, in, false)
+		}
+
 	} else {
 		dwh.LayoutHeaderH = layout.HeaderH
 		dwh.RowHeight = layout.Row.Height
