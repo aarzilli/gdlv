@@ -49,6 +49,8 @@ type detailViewer struct {
 	stringMode stringViewerMode
 	numberMode numberMode
 	ed         nucular.TextEditor
+	showAddr   bool
+	fullTypes  bool
 
 	mu sync.Mutex
 }
@@ -71,23 +73,19 @@ func newDetailViewer(mw nucular.MasterWindow, expr string) {
 	r.exprEd.Buffer = []rune(expr)
 	r.len = 64
 
-	mw.PopupOpen("Details", popupFlags|nucular.WindowNonmodal|nucular.WindowScalable|nucular.WindowClosable, rect.Rect{100, 100, 550, 400}, true, r.Update)
+	mw.PopupOpen("Details", nucular.WindowTitle|nucular.WindowMovable|nucular.WindowBorder|nucular.WindowNonmodal|nucular.WindowScalable|nucular.WindowClosable, rect.Rect{100, 100, 550, 400}, true, r.Update)
 }
 
 func (dv *detailViewer) load(p *asyncLoad) {
 	expr := string(dv.exprEd.Buffer)
+	oldv := dv.v
 	dv.v = nil
 	dv.loadErr = nil
-	v, err := client.EvalVariable(currentEvalScope(), expr, api.LoadConfig{false, 0, dv.len, dv.len, -1})
-	if err != nil {
-		dv.loadErr = err
-		if p != nil {
-			p.done(nil)
-		}
-		return
-	}
-
-	dv.v = wrapApiVariable("", v, v.Name, v.Name, true, nil, 0)
+	cfg := getVariableLoadConfig()
+	cfg.MaxArrayValues = dv.len
+	cfg.MaxStringLen = dv.len
+	dv.v, _ = evalScopedExpr(expr, cfg, true)
+	markChangedVariable(dv.v, oldv)
 
 	switch dv.v.Type {
 	case "string":
@@ -175,8 +173,6 @@ func (dv *detailViewer) setupView() {
 	default:
 		if dv.v.Kind == reflect.String {
 			dv.setupStringView()
-		} else {
-			dv.ed.Buffer = []rune(fmt.Sprintf("unsupported type %s", dv.v.Type))
 		}
 	}
 }
@@ -277,6 +273,7 @@ func (dv *detailViewer) Update(container *nucular.Window) {
 		return
 	}
 
+	w.MenubarBegin()
 	w.Row(30).Static(100, 0, 80, 150)
 	w.Label("Expression: ", "LC")
 	active := dv.exprEd.Edit(w)
@@ -286,7 +283,7 @@ func (dv *detailViewer) Update(container *nucular.Window) {
 	if w.ButtonText("Set") {
 		dv.load(nil)
 	}
-	if dv.v != nil {
+	if dv.v != nil && dv.needsLength() {
 		if w.PropertyInt("Length:", 1, &dv.len, int(dv.v.Len), 16, 16) {
 			dv.load(nil)
 		}
@@ -305,23 +302,36 @@ func (dv *detailViewer) Update(container *nucular.Window) {
 		return
 	}
 
-	w.Row(30).Static(100, 0)
-	w.Label("Showing: ", "LC")
-	w.Label(dv.loaded, "LC")
+	showing := func() {
+		w.Row(30).Static(100, 0)
+		w.Label("Showing: ", "LC")
+		w.Label(dv.loaded, "LC")
+		w.MenubarEnd()
+	}
 
 	switch dv.v.Type {
 	case "string", "[]uint8", "[]int32":
+		showing()
 		dv.stringUpdate(w)
 	case "[]int", "[]int8", "[]int16", "[]int64", "[]uint", "[]uint16", "[]uint32", "[]uint64":
+		showing()
 		dv.intArrayUpdate(w)
 	default:
 		if dv.v.Kind == reflect.String {
+			showing()
 			dv.stringUpdate(w)
 		} else {
-			w.Row(30).Dynamic(1)
-			w.Label(fmt.Sprintf("Unsupported type %s", dv.v.Type), "LC")
+			w.MenubarEnd()
+			showVariable(w, 0, newShowVariableFlags(dv.showAddr, dv.fullTypes)|showVariableAlwaysExpand, -1, dv.v)
 		}
 	}
+}
+
+func (dv *detailViewer) needsLength() bool {
+	if dv.v == nil {
+		return false
+	}
+	return dv.v.Kind == reflect.String || dv.v.Kind == reflect.Slice || dv.v.Kind == reflect.Array || dv.v.Kind == reflect.Map
 }
 
 func (dv *detailViewer) stringUpdate(w *nucular.Window) {
@@ -531,4 +541,14 @@ func (c *CustomFormatter) Format(v *Variable) {
 	default:
 		v.Value = sv.String()
 	}
+}
+
+type expressionPanel struct {
+	asyncLoad asyncLoad
+	exprEd    nucular.TextEditor
+
+	loaded  string
+	loadErr error
+
+	v *Variable
 }

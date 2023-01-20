@@ -505,9 +505,15 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		return
 	}
 	w.Row(20).Dynamic(1)
-	if fn := detailsAvailable(v); fn != nil {
+	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
 		if w.MenuItem(label.TA("Details", "LC")) {
-			fn(w.Master(), v.Expression)
+			newDetailViewer(w.Master(), localsPanel.expressions[exprMenuIdx].Expr)
+			removeExpression(exprMenuIdx)
+			return
+		}
+	} else {
+		if w.MenuItem(label.TA("Details", "LC")) {
+			newDetailViewer(w.Master(), v.Expression)
 		}
 	}
 
@@ -537,39 +543,37 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 			localsPanel.ed.Active = true
 			commandLineEditor.Active = false
 		}
-		if w.MenuItem(label.TA("Remove expression", "LC")) {
-			if exprMenuIdx+1 < len(localsPanel.expressions) {
-				copy(localsPanel.expressions[exprMenuIdx:], localsPanel.expressions[exprMenuIdx+1:])
-				copy(localsPanel.v[exprMenuIdx:], localsPanel.v[exprMenuIdx+1:])
-			}
-			localsPanel.expressions = localsPanel.expressions[:len(localsPanel.expressions)-1]
-			localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
-		}
 		if w.MenuItem(label.TA("Load parameters...", "LC")) {
 			w.Master().PopupOpen(fmt.Sprintf("Load parameters for %s", localsPanel.expressions[exprMenuIdx].Expr), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, configureLoadParameters(exprMenuIdx))
 		}
 		if w.CheckboxText("Pin to frame", &pinned) {
+			se := ParseScopedExpr(localsPanel.expressions[exprMenuIdx].Expr)
 			if pinned && curFrame < len(stackPanel.stack) {
-				localsPanel.expressions[exprMenuIdx].Expr = fmt.Sprintf("@g%df%dd%d %s", curGid, stackPanel.stack[curFrame].FrameOffset, curDeferredCall, localsPanel.expressions[exprMenuIdx].Expr)
+				se.Kind = FrameOffsetScopeExpr
+				se.Gid = curGid
+				se.Foff = int(stackPanel.stack[curFrame].FrameOffset)
+				se.DeferredCall = curDeferredCall
 			} else {
-				se := ParseScopedExpr(localsPanel.expressions[exprMenuIdx].Expr)
-				if se.Kind != InvalidScopeExpr {
-					localsPanel.expressions[exprMenuIdx].Expr = se.EvalExpr
-				}
+				se.Kind = NormalScopeExpr
+				se.Gid = -1
+				se.Foff = -1
+				se.Fid = -1
+				se.DeferredCall = -1
 			}
+			localsPanel.expressions[exprMenuIdx].Expr = se.String()
 			go func(i int) {
 				additionalLoadMu.Lock()
 				defer additionalLoadMu.Unlock()
 				loadOneExpr(i)
 			}(exprMenuIdx)
 		}
-		if exprMenuIdx < len(localsPanel.expressions) {
-			w.CheckboxText("Traced", &localsPanel.expressions[exprMenuIdx].traced)
+		w.CheckboxText("Traced", &localsPanel.expressions[exprMenuIdx].traced)
+		if w.MenuItem(label.TA("Remove expression", "LC")) {
+			removeExpression(exprMenuIdx)
 		}
 	} else if v.Expression != "" {
 		if w.MenuItem(label.TA("Add as expression", "LC")) {
 			addExpression(v.Expression)
-
 		}
 	}
 
@@ -647,13 +651,22 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 	}
 }
 
+func removeExpression(exprMenuIdx int) {
+	if exprMenuIdx+1 < len(localsPanel.expressions) {
+		copy(localsPanel.expressions[exprMenuIdx:], localsPanel.expressions[exprMenuIdx+1:])
+		copy(localsPanel.v[exprMenuIdx:], localsPanel.v[exprMenuIdx+1:])
+	}
+	localsPanel.expressions = localsPanel.expressions[:len(localsPanel.expressions)-1]
+	localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
+}
+
 func variableHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v *Variable) bool {
 	fullTypes := flags.fullTypes()
 	style := w.Master().Style()
 
 	w.LayoutSetWidthScaled(w.LayoutAvailableWidth())
 	initialOpen := false
-	if flags.parentIsPtr() {
+	if flags.parentIsPtr() || flags.alwaysExpand() {
 		initialOpen = true
 	}
 	lblrect, out, isopen := w.TreePushCustom(nucular.TreeNode, v.Varname, initialOpen)
@@ -830,6 +843,7 @@ const (
 	showVariableFullTypes showVariableFlags = 1 << iota
 	showVariableWithAddr
 	showVariableParentIsPtr
+	showVariableAlwaysExpand
 )
 
 func newShowVariableFlags(showAddr, fullTypes bool) (r showVariableFlags) {
@@ -842,12 +856,10 @@ func newShowVariableFlags(showAddr, fullTypes bool) (r showVariableFlags) {
 	return r
 }
 
-func (flags showVariableFlags) fullTypes() bool { return (flags & showVariableFullTypes) != 0 }
-func (flags showVariableFlags) showVariableParentIsPtr() bool {
-	return (flags & showVariableParentIsPtr) != 0
-}
-func (flags showVariableFlags) withAddr() bool    { return (flags & showVariableWithAddr) != 0 }
-func (flags showVariableFlags) parentIsPtr() bool { return (flags & showVariableParentIsPtr) != 0 }
+func (flags showVariableFlags) fullTypes() bool    { return (flags & showVariableFullTypes) != 0 }
+func (flags showVariableFlags) withAddr() bool     { return (flags & showVariableWithAddr) != 0 }
+func (flags showVariableFlags) parentIsPtr() bool  { return (flags & showVariableParentIsPtr) != 0 }
+func (flags showVariableFlags) alwaysExpand() bool { return (flags & showVariableAlwaysExpand) != 0 }
 
 func showVariable(w *nucular.Window, depth int, flags showVariableFlags, exprMenu int, v *Variable) {
 	style := w.Master().Style()
@@ -864,6 +876,7 @@ func showVariable(w *nucular.Window, depth int, flags showVariableFlags, exprMen
 
 	curflags := flags
 	flags = flags &^ showVariableParentIsPtr
+	flags = flags &^ showVariableAlwaysExpand
 
 	hdr := func() bool {
 		return variableHeader(w, curflags, exprMenu, v)
@@ -1131,24 +1144,6 @@ func loadMoreStruct(v *Variable) {
 			additionalLoadMu.Unlock()
 		}()
 	}
-}
-
-type openDetailsWindowFn func(nucular.MasterWindow, string)
-
-func detailsAvailable(v *Variable) openDetailsWindowFn {
-	if v == nil {
-		return nil
-	}
-	switch v.RealType {
-	case "string", "[]uint8", "[]int32":
-		return newDetailViewer
-	case "[]int", "[]int8", "[]int16", "[]int64", "[]uint", "[]uint16", "[]uint32", "[]uint64":
-		return newDetailViewer
-	}
-	if v.Kind == reflect.String {
-		return newDetailViewer
-	}
-	return nil
 }
 
 func configureLoadParameters(exprMenuIdx int) func(w *nucular.Window) {
