@@ -28,8 +28,10 @@ type ScopedExpr struct {
 
 	EvalExpr string // expression to evaluate
 
-	MaxStringLen int // maximum string length if > 0
-	Fmt          prettyprint.SimpleFormat
+	MaxStringLen       int // maximum string length if > 0
+	MaxArrayValues     int // maximum array values if > 0
+	MaxVariableRecurse int // maximum variable recursion if > 0
+	Fmt                prettyprint.SimpleFormat
 }
 
 type ScopeExprKind uint8
@@ -72,6 +74,9 @@ func ParseScopedExpr(in string) ScopedExpr {
 			in = parseScopedExprScope(in, &r)
 		case '%':
 			in = parseScopedExprLoad(in, &r)
+		}
+		if r.Kind == InvalidScopeExpr {
+			return r
 		}
 	}
 	return r
@@ -175,6 +180,20 @@ func parseScopedExprScope(in string, r *ScopedExpr) string {
 
 func parseScopedExprLoad(in string, r *ScopedExpr) string {
 	for i := range in {
+		parseNum := func() int {
+			s := in[:i+1]
+			s = s[1:]
+			s = s[:len(s)-1]
+			if s == "" {
+				return 0
+			}
+			n, err := strconv.Atoi(s)
+			if err != nil {
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("invalid formatter %q", in[1:])}
+			}
+			return n
+
+		}
 		if (in[i] < '0' || in[i] > '9') && in[i] != '%' && in[i] != '#' && in[i] != '+' && in[i] != '.' {
 			switch in[i] {
 			case 's':
@@ -192,6 +211,12 @@ func parseScopedExprLoad(in string, r *ScopedExpr) string {
 					}
 					r.MaxStringLen = n
 				}
+				return in[i+1:]
+			case 'a':
+				r.MaxArrayValues = parseNum()
+				return in[i+1:]
+			case 'v':
+				r.MaxVariableRecurse = parseNum()
 				return in[i+1:]
 			case 'x', 'X', 'o', 'O', 'd':
 				r.Fmt.IntFormat = in[:i+1]
@@ -350,6 +375,12 @@ func evalScopedExpr(expr string, cfg api.LoadConfig, customFormatters bool) (*Va
 
 	if se.MaxStringLen > 0 {
 		cfg.MaxStringLen = se.MaxStringLen
+	}
+	if se.MaxArrayValues > 0 {
+		cfg.MaxArrayValues = se.MaxArrayValues
+	}
+	if se.MaxVariableRecurse > 0 {
+		cfg.MaxVariableRecurse = se.MaxVariableRecurse
 	}
 
 	if len(se.EvalExpr) == 0 || se.EvalExpr[0] != '$' {

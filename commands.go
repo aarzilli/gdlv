@@ -360,7 +360,15 @@ print %200s x
 
 print %#s x
 
-	Formats strings like 'hexdump -C'
+	Formats strings like 'hexdump -C'.
+
+print %100a x
+	
+	Changes the number of elements loaded for slices, arrays and maps to 100.
+
+print %5v x
+	
+	Changes the recursion depth for structs and pointers to 5.
 
 print %+0.2g%o%1000s x
 
