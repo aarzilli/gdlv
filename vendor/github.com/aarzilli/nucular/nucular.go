@@ -346,6 +346,9 @@ func panelBegin(ctx *context, win *Window, title string) {
 		dwh.Label.Y = dwh.Header.Y + wstyle.Header.LabelPadding.Y
 		dwh.Label.H = FontHeight(font) + 2*wstyle.Header.LabelPadding.Y
 		dwh.Label.W = t + 2*wstyle.Header.Spacing.X
+		if dwh.Label.X+dwh.Label.W > dwh.Header.X+dwh.Header.W {
+			dwh.Label.W = dwh.Header.X + dwh.Header.W - dwh.Label.X
+		}
 		dwh.LayoutHeaderH = layout.HeaderH
 		dwh.RowHeight = layout.Row.Height
 		dwh.Title = title
