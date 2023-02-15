@@ -497,12 +497,12 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 	for _, loc := range locs {
 		requestedBp.Addr = loc.PC
 		requestedBp.Addrs = loc.PCs
-		setBreakpointEx(out, requestedBp)
+		setBreakpointEx(out, requestedBp, locspec)
 	}
 	return nil
 }
 
-func setBreakpointEx(out io.Writer, requestedBp *api.Breakpoint) {
+func setBreakpointEx(out io.Writer, requestedBp *api.Breakpoint, locspec string) {
 	if curThread < 0 {
 		switch {
 		default:
@@ -518,7 +518,7 @@ func setBreakpointEx(out io.Writer, requestedBp *api.Breakpoint) {
 		fmt.Fprintf(out, "Breakpoint will be set on restart\n")
 		return
 	}
-	bp, err := client.CreateBreakpoint(requestedBp)
+	bp, err := client.CreateBreakpointWithExpr(requestedBp, locspec, nil, true)
 	if err != nil {
 		fmt.Fprintf(out, "Could not create breakpoint: %v\n", err)
 	}

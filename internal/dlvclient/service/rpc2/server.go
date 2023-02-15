@@ -105,6 +105,10 @@ type ListBreakpointsOut struct {
 
 type CreateBreakpointIn struct {
 	Breakpoint api.Breakpoint
+
+	LocExpr             string
+	SubstitutePathRules [][2]string
+	Suspended           bool
 }
 
 type CreateBreakpointOut struct {

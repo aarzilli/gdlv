@@ -187,7 +187,7 @@ func (fbp *frozenBreakpoint) Restore(out io.Writer) {
 }
 
 func (fbp *frozenBreakpoint) Set(out io.Writer, functionLoc *api.Location) {
-	bp, err := client.CreateBreakpoint(&fbp.Bp)
+	bp, err := client.CreateBreakpointWithExpr(&fbp.Bp, fmt.Sprintf("%s:%d", fbp.Bp.File, fbp.Bp.Line), nil, true)
 	if err != nil {
 		fmt.Fprintf(out, "Could not restore breakpoint at %s:%d: %v\n", fbp.Bp.File, fbp.Bp.Line, err)
 		return

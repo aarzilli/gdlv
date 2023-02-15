@@ -1361,7 +1361,7 @@ func funcInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx i
 }
 
 func functionListSetBreakpoint(name string) {
-	setBreakpointEx(&editorWriter{true}, &api.Breakpoint{FunctionName: name, Line: -1})
+	setBreakpointEx(&editorWriter{true}, &api.Breakpoint{FunctionName: name, Line: -1}, "")
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 }
 
@@ -1598,7 +1598,7 @@ func updateListingPanel(container *nucular.Window) {
 }
 
 func listingSetBreakpoint(file string, line int) {
-	setBreakpointEx(&editorWriter{true}, &api.Breakpoint{File: file, Line: line})
+	setBreakpointEx(&editorWriter{true}, &api.Breakpoint{File: file, Line: line}, fmt.Sprintf("%s:%d", file, line))
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 }
 
