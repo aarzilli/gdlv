@@ -541,19 +541,18 @@ func (descr *ServerDescr) Close() {
 	})
 }
 
+var testArguments = []string{"-bench", "-benchtime", "-count", "-cover", "-covermode", "-coverpkg", "-cpu", "-parallel", "-run", "-short", "-timeout", "-v", "-benchmem", "-blockprofile", "-blockprofilerate", "-coverprofile", "-cpuprofile", "-memprofile", "-memprofilerate", "-mutexprofile", "-mutexprofilefraction", "-outputdir", "-trace"}
+
 func addTestPrefix(inputArgs []string) []string {
 	if inputArgs == nil {
 		return nil
 	}
 	args := make([]string, 0, len(inputArgs))
 	for _, arg := range inputArgs {
-		switch arg {
-		case "-bench", "-benchtime", "-count", "-cover", "-covermode", "-coverpkg", "-cpu", "-parallel", "-run", "-short", "-timeout", "-v":
-			fallthrough
-		case "-benchmem", "-blockprofile", "-blockprofilerate", "-coverprofile", "-cpuprofile", "-memprofile", "-memprofilerate", "-mutexprofile", "-mutexprofilefraction", "-outputdir", "-trace":
-			args = append(args, "-test."+arg[1:])
-		default:
-			args = append(args, arg)
+		for _, testarg := range testArguments {
+			if arg == testarg || strings.HasPrefix(arg, testarg+"=") {
+				args = append(args, "-test."+arg[1:])
+			}
 		}
 	}
 	return args
