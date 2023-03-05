@@ -548,11 +548,18 @@ func addTestPrefix(inputArgs []string) []string {
 		return nil
 	}
 	args := make([]string, 0, len(inputArgs))
+argloop:
 	for _, arg := range inputArgs {
+		added := false
 		for _, testarg := range testArguments {
 			if arg == testarg || strings.HasPrefix(arg, testarg+"=") {
 				args = append(args, "-test."+arg[1:])
+				added = true
+				continue argloop
 			}
+		}
+		if !added {
+			args = append(args, arg)
 		}
 	}
 	return args
