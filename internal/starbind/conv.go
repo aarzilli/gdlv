@@ -471,7 +471,7 @@ func (v ptrVariableAsStarlarkValue) Attr(name string) (starlark.Value, error) {
 }
 
 func (v ptrVariableAsStarlarkValue) AttrNames() []string {
-	if v.v.Children[0].Kind != reflect.Struct {
+	if len(v.v.Children) == 0 || v.v.Children[0].Kind != reflect.Struct {
 		return nil
 	}
 	// autodereference
