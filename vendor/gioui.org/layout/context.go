@@ -3,9 +3,9 @@
 package layout
 
 import (
+	"image"
 	"time"
 
-	"gioui.org/f32"
 	"gioui.org/io/event"
 	"gioui.org/io/system"
 	"gioui.org/op"
@@ -27,18 +27,23 @@ type Context struct {
 	// Now is the animation time.
 	Now time.Time
 
+	// Locale provides information on the system's language preferences.
+	// BUG(whereswaldon): this field is not currently populated automatically.
+	// Interested users must look up and populate these values manually.
+	Locale system.Locale
+
 	*op.Ops
 }
 
 // NewContext is a shorthand for
 //
-//   Context{
-//     Ops: ops,
-//     Now: e.Now,
-//     Queue: e.Queue,
-//     Config: e.Config,
-//     Constraints: Exact(e.Size),
-//   }
+//	Context{
+//	  Ops: ops,
+//	  Now: e.Now,
+//	  Queue: e.Queue,
+//	  Config: e.Config,
+//	  Constraints: Exact(e.Size),
+//	}
 //
 // NewContext calls ops.Reset and adjusts ops for e.Insets.
 func NewContext(ops *op.Ops, e system.FrameEvent) Context {
@@ -47,15 +52,15 @@ func NewContext(ops *op.Ops, e system.FrameEvent) Context {
 	size := e.Size
 
 	if e.Insets != (system.Insets{}) {
-		left := e.Metric.Px(e.Insets.Left)
-		top := e.Metric.Px(e.Insets.Top)
-		op.Offset(f32.Point{
-			X: float32(left),
-			Y: float32(top),
+		left := e.Metric.Dp(e.Insets.Left)
+		top := e.Metric.Dp(e.Insets.Top)
+		op.Offset(image.Point{
+			X: left,
+			Y: top,
 		}).Add(ops)
 
-		size.X -= left + e.Metric.Px(e.Insets.Right)
-		size.Y -= top + e.Metric.Px(e.Insets.Bottom)
+		size.X -= left + e.Metric.Dp(e.Insets.Right)
+		size.Y -= top + e.Metric.Dp(e.Insets.Bottom)
 	}
 
 	return Context{
@@ -67,9 +72,14 @@ func NewContext(ops *op.Ops, e system.FrameEvent) Context {
 	}
 }
 
-// Px maps the value to pixels.
-func (c Context) Px(v unit.Value) int {
-	return c.Metric.Px(v)
+// Dp converts v to pixels.
+func (c Context) Dp(v unit.Dp) int {
+	return c.Metric.Dp(v)
+}
+
+// Sp converts v to pixels.
+func (c Context) Sp(v unit.Sp) int {
+	return c.Metric.Sp(v)
 }
 
 // Events returns the events available for the key. If no

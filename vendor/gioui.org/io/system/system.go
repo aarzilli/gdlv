@@ -24,29 +24,10 @@ type FrameEvent struct {
 	Metric unit.Metric
 	// Size is the dimensions of the window.
 	Size image.Point
-	// Insets is the insets to apply.
+	// Insets represent the space occupied by system decorations and controls.
 	Insets Insets
-	// Frame is the callback to supply the list of
-	// operations to complete the FrameEvent.
-	//
-	// Note that the operation list and the operations themselves
-	// may not be mutated until another FrameEvent is received from
-	// the same event source.
-	// That means that calls to frame.Reset and changes to referenced
-	// data such as ImageOp backing images should happen between
-	// receiving a FrameEvent and calling Frame.
-	//
-	// Example:
-	//
-	//  var w *app.Window
-	//  var frame *op.Ops
-	//  for e := range w.Events() {
-	//      if e, ok := e.(system.FrameEvent); ok {
-	//          // Call frame.Reset and manipulate images for ImageOps
-	//          // here.
-	//          e.Frame(frame)
-	//      }
-	//  }
+	// Frame completes the FrameEvent by drawing the graphical operations
+	// from ops into the window.
 	Frame func(frame *op.Ops)
 	// Queue supplies the events for event handlers.
 	Queue event.Queue
@@ -64,7 +45,8 @@ type DestroyEvent struct {
 // system decoration such as translucent
 // system bars and software keyboards.
 type Insets struct {
-	Top, Bottom, Left, Right unit.Value
+	// Values are in pixels.
+	Top, Bottom, Left, Right unit.Dp
 }
 
 // A StageEvent is generated whenever the stage of a
@@ -73,38 +55,28 @@ type StageEvent struct {
 	Stage Stage
 }
 
-// CommandEvent is a system event. Unlike most other events, CommandEvent is
-// delivered as a pointer to allow Cancel to suppress it.
-type CommandEvent struct {
-	Type CommandType
-	// Cancel suppress the default action of the command.
-	Cancel bool
-}
-
 // Stage of a Window.
 type Stage uint8
 
-// CommandType is the type of a CommandEvent.
-type CommandType uint8
-
 const (
-	// StagePaused is the Stage for inactive Windows.
-	// Inactive Windows don't receive FrameEvents.
+	// StagePaused is the stage for windows that have no on-screen representation.
+	// Paused windows don't receive FrameEvent.
 	StagePaused Stage = iota
-	// StateRunning is for active Windows.
+	// StageInactive is the stage for windows that are visible, but not active.
+	// Inactive windows receive FrameEvent.
+	StageInactive
+	// StageRunning is for active and visible Windows.
+	// Running windows receive FrameEvent.
 	StageRunning
 )
 
-const (
-	// CommandBack is the command for a back action
-	// such as the Android back button.
-	CommandBack CommandType = iota
-)
-
+// String implements fmt.Stringer.
 func (l Stage) String() string {
 	switch l {
 	case StagePaused:
 		return "StagePaused"
+	case StageInactive:
+		return "StageInactive"
 	case StageRunning:
 		return "StageRunning"
 	default:
@@ -112,7 +84,6 @@ func (l Stage) String() string {
 	}
 }
 
-func (FrameEvent) ImplementsEvent()    {}
-func (StageEvent) ImplementsEvent()    {}
-func (*CommandEvent) ImplementsEvent() {}
-func (DestroyEvent) ImplementsEvent()  {}
+func (FrameEvent) ImplementsEvent()   {}
+func (StageEvent) ImplementsEvent()   {}
+func (DestroyEvent) ImplementsEvent() {}

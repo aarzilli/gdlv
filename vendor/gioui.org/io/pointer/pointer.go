@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"gioui.org/f32"
-	"gioui.org/internal/opconst"
+	"gioui.org/internal/ops"
 	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/op"
@@ -42,17 +42,16 @@ type Event struct {
 	Modifiers key.Modifiers
 }
 
-// AreaOp updates the hit area to the intersection of the current
-// hit area and the area. The area is transformed before applying
-// it.
-type AreaOp struct {
-	kind areaKind
-	rect image.Rectangle
+// PassOp sets the pass-through mode. InputOps added while the pass-through
+// mode is set don't block events to siblings.
+type PassOp struct {
 }
 
-// CursorNameOp sets the cursor for the current area.
-type CursorNameOp struct {
-	Name CursorName
+// PassStack represents a PassOp on the pass stack.
+type PassStack struct {
+	ops     *ops.Ops
+	id      ops.StackID
+	macroID int
 }
 
 // InputOp declares an input handler ready for pointer
@@ -72,15 +71,10 @@ type InputOp struct {
 	ScrollBounds image.Rectangle
 }
 
-// PassOp sets the pass-through mode.
-type PassOp struct {
-	Pass bool
-}
-
 type ID uint16
 
 // Type of an Event.
-type Type uint8
+type Type uint
 
 // Priority of an Event.
 type Priority uint8
@@ -91,29 +85,85 @@ type Source uint8
 // Buttons is a set of mouse buttons
 type Buttons uint8
 
-// CursorName is the name of a cursor.
-type CursorName string
+// Cursor denotes a pre-defined cursor shape. Its Add method adds an
+// operation that sets the cursor shape for the current clip area.
+type Cursor byte
 
-// Must match app/internal/input.areaKind
-type areaKind uint8
-
+// The cursors correspond to CSS pointer naming.
 const (
 	// CursorDefault is the default cursor.
-	CursorDefault CursorName = ""
-	// CursorText is the cursor for text.
-	CursorText CursorName = "text"
-	// CursorPointer is the cursor for a link.
-	CursorPointer CursorName = "pointer"
-	// CursorCrossHair is the cursor for precise location.
-	CursorCrossHair CursorName = "crosshair"
-	// CursorColResize is the cursor for vertical resize.
-	CursorColResize CursorName = "col-resize"
-	// CursorRowResize is the cursor for horizontal resize.
-	CursorRowResize CursorName = "row-resize"
-	// CursorGrab is the cursor for moving object in any direction.
-	CursorGrab CursorName = "grab"
+	CursorDefault Cursor = iota
 	// CursorNone hides the cursor. To show it again, use any other cursor.
-	CursorNone CursorName = "none"
+	CursorNone
+	// CursorText is for selecting and inserting text.
+	CursorText
+	// CursorVerticalText is for selecting and inserting vertical text.
+	CursorVerticalText
+	// CursorPointer is for a link.
+	// Usually displayed as a pointing hand.
+	CursorPointer
+	// CursorCrosshair is for a precise location.
+	CursorCrosshair
+	// CursorAllScroll is for indicating scrolling in all directions.
+	// Usually displayed as arrows to all four directions.
+	CursorAllScroll
+	// CursorColResize is for vertical resize.
+	// Usually displayed as a vertical bar with arrows pointing east and west.
+	CursorColResize
+	// CursorRowResize is for horizontal resize.
+	// Usually displayed as a horizontal bar with arrows pointing north and south.
+	CursorRowResize
+	// CursorGrab is for content that can be grabbed (dragged to be moved).
+	// Usually displayed as an open hand.
+	CursorGrab
+	// CursorGrabbing is for content that is being grabbed (dragged to be moved).
+	// Usually displayed as a closed hand.
+	CursorGrabbing
+	// CursorNotAllowed is shown when the request action cannot be carried out.
+	// Usually displayed as a circle with a line through.
+	CursorNotAllowed
+	// CursorWait is shown when the program is busy and user cannot interact.
+	// Usually displayed as a hourglass or the system equivalent.
+	CursorWait
+	// CursorProgress is shown when the program is busy, but the user can still interact.
+	// Usually displayed as a default cursor with a hourglass.
+	CursorProgress
+	// CursorNorthWestResize is for top-left corner resizing.
+	// Usually displayed as an arrow towards north-west.
+	CursorNorthWestResize
+	// CursorNorthEastResize is for top-right corner resizing.
+	// Usually displayed as an arrow towards north-east.
+	CursorNorthEastResize
+	// CursorSouthWestResize is for bottom-left corner resizing.
+	// Usually displayed as an arrow towards south-west.
+	CursorSouthWestResize
+	// CursorSouthEastResize is for bottom-right corner resizing.
+	// Usually displayed as an arrow towards south-east.
+	CursorSouthEastResize
+	// CursorNorthSouth is for top-bottom resizing.
+	// Usually displayed as a bi-directional arrow towards north-south.
+	CursorNorthSouthResize
+	// CursorEastWestResize is for left-right resizing.
+	// Usually displayed as a bi-directional arrow towards east-west.
+	CursorEastWestResize
+	// CursorWestResize is for left resizing.
+	// Usually displayed as an arrow towards west.
+	CursorWestResize
+	// CursorEastResize is for right resizing.
+	// Usually displayed as an arrow towards east.
+	CursorEastResize
+	// CursorNorthResize is for top resizing.
+	// Usually displayed as an arrow towards north.
+	CursorNorthResize
+	// CursorSouthResize is for bottom resizing.
+	// Usually displayed as an arrow towards south.
+	CursorSouthResize
+	// CursorNorthEastSouthWestResize is for top-right to bottom-left diagonal resizing.
+	// Usually displayed as a double ended arrow on the corresponding diagonal.
+	CursorNorthEastSouthWestResize
+	// CursorNorthWestSouthEastResize is for top-left to bottom-right diagonal resizing.
+	// Usually displayed as a double ended arrow on the corresponding diagonal.
+	CursorNorthWestSouthEastResize
 )
 
 const (
@@ -165,41 +215,24 @@ const (
 	ButtonTertiary
 )
 
-const (
-	areaRect areaKind = iota
-	areaEllipse
-)
-
-// Rect constructs a rectangular hit area.
-func Rect(size image.Rectangle) AreaOp {
-	return AreaOp{
-		kind: areaRect,
-		rect: size,
-	}
+// Push the current pass mode to the pass stack and set the pass mode.
+func (p PassOp) Push(o *op.Ops) PassStack {
+	id, mid := ops.PushOp(&o.Internal, ops.PassStack)
+	data := ops.Write(&o.Internal, ops.TypePassLen)
+	data[0] = byte(ops.TypePass)
+	return PassStack{ops: &o.Internal, id: id, macroID: mid}
 }
 
-// Ellipse constructs an ellipsoid hit area.
-func Ellipse(size image.Rectangle) AreaOp {
-	return AreaOp{
-		kind: areaEllipse,
-		rect: size,
-	}
+func (p PassStack) Pop() {
+	ops.PopOp(p.ops, ops.PassStack, p.id, p.macroID)
+	data := ops.Write(p.ops, ops.TypePopPassLen)
+	data[0] = byte(ops.TypePopPass)
 }
 
-func (op AreaOp) Add(o *op.Ops) {
-	data := o.Write(opconst.TypeAreaLen)
-	data[0] = byte(opconst.TypeArea)
-	data[1] = byte(op.kind)
-	bo := binary.LittleEndian
-	bo.PutUint32(data[2:], uint32(op.rect.Min.X))
-	bo.PutUint32(data[6:], uint32(op.rect.Min.Y))
-	bo.PutUint32(data[10:], uint32(op.rect.Max.X))
-	bo.PutUint32(data[14:], uint32(op.rect.Max.Y))
-}
-
-func (op CursorNameOp) Add(o *op.Ops) {
-	data := o.Write1(opconst.TypeCursorLen, op.Name)
-	data[0] = byte(opconst.TypeCursor)
+func (op Cursor) Add(o *op.Ops) {
+	data := ops.Write(&o.Internal, ops.TypeCursorLen)
+	data[0] = byte(ops.TypeCursor)
+	data[1] = byte(op)
 }
 
 // Add panics if the scroll range does not contain zero.
@@ -210,28 +243,39 @@ func (op InputOp) Add(o *op.Ops) {
 	if b := op.ScrollBounds; b.Min.X > 0 || b.Max.X < 0 || b.Min.Y > 0 || b.Max.Y < 0 {
 		panic(fmt.Errorf("invalid scroll range value %v", b))
 	}
-	data := o.Write1(opconst.TypePointerInputLen, op.Tag)
-	data[0] = byte(opconst.TypePointerInput)
+	if op.Types>>16 > 0 {
+		panic(fmt.Errorf("value in Types overflows uint16"))
+	}
+	data := ops.Write1(&o.Internal, ops.TypePointerInputLen, op.Tag)
+	data[0] = byte(ops.TypePointerInput)
 	if op.Grab {
 		data[1] = 1
 	}
-	data[2] = byte(op.Types)
 	bo := binary.LittleEndian
-	bo.PutUint32(data[3:], uint32(op.ScrollBounds.Min.X))
-	bo.PutUint32(data[7:], uint32(op.ScrollBounds.Min.Y))
-	bo.PutUint32(data[11:], uint32(op.ScrollBounds.Max.X))
-	bo.PutUint32(data[15:], uint32(op.ScrollBounds.Max.Y))
-}
-
-func (op PassOp) Add(o *op.Ops) {
-	data := o.Write(opconst.TypePassLen)
-	data[0] = byte(opconst.TypePass)
-	if op.Pass {
-		data[1] = 1
-	}
+	bo.PutUint16(data[2:], uint16(op.Types))
+	bo.PutUint32(data[4:], uint32(op.ScrollBounds.Min.X))
+	bo.PutUint32(data[8:], uint32(op.ScrollBounds.Min.Y))
+	bo.PutUint32(data[12:], uint32(op.ScrollBounds.Max.X))
+	bo.PutUint32(data[16:], uint32(op.ScrollBounds.Max.Y))
 }
 
 func (t Type) String() string {
+	if t == Cancel {
+		return "Cancel"
+	}
+	var buf strings.Builder
+	for tt := Type(1); tt > 0; tt <<= 1 {
+		if t&tt > 0 {
+			if buf.Len() > 0 {
+				buf.WriteByte('|')
+			}
+			buf.WriteString((t & tt).string())
+		}
+	}
+	return buf.String()
+}
+
+func (t Type) string() string {
 	switch t {
 	case Press:
 		return "Press"
@@ -298,11 +342,63 @@ func (b Buttons) String() string {
 	return strings.Join(strs, "|")
 }
 
-func (c CursorName) String() string {
-	if c == CursorDefault {
-		return "default"
+func (c Cursor) String() string {
+	switch c {
+	case CursorDefault:
+		return "Default"
+	case CursorNone:
+		return "None"
+	case CursorText:
+		return "Text"
+	case CursorVerticalText:
+		return "VerticalText"
+	case CursorPointer:
+		return "Pointer"
+	case CursorCrosshair:
+		return "Crosshair"
+	case CursorAllScroll:
+		return "AllScroll"
+	case CursorColResize:
+		return "ColResize"
+	case CursorRowResize:
+		return "RowResize"
+	case CursorGrab:
+		return "Grab"
+	case CursorGrabbing:
+		return "Grabbing"
+	case CursorNotAllowed:
+		return "NotAllowed"
+	case CursorWait:
+		return "Wait"
+	case CursorProgress:
+		return "Progress"
+	case CursorNorthWestResize:
+		return "NorthWestResize"
+	case CursorNorthEastResize:
+		return "NorthEastResize"
+	case CursorSouthWestResize:
+		return "SouthWestResize"
+	case CursorSouthEastResize:
+		return "SouthEastResize"
+	case CursorNorthSouthResize:
+		return "NorthSouthResize"
+	case CursorEastWestResize:
+		return "EastWestResize"
+	case CursorWestResize:
+		return "WestResize"
+	case CursorEastResize:
+		return "EastResize"
+	case CursorNorthResize:
+		return "NorthResize"
+	case CursorSouthResize:
+		return "SouthResize"
+	case CursorNorthEastSouthWestResize:
+		return "NorthEastSouthWestResize"
+	case CursorNorthWestSouthEastResize:
+		return "NorthWestSouthEastResize"
+	default:
+		panic("unknown Type")
 	}
-	return string(c)
 }
 
 func (Event) ImplementsEvent() {}

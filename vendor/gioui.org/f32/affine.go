@@ -3,11 +3,11 @@
 package f32
 
 import (
-	"fmt"
 	"math"
+	"strconv"
 )
 
-// Affine2D represents an affine 2D transformation. The zero value if Affine2D
+// Affine2D represents an affine 2D transformation. The zero value of Affine2D
 // represents the identity transform.
 type Affine2D struct {
 	// in order to make the zero value of Affine2D represent the identity
@@ -112,6 +112,15 @@ func (a Affine2D) Elems() (sx, hx, ox, hy, sy, oy float32) {
 	return a.a + 1, a.b, a.c, a.d, a.e + 1, a.f
 }
 
+// Split a transform into two parts, one which is pure offset and the
+// other representing the scaling, shearing and rotation part.
+func (a *Affine2D) Split() (srs Affine2D, offset Point) {
+	return Affine2D{
+		a: a.a, b: a.b, c: 0,
+		d: a.d, e: a.e, f: 0,
+	}, Point{X: a.c, Y: a.f}
+}
+
 func (a Affine2D) scale(factor Point) Affine2D {
 	return Affine2D{
 		(a.a+1)*factor.X - 1, a.b * factor.X, a.c * factor.X,
@@ -139,5 +148,25 @@ func (a Affine2D) shear(radiansX, radiansY float32) Affine2D {
 
 func (a Affine2D) String() string {
 	sx, hx, ox, hy, sy, oy := a.Elems()
-	return fmt.Sprintf("[[%f %f %f] [%f %f %f]]", sx, hx, ox, hy, sy, oy)
+
+	// precision 6, one period, negative sign and space per number
+	const prec = 6
+	const charsPerFloat = prec + 2 + 1
+	s := make([]byte, 0, 6*charsPerFloat+6)
+
+	s = append(s, '[', '[')
+	s = strconv.AppendFloat(s, float64(sx), 'g', prec, 32)
+	s = append(s, ' ')
+	s = strconv.AppendFloat(s, float64(hx), 'g', prec, 32)
+	s = append(s, ' ')
+	s = strconv.AppendFloat(s, float64(ox), 'g', prec, 32)
+	s = append(s, ']', ' ', '[')
+	s = strconv.AppendFloat(s, float64(hy), 'g', prec, 32)
+	s = append(s, ' ')
+	s = strconv.AppendFloat(s, float64(sy), 'g', prec, 32)
+	s = append(s, ' ')
+	s = strconv.AppendFloat(s, float64(oy), 'g', prec, 32)
+	s = append(s, ']', ']')
+
+	return string(s)
 }

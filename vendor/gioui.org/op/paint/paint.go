@@ -10,15 +10,12 @@ import (
 	"math"
 
 	"gioui.org/f32"
-	"gioui.org/internal/opconst"
+	"gioui.org/internal/ops"
 	"gioui.org/op"
 	"gioui.org/op/clip"
 )
 
 // ImageOp sets the brush to an image.
-//
-// Note: the ImageOp may keep a reference to the backing image.
-// See NewImageOp for details.
 type ImageOp struct {
 	uniform bool
 	color   color.NRGBA
@@ -43,13 +40,11 @@ type LinearGradientOp struct {
 	Color2 color.NRGBA
 }
 
-// PaintOp fills fills the current clip area with the current brush.
+// PaintOp fills the current clip area with the current brush.
 type PaintOp struct {
 }
 
-// NewImageOp creates an ImageOp backed by src. See
-// gioui.org/io/system.FrameEvent for a description of when data
-// referenced by operations is safe to re-use.
+// NewImageOp creates an ImageOp backed by src.
 //
 // NewImageOp assumes the backing image is immutable, and may cache a
 // copy of its contents in a GPU-friendly way. Create new ImageOps to
@@ -64,12 +59,9 @@ func NewImageOp(src image.Image) ImageOp {
 			color:   col,
 		}
 	case *image.RGBA:
-		bounds := src.Bounds()
-		if bounds.Min == (image.Point{}) && src.Stride == bounds.Dx()*4 {
-			return ImageOp{
-				src:    src,
-				handle: new(int),
-			}
+		return ImageOp{
+			src:    src,
+			handle: new(int),
 		}
 	}
 
@@ -98,14 +90,16 @@ func (i ImageOp) Add(o *op.Ops) {
 			Color: i.color,
 		}.Add(o)
 		return
+	} else if i.src == nil || i.src.Bounds().Empty() {
+		return
 	}
-	data := o.Write2(opconst.TypeImageLen, i.src, i.handle)
-	data[0] = byte(opconst.TypeImage)
+	data := ops.Write2(&o.Internal, ops.TypeImageLen, i.src, i.handle)
+	data[0] = byte(ops.TypeImage)
 }
 
 func (c ColorOp) Add(o *op.Ops) {
-	data := o.Write(opconst.TypeColorLen)
-	data[0] = byte(opconst.TypeColor)
+	data := ops.Write(&o.Internal, ops.TypeColorLen)
+	data[0] = byte(ops.TypeColor)
 	data[1] = c.Color.R
 	data[2] = c.Color.G
 	data[3] = c.Color.B
@@ -113,8 +107,8 @@ func (c ColorOp) Add(o *op.Ops) {
 }
 
 func (c LinearGradientOp) Add(o *op.Ops) {
-	data := o.Write(opconst.TypeLinearGradientLen)
-	data[0] = byte(opconst.TypeLinearGradient)
+	data := ops.Write(&o.Internal, ops.TypeLinearGradientLen)
+	data[0] = byte(ops.TypeLinearGradient)
 
 	bo := binary.LittleEndian
 	bo.PutUint32(data[1:], math.Float32bits(c.Stop1.X))
@@ -133,14 +127,13 @@ func (c LinearGradientOp) Add(o *op.Ops) {
 }
 
 func (d PaintOp) Add(o *op.Ops) {
-	data := o.Write(opconst.TypePaintLen)
-	data[0] = byte(opconst.TypePaint)
+	data := ops.Write(&o.Internal, ops.TypePaintLen)
+	data[0] = byte(ops.TypePaint)
 }
 
 // FillShape fills the clip shape with a color.
 func FillShape(ops *op.Ops, c color.NRGBA, shape clip.Op) {
-	defer op.Save(ops).Load()
-	shape.Add(ops)
+	defer shape.Push(ops).Pop()
 	Fill(ops, c)
 }
 
@@ -149,7 +142,6 @@ func FillShape(ops *op.Ops, c color.NRGBA, shape clip.Op) {
 // the painted area. Use FillShape unless you need to paint several
 // times within the same clip.Op.
 func Fill(ops *op.Ops, c color.NRGBA) {
-	defer op.Save(ops).Load()
 	ColorOp{Color: c}.Add(ops)
 	PaintOp{}.Add(ops)
 }

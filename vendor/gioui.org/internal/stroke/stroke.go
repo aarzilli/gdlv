@@ -29,7 +29,7 @@ import (
 	"encoding/binary"
 	"math"
 
-	"gioui.org/f32"
+	"gioui.org/internal/f32"
 	"gioui.org/internal/ops"
 	"gioui.org/internal/scene"
 )
@@ -40,25 +40,7 @@ import (
 // op/clip, eliminating the duplicate types.
 type StrokeStyle struct {
 	Width float32
-	Miter float32
-	Cap   StrokeCap
-	Join  StrokeJoin
 }
-
-type StrokeCap uint8
-
-const (
-	RoundCap StrokeCap = iota
-	FlatCap
-	SquareCap
-)
-
-type StrokeJoin uint8
-
-const (
-	RoundJoin StrokeJoin = iota
-	BevelJoin
-)
 
 // strokeTolerance is used to reconcile rounding errors arising
 // when splitting quads into smaller and smaller segments to approximate
@@ -87,20 +69,8 @@ type strokeState struct {
 
 type StrokeQuads []StrokeQuad
 
-func (qs *StrokeQuads) setContour(n uint32) {
-	for i := range *qs {
-		(*qs)[i].Contour = n
-	}
-}
-
 func (qs *StrokeQuads) pen() f32.Point {
 	return (*qs)[len(*qs)-1].Quad.To
-}
-
-func (qs *StrokeQuads) closed() bool {
-	beg := (*qs)[0].Quad.From
-	end := (*qs)[len(*qs)-1].Quad.To
-	return f32Eq(beg.X, end.X) && f32Eq(beg.Y, end.Y)
 }
 
 func (qs *StrokeQuads) lineTo(pt f32.Point) {
@@ -115,9 +85,8 @@ func (qs *StrokeQuads) lineTo(pt f32.Point) {
 }
 
 func (qs *StrokeQuads) arc(f1, f2 f32.Point, angle float32) {
-	const segments = 16
 	pen := qs.pen()
-	m := ArcTransform(pen, f1.Add(pen), f2.Add(pen), angle, segments)
+	m, segments := ArcTransform(pen, f1.Add(pen), f2.Add(pen), angle)
 	for i := 0; i < segments; i++ {
 		p0 := qs.pen()
 		p1 := m.Transform(p0)
@@ -155,11 +124,7 @@ func (qs StrokeQuads) split() []StrokeQuads {
 	return o
 }
 
-func (qs StrokeQuads) stroke(stroke StrokeStyle, dashes DashOp) StrokeQuads {
-	if !IsSolidLine(dashes) {
-		qs = qs.dash(dashes)
-	}
-
+func (qs StrokeQuads) stroke(stroke StrokeStyle) StrokeQuads {
 	var (
 		o  StrokeQuads
 		hw = 0.5 * stroke.Width
@@ -233,7 +198,7 @@ func (qs StrokeQuads) offset(hw float32, stroke StrokeStyle) (rhs, lhs StrokeQua
 				next = states[0]
 			}
 			if state.n1 != next.n0 {
-				strokePathJoin(stroke, &rhs, &lhs, hw, state.p1, state.n1, next.n0, state.r1, next.r0)
+				strokePathRoundJoin(&rhs, &lhs, hw, state.p1, state.n1, next.n0, state.r1, next.r0)
 			}
 		}
 	}
@@ -359,15 +324,7 @@ func strokePathNorm(p0, p1, p2 f32.Point, t, d float32) f32.Point {
 	panic("impossible")
 }
 
-func rot90CW(p f32.Point) f32.Point  { return f32.Pt(+p.Y, -p.X) }
-func rot90CCW(p f32.Point) f32.Point { return f32.Pt(-p.Y, +p.X) }
-
-// cosPt returns the cosine of the opening angle between p and q.
-func cosPt(p, q f32.Point) float32 {
-	np := math.Hypot(float64(p.X), float64(p.Y))
-	nq := math.Hypot(float64(q.X), float64(q.Y))
-	return dotPt(p, q) / float32(np*nq)
-}
+func rot90CW(p f32.Point) f32.Point { return f32.Pt(+p.Y, -p.X) }
 
 func normPt(p f32.Point, l float32) f32.Point {
 	d := math.Hypot(float64(p.X), float64(p.Y))
@@ -383,12 +340,13 @@ func lenPt(p f32.Point) float32 {
 	return float32(math.Hypot(float64(p.X), float64(p.Y)))
 }
 
-func dotPt(p, q f32.Point) float32 {
-	return p.X*q.X + p.Y*q.Y
-}
-
 func perpDot(p, q f32.Point) float32 {
 	return p.X*q.Y - p.Y*q.X
+}
+
+func angleBetween(n0, n1 f32.Point) float64 {
+	return math.Atan2(float64(n1.Y), float64(n1.X)) -
+		math.Atan2(float64(n0.Y), float64(n0.X))
 }
 
 // strokePathCurv returns the curvature at t, along the quadratic Bézier
@@ -412,7 +370,8 @@ func strokePathCurv(beg, ctl, end f32.Point, t float32) float32 {
 }
 
 // quadBezierSample returns the point on the Bézier curve at t.
-//  B(t) = (1-t)^2 P0 + 2(1-t)t P1 + t^2 P2
+//
+//	B(t) = (1-t)^2 P0 + 2(1-t)t P1 + t^2 P2
 func quadBezierSample(p0, p1, p2 f32.Point, t float32) f32.Point {
 	t1 := 1 - t
 	c0 := t1 * t1
@@ -426,7 +385,8 @@ func quadBezierSample(p0, p1, p2 f32.Point, t float32) f32.Point {
 }
 
 // quadBezierD1 returns the first derivative of the Bézier curve with respect to t.
-//  B'(t) = 2(1-t)(P1 - P0) + 2t(P2 - P1)
+//
+//	B'(t) = 2(1-t)(P1 - P0) + 2t(P2 - P1)
 func quadBezierD1(p0, p1, p2 f32.Point, t float32) f32.Point {
 	p10 := p1.Sub(p0).Mul(2 * (1 - t))
 	p21 := p2.Sub(p1).Mul(2 * t)
@@ -435,33 +395,11 @@ func quadBezierD1(p0, p1, p2 f32.Point, t float32) f32.Point {
 }
 
 // quadBezierD2 returns the second derivative of the Bézier curve with respect to t:
-//  B''(t) = 2(P2 - 2P1 + P0)
+//
+//	B''(t) = 2(P2 - 2P1 + P0)
 func quadBezierD2(p0, p1, p2 f32.Point, t float32) f32.Point {
 	p := p2.Sub(p1.Mul(2)).Add(p0)
 	return p.Mul(2)
-}
-
-// quadBezierLen returns the length of the Bézier curve.
-// See:
-//  https://malczak.linuxpl.com/blog/quadratic-bezier-curve-length/
-func quadBezierLen(p0, p1, p2 f32.Point) float32 {
-	a := p0.Sub(p1.Mul(2)).Add(p2)
-	b := p1.Mul(2).Sub(p0.Mul(2))
-	A := float64(4 * dotPt(a, a))
-	B := float64(4 * dotPt(a, b))
-	C := float64(dotPt(b, b))
-	if f64Eq(A, 0.0) {
-		// p1 is in the middle between p0 and p2,
-		// so it is a straight line from p0 to p2.
-		return lenPt(p2.Sub(p0))
-	}
-
-	Sabc := 2 * math.Sqrt(A+B+C)
-	A2 := math.Sqrt(A)
-	A32 := 2 * A * A2
-	C2 := 2 * math.Sqrt(C)
-	BA := B / A2
-	return float32((A32*Sabc + A2*B*(Sabc-C2) + (4*C*A-B*B)*math.Log((2*A2+BA+Sabc)/(BA+C2))) / (4 * A32))
 }
 
 func strokeQuadBezier(state strokeState, d, flatness float32) StrokeQuads {
@@ -546,47 +484,20 @@ func quadBezierSplit(p0, p1, p2 f32.Point, t float32) (f32.Point, f32.Point, f32
 	return b0, b1, b2, a0, a1, a2
 }
 
-// strokePathJoin joins the two paths rhs and lhs, according to the provided
-// stroke operation.
-func strokePathJoin(stroke StrokeStyle, rhs, lhs *StrokeQuads, hw float32, pivot, n0, n1 f32.Point, r0, r1 float32) {
-	if stroke.Miter > 0 {
-		strokePathMiterJoin(stroke, rhs, lhs, hw, pivot, n0, n1, r0, r1)
-		return
-	}
-	switch stroke.Join {
-	case BevelJoin:
-		strokePathBevelJoin(rhs, lhs, hw, pivot, n0, n1, r0, r1)
-	case RoundJoin:
-		strokePathRoundJoin(rhs, lhs, hw, pivot, n0, n1, r0, r1)
-	default:
-		panic("impossible")
-	}
-}
-
-func strokePathBevelJoin(rhs, lhs *StrokeQuads, hw float32, pivot, n0, n1 f32.Point, r0, r1 float32) {
-
-	rp := pivot.Add(n1)
-	lp := pivot.Sub(n1)
-
-	rhs.lineTo(rp)
-	lhs.lineTo(lp)
-}
-
+// strokePathRoundJoin joins the two paths rhs and lhs, creating an arc.
 func strokePathRoundJoin(rhs, lhs *StrokeQuads, hw float32, pivot, n0, n1 f32.Point, r0, r1 float32) {
 	rp := pivot.Add(n1)
 	lp := pivot.Sub(n1)
-	cw := dotPt(rot90CW(n0), n1) >= 0.0
+	angle := angleBetween(n0, n1)
 	switch {
-	case cw:
+	case angle <= 0:
 		// Path bends to the right, ie. CW (or 180 degree turn).
 		c := pivot.Sub(lhs.pen())
-		angle := -math.Acos(float64(cosPt(n0, n1)))
 		lhs.arc(c, c, float32(angle))
 		lhs.lineTo(lp) // Add a line to accommodate for rounding errors.
 		rhs.lineTo(rp)
 	default:
 		// Path bends to the left, ie. CCW.
-		angle := math.Acos(float64(cosPt(n0, n1)))
 		c := pivot.Sub(rhs.pen())
 		rhs.arc(c, c, float32(angle))
 		rhs.lineTo(rp) // Add a line to accommodate for rounding errors.
@@ -594,79 +505,9 @@ func strokePathRoundJoin(rhs, lhs *StrokeQuads, hw float32, pivot, n0, n1 f32.Po
 	}
 }
 
-func strokePathMiterJoin(stroke StrokeStyle, rhs, lhs *StrokeQuads, hw float32, pivot, n0, n1 f32.Point, r0, r1 float32) {
-	if n0 == n1.Mul(-1) {
-		strokePathBevelJoin(rhs, lhs, hw, pivot, n0, n1, r0, r1)
-		return
-	}
-
-	// This is to handle nearly linear joints that would be clipped otherwise.
-	limit := math.Max(float64(stroke.Miter), 1.001)
-
-	cw := dotPt(rot90CW(n0), n1) >= 0.0
-	if cw {
-		// hw is used to calculate |R|.
-		// When running CW, n0 and n1 point the other way,
-		// so the sign of r0 and r1 is negated.
-		hw = -hw
-	}
-	hw64 := float64(hw)
-
-	cos := math.Sqrt(0.5 * (1 + float64(cosPt(n0, n1))))
-	d := hw64 / cos
-	if math.Abs(limit*hw64) < math.Abs(d) {
-		stroke.Miter = 0 // Set miter to zero to disable the miter joint.
-		strokePathJoin(stroke, rhs, lhs, hw, pivot, n0, n1, r0, r1)
-		return
-	}
-	mid := pivot.Add(normPt(n0.Add(n1), float32(d)))
-
-	rp := pivot.Add(n1)
-	lp := pivot.Sub(n1)
-	switch {
-	case cw:
-		// Path bends to the right, ie. CW.
-		lhs.lineTo(mid)
-	default:
-		// Path bends to the left, ie. CCW.
-		rhs.lineTo(mid)
-	}
-	rhs.lineTo(rp)
-	lhs.lineTo(lp)
-}
-
 // strokePathCap caps the provided path qs, according to the provided stroke operation.
 func strokePathCap(stroke StrokeStyle, qs *StrokeQuads, hw float32, pivot, n0 f32.Point) {
-	switch stroke.Cap {
-	case FlatCap:
-		strokePathFlatCap(qs, hw, pivot, n0)
-	case SquareCap:
-		strokePathSquareCap(qs, hw, pivot, n0)
-	case RoundCap:
-		strokePathRoundCap(qs, hw, pivot, n0)
-	default:
-		panic("impossible")
-	}
-}
-
-// strokePathFlatCap caps the start or end of a path with a flat cap.
-func strokePathFlatCap(qs *StrokeQuads, hw float32, pivot, n0 f32.Point) {
-	end := pivot.Sub(n0)
-	qs.lineTo(end)
-}
-
-// strokePathSquareCap caps the start or end of a path with a square cap.
-func strokePathSquareCap(qs *StrokeQuads, hw float32, pivot, n0 f32.Point) {
-	var (
-		e       = pivot.Add(rot90CCW(n0))
-		corner1 = e.Add(n0)
-		corner2 = e.Sub(n0)
-		end     = pivot.Sub(n0)
-	)
-
-	qs.lineTo(corner1)
-	qs.lineTo(corner2)
-	qs.lineTo(end)
+	strokePathRoundCap(qs, hw, pivot, n0)
 }
 
 // strokePathRoundCap caps the start or end of a path with a round cap.
@@ -679,60 +520,59 @@ func strokePathRoundCap(qs *StrokeQuads, hw float32, pivot, n0 f32.Point) {
 // curve approximations for an arc.
 //
 // The math is extracted from the following paper:
-//  "Drawing an elliptical arc using polylines, quadratic or
-//   cubic Bezier curves", L. Maisonobe
+//
+//	"Drawing an elliptical arc using polylines, quadratic or
+//	 cubic Bezier curves", L. Maisonobe
+//
 // An electronic version may be found at:
-//  http://spaceroots.org/documents/ellipse/elliptical-arc.pdf
-func ArcTransform(p, f1, f2 f32.Point, angle float32, segments int) f32.Affine2D {
-	c := f32.Point{
-		X: 0.5 * (f1.X + f2.X),
-		Y: 0.5 * (f1.Y + f2.Y),
+//
+//	http://spaceroots.org/documents/ellipse/elliptical-arc.pdf
+func ArcTransform(p, f1, f2 f32.Point, angle float32) (transform f32.Affine2D, segments int) {
+	const segmentsPerCircle = 16
+	const anglePerSegment = 2 * math.Pi / segmentsPerCircle
+
+	s := angle / anglePerSegment
+	if s < 0 {
+		s = -s
+	}
+	segments = int(math.Ceil(float64(s)))
+	if segments <= 0 {
+		segments = 1
 	}
 
-	// semi-major axis: 2a = |PF1| + |PF2|
-	a := 0.5 * (dist(f1, p) + dist(f2, p))
-
-	// semi-minor axis: c^2 = a^2+b^2 (c: focal distance)
-	f := dist(f1, c)
-	b := math.Sqrt(a*a - f*f)
-
-	var rx, ry, alpha, start float64
-	switch {
-	case a > b:
-		rx = a
-		ry = b
-	default:
-		rx = b
-		ry = a
-	}
-
-	var x float64
-	switch {
-	case f1 == c || f2 == c:
+	var rx, ry, alpha float64
+	if f1 == f2 {
 		// degenerate case of a circle.
-		alpha = 0
-	default:
+		rx = dist(f1, p)
+		ry = rx
+	} else {
+		// semi-major axis: 2a = |PF1| + |PF2|
+		a := 0.5 * (dist(f1, p) + dist(f2, p))
+		// semi-minor axis: c^2 = a^2 - b^2 (c: focal distance)
+		c := dist(f1, f2) * 0.5
+		b := math.Sqrt(a*a - c*c)
 		switch {
-		case f1.X > c.X:
-			x = float64(f1.X - c.X)
-			alpha = math.Acos(x / f)
-		case f1.X < c.X:
-			x = float64(f2.X - c.X)
-			alpha = math.Acos(x / f)
-		case f1.X == c.X:
+		case a > b:
+			rx = a
+			ry = b
+		default:
+			rx = b
+			ry = a
+		}
+		if f1.X == f2.X {
 			// special case of a "vertical" ellipse.
 			alpha = math.Pi / 2
-			if f1.Y < c.Y {
+			if f1.Y < f2.Y {
 				alpha = -alpha
 			}
+		} else {
+			x := float64(f1.X-f2.X) * 0.5
+			if x < 0 {
+				x = -x
+			}
+			alpha = math.Acos(x / c)
 		}
 	}
-
-	start = math.Acos(float64(p.X-c.X) / dist(c, p))
-	if c.Y > p.Y {
-		start = -start
-	}
-	start -= alpha
 
 	var (
 		θ   = angle / float32(segments)
@@ -740,21 +580,25 @@ func ArcTransform(p, f1, f2 f32.Point, angle float32, segments int) f32.Affine2D
 		rot f32.Affine2D // rotation matrix for each segment
 		inv f32.Affine2D // transform from ellipse-based frame to absolute one
 	)
-	ref = ref.Offset(f32.Point{}.Sub(c))
+	center := f32.Point{
+		X: 0.5 * (f1.X + f2.X),
+		Y: 0.5 * (f1.Y + f2.Y),
+	}
+	ref = ref.Offset(f32.Point{}.Sub(center))
 	ref = ref.Rotate(f32.Point{}, float32(-alpha))
 	ref = ref.Scale(f32.Point{}, f32.Point{
 		X: float32(1 / rx),
 		Y: float32(1 / ry),
 	})
 	inv = ref.Invert()
-	rot = rot.Rotate(f32.Point{}, float32(0.5*θ))
+	rot = rot.Rotate(f32.Point{}, 0.5*θ)
 
 	// Instead of invoking math.Sincos for every segment, compute a rotation
 	// matrix once and apply for each segment.
 	// Before applying the rotation matrix rot, transform the coordinates
 	// to a frame centered to the ellipse (and warped into a unit circle), then rotate.
 	// Finally, transform back into the original frame.
-	return inv.Mul(rot).Mul(ref)
+	return inv.Mul(rot).Mul(ref), segments
 }
 
 func dist(p1, p2 f32.Point) float64 {
@@ -769,9 +613,9 @@ func dist(p1, p2 f32.Point) float64 {
 	return math.Hypot(dx, dy)
 }
 
-func StrokePathCommands(style StrokeStyle, dashes DashOp, scene []byte) StrokeQuads {
+func StrokePathCommands(style StrokeStyle, scene []byte) StrokeQuads {
 	quads := decodeToStrokeQuads(scene)
-	return quads.stroke(style, dashes)
+	return quads.stroke(style)
 }
 
 // decodeToStrokeQuads decodes scene commands to quads ready to stroke.
@@ -790,6 +634,8 @@ func decodeToStrokeQuads(pathData []byte) StrokeQuads {
 				Quad:    q,
 			}
 			quads = append(quads, quad)
+		case scene.OpGap:
+			// Ignore gaps for strokes.
 		case scene.OpQuad:
 			var q QuadSegment
 			q.From, q.Ctrl, q.To = scene.DecodeQuad(cmd)
@@ -821,7 +667,10 @@ func SplitCubic(from, ctrl0, ctrl1, to f32.Point) []QuadSegment {
 	hull := f32.Rectangle{
 		Min: from,
 		Max: ctrl0,
-	}.Canon().Add(ctrl1).Add(to)
+	}.Canon().Union(f32.Rectangle{
+		Min: ctrl1,
+		Max: to,
+	}.Canon())
 	l := hull.Dx()
 	if h := hull.Dy(); h > l {
 		l = h

@@ -27,6 +27,46 @@ import (
 // The duration is somewhat arbitrary.
 const doubleClickDuration = 200 * time.Millisecond
 
+// Hover detects the hover gesture for a pointer area.
+type Hover struct {
+	// entered tracks whether the pointer is inside the gesture.
+	entered bool
+	// pid is the pointer.ID.
+	pid pointer.ID
+}
+
+// Add the gesture to detect hovering over the current pointer area.
+func (h *Hover) Add(ops *op.Ops) {
+	pointer.InputOp{
+		Tag:   h,
+		Types: pointer.Enter | pointer.Leave,
+	}.Add(ops)
+}
+
+// Hovered returns whether a pointer is inside the area.
+func (h *Hover) Hovered(q event.Queue) bool {
+	for _, ev := range q.Events(h) {
+		e, ok := ev.(pointer.Event)
+		if !ok {
+			continue
+		}
+		switch e.Type {
+		case pointer.Leave, pointer.Cancel:
+			if h.entered && h.pid == e.PointerID {
+				h.entered = false
+			}
+		case pointer.Enter:
+			if !h.entered {
+				h.pid = e.PointerID
+			}
+			if h.pid == e.PointerID {
+				h.entered = true
+			}
+		}
+	}
+	return h.entered
+}
+
 // Click detects click gestures in the form
 // of ClickEvents.
 type Click struct {
@@ -38,20 +78,20 @@ type Click struct {
 	clicks int
 	// pressed tracks whether the pointer is pressed.
 	pressed bool
-	// entered tracks whether the pointer is inside the gesture.
+	// hovered tracks whether the pointer is inside the gesture.
+	hovered bool
+	// entered tracks whether an Enter event has been received.
 	entered bool
 	// pid is the pointer.ID.
 	pid pointer.ID
 }
-
-type ClickState uint8
 
 // ClickEvent represent a click action, either a
 // TypePress for the beginning of a click or a
 // TypeClick for a completed click.
 type ClickEvent struct {
 	Type      ClickType
-	Position  f32.Point
+	Position  image.Point
 	Source    pointer.Source
 	Modifiers key.Modifiers
 	// NumClicks records successive clicks occurring
@@ -64,6 +104,7 @@ type ClickType uint8
 // Drag detects drag gestures in the form of pointer.Drag events.
 type Drag struct {
 	dragging bool
+	pressed  bool
 	pid      pointer.ID
 	start    f32.Point
 	grab     bool
@@ -109,27 +150,26 @@ const (
 const (
 	// StateIdle is the default scroll state.
 	StateIdle ScrollState = iota
-	// StateDrag is reported during drag gestures.
+	// StateDragging is reported during drag gestures.
 	StateDragging
 	// StateFlinging is reported when a fling is
 	// in progress.
 	StateFlinging
 )
 
-var touchSlop = unit.Dp(3)
+const touchSlop = unit.Dp(3)
 
 // Add the handler to the operation list to receive click events.
 func (c *Click) Add(ops *op.Ops) {
-	op := pointer.InputOp{
+	pointer.InputOp{
 		Tag:   c,
 		Types: pointer.Press | pointer.Release | pointer.Enter | pointer.Leave,
-	}
-	op.Add(ops)
+	}.Add(ops)
 }
 
 // Hovered returns whether a pointer is inside the area.
 func (c *Click) Hovered() bool {
-	return c.entered
+	return c.hovered
 }
 
 // Pressed returns whether a pointer is pressing.
@@ -137,7 +177,7 @@ func (c *Click) Pressed() bool {
 	return c.pressed
 }
 
-// Events returns the next click event, if any.
+// Events returns the next click events, if any.
 func (c *Click) Events(q event.Queue) []ClickEvent {
 	var events []ClickEvent
 	for _, evt := range q.Events(c) {
@@ -151,20 +191,15 @@ func (c *Click) Events(q event.Queue) []ClickEvent {
 				break
 			}
 			c.pressed = false
-			if c.entered {
-				if e.Time-c.clickedAt < doubleClickDuration {
-					c.clicks++
-				} else {
-					c.clicks = 1
-				}
-				c.clickedAt = e.Time
-				events = append(events, ClickEvent{Type: TypeClick, Position: e.Position, Source: e.Source, Modifiers: e.Modifiers, NumClicks: c.clicks})
+			if !c.entered || c.hovered {
+				events = append(events, ClickEvent{Type: TypeClick, Position: e.Position.Round(), Source: e.Source, Modifiers: e.Modifiers, NumClicks: c.clicks})
 			} else {
 				events = append(events, ClickEvent{Type: TypeCancel})
 			}
 		case pointer.Cancel:
 			wasPressed := c.pressed
 			c.pressed = false
+			c.hovered = false
 			c.entered = false
 			if wasPressed {
 				events = append(events, ClickEvent{Type: TypeCancel})
@@ -176,26 +211,33 @@ func (c *Click) Events(q event.Queue) []ClickEvent {
 			if e.Source == pointer.Mouse && e.Buttons != pointer.ButtonPrimary {
 				break
 			}
-			if !c.entered {
+			if !c.hovered {
 				c.pid = e.PointerID
 			}
 			if c.pid != e.PointerID {
 				break
 			}
 			c.pressed = true
-			events = append(events, ClickEvent{Type: TypePress, Position: e.Position, Source: e.Source, Modifiers: e.Modifiers})
+			if e.Time-c.clickedAt < doubleClickDuration {
+				c.clicks++
+			} else {
+				c.clicks = 1
+			}
+			c.clickedAt = e.Time
+			events = append(events, ClickEvent{Type: TypePress, Position: e.Position.Round(), Source: e.Source, Modifiers: e.Modifiers, NumClicks: c.clicks})
 		case pointer.Leave:
 			if !c.pressed {
 				c.pid = e.PointerID
 			}
 			if c.pid == e.PointerID {
-				c.entered = false
+				c.hovered = false
 			}
 		case pointer.Enter:
 			if !c.pressed {
 				c.pid = e.PointerID
 			}
 			if c.pid == e.PointerID {
+				c.hovered = true
 				c.entered = true
 			}
 		}
@@ -206,6 +248,8 @@ func (c *Click) Events(q event.Queue) []ClickEvent {
 func (ClickEvent) ImplementsEvent() {}
 
 // Add the handler to the operation list to receive scroll events.
+// The bounds variable refers to the scrolling boundaries
+// as defined in io/pointer.InputOp.
 func (s *Scroll) Add(ops *op.Ops, bounds image.Rectangle) {
 	oph := pointer.InputOp{
 		Tag:          s,
@@ -259,7 +303,7 @@ func (s *Scroll) Scroll(cfg unit.Metric, q event.Queue, t time.Time, axis Axis) 
 				break
 			}
 			fling := s.estimator.Estimate()
-			if slop, d := float32(cfg.Px(touchSlop)), fling.Distance; d < -slop || d > slop {
+			if slop, d := float32(cfg.Dp(touchSlop)), fling.Distance; d < -slop || d > slop {
 				s.flinger.Start(cfg, t, fling.Velocity)
 			}
 			fallthrough
@@ -285,7 +329,7 @@ func (s *Scroll) Scroll(cfg unit.Metric, q event.Queue, t time.Time, axis Axis) 
 			v := int(math.Round(float64(val)))
 			dist := s.last - v
 			if e.Priority < pointer.Grabbed {
-				slop := cfg.Px(touchSlop)
+				slop := cfg.Dp(touchSlop)
 				if dist := dist; dist >= slop || -slop >= dist {
 					s.grab = true
 				}
@@ -321,12 +365,11 @@ func (s *Scroll) State() ScrollState {
 
 // Add the handler to the operation list to receive drag events.
 func (d *Drag) Add(ops *op.Ops) {
-	op := pointer.InputOp{
+	pointer.InputOp{
 		Tag:   d,
 		Grab:  d.grab,
 		Types: pointer.Press | pointer.Drag | pointer.Release,
-	}
-	op.Add(ops)
+	}.Add(ops)
 }
 
 // Events returns the next drag events, if any.
@@ -343,6 +386,7 @@ func (d *Drag) Events(cfg unit.Metric, q event.Queue, axis Axis) []pointer.Event
 			if !(e.Buttons == pointer.ButtonPrimary || e.Source == pointer.Touch) {
 				continue
 			}
+			d.pressed = true
 			if d.dragging {
 				continue
 			}
@@ -363,12 +407,13 @@ func (d *Drag) Events(cfg unit.Metric, q event.Queue, axis Axis) []pointer.Event
 			}
 			if e.Priority < pointer.Grabbed {
 				diff := e.Position.Sub(d.start)
-				slop := cfg.Px(touchSlop)
+				slop := cfg.Dp(touchSlop)
 				if diff.X*diff.X+diff.Y*diff.Y > float32(slop*slop) {
 					d.grab = true
 				}
 			}
 		case pointer.Release, pointer.Cancel:
+			d.pressed = false
 			if !d.dragging || e.PointerID != d.pid {
 				continue
 			}
@@ -382,8 +427,11 @@ func (d *Drag) Events(cfg unit.Metric, q event.Queue, axis Axis) []pointer.Event
 	return events
 }
 
-// Dragging reports whether it's currently in use.
+// Dragging reports whether it is currently in use.
 func (d *Drag) Dragging() bool { return d.dragging }
+
+// Pressed returns whether a pointer is pressing.
+func (d *Drag) Pressed() bool { return d.pressed }
 
 func (a Axis) String() string {
 	switch a {

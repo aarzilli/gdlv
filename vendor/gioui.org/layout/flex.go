@@ -142,7 +142,7 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 		children[i].call = c
 		children[i].dims = dims
 	}
-	var maxCross int
+	maxCross := crossMin
 	var maxBaseline int
 	for _, child := range children {
 		if c := f.Axis.Convert(child.dims.Size).Y; c > maxCross {
@@ -183,11 +183,10 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 				cross = maxBaseline - b
 			}
 		}
-		stack := op.Save(gtx.Ops)
 		pt := f.Axis.Convert(image.Pt(mainSize, cross))
-		op.Offset(FPt(pt)).Add(gtx.Ops)
+		trans := op.Offset(pt).Push(gtx.Ops)
 		child.call.Add(gtx.Ops)
-		stack.Load()
+		trans.Pop()
 		mainSize += f.Axis.Convert(dims.Size).X
 		if i < len(children)-1 {
 			switch f.Spacing {
@@ -217,6 +216,7 @@ func (f Flex) Layout(gtx Context, children ...FlexChild) Dimensions {
 		}
 	}
 	sz := f.Axis.Convert(image.Pt(mainSize, maxCross))
+	sz = cs.Constrain(sz)
 	return Dimensions{Size: sz, Baseline: sz.Y - maxBaseline}
 }
 

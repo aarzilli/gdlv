@@ -85,13 +85,6 @@ func FPt(p image.Point) f32.Point {
 	}
 }
 
-// FRect converts a rectangle to a f32.Rectangle.
-func FRect(r image.Rectangle) f32.Rectangle {
-	return f32.Rectangle{
-		Min: FPt(r.Min), Max: FPt(r.Max),
-	}
-}
-
 // Constrain a size so each dimension is in the range [min;max].
 func (c Constraints) Constrain(size image.Point) image.Point {
 	if min := c.Min.X; size.X < min {
@@ -113,15 +106,15 @@ func (c Constraints) Constrain(size image.Point) image.Point {
 // constraints. The minimum constraints will be adjusted to ensure
 // they do not exceed the maximum.
 type Inset struct {
-	Top, Right, Bottom, Left unit.Value
+	Top, Bottom, Left, Right unit.Dp
 }
 
 // Layout a widget.
 func (in Inset) Layout(gtx Context, w Widget) Dimensions {
-	top := gtx.Px(in.Top)
-	right := gtx.Px(in.Right)
-	bottom := gtx.Px(in.Bottom)
-	left := gtx.Px(in.Left)
+	top := gtx.Dp(in.Top)
+	right := gtx.Dp(in.Right)
+	bottom := gtx.Dp(in.Bottom)
+	left := gtx.Dp(in.Left)
 	mcs := gtx.Constraints
 	mcs.Max.X -= left + right
 	if mcs.Max.X < 0 {
@@ -141,11 +134,10 @@ func (in Inset) Layout(gtx Context, w Widget) Dimensions {
 	if mcs.Min.Y > mcs.Max.Y {
 		mcs.Min.Y = mcs.Max.Y
 	}
-	stack := op.Save(gtx.Ops)
-	op.Offset(FPt(image.Point{X: left, Y: top})).Add(gtx.Ops)
 	gtx.Constraints = mcs
+	trans := op.Offset(image.Pt(left, top)).Push(gtx.Ops)
 	dims := w(gtx)
-	stack.Load()
+	trans.Pop()
 	return Dimensions{
 		Size:     dims.Size.Add(image.Point{X: right + left, Y: top + bottom}),
 		Baseline: dims.Baseline + bottom,
@@ -154,7 +146,7 @@ func (in Inset) Layout(gtx Context, w Widget) Dimensions {
 
 // UniformInset returns an Inset with a single inset applied to all
 // edges.
-func UniformInset(v unit.Value) Inset {
+func UniformInset(v unit.Dp) Inset {
 	return Inset{Top: v, Right: v, Bottom: v, Left: v}
 }
 
@@ -162,21 +154,27 @@ func UniformInset(v unit.Value) Inset {
 // The widget is called with the context constraints minimum cleared.
 func (d Direction) Layout(gtx Context, w Widget) Dimensions {
 	macro := op.Record(gtx.Ops)
-	cs := gtx.Constraints
-	gtx.Constraints.Min = image.Point{}
+	csn := gtx.Constraints.Min
+	switch d {
+	case N, S:
+		gtx.Constraints.Min.Y = 0
+	case E, W:
+		gtx.Constraints.Min.X = 0
+	default:
+		gtx.Constraints.Min = image.Point{}
+	}
 	dims := w(gtx)
 	call := macro.Stop()
 	sz := dims.Size
-	if sz.X < cs.Min.X {
-		sz.X = cs.Min.X
+	if sz.X < csn.X {
+		sz.X = csn.X
 	}
-	if sz.Y < cs.Min.Y {
-		sz.Y = cs.Min.Y
+	if sz.Y < csn.Y {
+		sz.Y = csn.Y
 	}
 
-	defer op.Save(gtx.Ops).Load()
 	p := d.Position(dims.Size, sz)
-	op.Offset(FPt(p)).Add(gtx.Ops)
+	defer op.Offset(p).Push(gtx.Ops).Pop()
 	call.Add(gtx.Ops)
 
 	return Dimensions{
@@ -208,15 +206,15 @@ func (d Direction) Position(widget, bounds image.Point) image.Point {
 
 // Spacer adds space between widgets.
 type Spacer struct {
-	Width, Height unit.Value
+	Width, Height unit.Dp
 }
 
 func (s Spacer) Layout(gtx Context) Dimensions {
 	return Dimensions{
-		Size: image.Point{
-			X: gtx.Px(s.Width),
-			Y: gtx.Px(s.Height),
-		},
+		Size: gtx.Constraints.Constrain(image.Point{
+			X: gtx.Dp(s.Width),
+			Y: gtx.Dp(s.Height),
+		}),
 	}
 }
 
@@ -243,6 +241,16 @@ func (a Axis) Convert(pt image.Point) image.Point {
 		return pt
 	}
 	return image.Pt(pt.Y, pt.X)
+}
+
+// FConvert a point in (x, y) coordinates to (main, cross) coordinates,
+// or vice versa. Specifically, FConvert((x, y)) returns (x, y) unchanged
+// for the horizontal axis, or (y, x) for the vertical axis.
+func (a Axis) FConvert(pt f32.Point) f32.Point {
+	if a == Horizontal {
+		return pt
+	}
+	return f32.Pt(pt.Y, pt.X)
 }
 
 // mainConstraint returns the min and max main constraints for axis a.
