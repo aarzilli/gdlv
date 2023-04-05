@@ -14,7 +14,6 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
-	"unicode/utf8"
 	"unsafe"
 
 	"gioui.org/app"
@@ -82,7 +81,10 @@ func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, update
 
 func (mw *masterWindow) Main() {
 	go func() {
-		mw.w = app.NewWindow(app.Title(mw.Title), app.Size(unit.Px(float32(mw.ctx.scale(mw.initialSize.X))), unit.Px(float32(mw.ctx.scale(mw.initialSize.Y)))))
+		//TODO: aarzilli this actually doesn't work correctly because gio lost the
+		// ability to specify the initial size of the window in real pixels, it can
+		// only be specified in device-independent pixels.
+		mw.w = app.NewWindow(app.Title(mw.Title), app.Size(unit.Dp(float32(mw.ctx.scale(mw.initialSize.X))), unit.Dp(float32(mw.ctx.scale(mw.initialSize.Y)))))
 		mw.main()
 		if mw.onClose != nil {
 			mw.onClose()
@@ -103,7 +105,7 @@ func (mw *masterWindow) Unlock() {
 }
 
 func (mw *masterWindow) Close() {
-	mw.w.Close()
+	mw.w.Perform(system.ActionClose)
 }
 
 func (mw *masterWindow) Closed() bool {
@@ -131,6 +133,41 @@ func (mw *masterWindow) main() {
 
 		case system.FrameEvent:
 			mw.size = e.Size
+
+			for _, e := range e.Queue.Events(mw.ctx) {
+				switch e := e.(type) {
+				case pointer.Event:
+					mw.uilock.Lock()
+					mw.processPointerEvent(e)
+					mw.uilock.Unlock()
+				case key.EditEvent:
+					changed := atomic.LoadInt32(&mw.ctx.changed)
+					if changed < 2 {
+						atomic.StoreInt32(&mw.ctx.changed, 2)
+					}
+					mw.uilock.Lock()
+					io.WriteString(&mw.textbuffer, e.Text)
+					mw.uilock.Unlock()
+
+				case key.Event:
+					changed := atomic.LoadInt32(&mw.ctx.changed)
+					if changed < 2 {
+						atomic.StoreInt32(&mw.ctx.changed, 2)
+					}
+					if e.State == key.Press {
+						mw.uilock.Lock()
+						switch e.Name {
+						case key.NameEnter, key.NameReturn:
+							io.WriteString(&mw.textbuffer, "\n")
+						}
+						mw.ctx.Input.Keyboard.Keys = append(mw.ctx.Input.Keyboard.Keys, gio2mobileKey(e))
+						mw.uilock.Unlock()
+					}
+				case profile.Event:
+					perfString = e.Timings
+				}
+			}
+
 			mw.uilock.Lock()
 			mw.prevCmds = mw.prevCmds[:0]
 			mw.updateLocked(perfString)
@@ -138,35 +175,6 @@ func (mw *masterWindow) main() {
 
 			e.Frame(&mw.ops)
 
-		case profile.Event:
-			perfString = e.Timings
-		case pointer.Event:
-			mw.uilock.Lock()
-			mw.processPointerEvent(e)
-			mw.uilock.Unlock()
-		case key.EditEvent:
-			changed := atomic.LoadInt32(&mw.ctx.changed)
-			if changed < 2 {
-				atomic.StoreInt32(&mw.ctx.changed, 2)
-			}
-			mw.uilock.Lock()
-			io.WriteString(&mw.textbuffer, e.Text)
-			mw.uilock.Unlock()
-
-		case key.Event:
-			changed := atomic.LoadInt32(&mw.ctx.changed)
-			if changed < 2 {
-				atomic.StoreInt32(&mw.ctx.changed, 2)
-			}
-			if e.State == key.Press {
-				mw.uilock.Lock()
-				switch e.Name {
-				case key.NameEnter, key.NameReturn:
-					io.WriteString(&mw.textbuffer, "\n")
-				}
-				mw.ctx.Input.Keyboard.Keys = append(mw.ctx.Input.Keyboard.Keys, gio2mobileKey(e))
-				mw.uilock.Unlock()
-			}
 		}
 	}
 }
@@ -291,6 +299,9 @@ func gio2mobileKey(e key.Event) mkey.Event {
 	if e.Modifiers.Contain(key.ModSuper) {
 		mod |= mkey.ModMeta
 	}
+	if e.Modifiers.Contain(key.ModShift) {
+		mod |= mkey.ModShift
+	}
 
 	var name rune
 
@@ -374,11 +385,9 @@ func (mw *masterWindow) updateLocked(perfString string) {
 		pos.Y -= bounds.Y
 		pos.X -= bounds.X
 
-		paintRect := f32.Rectangle{f32.Point{float32(pos.X), float32(pos.Y)}, f32.Point{float32(pos.X + bounds.X), float32(pos.Y + bounds.Y)}}
+		paintRect := image.Rect(pos.X, pos.Y, pos.X+bounds.X, pos.Y+bounds.Y)
 
-		stack := op.Save(&mw.ops)
 		paint.FillShape(&mw.ops, color.NRGBA{0xff, 0xff, 0xff, 0xff}, gioclip.UniformRRect(paintRect, 0).Op(&mw.ops))
-		stack.Load()
 
 		drawText(&mw.ops, txt, font, color.RGBA{0x00, 0x00, 0x00, 0xff}, pos, bounds, paintRect)
 	}
@@ -400,10 +409,15 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 	if perf {
 		profile.Op{ctx}.Add(ops)
 	}
-	pointer.InputOp{ctx, false, pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Scroll, image.Rect(0, 0, 4096, 4096)}.Add(ops)
-	key.InputOp{ctx}.Add(ops)
 
-	var scissorStack op.StateOp
+	areaStack := gioclip.Rect(image.Rectangle{Max: size}).Push(ops)
+	// Register for all pointer inputs on the current clip area.
+	pointer.InputOp{ctx, false, pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Scroll, image.Rect(-4096, -4096, 4096, 4096)}.Add(ops)
+	key.InputOp{ctx, key.HintAny, ""}.Add(ops)
+	key.FocusOp{ctx}.Add(ops)
+	areaStack.Pop()
+
+	var scissorStack gioclip.Stack
 	scissorless := true
 
 	for i := range ctx.cmds {
@@ -411,16 +425,15 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 		switch icmd.Kind {
 		case command.ScissorCmd:
 			if !scissorless {
-				scissorStack.Load()
+				scissorStack.Pop()
 			}
-			scissorStack = op.Save(ops)
-			gioclip.Rect(icmd.Rect.Rectangle()).Add(ops)
+			//scissorStack = op.Save(ops)
+			scissorStack = gioclip.Rect(icmd.Rect.Rectangle()).Push(ops)
 			scissorless = false
 
 		case command.LineCmd:
 			cmd := icmd.Line
 
-			stack := op.Save(ops)
 			paint.ColorOp{Color: toNRGBA(cmd.Color)}.Add(ops)
 
 			h1 := int(cmd.LineThickness / 2)
@@ -431,15 +444,17 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 				if y0 > y1 {
 					y0, y1 = y1, y0
 				}
-				gioclip.Rect{image.Point{cmd.Begin.X - h1, y0}, image.Point{cmd.Begin.X + h2, y1}}.Add(ops)
+				stack := gioclip.Rect{image.Point{cmd.Begin.X - h1, y0}, image.Point{cmd.Begin.X + h2, y1}}.Push(ops)
 				paint.PaintOp{}.Add(ops)
+				stack.Pop()
 			} else if cmd.Begin.Y == cmd.End.Y {
 				x0, x1 := cmd.Begin.X, cmd.End.X
 				if x0 > x1 {
 					x0, x1 = x1, x0
 				}
-				gioclip.Rect{image.Point{x0, cmd.Begin.Y - h1}, image.Point{x1, cmd.Begin.Y + h2}}.Add(ops)
+				stack := gioclip.Rect{image.Point{x0, cmd.Begin.Y - h1}, image.Point{x1, cmd.Begin.Y + h2}}.Push(ops)
 				paint.PaintOp{}.Add(ops)
+				stack.Pop()
 			} else {
 				m := float32(cmd.Begin.Y-cmd.End.Y) / float32(cmd.Begin.X-cmd.End.X)
 				invm := -1 / m
@@ -461,23 +476,21 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 				p.Line(f32.Point{float32(cmd.Begin.X - cmd.End.X), float32(cmd.Begin.Y - cmd.End.Y)})
 				p.Close()
 
-				gioclip.Outline{Path: p.End()}.Op().Add(ops)
+				stack := gioclip.Outline{Path: p.End()}.Op().Push(ops)
 
 				pb = pb.Add(pa)
 				pc = pc.Add(pb)
 				pd = pd.Add(pc)
 
 				paint.PaintOp{}.Add(ops)
+				stack.Pop()
 			}
-
-			stack.Load()
 
 		case command.RectFilledCmd:
 			cmd := icmd.RectFilled
 			// rounding is true if rounding has been requested AND we can draw it
 			rounding := cmd.Rounding > 0 && int(cmd.Rounding*2) < icmd.W && int(cmd.Rounding*2) < icmd.H
 
-			stack := op.Save(ops)
 			paint.ColorOp{Color: toNRGBA(cmd.Color)}.Add(ops)
 
 			if rounding {
@@ -497,17 +510,17 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 				b.Line(f32.Point{X: w - r - r, Y: 0})
 				b.Cube(f32.Point{X: r * c, Y: 0}, f32.Point{X: r, Y: r - r*c}, f32.Point{X: r, Y: r}) // NE
 				b.Close()
-				gioclip.Outline{Path: b.End()}.Op().Add(ops)
+				stack := gioclip.Outline{Path: b.End()}.Op().Push(ops)
+				paint.PaintOp{}.Add(ops)
+				stack.Pop()
+			} else {
+				stack := gioclip.Rect(icmd.Rect.Rectangle()).Push(ops)
+				paint.PaintOp{}.Add(ops)
+				stack.Pop()
 			}
-
-			gioclip.Rect(icmd.Rect.Rectangle()).Add(ops)
-			paint.PaintOp{}.Add(ops)
-			stack.Load()
 
 		case command.TriangleFilledCmd:
 			cmd := icmd.TriangleFilled
-
-			stack := op.Save(ops)
 
 			paint.ColorOp{toNRGBA(cmd.Color)}.Add(ops)
 
@@ -518,15 +531,13 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 			p.Line(f32.Point{float32(cmd.C.X - cmd.B.X), float32(cmd.C.Y - cmd.B.Y)})
 			p.Line(f32.Point{float32(cmd.A.X - cmd.C.X), float32(cmd.A.Y - cmd.C.Y)})
 			p.Close()
-			gioclip.Outline{Path: p.End()}.Op().Add(ops)
+			stack := gioclip.Outline{Path: p.End()}.Op().Push(ops)
 
 			paint.PaintOp{}.Add(ops)
 
-			stack.Load()
+			stack.Pop()
 
 		case command.CircleFilledCmd:
-			stack := op.Save(ops)
-
 			paint.ColorOp{toNRGBA(icmd.CircleFilled.Color)}.Add(ops)
 
 			r := min2(float32(icmd.W), float32(icmd.H)) / 2
@@ -539,20 +550,20 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 			b.Cube(f32.Point{X: -r * c, Y: 0}, f32.Point{X: -r, Y: -r + r*c}, f32.Point{X: -r, Y: -r}) // SW
 			b.Cube(f32.Point{X: 0, Y: -r * c}, f32.Point{X: r - r*c, Y: -r}, f32.Point{X: r, Y: -r})   // NW
 			b.Cube(f32.Point{X: r * c, Y: 0}, f32.Point{X: r, Y: r - r*c}, f32.Point{X: r, Y: r})      // NE
-			gioclip.Outline{Path: b.End()}.Op().Add(ops)
+			stack := gioclip.Outline{Path: b.End()}.Op().Push(ops)
 
 			paint.PaintOp{}.Add(ops)
 
-			stack.Load()
+			stack.Pop()
 
 		case command.ImageCmd:
-			stack := op.Save(ops)
 			//TODO: this should be retained between frames somehow...
 			paint.NewImageOp(icmd.Image.Img).Add(ops)
-			op.Offset(f32.Point{float32(icmd.Rect.X), float32(icmd.Rect.Y)}).Add(ops)
-			gioclip.Rect{image.Point{0, 0}, image.Point{icmd.Rect.W, icmd.Rect.H}}.Add(ops)
+			stack1 := op.Offset(image.Point{icmd.Rect.X, icmd.Rect.Y}).Push(ops)
+			stack2 := gioclip.Rect{image.Point{0, 0}, image.Point{icmd.Rect.W, icmd.Rect.H}}.Push(ops)
 			paint.PaintOp{}.Add(ops)
-			stack.Load()
+			stack2.Pop()
+			stack1.Pop()
 
 		case command.TextCmd:
 			txt := fontFace2fontFace(&icmd.Text.Face).layout(icmd.Text.String, -1)
@@ -568,7 +579,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 				bounds.Y = icmd.H
 			}
 
-			drawText(ops, txt, icmd.Text.Face, icmd.Text.Foreground, image.Point{icmd.X, icmd.Y}, bounds, n2fRect(icmd.Rect))
+			drawText(ops, txt, icmd.Text.Face, icmd.Text.Foreground, image.Point{icmd.X, icmd.Y}, bounds, n2iRect(icmd.Rect))
 
 		default:
 			panic(UnknownCommandErr)
@@ -578,16 +589,8 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 	return len(ctx.cmds)
 }
 
-func n2fRect(r rect.Rect) f32.Rectangle {
-	return f32.Rectangle{
-		Min: f32.Point{float32(r.X), float32(r.Y)},
-		Max: f32.Point{float32(r.X + r.W), float32(r.Y + r.H)}}
-}
-
-func i2fRect(r image.Rectangle) f32.Rectangle {
-	return f32.Rectangle{
-		Min: f32.Point{X: float32(r.Min.X), Y: float32(r.Min.Y)},
-		Max: f32.Point{X: float32(r.Max.X), Y: float32(r.Max.Y)}}
+func n2iRect(r rect.Rect) image.Rectangle {
+	return image.Rect(r.X, r.Y, r.X+r.W, r.Y+r.H)
 }
 
 func min4(a, b, c, d float32) float32 {
@@ -612,15 +615,75 @@ func max2(a, b float32) float32 {
 	return b
 }
 
-func textPadding(lines []text.Line) (padding image.Rectangle) {
-	if len(lines) == 0 {
+type textLine struct {
+	Ascent, Descent         fixed.Int26_6
+	Bounds                  fixed.Rectangle26_6
+	Width                   fixed.Int26_6
+	RunesOffset, RunesCount int
+	Glyphs                  []text.Glyph
+}
+
+type linesIterator struct {
+	txt          []text.Glyph
+	line         []text.Glyph
+	start, count int
+}
+
+func (it *linesIterator) Next() bool {
+	it.start += it.count
+	if len(it.txt) == 0 {
+		return false
+	}
+
+	found := false
+	for i := range it.txt {
+		if it.txt[i].Y != it.txt[0].Y {
+			it.line = it.txt[:i]
+			it.txt = it.txt[i:]
+			found = true
+			break
+		}
+	}
+	if !found {
+		it.line = it.txt
+		it.txt = it.txt[:0]
+	}
+	it.count = 0
+	for i := range it.line {
+		it.count += int(it.line[i].Runes)
+	}
+	return true
+}
+
+func (it *linesIterator) Line() textLine {
+	if len(it.line) == 0 {
+		return textLine{RunesOffset: it.start}
+	}
+	lastX := it.line[len(it.line)-1].Bounds.Max.X + it.line[len(it.line)-1].X
+	return textLine{
+		Ascent:      it.line[0].Ascent,
+		Descent:     it.line[0].Descent,
+		Width:       lastX - it.line[0].X,
+		RunesOffset: it.start,
+		RunesCount:  it.count,
+		Glyphs:      it.line,
+	}
+}
+
+func textPadding(txt []text.Glyph) (padding image.Rectangle) {
+	if len(txt) == 0 {
 		return
 	}
-	first := lines[0]
+	it := linesIterator{txt: txt}
+	it.Next()
+	first := it.Line()
 	if d := first.Ascent + first.Bounds.Min.Y; d < 0 {
 		padding.Min.Y = d.Ceil()
 	}
-	last := lines[len(lines)-1]
+	var last textLine
+	for it.Next() {
+		last = it.Line()
+	}
 	if d := last.Bounds.Max.Y - last.Descent; d > 0 {
 		padding.Max.Y = d.Ceil()
 	}
@@ -633,36 +696,33 @@ func textPadding(lines []text.Line) (padding image.Rectangle) {
 	return
 }
 
-func clipLine(line text.Line, clip image.Rectangle) (text.Line, f32.Point, bool) {
-	off := fixed.Point26_6{X: fixed.I(0), Y: fixed.I(line.Ascent.Ceil())}
-	for len(line.Layout.Advances) > 0 {
-		adv := line.Layout.Advances[0]
-		_, n := utf8.DecodeRuneInString(line.Layout.Text)
-		if (off.X + adv + line.Bounds.Max.X - line.Width).Ceil() >= clip.Min.X {
+func clipLine(line []text.Glyph, clip image.Rectangle) []text.Glyph {
+	if len(line) < 0 {
+		return line
+	}
+
+	for len(line) > 0 {
+		if (line[0].X + line[0].Advance).Ceil() >= clip.Min.X {
 			break
 		}
-		off.X += adv
-		line.Layout.Text = line.Layout.Text[n:]
-		line.Layout.Advances = line.Layout.Advances[1:]
+		line = line[1:]
 	}
-	endx := off.X
-	rune := 0
-	for n, _ := range line.Layout.Text {
-		if (endx + line.Bounds.Min.X).Floor() > clip.Max.X {
-			line.Layout.Advances = line.Layout.Advances[:rune]
-			line.Layout.Text = line.Layout.Text[:n]
+
+	for len(line) > 0 {
+		if line[len(line)-1].X.Ceil() < clip.Max.X {
 			break
 		}
-		endx += line.Layout.Advances[rune]
-		rune++
+		line = line[:len(line)-1]
 	}
-	offf := f32.Point{X: float32(off.X) / 64, Y: float32(off.Y) / 64}
-	return line, offf, true
+
+	return line
 }
 
-func maxLinesWidth(lines []text.Line) int {
+func maxLinesWidth(txt []text.Glyph) int {
+	it := linesIterator{txt: txt}
 	w := 0
-	for _, line := range lines {
+	for it.Next() {
+		line := it.Line()
 		if line.Width.Ceil() > w {
 			w = line.Width.Ceil()
 		}
@@ -670,42 +730,34 @@ func maxLinesWidth(lines []text.Line) int {
 	return w
 }
 
-func drawText(ops *op.Ops, txt []text.Line, face font.Face, fgcolor color.RGBA, pos, bounds image.Point, paintRect f32.Rectangle) {
+func drawText(ops *op.Ops, txt []text.Glyph, face font.Face, fgcolor color.RGBA, pos, bounds image.Point, paintRect image.Rectangle) {
 	clip := textPadding(txt)
 	clip.Max = clip.Max.Add(bounds)
 
-	stack := op.Save(ops)
 	paint.ColorOp{toNRGBA(fgcolor)}.Add(ops)
 
 	fc := fontFace2fontFace(&face)
 
-	for i := range txt {
-		txtstr, off, ok := clipLine(txt[i], clip)
-		if !ok {
-			continue
-		}
+	it := linesIterator{txt: txt}
+	i := 0
+	stack3 := gioclip.UniformRRect(paintRect, 0).Push(ops)
+	for it.Next() {
+		txtline := it.Line()
+		txtstr := clipLine(txtline.Glyphs, clip)
 
-		off.X += float32(pos.X)
-		off.Y += float32(pos.Y) + float32(i*FontHeight(face))
-
-		stack := op.Save(ops)
-
-		op.Offset(off).Add(ops)
-		fc.shape(txtstr.Layout).Add(ops)
-
-		gioclip.UniformRRect(paintRect.Sub(off), 0).Add(ops)
+		stack1 := op.Offset(image.Point{pos.X, pos.Y + txtline.Ascent.Ceil() + i*FontHeight(face)}).Push(ops)
+		stack2 := fc.shape(txtstr).Push(ops)
 		paint.PaintOp{}.Add(ops)
-
-		stack.Load()
+		stack2.Pop()
+		stack1.Pop()
+		i++
 	}
-
-	stack.Load()
+	stack3.Pop()
 }
 
 type fontFace struct {
-	fnt     *opentype.Font
-	shaper  *text.Cache
-	size    int
+	fnt     opentype.Face
+	shaper  *text.Shaper
 	fsize   fixed.Int26_6
 	metrics ifont.Metrics
 }
@@ -714,47 +766,57 @@ func fontFace2fontFace(f *font.Face) *fontFace {
 	return (*fontFace)(unsafe.Pointer(f))
 }
 
-func (face *fontFace) layout(str string, width int) []text.Line {
+func (face *fontFace) layout(str string, width int) []text.Glyph {
 	if width < 0 {
 		width = 1e6
 	}
-	return face.shaper.LayoutString(text.Font{}, fixed.I(face.size), width, str)
+	face.shaper.LayoutString(text.Parameters{
+		Font:     text.Font{},
+		PxPerEm:  face.fsize,
+		MinWidth: 0,
+		MaxWidth: width,
+		Locale:   system.Locale{}}, str)
+	gs := []text.Glyph{}
+	x := fixed.I(0)
+	for {
+		g, ok := face.shaper.NextGlyph()
+		if !ok {
+			break
+		}
+		g.X = x
+		g.Advance = fixed.I(g.Advance.Ceil())
+		x += g.Advance
+		gs = append(gs, g)
+	}
+	return gs
 }
 
-func (face *fontFace) shape(txtstr text.Layout) op.CallOp {
-	return face.shaper.Shape(text.Font{}, fixed.I(face.size), txtstr)
-}
-
-func (face *fontFace) Px(v unit.Value) int {
-	return face.size
+func (face *fontFace) shape(txtstr []text.Glyph) gioclip.Op {
+	return gioclip.Outline{face.shaper.Shape(txtstr)}.Op()
 }
 
 func ChangeFontWidthCache(size int) {
 }
 
 func FontWidth(f font.Face, str string) int {
-	txt := fontFace2fontFace(&f).layout(str, -1)
-	maxw := 0
-	for i := range txt {
-		if w := txt[i].Width.Ceil(); w > maxw {
-			maxw = w
-		}
+	text := fontFace2fontFace(&f).layout(str, -1)
+	if len(text) == 0 {
+		return 0
 	}
-	return maxw
+	return (text[len(text)-1].Advance + text[len(text)-1].X - text[0].X).Ceil()
 }
 
 func glyphAdvance(f font.Face, ch rune) int {
 	txt := fontFace2fontFace(&f).layout(string(ch), 1e6)
-	return txt[0].Width.Ceil()
+	return txt[0].Advance.Ceil()
 }
 
 func measureRunes(f font.Face, runes []rune) int {
 	text := fontFace2fontFace(&f).layout(string(runes), 1e6)
-	w := fixed.Int26_6(0)
-	for i := range text {
-		w += text[i].Width
+	if len(text) == 0 {
+		return 0
 	}
-	return w.Ceil()
+	return (text[len(text)-1].Advance + text[len(text)-1].X - text[0].X).Ceil()
 }
 
 ///////////////////////////////////////////////////////////////////////////////////
@@ -832,13 +894,15 @@ func widgetTextWrap(o *command.Buffer, b rect.Rect, str []rune, t *textWidget, f
 	line.W = b.W - 2*t.Padding.X
 	line.H = 2*t.Padding.Y + FontHeight(f)
 
-	lines := fontFace2fontFace(&f).layout(string(str), line.W)
+	glyphs := fontFace2fontFace(&f).layout(string(str), line.W)
 
-	for _, txtline := range lines {
+	it := linesIterator{txt: glyphs}
+	for it.Next() {
+		txtline := it.Line()
 		if line.Y+line.H >= (b.Y + b.H) {
 			break
 		}
-		widgetText(o, line, txtline.Layout.Text, &text, "LC", f)
+		widgetText(o, line, string(str[txtline.RunesOffset:][:txtline.RunesCount]), &text, "LC", f)
 		line.Y += FontHeight(f) + 2*t.Padding.Y
 	}
 }

@@ -1,3 +1,4 @@
+//go:build (darwin && !nucular_shiny) || nucular_gio
 // +build darwin,!nucular_shiny nucular_gio
 
 package font
@@ -8,31 +9,30 @@ import (
 	"sync"
 
 	"gioui.org/font/opentype"
+	"gioui.org/io/system"
 	"gioui.org/text"
-	"gioui.org/unit"
 
 	"golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 )
 
 type Face struct {
-	fnt     *opentype.Font
-	shaper  *text.Cache
-	size    int
+	fnt     opentype.Face
+	shaper  *text.Shaper
 	fsize   fixed.Int26_6
 	metrics font.Metrics
 }
 
 var fontsMu sync.Mutex
-var fontsMap = map[[md5.Size]byte]*opentype.Font{}
+var fontsMap = map[[md5.Size]byte]opentype.Face{}
 
 func NewFace(ttf []byte, size int) (Face, error) {
 	key := md5.Sum(ttf)
 	fontsMu.Lock()
 	defer fontsMu.Unlock()
 
-	fnt, _ := fontsMap[key]
-	if fnt == nil {
+	fnt, ok := fontsMap[key]
+	if !ok {
 		var err error
 		fnt, err = opentype.Parse(ttf)
 		if err != nil {
@@ -40,18 +40,21 @@ func NewFace(ttf []byte, size int) (Face, error) {
 		}
 	}
 
-	shaper := text.NewCache([]text.FontFace{{text.Font{}, fnt}})
+	shaper := text.NewShaper([]text.FontFace{{text.Font{}, fnt}})
 
-	face := Face{fnt, shaper, size, fixed.I(size), font.Metrics{}}
-	metricsTxt, _ := face.shaper.Layout(text.Font{}, fixed.I(size), 1e6, strings.NewReader("metrics"))
-	face.metrics.Ascent = metricsTxt[0].Ascent
-	face.metrics.Descent = metricsTxt[0].Descent
+	face := Face{fnt, shaper, fixed.I(size), font.Metrics{}}
+	face.shaper.Layout(text.Parameters{
+		Font:     text.Font{},
+		PxPerEm:  face.fsize,
+		MinWidth: 0,
+		MaxWidth: 1e6,
+		Locale:   system.Locale{},
+	}, strings.NewReader("metrics"))
+	g, _ := face.shaper.NextGlyph()
+	face.metrics.Ascent = g.Ascent
+	face.metrics.Descent = g.Descent
 	face.metrics.Height = face.metrics.Ascent + face.metrics.Descent
 	return face, nil
-}
-
-func (face Face) Px(v unit.Value) int {
-	return face.size
 }
 
 func (face Face) Metrics() font.Metrics {

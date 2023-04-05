@@ -1,3 +1,4 @@
+//go:build (darwin && !nucular_shiny) || nucular_gio
 // +build darwin,!nucular_shiny nucular_gio
 
 package richtext
@@ -12,14 +13,13 @@ import (
 	"golang.org/x/image/math/fixed"
 
 	"gioui.org/font/opentype"
+	"gioui.org/io/system"
 	"gioui.org/text"
-	"gioui.org/unit"
 )
 
 type fontFace struct {
-	fnt     *opentype.Font
-	shaper  *text.Cache
-	size    int
+	fnt     opentype.Face
+	shaper  *text.Shaper
 	fsize   fixed.Int26_6
 	metrics ifont.Metrics
 }
@@ -28,15 +28,29 @@ func fontFace2fontFace(f *font.Face) *fontFace {
 	return (*fontFace)(unsafe.Pointer(f))
 }
 
-func (face *fontFace) layout(str string, width int) []text.Line {
+func (face *fontFace) layout(str string, width int) []text.Glyph {
 	if width < 0 {
 		width = 1e6
 	}
-	return face.shaper.LayoutString(text.Font{}, fixed.I(face.size), width, str)
-}
-
-func (face *fontFace) Px(v unit.Value) int {
-	return face.size
+	face.shaper.LayoutString(text.Parameters{
+		Font:     text.Font{},
+		PxPerEm:  face.fsize,
+		MinWidth: 0,
+		MaxWidth: width,
+		Locale:   system.Locale{}}, str)
+	gs := []text.Glyph{}
+	x := fixed.I(0)
+	for {
+		g, ok := face.shaper.NextGlyph()
+		if !ok {
+			break
+		}
+		g.X = x
+		g.Advance = fixed.I(g.Advance.Ceil())
+		x += g.Advance
+		gs = append(gs, g)
+	}
+	return gs
 }
 
 func (rtxt *RichText) calcAdvances(partial int) {
@@ -49,25 +63,35 @@ func (rtxt *RichText) calcAdvances(partial int) {
 	for _, chunk := range rtxt.chunks[partial:] {
 		// Note chunk is a copy of the element in the slice so we can modify it with impunity
 		for chunk.len() > 0 {
-			len := chunk.len()
-			if siter.styleSel.E < pos+len {
-				len = siter.styleSel.E - pos
+			l := chunk.len()
+			if siter.styleSel.E < pos+l {
+				l = siter.styleSel.E - pos
 			}
 
 			if chunk.b != nil {
 				panic("not implemented")
 			}
 
-			txt := fontFace2fontFace(&siter.styleSel.Face).layout(chunk.s[:len], 1e6)
-			for _, line := range txt {
-				for i := range line.Layout.Advances {
-					rtxt.adv = append(rtxt.adv, line.Layout.Advances[i])
+			advLenBefore := len(rtxt.adv)
+
+			txt := fontFace2fontFace(&siter.styleSel.Face).layout(chunk.s[:l], 1e6)
+			for _, glyph := range txt {
+				if glyph.Runes == 0 {
+					continue
 				}
+				for n := 0; n < int(glyph.Runes)-1; n++ {
+					rtxt.adv = append(rtxt.adv, 0)
+				}
+				rtxt.adv = append(rtxt.adv, glyph.Advance)
 			}
 
-			siter.AdvanceTo(pos + len)
-			pos += len
-			chunk.s = chunk.s[len:]
+			if len([]rune(chunk.s[:l])) != len(rtxt.adv)-advLenBefore {
+				panic("internal error")
+			}
+
+			siter.AdvanceTo(pos + l)
+			pos += l
+			chunk.s = chunk.s[l:]
 		}
 	}
 }
