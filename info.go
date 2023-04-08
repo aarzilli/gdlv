@@ -1237,7 +1237,7 @@ func updateDeferredCalls(container *nucular.Window) {
 	}
 
 	w.MenubarBegin()
-	w.Row(20).Static(120)
+	w.Row(20).Static(200)
 	combosel := 0
 	if stackPanel.showDeferPos {
 		combosel = 1
