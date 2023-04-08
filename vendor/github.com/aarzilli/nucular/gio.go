@@ -81,10 +81,12 @@ func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, update
 
 func (mw *masterWindow) Main() {
 	go func() {
-		//TODO: aarzilli this actually doesn't work correctly because gio lost the
-		// ability to specify the initial size of the window in real pixels, it can
-		// only be specified in device-independent pixels.
-		mw.w = app.NewWindow(app.Title(mw.Title), app.Size(unit.Dp(float32(mw.ctx.scale(mw.initialSize.X))), unit.Dp(float32(mw.ctx.scale(mw.initialSize.Y)))))
+		mw.w = app.NewWindow(app.Title(mw.Title), func(u unit.Metric, cfg *app.Config) {
+			cfg.Size = image.Point{
+				X: mw.ctx.scale(mw.initialSize.X),
+				Y: mw.ctx.scale(mw.initialSize.Y),
+			}
+		})
 		mw.main()
 		if mw.onClose != nil {
 			mw.onClose()
