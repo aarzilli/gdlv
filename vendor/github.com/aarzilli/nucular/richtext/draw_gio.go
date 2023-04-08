@@ -40,12 +40,18 @@ func (face *fontFace) layout(str string, width int) []text.Glyph {
 		Locale:   system.Locale{}}, str)
 	gs := []text.Glyph{}
 	x := fixed.I(0)
+	y := int32(0)
 	for {
 		g, ok := face.shaper.NextGlyph()
 		if !ok {
 			break
 		}
-		g.X = x
+		if g.Y != y {
+			x = g.X
+			y = g.Y
+		} else {
+			g.X = x
+		}
 		g.Advance = fixed.I(g.Advance.Ceil())
 		x += g.Advance
 		gs = append(gs, g)
