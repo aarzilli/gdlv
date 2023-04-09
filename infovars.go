@@ -492,8 +492,10 @@ func exprsEditor(w *nucular.Window) {
 }
 
 func addExpression(newexpr string) {
+	wnd.Lock()
 	localsPanel.expressions = append(localsPanel.expressions, Expr{Expr: newexpr})
 	localsPanel.v = append(localsPanel.v, nil)
+	wnd.Unlock()
 	i := len(localsPanel.v) - 1
 	go func(i int) {
 		additionalLoadMu.Lock()
