@@ -581,7 +581,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 	} else if v.Expression != "" {
 		if w.MenuItem(label.TA("Add as expression", "LC")) {
-			addExpression(v.Expression)
+			go addExpression(v.Expression)
 		}
 	}
 
