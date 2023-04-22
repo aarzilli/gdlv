@@ -218,7 +218,7 @@ func parseScopedExprLoad(in string, r *ScopedExpr) string {
 			case 'v':
 				r.MaxVariableRecurse = parseNum()
 				return in[i+1:]
-			case 'x', 'X', 'o', 'O', 'd':
+			case 'x', 'X', 'o', 'O', 'b', 'd':
 				r.Fmt.IntFormat = in[:i+1]
 				return in[i+1:]
 			case 'e', 'f', 'g', 'E', 'F', 'G':

@@ -31,6 +31,7 @@ const (
 	decMode numberMode = iota
 	hexMode
 	octMode
+	binMode
 )
 
 var changedVariableOpacity uint8
@@ -615,6 +616,9 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 		if w.OptionText("Octal", v.sfmt.IntFormat == "%#o") {
 			v.sfmt.IntFormat = "%#o"
+		}
+		if w.OptionText("Binary", v.sfmt.IntFormat == "%#b") {
+			v.sfmt.IntFormat = "%#b"
 		}
 		if w.OptionText("Decimal", v.sfmt.IntFormat == "" || v.sfmt.IntFormat == "%d") {
 			v.sfmt.IntFormat = ""
