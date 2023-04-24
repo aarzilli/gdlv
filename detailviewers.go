@@ -216,6 +216,9 @@ func formatArray(array []int64, hexaddr bool, mode numberMode, canonical bool, s
 	case octMode:
 		fmtstr = fmt.Sprintf("%%0%do ", size*3)
 		emptyfield = fmt.Sprintf("%*s", size*3+1, "")
+	case binMode:
+		fmtstr = fmt.Sprintf("%%0%db ", size*8)
+		emptyfield = fmt.Sprintf("%*s", size*8+1, "")
 	}
 
 	var addrfmtstr string
@@ -353,7 +356,7 @@ func (dv *detailViewer) stringUpdate(w *nucular.Window) {
 		// nothing to choose
 		w.Spacing(1)
 	case viewByteArray, viewRuneArray:
-		numberMode := numberMode(w.ComboSimple([]string{"Decimal", "Hexadecimal", "Octal"}, int(dv.numberMode), 20))
+		numberMode := numberMode(w.ComboSimple([]string{"Decimal", "Hexadecimal", "Octal", "Binary"}, int(dv.numberMode), 20))
 		if numberMode != dv.numberMode {
 			dv.numberMode = numberMode
 			dv.setupView()
@@ -422,6 +425,9 @@ func (dv *detailViewer) intArrayUpdate(w *nucular.Window) {
 	}
 	if w.OptionText("Octal", mode == octMode) {
 		mode = octMode
+	}
+	if w.OptionText("Binary", mode == binMode) {
+		mode = binMode
 	}
 	if mode != dv.numberMode {
 		dv.numberMode = mode
