@@ -11,6 +11,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -807,6 +808,23 @@ func ChangeFontWidthCache(size int) {
 }
 
 func FontWidth(f font.Face, str string) int {
+	if strings.Index(str, "\n") >= 0 {
+		maxwidth := 0
+		for str != "" {
+			rest := ""
+			if nl := strings.Index(str, "\n"); nl >= 0 {
+				cur := str[:nl]
+				rest = str[nl+1:]
+				str = cur
+			}
+			w := FontWidth(f, str)
+			if w > maxwidth {
+				maxwidth = w
+			}
+			str = rest
+		}
+		return maxwidth
+	}
 	text := fontFace2fontFace(&f).layout(str, -1)
 	if len(text) == 0 {
 		return 0
