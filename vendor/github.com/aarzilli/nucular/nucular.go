@@ -1351,7 +1351,8 @@ func (win *Window) LayoutAvailableWidth() int {
 		return win.layout.Clip.W
 	default:
 		style := win.style()
-		return win.layout.Width - 2*style.Spacing.X - style.Padding.X*2 - (win.layout.AtX - win.layout.Bounds.X)
+		//layout := win.layout
+		return win.Bounds.W - 3*style.Spacing.X - 3*style.Padding.X - (win.layout.AtX - win.layout.Bounds.X)
 	}
 }
 
@@ -1484,7 +1485,7 @@ func (win *Window) TreePushCustom(type_ TreeType, name string, initial_open bool
 	/* increase x-axis cursor widget position pointer */
 	if node.Open {
 		layout.AtX = header.X + layout.Offset.X + style.Tab.Indent
-		layout.Width = max(layout.Width, 2*panel_padding.X)
+		//layout.Width = max(layout.Width, 2*panel_padding.X)
 		layout.Width -= (style.Tab.Indent + panel_padding.X)
 		layout.Row.TreeDepth++
 		win.curNode = node

@@ -57,7 +57,7 @@ gioui.org/shader/piet
 ## explicit
 github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/xproto
-# github.com/aarzilli/nucular v0.0.0-20230513154952-7214a9aade1c
+# github.com/aarzilli/nucular v0.0.0-20230531140252-73505eb2e866
 ## explicit; go 1.18
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard
