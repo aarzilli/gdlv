@@ -20,6 +20,7 @@ import (
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
+	"golang.org/x/mobile/event/mouse"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/gdlv/internal/prettyprint"
@@ -505,16 +506,69 @@ func addExpression(newexpr string) {
 	}(i)
 }
 
+func editExpression(exprMenuIdx int) {
+	localsPanel.selected = exprMenuIdx
+	localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected].Expr)
+	localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
+	localsPanel.ed.SelectStart = localsPanel.ed.Cursor
+	localsPanel.ed.SelectEnd = localsPanel.ed.Cursor
+	localsPanel.ed.CursorFollow = true
+	localsPanel.ed.Active = true
+	commandLineEditor.Active = false
+}
+
 func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb []byte) {
 	if client.Running() {
 		return
+	}
+	if parentw.LastWidgetBounds.W > 0 && parentw.LastWidgetBounds.H > 0 {
+		if parentw.Input().Mouse.Clicked(mouse.ButtonMiddle, parentw.LastWidgetBounds) {
+			editExpression(exprMenuIdx)
+			return
+		}
 	}
 	w := parentw.ContextualOpen(0, image.Point{}, parentw.LastWidgetBounds, nil)
 	if w == nil {
 		return
 	}
 	w.Row(20).Dynamic(1)
-	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
+	isExpression := exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions)
+	if isExpression {
+		if w.MenuItem(label.TA("Edit expression", "LC")) {
+			editExpression(exprMenuIdx)
+		}
+		if w.MenuItem(label.TA("Remove expression", "LC")) {
+			removeExpression(exprMenuIdx)
+		}
+		if w.MenuItem(label.TA("Load parameters...", "LC")) {
+			w.Master().PopupOpen(fmt.Sprintf("Load parameters for %s", localsPanel.expressions[exprMenuIdx].Expr), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, configureLoadParameters(exprMenuIdx))
+		}
+		pinned := exprIsScoped(localsPanel.expressions[exprMenuIdx].Expr)
+		if w.CheckboxText("Pin to frame", &pinned) {
+			se := ParseScopedExpr(localsPanel.expressions[exprMenuIdx].Expr)
+			if pinned && curFrame < len(stackPanel.stack) {
+				se.Kind = FrameOffsetScopeExpr
+				se.Gid = curGid
+				se.Foff = int(stackPanel.stack[curFrame].FrameOffset)
+				se.DeferredCall = curDeferredCall
+			} else {
+				se.Kind = NormalScopeExpr
+				se.Gid = -1
+				se.Foff = -1
+				se.Fid = -1
+				se.DeferredCall = -1
+			}
+			localsPanel.expressions[exprMenuIdx].Expr = se.String()
+			go func(i int) {
+				additionalLoadMu.Lock()
+				defer additionalLoadMu.Unlock()
+				loadOneExpr(i)
+			}(exprMenuIdx)
+		}
+		w.CheckboxText("Traced", &localsPanel.expressions[exprMenuIdx].traced)
+		w.MenuItem(label.TA("---", "CC"))
+	}
+	if isExpression {
 		if w.MenuItem(label.TA("Details", "LC")) {
 			newDetailViewer(w.Master(), localsPanel.expressions[exprMenuIdx].Expr)
 			removeExpression(exprMenuIdx)
@@ -540,47 +594,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 	}
 
-	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
-		pinned := exprIsScoped(localsPanel.expressions[exprMenuIdx].Expr)
-		if w.MenuItem(label.TA("Edit expression", "LC")) {
-			localsPanel.selected = exprMenuIdx
-			localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected].Expr)
-			localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
-			localsPanel.ed.SelectStart = 0
-			localsPanel.ed.SelectEnd = localsPanel.ed.Cursor
-			localsPanel.ed.CursorFollow = true
-			localsPanel.ed.Active = true
-			commandLineEditor.Active = false
-		}
-		if w.MenuItem(label.TA("Load parameters...", "LC")) {
-			w.Master().PopupOpen(fmt.Sprintf("Load parameters for %s", localsPanel.expressions[exprMenuIdx].Expr), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, configureLoadParameters(exprMenuIdx))
-		}
-		if w.CheckboxText("Pin to frame", &pinned) {
-			se := ParseScopedExpr(localsPanel.expressions[exprMenuIdx].Expr)
-			if pinned && curFrame < len(stackPanel.stack) {
-				se.Kind = FrameOffsetScopeExpr
-				se.Gid = curGid
-				se.Foff = int(stackPanel.stack[curFrame].FrameOffset)
-				se.DeferredCall = curDeferredCall
-			} else {
-				se.Kind = NormalScopeExpr
-				se.Gid = -1
-				se.Foff = -1
-				se.Fid = -1
-				se.DeferredCall = -1
-			}
-			localsPanel.expressions[exprMenuIdx].Expr = se.String()
-			go func(i int) {
-				additionalLoadMu.Lock()
-				defer additionalLoadMu.Unlock()
-				loadOneExpr(i)
-			}(exprMenuIdx)
-		}
-		w.CheckboxText("Traced", &localsPanel.expressions[exprMenuIdx].traced)
-		if w.MenuItem(label.TA("Remove expression", "LC")) {
-			removeExpression(exprMenuIdx)
-		}
-	} else if v.Expression != "" {
+	if !isExpression && v.Expression != "" {
 		if w.MenuItem(label.TA("Add as expression", "LC")) {
 			go addExpression(v.Expression)
 		}
