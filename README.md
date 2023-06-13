@@ -38,6 +38,12 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2023-06-13 / Version 1.10
+* Better display of long string variables in the variables window
+* Added formatting directives to `print` command and variables window (see `help print`)
+* Support multi-target debugging where Delve supports it
+* Miscellaneous bug fixes
+
 ## 2023-01-05 / Version 1.9
 * Show an indicator when the current frame changes between continues
 * Miscellaneous bug fixes
