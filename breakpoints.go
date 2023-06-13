@@ -110,7 +110,7 @@ func restoreFrozenBreakpoints(out io.Writer) {
 
 	// Re-freeze breakpoints
 	FrozenBreakpoints = FrozenBreakpoints[:0]
-	bps, err := client.ListBreakpoints()
+	bps, err := client.ListBreakpoints(false)
 	if err != nil {
 		return
 	}

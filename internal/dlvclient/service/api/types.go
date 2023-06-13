@@ -17,6 +17,8 @@ var ErrNotExecutable = errors.New("not an executable file")
 type DebuggerState struct {
 	// PID of the process we are debugging.
 	Pid int
+	// Command line of the process we are debugging.
+	TargetCommandLine string
 	// Running is true if the process is running and no other information can be collected.
 	Running bool
 	// Recording is true if the process is currently being recorded and no other
@@ -37,6 +39,9 @@ type DebuggerState struct {
 	// While NextInProgress is set further requests for next or step may be rejected.
 	// Either execute continue until NextInProgress is false or call CancelNext
 	NextInProgress bool
+	// WatchOutOfScope contains the list of watchpoints that went out of scope
+	// during the last continue.
+	WatchOutOfScope []*Breakpoint
 	// Exited indicates whether the debugged process has exited.
 	Exited     bool `json:"exited"`
 	ExitStatus int  `json:"exitStatus"`
@@ -44,6 +49,24 @@ type DebuggerState struct {
 	When string
 	// Filled by RPCClient.Continue, indicates an error
 	Err error `json:"-"`
+}
+
+type TracepointResult struct {
+	// Addr is the address of this tracepoint.
+	Addr uint64 `json:"addr"`
+	// File is the source file for the breakpoint.
+	File string `json:"file"`
+	// Line is a line in File for the breakpoint.
+	Line  int  `json:"line"`
+	IsRet bool `json:"is_ret"`
+	// FunctionName is the name of the function at the current breakpoint, and
+	// may not always be available.
+	FunctionName string `json:"functionName,omitempty"`
+
+	GoroutineID int `json:"goroutineID"`
+
+	InputParams  []Variable `json:"inputParams,omitempty"`
+	ReturnParams []Variable `json:"returnParams,omitempty"`
 }
 
 // Breakpoint addresses a set of locations at which process execution may be
@@ -57,6 +80,9 @@ type Breakpoint struct {
 	Addr uint64 `json:"addr"`
 	// Addrs is the list of addresses for this breakpoint.
 	Addrs []uint64 `json:"addrs"`
+	// AddrPid[i] is the PID associated with by Addrs[i], when debugging a
+	// single target process this is optional, otherwise it is mandatory.
+	AddrPid []int `json:"addrpid"`
 	// File is the source file for the breakpoint.
 	File string `json:"file"`
 	// Line is a line in File for the breakpoint.
@@ -70,6 +96,8 @@ type Breakpoint struct {
 	// Breakpoint hit count condition.
 	// Supported hit count conditions are "NUMBER" and "OP NUMBER".
 	HitCond string
+	// HitCondPerG use per goroutine hitcount as HitCond operand, instead of total hitcount
+	HitCondPerG bool
 
 	// Tracepoint flag, signifying this is a tracepoint.
 	Tracepoint bool `json:"continue"`
@@ -91,12 +119,16 @@ type Breakpoint struct {
 	WatchExpr string
 	WatchType WatchType
 
+	VerboseDescr []string `json:"VerboseDescr,omitempty"`
+
 	// number of times a breakpoint has been reached in a certain goroutine
 	HitCount map[string]uint64 `json:"hitCount"`
 	// number of times a breakpoint has been reached
 	TotalHitCount uint64 `json:"totalHitCount"`
 	// Disabled flag, signifying the state of the breakpoint
 	Disabled bool `json:"disabled"`
+
+	UserData interface{} `json:"-"`
 }
 
 // ValidBreakpointName returns an error if
@@ -139,7 +171,7 @@ type Thread struct {
 	Function *Function `json:"function,omitempty"`
 
 	// ID of the goroutine running on this thread
-	GoroutineID int `json:"goroutineID"`
+	GoroutineID int64 `json:"goroutineID"`
 
 	// Breakpoint this thread is stopped at
 	Breakpoint *Breakpoint `json:"breakPoint,omitempty"`
@@ -163,6 +195,7 @@ type Location struct {
 	Line     int       `json:"line"`
 	Function *Function `json:"function,omitempty"`
 	PCs      []uint64  `json:"pcs,omitempty"`
+	PCPids   []int     `json:"pcpids,omitempty"`
 }
 
 // Stackframe describes one frame in a stack trace.
@@ -251,12 +284,12 @@ const (
 
 	// VariableFakeAddress means the address of this variable is either fake
 	// (i.e. the variable is partially or completely stored in a CPU register
-	// and doesn't have a real address) or possibly no longer availabe (because
+	// and doesn't have a real address) or possibly no longer available (because
 	// the variable is the return value of a function call and allocated on a
 	// frame that no longer exists)
 	VariableFakeAddress
 
-	// VariableCPrt means the variable is a C pointer
+	// VariableCPtr means the variable is a C pointer
 	VariableCPtr
 
 	// VariableCPURegister means this variable is a CPU register.
@@ -329,7 +362,7 @@ type LoadConfig struct {
 // internal G structure.
 type Goroutine struct {
 	// ID is a unique identifier for the goroutine.
-	ID int `json:"id"`
+	ID int64 `json:"id"`
 	// Current location of the goroutine
 	CurrentLoc Location `json:"currentLoc"`
 	// Current location of the goroutine, excluding calls inside runtime
@@ -362,7 +395,7 @@ type DebuggerCommand struct {
 	ThreadID int `json:"threadID,omitempty"`
 	// GoroutineID is used to specify which thread to use with the SwitchGoroutine
 	// and Call commands.
-	GoroutineID int `json:"goroutineID,omitempty"`
+	GoroutineID int64 `json:"goroutineID,omitempty"`
 	// When ReturnInfoLoadConfig is not nil it will be used to load the value
 	// of any return variables.
 	ReturnInfoLoadConfig *LoadConfig
@@ -372,7 +405,7 @@ type DebuggerCommand struct {
 	// UnsafeCall disables parameter escape checking for function calls.
 	// Go objects can be allocated on the stack or on the heap. Heap objects
 	// can be used by any goroutine; stack objects can only be used by the
-	// goroutine that owns the stack they are allocated on and can not surivive
+	// goroutine that owns the stack they are allocated on and can not survive
 	// the stack frame of allocation.
 	// The Go compiler will use escape analysis to determine whether to
 	// allocate an object on the stack or the heap.
@@ -397,7 +430,7 @@ type BreakpointInfo struct {
 // EvalScope is the scope a command should
 // be evaluated in. Describes the goroutine and frame number.
 type EvalScope struct {
-	GoroutineID  int
+	GoroutineID  int64
 	Frame        int
 	DeferredCall int // when DeferredCall is n > 0 this eval scope is relative to the n-th deferred call in the current frame
 }
@@ -407,7 +440,7 @@ const (
 	Continue = "continue"
 	// Rewind resumes process execution backwards (target must be a recording).
 	Rewind = "rewind"
-	// DirecitonCongruentContinue resumes process execution, if a reverse next, step or stepout operation is in progress it will resume execution backward.
+	// DirectionCongruentContinue resumes process execution, if a reverse next, step or stepout operation is in progress it will resume execution backward.
 	DirectionCongruentContinue = "directionCongruentContinue"
 	// Step continues to next source line, entering function calls.
 	Step = "step"
@@ -415,7 +448,7 @@ const (
 	ReverseStep = "reverseStep"
 	// StepOut continues to the return address of the current function
 	StepOut = "stepOut"
-	// ReverseStepOut continues backward to the calle rof the current function.
+	// ReverseStepOut continues backward to the caller of the current function.
 	ReverseStepOut = "reverseStepOut"
 	// StepInstruction continues for exactly 1 cpu instruction.
 	StepInstruction = "stepInstruction"
@@ -567,7 +600,7 @@ const (
 	StacktraceG
 )
 
-// ImportPathToDirectoryPath maps an import path to a directory path.
+// PackageBuildInfo maps an import path to a directory path.
 type PackageBuildInfo struct {
 	ImportPath    string
 	DirectoryPath string
@@ -621,4 +654,11 @@ type GoroutineGroupingOptions struct {
 	GroupByKey      string
 	MaxGroupMembers int
 	MaxGroups       int
+}
+
+// Target represents a debugging target.
+type Target struct {
+	Pid           int
+	CmdLine       string
+	CurrentThread *Thread
 }

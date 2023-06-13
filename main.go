@@ -191,7 +191,7 @@ var wnd nucular.MasterWindow
 var nextInProgress bool
 var client *rpc2.RPCClient
 var curThread, oldThread int
-var curGid, oldGid int
+var curGid, oldGid int64
 var curFrameOffset, oldFrameOffset int64
 var firstStop bool = true
 var ignoreFrameChange bool
@@ -906,7 +906,7 @@ func loadListing(loc *api.Location, failstate func(string, error)) {
 }
 
 func applyBreakpoints(failstate func(string, error)) {
-	breakpoints, err := client.ListBreakpoints()
+	breakpoints, err := client.ListBreakpoints(false)
 	if err != nil {
 		failstate("ListBreakpoints()", err)
 		return

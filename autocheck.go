@@ -36,7 +36,7 @@ var autoCheckpointsPanel = struct {
 type autoCheckpoint struct {
 	ID          int
 	Where       string
-	GoroutineID int
+	GoroutineID int64
 	Breakpoint  *api.Breakpoint
 	Variables   []*Variable
 }
@@ -184,7 +184,7 @@ func updateAutoCheckpoints(container *nucular.Window) {
 	}
 }
 
-func addcheck(cnt int, gid int, bp *api.Breakpoint, bpi *api.BreakpointInfo) {
+func addcheck(cnt int, gid int64, bp *api.Breakpoint, bpi *api.BreakpointInfo) {
 	where := fmt.Sprintf("acp%+d", cnt)
 	cp, err := client.Checkpoint(where)
 	if err != nil {
@@ -361,7 +361,7 @@ func autoCheckpointsReloadVars() {
 		refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	}()
 
-	bps, err := client.ListBreakpoints()
+	bps, err := client.ListBreakpoints(false)
 	if err != nil {
 		panic(err)
 	}

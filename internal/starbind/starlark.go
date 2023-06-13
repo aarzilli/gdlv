@@ -6,6 +6,7 @@ import (
 	"io"
 	"io/ioutil"
 	"runtime"
+	"sort"
 	"strings"
 	"sync"
 
@@ -27,6 +28,7 @@ const (
 	dlvContextName               = "dlv_context"
 	curScopeBuiltinName          = "cur_scope"
 	defaultLoadConfigBuiltinName = "default_load_config"
+	helpBuiltinName              = "help"
 )
 
 func init() {
@@ -66,7 +68,13 @@ func New(ctx Context) *Env {
 
 	env.ctx = ctx
 
-	env.env = env.starlarkPredeclare()
+	var doc map[string]string
+	env.env, doc = env.starlarkPredeclare()
+
+	builtindoc := func(name, args, descr string) {
+		doc[name] = name + args + "\n\n" + name + " " + descr
+	}
+
 	env.env[dlvCommandBuiltinName] = starlark.NewBuiltin(dlvCommandBuiltinName, func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		if err := isCancelled(thread); err != nil {
 			return starlark.None, err
@@ -85,6 +93,8 @@ func New(ctx Context) *Env {
 		}
 		return starlark.None, decorateError(thread, err)
 	})
+	builtindoc(dlvCommandBuiltinName, "(Command)", "interrupts, continues and steps through the program.")
+
 	env.env[readFileBuiltinName] = starlark.NewBuiltin(readFileBuiltinName, func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		if len(args) != 1 {
 			return nil, decorateError(thread, fmt.Errorf("wrong number of arguments"))
@@ -99,6 +109,8 @@ func New(ctx Context) *Env {
 		}
 		return starlark.String(string(buf)), nil
 	})
+	builtindoc(readFileBuiltinName, "(Path)", "reads a file.")
+
 	env.env[writeFileBuiltinName] = starlark.NewBuiltin(writeFileBuiltinName, func(thread *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		if len(args) != 2 {
 			return nil, decorateError(thread, fmt.Errorf("wrong number of arguments"))
@@ -110,12 +122,56 @@ func New(ctx Context) *Env {
 		err := ioutil.WriteFile(string(path), []byte(args[1].String()), 0640)
 		return starlark.None, decorateError(thread, err)
 	})
+	builtindoc(writeFileBuiltinName, "(Path, Text)", "writes text to the specified file.")
+
 	env.env[curScopeBuiltinName] = starlark.NewBuiltin(curScopeBuiltinName, func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		return env.interfaceToStarlarkValue(env.ctx.Scope()), nil
 	})
+	builtindoc(curScopeBuiltinName, "()", "returns the current scope.")
+
 	env.env[defaultLoadConfigBuiltinName] = starlark.NewBuiltin(defaultLoadConfigBuiltinName, func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		return env.interfaceToStarlarkValue(env.ctx.LoadConfig()), nil
 	})
+	builtindoc(defaultLoadConfigBuiltinName, "()", "returns the default load configuration.")
+
+	env.env[helpBuiltinName] = starlark.NewBuiltin(helpBuiltinName, func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
+		switch len(args) {
+		case 0:
+			fmt.Fprintln(env.out, "Available builtins:")
+			bins := make([]string, 0, len(env.env))
+			for name, value := range env.env {
+				switch value.(type) {
+				case *starlark.Builtin:
+					bins = append(bins, name)
+				}
+			}
+			sort.Strings(bins)
+			for _, bin := range bins {
+				fmt.Fprintf(env.out, "\t%s\n", bin)
+			}
+		case 1:
+			switch x := args[0].(type) {
+			case *starlark.Builtin:
+				if doc[x.Name()] != "" {
+					fmt.Fprintf(env.out, "%s\n", doc[x.Name()])
+				} else {
+					fmt.Fprintf(env.out, "no help for builtin %s\n", x.Name())
+				}
+			case *starlark.Function:
+				fmt.Fprintf(env.out, "user defined function %s\n", x.Name())
+				if doc := x.Doc(); doc != "" {
+					fmt.Fprintln(env.out, doc)
+				}
+			default:
+				fmt.Fprintf(env.out, "no help for object of type %T\n", args[0])
+			}
+		default:
+			fmt.Fprintln(env.out, "wrong number of arguments ", len(args))
+		}
+		return starlark.None, nil
+	})
+	builtindoc(helpBuiltinName, "(Object)", "prints help for Object.")
+
 	return env
 }
 

@@ -279,7 +279,7 @@ func loadGoroutines(p *asyncLoad) {
 		return
 	}
 
-	bpgoids := make([]int, 0, 10)
+	bpgoids := make([]int64, 0, 10)
 	for _, th := range state.Threads {
 		if th.Breakpoint != nil && th.GoroutineID > 0 {
 			bpgoids = append(bpgoids, th.GoroutineID)
@@ -390,7 +390,7 @@ func updateGoroutines(container *nucular.Window) {
 
 	d := 1
 	if len(goroutines) > 0 {
-		d = digits(goroutines[len(goroutines)-1].ID)
+		d = digits(int(goroutines[len(goroutines)-1].ID))
 	}
 
 	maxthreadid := 0
@@ -447,7 +447,7 @@ func updateGoroutines(container *nucular.Window) {
 		w.SelectableLabel(loc, "LT", &selected)
 
 		if selected && curGid != g.ID && !client.Running() {
-			go func(gid int) {
+			go func(gid int64) {
 				state, err := client.SwitchGoroutine(gid)
 				if err != nil {
 					out := editorWriter{true}
@@ -791,7 +791,7 @@ func updateThreads(container *nucular.Window) {
 		w.SelectableLabel(fmt.Sprintf("%*d", d, thread.ID), "LT", &selected)
 
 		w.LayoutFitWidth(threadsPanel.id, 1)
-		loc := api.Location{thread.PC, thread.File, thread.Line, thread.Function, nil}
+		loc := api.Location{thread.PC, thread.File, thread.Line, thread.Function, nil, nil}
 		w.SelectableLabel(formatLocation2(loc), "LT", &selected)
 
 		if selected && curThread != thread.ID && !client.Running() {
@@ -855,7 +855,7 @@ func (bps breakpointsByID) Less(i, j int) bool { return bps[i].ID < bps[j].ID }
 
 func loadBreakpoints(p *asyncLoad) {
 	var err error
-	breakpointsPanel.breakpoints, err = client.ListBreakpoints()
+	breakpointsPanel.breakpoints, err = client.ListBreakpoints(false)
 	if err == nil {
 		sort.Sort(breakpointsByID(breakpointsPanel.breakpoints))
 	}
@@ -998,7 +998,7 @@ func execClearBreakpoint(id int) {
 	wnd.Changed()
 }
 
-func execRestartCheckpoint(id int, gid int, where string) {
+func execRestartCheckpoint(id int, gid int64, where string) {
 	scrollbackOut := editorWriter{true}
 	err := restartCheckpointToGoroutine(id, gid)
 	if err != nil {
@@ -1009,7 +1009,7 @@ func execRestartCheckpoint(id int, gid int, where string) {
 	refreshState(refreshToFrameZero, clearStop, nil)
 }
 
-func restartCheckpointToGoroutine(id, gid int) error {
+func restartCheckpointToGoroutine(id int, gid int64) error {
 	_, err := client.RestartFrom(false, fmt.Sprintf("c%d", id), false, nil, [3]string{}, false)
 	if err != nil {
 		return err

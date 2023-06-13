@@ -64,6 +64,13 @@ type CommandOut struct {
 	State api.DebuggerState
 }
 
+type GetBufferedTracepointsIn struct {
+}
+
+type GetBufferedTracepointsOut struct {
+	TracepointResults []api.TracepointResult
+}
+
 type GetBreakpointIn struct {
 	Id   int
 	Name string
@@ -74,7 +81,7 @@ type GetBreakpointOut struct {
 }
 
 type StacktraceIn struct {
-	Id     int
+	Id     int64
 	Depth  int
 	Full   bool
 	Defers bool // read deferred functions (equivalent to passing StacktraceReadDefers in Opts)
@@ -87,7 +94,7 @@ type StacktraceOut struct {
 }
 
 type AncestorsIn struct {
-	GoroutineID  int
+	GoroutineID  int64
 	NumAncestors int
 	Depth        int
 }
@@ -97,6 +104,7 @@ type AncestorsOut struct {
 }
 
 type ListBreakpointsIn struct {
+	All bool
 }
 
 type ListBreakpointsOut struct {
@@ -112,6 +120,14 @@ type CreateBreakpointIn struct {
 }
 
 type CreateBreakpointOut struct {
+	Breakpoint api.Breakpoint
+}
+
+type CreateEBPFTracepointIn struct {
+	FunctionName string
+}
+
+type CreateEBPFTracepointOut struct {
 	Breakpoint api.Breakpoint
 }
 
@@ -414,4 +430,42 @@ type CreateWatchpointIn struct {
 
 type CreateWatchpointOut struct {
 	*api.Breakpoint
+}
+
+type BuildIDIn struct {
+}
+
+type BuildIDOut struct {
+	BuildID string
+}
+
+type ListTargetsIn struct {
+}
+
+type ListTargetsOut struct {
+	Targets []api.Target
+}
+
+type FollowExecIn struct {
+	Enable bool
+	Regex  string
+}
+
+type FollowExecOut struct {
+}
+
+type FollowExecEnabledIn struct {
+}
+
+type FollowExecEnabledOut struct {
+	Enabled bool
+}
+
+type DebugInfoDirectoriesIn struct {
+	Set  bool
+	List []string
+}
+
+type DebugInfoDirectoriesOut struct {
+	List []string
 }

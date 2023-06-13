@@ -14,6 +14,12 @@ func (c *RPCClient) ProcessPid() int {
 	return out.Pid
 }
 
+func (c *RPCClient) BuildID() string {
+	out := new(BuildIDOut)
+	c.call("BuildID", BuildIDIn{}, out)
+	return out.BuildID
+}
+
 func (c *RPCClient) LastModified() time.Time {
 	out := new(LastModifiedOut)
 	c.call("LastModified", LastModifiedIn{}, out)
@@ -74,6 +80,7 @@ func (c *RPCClient) continueDir(cmd string) <-chan *api.DebuggerState {
 			}
 			if state.Exited {
 				// Error types apparently cannot be marshalled by Go correctly. Must reset error here.
+				//lint:ignore ST1005 backwards compatibility
 				state.Err = fmt.Errorf("Process %d has exited with status %d", c.ProcessPid(), state.ExitStatus)
 			}
 			ch <- &state
@@ -136,7 +143,7 @@ func (c *RPCClient) ReverseStepOut() (*api.DebuggerState, error) {
 	return c.exitedToError(&out, err)
 }
 
-func (c *RPCClient) Call(goroutineID int, expr string, unsafe bool) (*api.DebuggerState, error) {
+func (c *RPCClient) Call(goroutineID int64, expr string, unsafe bool) (*api.DebuggerState, error) {
 	var out CommandOut
 	err := c.call("Command", api.DebuggerCommand{Name: api.Call, ReturnInfoLoadConfig: c.retValLoadCfg, Expr: expr, UnsafeCall: unsafe, GoroutineID: goroutineID}, &out)
 	return c.exitedToError(&out, err)
@@ -164,7 +171,7 @@ func (c *RPCClient) SwitchThread(threadID int) (*api.DebuggerState, error) {
 	return &out.State, err
 }
 
-func (c *RPCClient) SwitchGoroutine(goroutineID int) (*api.DebuggerState, error) {
+func (c *RPCClient) SwitchGoroutine(goroutineID int64) (*api.DebuggerState, error) {
 	var out CommandOut
 	cmd := api.DebuggerCommand{
 		Name:        api.SwitchGoroutine,
@@ -178,6 +185,12 @@ func (c *RPCClient) Halt() (*api.DebuggerState, error) {
 	var out CommandOut
 	err := c.call("Command", api.DebuggerCommand{Name: api.Halt}, &out)
 	return &out.State, err
+}
+
+func (c *RPCClient) GetBufferedTracepoints() ([]api.TracepointResult, error) {
+	var out GetBufferedTracepointsOut
+	err := c.call("GetBufferedTracepoints", GetBufferedTracepointsIn{}, &out)
+	return out.TracepointResults, err
 }
 
 func (c *RPCClient) GetBreakpoint(id int) (*api.Breakpoint, error) {
@@ -211,15 +224,20 @@ func (c *RPCClient) CreateBreakpointWithExpr(breakPoint *api.Breakpoint, locExpr
 	return &out.Breakpoint, err
 }
 
+func (c *RPCClient) CreateEBPFTracepoint(fnName string) error {
+	var out CreateEBPFTracepointOut
+	return c.call("CreateEBPFTracepoint", CreateEBPFTracepointIn{FunctionName: fnName}, &out)
+}
+
 func (c *RPCClient) CreateWatchpoint(scope api.EvalScope, expr string, wtype api.WatchType) (*api.Breakpoint, error) {
 	var out CreateWatchpointOut
 	err := c.call("CreateWatchpoint", CreateWatchpointIn{scope, expr, wtype}, &out)
 	return out.Breakpoint, err
 }
 
-func (c *RPCClient) ListBreakpoints() ([]*api.Breakpoint, error) {
+func (c *RPCClient) ListBreakpoints(all bool) ([]*api.Breakpoint, error) {
 	var out ListBreakpointsOut
-	err := c.call("ListBreakpoints", ListBreakpointsIn{}, &out)
+	err := c.call("ListBreakpoints", ListBreakpointsIn{all}, &out)
 	return out.Breakpoints, err
 }
 
@@ -344,13 +362,13 @@ func (c *RPCClient) ListGoroutinesWithFilter(start, count int, filters []api.Lis
 	return out.Goroutines, out.Groups, out.Nextg, out.TooManyGroups, err
 }
 
-func (c *RPCClient) Stacktrace(goroutineId, depth int, opts api.StacktraceOptions, cfg *api.LoadConfig) ([]api.Stackframe, error) {
+func (c *RPCClient) Stacktrace(goroutineId int64, depth int, opts api.StacktraceOptions, cfg *api.LoadConfig) ([]api.Stackframe, error) {
 	var out StacktraceOut
 	err := c.call("Stacktrace", StacktraceIn{goroutineId, depth, false, false, opts, cfg}, &out)
 	return out.Locations, err
 }
 
-func (c *RPCClient) Ancestors(goroutineID int, numAncestors int, depth int) ([]api.Ancestor, error) {
+func (c *RPCClient) Ancestors(goroutineID int64, numAncestors int, depth int) ([]api.Ancestor, error) {
 	var out AncestorsOut
 	err := c.call("Ancestors", AncestorsIn{goroutineID, numAncestors, depth}, &out)
 	return out.Ancestors, err
@@ -368,14 +386,14 @@ func (c *RPCClient) FindLocation(scope api.EvalScope, loc string, findInstructio
 	return out.Locations, err
 }
 
-// Disassemble code between startPC and endPC
+// DisassembleRange disassembles code between startPC and endPC
 func (c *RPCClient) DisassembleRange(scope api.EvalScope, startPC, endPC uint64, flavour api.AssemblyFlavour) (api.AsmInstructions, error) {
 	var out DisassembleOut
 	err := c.call("Disassemble", DisassembleIn{scope, startPC, endPC, flavour}, &out)
 	return out.Disassemble, err
 }
 
-// Disassemble function containing pc
+// DisassemblePC disassembles function containing pc
 func (c *RPCClient) DisassemblePC(scope api.EvalScope, pc uint64, flavour api.AssemblyFlavour) (api.AsmInstructions, error) {
 	var out DisassembleOut
 	err := c.call("Disassemble", DisassembleIn{scope, pc, 0, flavour}, &out)
@@ -469,6 +487,40 @@ func (c *RPCClient) CoreDumpWait(msec int) api.DumpState {
 func (c *RPCClient) CoreDumpCancel() error {
 	out := &DumpCancelOut{}
 	return c.call("DumpCancel", DumpCancelIn{}, out)
+}
+
+// ListTargets returns the current list of debug targets.
+func (c *RPCClient) ListTargets() ([]api.Target, error) {
+	out := &ListTargetsOut{}
+	err := c.call("ListTargets", ListTargetsIn{}, out)
+	return out.Targets, err
+}
+
+// FollowExec enabled or disabled follow exec mode. When follow exec is
+// enabled Delve will automatically attach to new subprocesses with a
+// command line matched by regex, if regex is nil all new subprocesses are
+// automatically debugged.
+func (c *RPCClient) FollowExec(v bool, regex string) error {
+	out := &FollowExecOut{}
+	err := c.call("FollowExec", FollowExecIn{Enable: v, Regex: regex}, out)
+	return err
+}
+
+// FollowExecEnabled returns true if follow exec mode is enabled.
+func (c *RPCClient) FollowExecEnabled() bool {
+	out := &FollowExecEnabledOut{}
+	_ = c.call("FollowExecEnabled", FollowExecEnabledIn{}, out)
+	return out.Enabled
+}
+
+func (c *RPCClient) SetDebugInfoDirectories(v []string) error {
+	return c.call("DebugInfoDirectories", DebugInfoDirectoriesIn{Set: true, List: v}, &DebugInfoDirectoriesOut{})
+}
+
+func (c *RPCClient) GetDebugInfoDirectories() ([]string, error) {
+	out := &DebugInfoDirectoriesOut{}
+	err := c.call("DebugInfoDirectories", DebugInfoDirectoriesIn{Set: false, List: nil}, out)
+	return out.List, err
 }
 
 func (c *RPCClient) CallAPI(method string, args, reply interface{}) error {

@@ -18,7 +18,7 @@ import (
 // ScopedExpr represents an expression to be evaluated in a specified scope.
 type ScopedExpr struct {
 	Kind   ScopeExprKind
-	Gid    int            // goroutine id (-1 for current goroutine)
+	Gid    int64          // goroutine id (-1 for current goroutine)
 	Fid    int            // frame id (-1 for current goroutine)
 	Foff   int            // frame offset (will search for this specified frame offset or return an error otherwise)
 	Fre    *regexp.Regexp // frame regular expression (will search for a frame in a function matching this regular expression)
@@ -102,7 +102,9 @@ func parseScopedExprScope(in string, r *ScopedExpr) string {
 			}
 			gseen = true
 			var ok bool
-			in, r.Gid, ok = scopeReadNumber(in)
+			var n int
+			in, n, ok = scopeReadNumber(in)
+			r.Gid = int64(n)
 			if !ok {
 				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: "invalid argument for 'g'"}
 				return ""
@@ -337,7 +339,8 @@ func evalScopedExpr(expr string, cfg api.LoadConfig, customFormatters bool) (*Va
 
 	se := ParseScopedExpr(expr)
 
-	var gid, frame, deferredCall int
+	var gid int64
+	var frame, deferredCall int
 
 	gid = se.Gid
 	if gid < 0 {
@@ -425,7 +428,7 @@ func convertStarlarkToVariable(expr string, sv starlark.Value) *api.Variable {
 	}
 }
 
-func findFrameOffset(gid int, frameOffset int64, rx *regexp.Regexp) (frame int) {
+func findFrameOffset(gid int64, frameOffset int64, rx *regexp.Regexp) (frame int) {
 	frames, err := client.Stacktrace(gid, 100, 0, nil)
 	if err != nil {
 		return -1

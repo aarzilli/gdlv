@@ -539,7 +539,7 @@ func listBreakpoints() {
 	style := wnd.Style()
 	c := scrollbackEditor.Append(true)
 	defer c.End()
-	bps, err := client.ListBreakpoints()
+	bps, err := client.ListBreakpoints(false)
 	if err != nil {
 		c.Text(fmt.Sprintf("Command failed: %v\n", err))
 		return
@@ -1963,7 +1963,7 @@ func printcontextThread(th *api.Thread) {
 
 	c.Text(fmt.Sprintf("> %s%s(%s) ", bpname, fn.Name(), args))
 	writeLinkToLocation(c, style, th.File, th.Line, th.PC)
-	if hitCount, ok := th.Breakpoint.HitCount[strconv.Itoa(th.GoroutineID)]; ok {
+	if hitCount, ok := th.Breakpoint.HitCount[strconv.FormatInt(th.GoroutineID, 10)]; ok {
 		c.Text(fmt.Sprintf(" (hits goroutine(%d):%d total:%d) (PC: %#v)\n",
 			th.GoroutineID,
 			hitCount,
