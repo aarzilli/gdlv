@@ -9,6 +9,7 @@ import (
 	"go/parser"
 	"go/scanner"
 	"io"
+	"net/rpc"
 	"os"
 	"reflect"
 	"sort"
@@ -305,6 +306,21 @@ Current limitations:
 - calling a function will resume execution of all goroutines.
 - only supported on linux's native backend.
 `},
+
+		{aliases: []string{"target"}, cmdFn: target, helpMsg: `Manages child process debugging.
+
+	target follow-exec [-on [regex]] [-off]
+
+Enables or disables follow exec mode. When follow exec mode Delve will automatically attach to new child processes executed by the target process. An optional regular expression can be passed to 'target follow-exec', only child processes with a command line matching the regular expression will be followed.
+
+	target list
+
+List currently attached processes.
+
+	target switch [pid]
+
+Switches to the specified process.
+`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -481,25 +497,58 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 	}
 
 	requestedBp.Tracepoint = tracepoint
-	locs, err := client.FindLocation(currentEvalScope(), locspec, true, nil)
-	if err != nil {
-		if requestedBp.Name == "" {
-			return err
-		}
+	locs, findLocErr := client.FindLocation(currentEvalScope(), locspec, true, nil)
+	if findLocErr != nil && requestedBp.Name != "" {
 		requestedBp.Name = ""
 		locspec = argstr
 		var err2 error
 		locs, err2 = client.FindLocation(currentEvalScope(), locspec, true, nil)
-		if err2 != nil {
-			return err
+		if err2 == nil {
+			findLocErr = nil
 		}
+	}
+	if findLocErr != nil && shouldAskToSuspendBreakpoint() {
+		wnd.PopupOpen("Set suspended breakpoint?", dynamicPopupFlags, rect.Rect{100, 100, 550, 400}, true, func(w *nucular.Window) {
+			w.Row(30).Static(0)
+			w.Label("Could not find breakpoint location, set suspended breakpoint?", "LC")
+			yes, no := yesno(w)
+			switch {
+			case yes:
+				bp, err := client.CreateBreakpointWithExpr(requestedBp, locspec, nil, true)
+				out := &editorWriter{false}
+				if err != nil {
+					fmt.Fprintf(out, "Could not set breakpoint: %v", err)
+				} else {
+					fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp, false))
+					go refreshState(refreshToSameFrame, clearBreakpoint, nil)
+				}
+				w.Close()
+			case no:
+				w.Close()
+			}
+		})
+	}
+	if findLocErr != nil {
+		return findLocErr
 	}
 	for _, loc := range locs {
 		requestedBp.Addr = loc.PC
 		requestedBp.Addrs = loc.PCs
+		requestedBp.AddrPid = loc.PCPids
 		setBreakpointEx(out, requestedBp, locspec)
 	}
 	return nil
+}
+
+func shouldAskToSuspendBreakpoint() bool {
+	fns, _ := client.ListFunctions(`^plugin\.Open$`)
+	_, err := client.GetState()
+	return len(fns) > 0 || isErrProcessExited(err) || client.FollowExecEnabled()
+}
+
+func isErrProcessExited(err error) bool {
+	rpcError, ok := err.(rpc.ServerError)
+	return ok && strings.Contains(rpcError.Error(), "has exited with status")
 }
 
 func setBreakpointEx(out io.Writer, requestedBp *api.Breakpoint, locspec string) {
@@ -631,24 +680,7 @@ func restart(out io.Writer, args string) error {
 		wnd.PopupOpen("Recompile?", dynamicPopupFlags, rect.Rect{100, 100, 550, 400}, true, func(w *nucular.Window) {
 			w.Row(30).Static(0)
 			w.Label("Executable is stale. Rebuild?", "LC")
-			var yes, no bool
-			for _, e := range w.Input().Keyboard.Keys {
-				switch {
-				case e.Code == key.CodeEscape:
-					no = true
-				case e.Code == key.CodeReturnEnter:
-					yes = true
-				}
-			}
-			w.Row(30).Static(0, 100, 100, 0)
-			w.Spacing(1)
-			if w.ButtonText("Yes") {
-				yes = true
-			}
-			if w.ButtonText("No") {
-				no = true
-			}
-			w.Spacing(1)
+			yes, no := yesno(w)
 
 			switch {
 			case yes:
@@ -667,6 +699,27 @@ func restart(out io.Writer, args string) error {
 	}
 
 	return doRestart(out, restartCheckpoint, resetArgs, newArgs, rerecord)
+}
+
+func yesno(w *nucular.Window) (yes, no bool) {
+	for _, e := range w.Input().Keyboard.Keys {
+		switch {
+		case e.Code == key.CodeEscape:
+			no = true
+		case e.Code == key.CodeReturnEnter:
+			yes = true
+		}
+	}
+	w.Row(30).Static(0, 100, 100, 0)
+	w.Spacing(1)
+	if w.ButtonText("Yes") {
+		yes = true
+	}
+	if w.ButtonText("No") {
+		no = true
+	}
+	w.Spacing(1)
+	return yes, no
 }
 
 func splitQuotedFields(in string, quote rune) []string {
@@ -1842,6 +1895,86 @@ func watchpoint(out io.Writer, args string) error {
 	fmt.Fprintf(out, "%s set at %s\n", formatBreakpointName(bp, true), formatBreakpointLocation(bp, false))
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	return nil
+}
+
+func split2PartsBySpace(s string) []string {
+	v := strings.SplitN(s, " ", 2)
+	for i := range v {
+		v[i] = strings.TrimSpace(v[i])
+	}
+	return v
+}
+
+func target(out io.Writer, args string) error {
+	argv := split2PartsBySpace(args)
+	switch argv[0] {
+	case "list":
+		tgts, err := client.ListTargets()
+		if err != nil {
+			return err
+		}
+		w := new(tabwriter.Writer)
+		w.Init(out, 4, 4, 2, ' ', 0)
+		for _, tgt := range tgts {
+			selected := ""
+			if tgt.Pid == curPid {
+				selected = "*"
+			}
+			fmt.Fprintf(w, "%s\t%d\t%s\n", selected, tgt.Pid, tgt.CmdLine)
+		}
+		w.Flush()
+		return nil
+	case "follow-exec":
+		if len(argv) == 1 {
+			if client.FollowExecEnabled() {
+				fmt.Fprintf(out, "Follow exec is enabled.\n")
+			} else {
+				fmt.Fprintf(out, "Follow exec is disabled.\n")
+			}
+			return nil
+		}
+		argv = split2PartsBySpace(argv[1])
+		switch argv[0] {
+		case "-on":
+			var regex string
+			if len(argv) == 2 {
+				regex = argv[1]
+			}
+			client.FollowExec(true, regex)
+		case "-off":
+			if len(argv) > 1 {
+				return errors.New("too many arguments")
+			}
+			client.FollowExec(false, "")
+		default:
+			return fmt.Errorf("unknown argument %q to 'target follow-exec'", argv[0])
+		}
+		return nil
+	case "switch":
+		tgts, err := client.ListTargets()
+		if err != nil {
+			return err
+		}
+		pid, err := strconv.Atoi(argv[1])
+		if err != nil {
+			return err
+		}
+		found := false
+		for _, tgt := range tgts {
+			if tgt.Pid == pid {
+				found = true
+				client.SwitchThread(tgt.CurrentThread.ID)
+			}
+		}
+		if !found {
+			return fmt.Errorf("could not find target %d", pid)
+		}
+		return nil
+	case "":
+		return errors.New("not enough arguments for 'target'")
+	default:
+		return fmt.Errorf("unknown command 'target %s'", argv[0])
+	}
 }
 
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {

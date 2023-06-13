@@ -191,6 +191,7 @@ var wnd nucular.MasterWindow
 var nextInProgress bool
 var client *rpc2.RPCClient
 var curThread, oldThread int
+var curPid int
 var curGid, oldGid int64
 var curFrameOffset, oldFrameOffset int64
 var firstStop bool = true
@@ -347,14 +348,18 @@ func currentPrompt() string {
 		if starlarkMode != nil {
 			pmpt = starlarkPrompt
 		}
+		pfx := ""
+		if curPid != 0 {
+			pfx = fmt.Sprintf("pid %d ", curPid)
+		}
 		if curThread < 0 {
-			return fmt.Sprintf("dlv%s", pmpt)
+			return fmt.Sprintf("%sdlv%s", pfx, pmpt)
 		} else if curGid < 0 {
-			return fmt.Sprintf("thread %d:%d%s", curThread, curFrame, pmpt)
+			return fmt.Sprintf("%sthread %d:%d%s", pfx, curThread, curFrame, pmpt)
 		} else if curDeferredCall > 0 {
-			return fmt.Sprintf("deferred call %d:%d:%d%s", curGid, curFrame, curDeferredCall, pmpt)
+			return fmt.Sprintf("%sdeferred call %d:%d:%d%s", pfx, curGid, curFrame, curDeferredCall, pmpt)
 		} else {
-			return fmt.Sprintf("goroutine %d:%d%s", curGid, curFrame, pmpt)
+			return fmt.Sprintf("%sgoroutine %d:%d%s", pfx, curGid, curFrame, pmpt)
 		}
 	}
 }
@@ -635,6 +640,13 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 
 	delayFrame = true
 
+	curPid = state.Pid
+	if curPid != 0 {
+		tgts, _ := client.ListTargets()
+		if len(tgts) <= 1 {
+			curPid = 0
+		}
+	}
 	if state.CurrentThread != nil {
 		curThread = state.CurrentThread.ID
 	} else {
