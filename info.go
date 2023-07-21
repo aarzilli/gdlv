@@ -876,9 +876,7 @@ func updateBreakpoints(container *nucular.Window) {
 	savedStyle := *style
 
 	breakpoints := make([]*api.Breakpoint, 0, len(breakpointsPanel.breakpoints))
-	for i := range breakpointsPanel.breakpoints {
-		breakpoints = append(breakpoints, breakpointsPanel.breakpoints[i])
-	}
+	breakpoints = append(breakpoints, breakpointsPanel.breakpoints...)
 
 	for _, breakpoint := range breakpoints {
 		oldselectedId := breakpointsPanel.selected

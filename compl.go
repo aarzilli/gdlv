@@ -20,18 +20,14 @@ func completeLocationSetup() {
 	funcCompl = []string{}
 	for _, source := range sourcesPanel.slice {
 		fullpathCompl = append(fullpathCompl, source)
-		for _, seg := range strings.Split(source, "/") {
-			pathCompl = append(pathCompl, seg)
-		}
+		pathCompl = append(pathCompl, strings.Split(source, "/")...)
 	}
 
 	for _, name := range funcsPanel.slice {
 		funcCompl = append(funcCompl, name)
 		for _, seg0 := range strings.Split(name, "/") {
 			funcCompl = append(funcCompl, seg0)
-			for _, seg := range strings.Split(seg0, ".") {
-				funcCompl = append(funcCompl, seg)
-			}
+			funcCompl = append(funcCompl, strings.Split(seg0, ".")...)
 		}
 	}
 }
