@@ -521,7 +521,7 @@ func (v mapVariableAsStarlarkValue) Hash() (uint32, error) {
 }
 
 func (v mapVariableAsStarlarkValue) String() string {
-	return fmt.Sprintf("%s", fmt.Sprintf("%#v", v.v))
+	return fmt.Sprintf("%#v", v.v)
 }
 
 func (v mapVariableAsStarlarkValue) Truth() starlark.Bool {
