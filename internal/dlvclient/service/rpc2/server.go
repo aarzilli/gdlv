@@ -294,7 +294,8 @@ type FindLocationIn struct {
 }
 
 type FindLocationOut struct {
-	Locations []api.Location
+	Locations         []api.Location
+	SubstituteLocExpr string // if this isn't an empty string it should be passed as the location expression for CreateBreakpoint instead of the original location expression
 }
 
 type DisassembleIn struct {

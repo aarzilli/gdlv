@@ -90,6 +90,8 @@ type Breakpoint struct {
 	// FunctionName is the name of the function at the current breakpoint, and
 	// may not always be available.
 	FunctionName string `json:"functionName,omitempty"`
+	// ExprString is the string that will be used to set a suspended breakpoint.
+	ExprString string
 
 	// Breakpoint condition
 	Cond string
@@ -569,8 +571,9 @@ type Checkpoint struct {
 
 // Image represents a loaded shared object (go plugin or shared library)
 type Image struct {
-	Path    string
-	Address uint64
+	Path      string
+	Address   uint64
+	LoadError string
 }
 
 // Ancestor represents a goroutine ancestor

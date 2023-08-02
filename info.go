@@ -886,13 +886,20 @@ func updateBreakpoints(container *nucular.Window) {
 		disableMark := ""
 		if breakpoint.Disabled {
 			disableMark = "[disabled] "
+		} else if breakpoint.ExprString != "" {
+			disableMark = "[suspended] "
+		}
 
+		if disableMark != "" {
 			for _, p := range []*color.RGBA{&style.Text.Color, &style.Selectable.TextNormal, &style.Selectable.TextHover, &style.Selectable.TextPressed, &style.Selectable.TextPressed, &style.Selectable.TextNormalActive, &style.Selectable.TextHoverActive, &style.Selectable.TextPressedActive} {
 				darken(p)
 			}
 		}
 
 		name := breakpoint.Name
+		if name == "" {
+			name = breakpoint.ExprString
+		}
 		if name != "" {
 			name += " "
 		}
@@ -909,7 +916,7 @@ func updateBreakpoints(container *nucular.Window) {
 			w.SelectableLabel(fmt.Sprintf("%s%s%s (hit count: %d)\nat %s:%d (%#v)", disableMark, name, breakpoint.FunctionName, breakpoint.TotalHitCount, breakpoint.File, breakpoint.Line, breakpoint.Addr), "LT", &selected)
 		}
 
-		if breakpoint.Disabled {
+		if disableMark != "" {
 			*style = savedStyle
 		}
 
@@ -1341,7 +1348,7 @@ func (p *stringSlicePanel) update(container *nucular.Window) {
 
 func funcInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx int, bounds rect.Rect) {
 	if clicked {
-		locs, err := client.FindLocation(currentEvalScope(), p.slice[p.selected], true, nil)
+		locs, _, err := client.FindLocation(currentEvalScope(), p.slice[p.selected], true, nil)
 		if err == nil && len(locs) == 1 {
 			listingPanel.pinnedLoc = &locs[0]
 			go refreshState(refreshToSameFrame, clearNothing, nil)
