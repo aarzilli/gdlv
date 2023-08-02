@@ -321,6 +321,8 @@ List currently attached processes.
 
 Switches to the specified process.
 `},
+
+		{aliases: []string{"libraries"}, cmdFn: libraries, helpMsg: `List loaded dynamic libraries`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -1980,6 +1982,21 @@ func target(out io.Writer, args string) error {
 	default:
 		return fmt.Errorf("unknown command 'target %s'", argv[0])
 	}
+}
+
+func libraries(out io.Writer, args string) error {
+	libs, err := client.ListDynamicLibraries()
+	if err != nil {
+		return err
+	}
+	d := digits(len(libs))
+	for i := range libs {
+		fmt.Fprintf(out, "%"+strconv.Itoa(d)+"d. %#x %s\n", i, libs[i].Address, libs[i].Path)
+		if libs[i].LoadError != "" {
+			fmt.Fprintf(out, "    Load error: %s", libs[i].LoadError)
+		}
+	}
+	return nil
 }
 
 func formatBreakpointName(bp *api.Breakpoint, upcase bool) string {
