@@ -1245,6 +1245,11 @@ func printVar(out io.Writer, args string) error {
 	} else {
 		fmt.Fprintln(out, valstr)
 	}
+
+	if val.Kind == reflect.Chan {
+		chanGoroutines(val)
+	}
+
 	return nil
 }
 
@@ -1721,7 +1726,6 @@ func stackCommand(out io.Writer, args string) error {
 func goroutinesCommand(out io.Writer, args string) error {
 	wnd.Lock()
 	defer wnd.Unlock()
-	style := wnd.Style()
 	c := scrollbackEditor.Append(true)
 	defer c.End()
 
@@ -1734,6 +1738,13 @@ func goroutinesCommand(out io.Writer, args string) error {
 		return err
 	}
 
+	printGoroutines(c, gs)
+
+	return nil
+}
+
+func printGoroutines(c *richtext.Ctor, gs []*api.Goroutine) {
+	style := wnd.Style()
 	for _, g := range gs {
 		if g.ID == curGid {
 			c.Text("* ")
@@ -1754,7 +1765,16 @@ func goroutinesCommand(out io.Writer, args string) error {
 			locType = "Start"
 		}
 		loc := goroutineGetDisplayLiocation(g)
-		c.Text(fmt.Sprintf("Goroutine %d - %s: ", g.ID, locType))
+		gid := g.ID
+		writeLink(c, style, fmt.Sprintf("Goroutine %d", g.ID), func() {
+			state, err := client.SwitchGoroutine(gid)
+			if err != nil {
+				fmt.Fprintf(&editorWriter{true}, "Could not switch goroutine: %v\n", err)
+			} else {
+				go refreshState(refreshToUserFrame, clearGoroutineSwitch, state)
+			}
+		})
+		c.Text(fmt.Sprintf(" - %s: ", locType))
 		writeLinkToLocation(c, style, loc.File, loc.Line, loc.PC)
 		c.Text(fmt.Sprintf(" %s (%#x)", loc.Function.Name(), loc.PC))
 
@@ -1768,8 +1788,6 @@ func goroutinesCommand(out io.Writer, args string) error {
 
 		c.Text("\n")
 	}
-
-	return nil
 }
 
 func goroutineFormatWaitReason(g *api.Goroutine) string {
@@ -2179,13 +2197,17 @@ func writeGoroutineLong(w io.Writer, g *api.Goroutine, prefix string) {
 		prefix, formatLocation(g.GoStatementLoc))
 }
 
-func writeLinkToLocation(c *richtext.Ctor, style *style.Style, file string, line int, pc uint64) {
+func writeLink(c *richtext.Ctor, style *style.Style, text string, fn func()) {
 	c.SetStyle(richtext.TextStyle{Face: style.Font, Color: linkColor, Flags: richtext.Underline})
-	c.Link(fmt.Sprintf("%s:%d", ShortenFilePath(file), line), linkHoverColor, func() {
+	c.Link(text, linkHoverColor, fn)
+	c.SetStyle(richtext.TextStyle{Face: style.Font})
+}
+
+func writeLinkToLocation(c *richtext.Ctor, style *style.Style, file string, line int, pc uint64) {
+	writeLink(c, style, fmt.Sprintf("%s:%d", ShortenFilePath(file), line), func() {
 		listingPanel.pinnedLoc = &api.Location{File: file, Line: line, PC: pc}
 		go refreshState(refreshToSameFrame, clearNothing, nil)
 	})
-	c.SetStyle(richtext.TextStyle{Face: style.Font})
 }
 
 func printStack(c *richtext.Ctor, stack []api.Stackframe, ind string) {
@@ -2391,4 +2413,22 @@ func getVariableLoadConfig() api.LoadConfig {
 		cfg.MaxStringLen = conf.MaxStringLen
 	}
 	return cfg
+}
+
+func chanGoroutines(v *Variable) {
+	scope := currentEvalScope()
+	gs, _, _, _, err := client.ListGoroutinesWithFilter(0, 100, []api.ListGoroutinesFilter{{Kind: api.GoroutineWaitingOnChannel, Arg: fmt.Sprintf("*(*%q)(%#x)", v.Type, v.Addr)}}, nil, &scope)
+	if err != nil {
+		fmt.Fprintf(&editorWriter{true}, "error getting list of goroutines for channel: %v", err)
+		return
+	}
+	c := scrollbackEditor.Append(true)
+	defer c.End()
+
+	if v.Expression != "" && len(v.Expression) < 30 {
+		c.Text(fmt.Sprintf("Goroutines waiting on channel %s:\n", v.Expression))
+	} else {
+		c.Text("Goroutines waiting on channel:\n")
+	}
+	printGoroutines(c, gs)
 }

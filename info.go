@@ -267,7 +267,7 @@ func loadGoroutines(p *asyncLoad) {
 		goroutinesPanel.rules = append(goroutinesPanel.rules, newGoroutineFilterRule())
 	}
 
-	gs, groups, _, tooManyGroups, err := client.ListGoroutinesWithFilter(0, lim, filters, groupby)
+	gs, groups, _, tooManyGroups, err := client.ListGoroutinesWithFilter(0, lim, filters, groupby, nil)
 	if err != nil {
 		p.done(err)
 		return

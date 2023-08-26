@@ -580,6 +580,12 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 	}
 
+	if v.Kind == reflect.Chan {
+		if w.MenuItem(label.TA("Channel goroutines", "LC")) {
+			go chanGoroutines(v)
+		}
+	}
+
 	if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
 		clipboard.Set(string(clipb))
 	}

@@ -264,6 +264,8 @@ type ListGoroutinesIn struct {
 
 	Filters []api.ListGoroutinesFilter
 	api.GoroutineGroupingOptions
+
+	EvalScope *api.EvalScope
 }
 
 type ListGoroutinesOut struct {
