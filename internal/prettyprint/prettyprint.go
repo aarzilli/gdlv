@@ -438,13 +438,13 @@ func (sfmt *SimpleFormat) Apply(v *api.Variable) string {
 		if sfmt.IntFormat == "" {
 			return v.Value
 		}
-		n, _ := strconv.ParseInt(v.Value, 10, 64)
+		n, _ := strconv.ParseInt(extractIntValue(v.Value), 10, 64)
 		return fmt.Sprintf(sfmt.IntFormat, n)
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uintptr:
 		if sfmt.IntFormat == "" {
 			return v.Value
 		}
-		n, _ := strconv.ParseUint(v.Value, 10, 64)
+		n, _ := strconv.ParseUint(extractIntValue(v.Value), 10, 64)
 		return fmt.Sprintf(sfmt.IntFormat, n)
 	case reflect.Float32, reflect.Float64:
 		if sfmt.FloatFormat == "" {
@@ -496,6 +496,17 @@ func (sfmt *SimpleFormat) Apply(v *api.Variable) string {
 	default:
 		return v.Value
 	}
+}
+
+func extractIntValue(s string) string {
+	if s == "" || s[len(s)-1] != ')' {
+		return s
+	}
+	open := strings.LastIndex(s, "(")
+	if open < 0 {
+		return s
+	}
+	return s[open+1 : len(s)-1]
 }
 
 func Hexdigits(n uint64) int {
