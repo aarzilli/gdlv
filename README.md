@@ -38,6 +38,11 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2023-09-24 / Version 1.11
+* Better display of suspended breakpoints
+* Add libraries command
+* When printing a channel also print a list of goroutines waiting on it
+
 ## 2023-06-13 / Version 1.10
 * Better display of long string variables in the variables window
 * Added formatting directives to `print` command and variables window (see `help print`)
@@ -51,7 +56,6 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 ## 2022-05-13 / Version 1.8
 * Extended type shortening rules to support simple generic types
 * Miscellaneous bug fixes
-
 
 ## 2021-09-23 / Version 1.7
 * Add watchpoint support
