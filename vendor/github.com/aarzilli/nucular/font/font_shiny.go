@@ -1,5 +1,3 @@
-// +build !darwin,!nucular_gio nucular_shiny
-
 package font
 
 import (
@@ -13,7 +11,7 @@ import (
 )
 
 type Face struct {
-	face font.Face
+	Face font.Face
 }
 
 var fontsMu sync.Mutex
@@ -38,5 +36,5 @@ func NewFace(ttf []byte, size int) (Face, error) {
 }
 
 func (face Face) Metrics() font.Metrics {
-	return face.face.Metrics()
+	return face.Face.Metrics()
 }

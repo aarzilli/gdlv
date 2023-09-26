@@ -12,15 +12,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aarzilli/nucular/font"
-
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/clipboard"
-	ncommand "github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
-	nstyle "github.com/aarzilli/nucular/style"
-	"golang.org/x/mobile/event/mouse"
+	"github.com/aarzilli/nucular/richtext"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/gdlv/internal/prettyprint"
@@ -48,13 +44,15 @@ type Variable struct {
 	Width   int
 	Value   string
 	loading bool
-	Varname string
+	Varname string // unique name for the variable
 
 	ShortType   string
 	DisplayName string
 	Expression  string
 
-	changed bool
+	changed        bool // value of the underlying variable changed from previous stop
+	reformatted    bool // formatting of variable value changed from last frame
+	requestedLines int  // number of lines needed to display the value of the variable
 
 	Children []*Variable
 
@@ -266,19 +264,16 @@ var localsPanel = struct {
 	locals       []*Variable
 
 	expressions []Expr
-	selected    int
-	ed          nucular.TextEditor
 	v           []*Variable
 }{
 	filterEditor: nucular.TextEditor{Filter: spacefilter},
-	selected:     -1,
-	ed:           nucular.TextEditor{Flags: nucular.EditSelectable | nucular.EditSigEnter | nucular.EditClipboard},
 }
 
 type Expr struct {
 	Expr                         string
 	maxArrayValues, maxStringLen int
 	traced                       bool
+	exprSel                      richtext.Sel
 }
 
 func loadGlobals(p *asyncLoad) {
@@ -419,15 +414,11 @@ func updateLocals(container *nucular.Window) {
 	if len(localsPanel.expressions) > 0 {
 		if w.TreePush(nucular.TreeTab, "Expression", true) {
 			for i := 0; i < len(localsPanel.expressions); i++ {
-				if i == localsPanel.selected {
-					exprsEditor(w)
+				if localsPanel.v[i] == nil {
+					w.Row(varRowHeight).Dynamic(1)
+					w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i].Expr), "LC")
 				} else {
-					if localsPanel.v[i] == nil {
-						w.Row(varRowHeight).Dynamic(1)
-						w.Label(fmt.Sprintf("loading %s", localsPanel.expressions[i].Expr), "LC")
-					} else {
-						showVariable(w, 0, newShowVariableFlags(localsPanel.showAddr, localsPanel.fullTypes), i, localsPanel.v[i])
-					}
+					showVariable(w, 0, newShowVariableFlags(localsPanel.showAddr, localsPanel.fullTypes), i, localsPanel.v[i])
 				}
 			}
 			w.TreePop()
@@ -472,25 +463,8 @@ func loadOneExpr(i int) {
 
 	localsPanel.v[i].Name = localsPanel.expressions[i].Expr
 	localsPanel.v[i].DisplayName = localsPanel.expressions[i].Expr
-}
-
-func exprsEditor(w *nucular.Window) {
-	w.Row(varEditorHeight).Dynamic(1)
-	active := localsPanel.ed.Edit(w)
-	if active&nucular.EditCommitted == 0 {
-		return
-	}
-	if localsPanel.selected < 0 {
-		return
-	}
-
-	localsPanel.expressions[localsPanel.selected].Expr = string(localsPanel.ed.Buffer)
-	go func(i int) {
-		additionalLoadMu.Lock()
-		defer additionalLoadMu.Unlock()
-		loadOneExpr(i)
-	}(localsPanel.selected)
-	localsPanel.selected = -1
+	localsPanel.v[i].Varname += fmt.Sprintf(" expr%d", i)
+	localsPanel.v[i].reformatted = true
 }
 
 func addExpression(newexpr string) {
@@ -506,37 +480,24 @@ func addExpression(newexpr string) {
 	}(i)
 }
 
-func editExpression(exprMenuIdx int) {
-	localsPanel.selected = exprMenuIdx
-	localsPanel.ed.Buffer = []rune(localsPanel.expressions[localsPanel.selected].Expr)
-	localsPanel.ed.Cursor = len(localsPanel.ed.Buffer)
-	localsPanel.ed.SelectStart = localsPanel.ed.Cursor
-	localsPanel.ed.SelectEnd = localsPanel.ed.Cursor
-	localsPanel.ed.CursorFollow = true
-	localsPanel.ed.Active = true
-	commandLineEditor.Active = false
-}
-
-func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb []byte) {
+func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, ed *richtext.RichText) {
 	if client.Running() {
 		return
-	}
-	if parentw.LastWidgetBounds.W > 0 && parentw.LastWidgetBounds.H > 0 {
-		if parentw.Input().Mouse.Clicked(mouse.ButtonMiddle, parentw.LastWidgetBounds) {
-			editExpression(exprMenuIdx)
-			return
-		}
 	}
 	w := parentw.ContextualOpen(0, image.Point{}, parentw.LastWidgetBounds, nil)
 	if w == nil {
 		return
 	}
 	w.Row(20).Dynamic(1)
+
+	if ed.Sel.S != ed.Sel.E {
+		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
+			clipboard.Set(ed.Get(ed.Sel))
+		}
+	}
+
 	isExpression := exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions)
 	if isExpression {
-		if w.MenuItem(label.TA("Edit expression", "LC")) {
-			editExpression(exprMenuIdx)
-		}
 		if w.MenuItem(label.TA("Remove expression", "LC")) {
 			removeExpression(exprMenuIdx)
 			return
@@ -587,10 +548,6 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 	}
 
-	if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
-		clipboard.Set(string(clipb))
-	}
-
 	if w.MenuItem(label.TA("Go doc", "LC")) {
 		go goDocCommand(v.Type)
 	}
@@ -618,6 +575,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 	}
 
 	setVarFormat := func(f *prettyprint.SimpleFormat) {
+		v.reformatted = true
 		if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
 			expr := ParseScopedExpr(localsPanel.expressions[exprMenuIdx].Expr)
 			expr.Fmt = *f
@@ -647,6 +605,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		if mode != v.sfmt.IntFormat {
 			setVarFormat(v.sfmt)
 			v.Value = v.sfmt.Apply(v.Variable)
+			v.reformatted = true
 			v.Width = 0
 		}
 
@@ -694,64 +653,99 @@ func removeExpression(exprMenuIdx int) {
 }
 
 func variableHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v *Variable) bool {
-	fullTypes := flags.fullTypes()
-	style := w.Master().Style()
-
-	w.LayoutSetWidthScaled(w.LayoutAvailableWidth())
 	initialOpen := false
 	if flags.parentIsPtr() || flags.alwaysExpand() {
 		initialOpen = true
 	}
-	lblrect, out, isopen := w.TreePushCustom(nucular.TreeNode, v.Varname, initialOpen)
-	if out == nil {
-		return isopen
+
+	style := w.Master().Style()
+
+	w.LayoutSetWidthScaled(variableNoHeaderSpacing(w, 0) - style.NormalWindow.Spacing.X)
+	isopen, start := w.TreePushNothing(nucular.TreeNode, v.Varname, initialOpen)
+
+	w.LayoutSetWidthScaled(w.LayoutAvailableWidth() - 2*nucular.FontHeight(style.Font) - style.NormalWindow.Spacing.X)
+
+	if isopen {
+		flags |= showVariableOpen
 	}
+
+	ed, changed := richTextLookup(v.Variable, false, flags)
+	if exprMenu >= 0 {
+		ed.Flags |= richtext.ShowTick | richtext.Editable
+	}
+	if c := ed.Widget(w, changed || v.reformatted); c != nil {
+		v.reformatted = false
+		fullTypes := flags.fullTypes()
+		if flags.withAddr() {
+			c.Text(fmt.Sprintf("%#010x ", v.Addr))
+		}
+		c.SetStyle(richtext.TextStyle{Face: boldFace})
+		c.Text(v.DisplayName)
+		if exprMenu >= 0 {
+			exprSel := c.LastChunkSel()
+			localsPanel.expressions[exprMenu].exprSel = exprSel
+			ed.Replace = func(sel richtext.Sel, str string) bool {
+				return exprEditReplace(exprMenu, exprSel, sel, str)
+			}
+		}
+		c.SetStyle(richtext.TextStyle{})
+		c.Text(" ")
+
+		if isopen {
+			switch v.Kind {
+			case reflect.Slice:
+				c.Text(getDisplayType(v, fullTypes))
+				c.Text(" ")
+				c.Text(fmt.Sprintf("(len: %d cap: %d)", v.Len, v.Cap))
+			case reflect.Interface:
+				if len(v.Children) > 0 && v.Children[0] != nil {
+					c.Text(fmt.Sprintf("%s (%v)", getDisplayType(v, fullTypes), getDisplayType(v.Children[0], fullTypes)))
+				} else {
+					c.Text(v.Type)
+				}
+			default:
+				c.Text(getDisplayType(v, fullTypes))
+			}
+
+		} else {
+			c.Text(getDisplayType(v, fullTypes))
+			c.Text(" = ")
+			if v.Value != "" && v.Kind != reflect.Ptr {
+				c.Text(v.Value)
+			} else {
+				c.Text(v.SinglelineString(false, fullTypes))
+			}
+
+		}
+		c.End()
+	}
+
+	if ed.Events&richtext.Clicked != 0 {
+		toggle := true
+		if exprMenu >= 0 {
+			sel := localsPanel.expressions[exprMenu].exprSel
+			if ed.Sel.S >= sel.S && ed.Sel.S <= sel.E {
+				toggle = false
+			}
+		}
+		if toggle {
+			if isopen {
+				w.TreeClose(v.Varname)
+			} else {
+				w.TreeOpen(v.Varname)
+			}
+		}
+	}
+
+	lblrect := w.LastWidgetBounds
 	lblrect.W = w.Bounds.W
 	if v.changed {
-		out.FillRect(lblrect, 0, changedVariableColor())
+		w.Commands().FillRect(lblrect, 0, changedVariableColor())
 	}
 
-	clipb := []byte{}
+	showExprMenu(w, exprMenu, v, ed)
 
-	print := func(str string, font font.Face) {
-		clipb = append(clipb, []byte(str)...)
-		clipb = append(clipb, ' ')
-		out.DrawText(lblrect, str, font, style.Tab.Text)
-		width := nucular.FontWidth(font, str) + spaceWidth
-		lblrect.X += width
-		lblrect.W -= width
-	}
-
-	if flags.withAddr() {
-		print(fmt.Sprintf("%#x", v.Addr), style.Font)
-	}
-	if isopen {
-		print(v.DisplayName, boldFace)
-
-		switch v.Kind {
-		case reflect.Slice:
-			print(getDisplayType(v, fullTypes), style.Font)
-			print(fmt.Sprintf("(len: %d cap: %d)", v.Len, v.Cap), style.Font)
-		case reflect.Interface:
-			if len(v.Children) > 0 && v.Children[0] != nil {
-				print(fmt.Sprintf("%s (%v)", getDisplayType(v, fullTypes), getDisplayType(v.Children[0], fullTypes)), style.Font)
-			} else {
-				print(v.Type, style.Font)
-			}
-		default:
-			print(getDisplayType(v, fullTypes), style.Font)
-		}
-	} else {
-		print(v.DisplayName, boldFace)
-		print(getDisplayType(v, fullTypes), style.Font)
-		if v.Value != "" && v.Kind != reflect.Ptr {
-			print("= "+v.Value, style.Font)
-		} else {
-			print("= "+v.SinglelineString(false, fullTypes), style.Font)
-		}
-	}
-	showExprMenu(w, exprMenu, v, clipb)
-	return isopen
+	return start()
 }
 
 func variableNoHeaderSpacing(w *nucular.Window, n int) int {
@@ -763,96 +757,64 @@ func variableNoHeaderSpacing(w *nucular.Window, n int) int {
 }
 
 func variableNoHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v *Variable, value string, wrap bool) {
-	fullTypes := flags.fullTypes()
 	style := w.Master().Style()
-	var lblrect rect.Rect
-	var out *ncommand.Buffer
-	start := func() {
-		w.LayoutSetWidthScaled(variableNoHeaderSpacing(w, 0))
-		w.Spacing(1)
-		w.LayoutSetWidthScaled(w.LayoutAvailableWidth())
-		lblrect, out = w.Custom(nstyle.WidgetStateActive)
-	}
 
-	changed := func() {
-		if v.changed && out != nil {
-			out.FillRect(lblrect, 0, changedVariableColor())
+	w.LayoutSetWidthScaled(variableNoHeaderSpacing(w, 0) - style.NormalWindow.Spacing.X)
+	w.Spacing(1)
+
+	w.LayoutSetWidthScaled(w.LayoutAvailableWidth() - 2*nucular.FontHeight(style.Font) - style.NormalWindow.Spacing.X)
+
+	ed, changed := richTextLookup(v.Variable, wrap, flags)
+	if exprMenu >= 0 {
+		ed.Flags |= richtext.ShowTick | richtext.Editable
+	}
+	if c := ed.Widget(w, changed || v.reformatted); c != nil {
+		v.reformatted = false
+		if flags.withAddr() {
+			c.Text(fmt.Sprintf("%#010x ", v.Addr))
 		}
-	}
-
-	start()
-	if out == nil {
-		return
-	}
-	changed()
-
-	lblrect.Y += style.Text.Padding.Y
-
-	clipb := []byte{}
-
-	print := func(str string, font font.Face) {
-		clipb = append(clipb, []byte(str)...)
-		clipb = append(clipb, ' ')
-		if out != nil {
-			out.DrawText(lblrect, str, font, style.Text.Color)
-		}
-		width := nucular.FontWidth(font, str) + spaceWidth
-		lblrect.X += width
-		lblrect.W -= width
-	}
-
-	if flags.withAddr() {
-		print(fmt.Sprintf("%#x", v.Addr), style.Font)
-	}
-	print(v.DisplayName, boldFace)
-	print(getDisplayType(v, fullTypes), style.Font)
-	print("= ", style.Font)
-
-	valuex := lblrect.X
-	valuew := lblrect.W
-
-	clipb = append(clipb, []byte(value)...)
-	clipb = append(clipb, ' ')
-
-	textClamp := func(text []rune, space int) []rune {
-		if !wrap || nucular.FontWidth(style.Font, string(text)) < space {
-			return text
-		}
-		text_width := 0
-		for i, ch := range text {
-			xw := nucular.FontWidth(style.Font, string(ch))
-			if text_width+xw >= space {
-				if i == 0 {
-					i = 1
-				}
-				return text[:i]
+		c.SetStyle(richtext.TextStyle{Face: boldFace})
+		c.Text(v.DisplayName)
+		if exprMenu >= 0 {
+			exprSel := c.LastChunkSel()
+			ed.Replace = func(sel richtext.Sel, str string) bool {
+				return exprEditReplace(exprMenu, exprSel, sel, str)
 			}
-			text_width += xw
 		}
-		return text
+		c.SetStyle(richtext.TextStyle{})
+		c.Text(" ")
+		c.Text(getDisplayType(v, flags.fullTypes()))
+		c.Text(" = ")
+		if wrap {
+			c.SetStyle(richtext.TextStyle{LeftMarginHere: true})
+		}
+		c.Text(value)
+		c.End()
 	}
 
-	valstr := []rune(value)
-	first := true
-	for len(valstr) > 0 {
-		if !first {
-			showExprMenu(w, exprMenu, v, clipb)
-			w.Row(varRowHeight).Static()
-			start()
-			if out == nil {
-				return
-			}
-			changed()
-			lblrect.X = valuex
-			lblrect.W = valuew
+	if wrap {
+		if v.requestedLines == 0 {
+			v.requestedLines = 1
 		}
-		cur := textClamp(valstr, lblrect.W)
-		valstr = valstr[len(cur):]
-		out.DrawText(lblrect, string(cur), style.Font, style.Text.Color)
-		first = false
+		nrl := ed.Len()
+		if nrl == 0 {
+			nrl = 1
+		}
+		if nrl > 5 {
+			nrl = 5
+		}
+		if nrl != v.requestedLines {
+			v.requestedLines = nrl
+			w.Master().Changed()
+		}
 	}
 
-	showExprMenu(w, exprMenu, v, clipb)
+	lblrect := w.LastWidgetBounds
+	lblrect.W = w.Bounds.W
+	if v.changed {
+		w.Commands().FillRect(lblrect, 0, changedVariableColor())
+	}
+	showExprMenu(w, exprMenu, v, ed)
 }
 
 func getDisplayType(v *Variable, fullTypes bool) string {
@@ -877,6 +839,7 @@ const (
 	showVariableWithAddr
 	showVariableParentIsPtr
 	showVariableAlwaysExpand
+	showVariableOpen
 )
 
 func newShowVariableFlags(showAddr, fullTypes bool) (r showVariableFlags) {
@@ -928,7 +891,13 @@ func showVariable(w *nucular.Window, depth int, flags showVariableFlags, exprMen
 		w.Label(s, "LC")
 	}
 
-	w.Row(varRowHeight).Static()
+	if v.requestedLines > 1 {
+		style := w.Master().Style()
+		h := nucular.FontHeight(style.Font)
+		w.RowScaled(int(float64(varRowHeight)*style.Scaling) + h*(v.requestedLines-1) + style.GroupWindow.Spacing.Y*(v.requestedLines-1)).Static()
+	} else {
+		w.Row(varRowHeight).Static()
+	}
 	if v.Unreadable != "" {
 		cblblfmt("(unreadable %s)", v.Unreadable)
 		return
@@ -1284,4 +1253,65 @@ func hexdumpWindow(w *nucular.Window, v *Variable) {
 		v.ed.Buffer = []rune(v.Value)
 	}
 	v.ed.Edit(w)
+}
+
+var perFrameRichTextGroup = &richtext.SelectionGroup{}
+var perFrameRichTextMap = map[*api.Variable]*perFrameRichText{}
+
+type perFrameRichText struct {
+	used  bool
+	ed    *richtext.RichText
+	flags showVariableFlags
+}
+
+func richTextLookup(v *api.Variable, wrap bool, flags showVariableFlags) (*richtext.RichText, bool) {
+	pfrt := perFrameRichTextMap[v]
+	if pfrt == nil {
+		rtflags := richtext.Selectable | richtext.MimicLabel
+		if wrap {
+			rtflags |= richtext.AutoWrap
+		}
+		pfrt = &perFrameRichText{used: true, ed: richtext.New(rtflags), flags: flags}
+		pfrt.ed.Group = perFrameRichTextGroup
+		perFrameRichTextMap[v] = pfrt
+	}
+	changed := pfrt.flags != flags
+	pfrt.flags = flags
+	pfrt.used = true
+	return pfrt.ed, changed
+}
+
+func richTextCleanup() {
+	for k, pfrt := range perFrameRichTextMap {
+		if !pfrt.used {
+			delete(perFrameRichTextMap, k)
+		}
+	}
+	for _, pfrt := range perFrameRichTextMap {
+		pfrt.used = false
+	}
+}
+
+func exprEditReplace(exprMenuIdx int, exprSel, sel richtext.Sel, str string) bool {
+	if exprMenuIdx >= len(localsPanel.expressions) {
+		return false
+	}
+	for i := range str {
+		if str[i] == '\n' {
+			return false
+		}
+	}
+	sel.S -= exprSel.S
+	sel.E -= exprSel.S
+	expr := localsPanel.expressions[exprMenuIdx].Expr
+	if sel.S < 0 || sel.S > int32(len(expr)) || sel.E < 0 || sel.E > int32(len(expr)) {
+		return false
+	}
+
+	expr = expr[:sel.S] + str + expr[sel.E:]
+	localsPanel.expressions[exprMenuIdx].Expr = expr
+	pfrt := perFrameRichTextMap[localsPanel.v[exprMenuIdx].Variable]
+	loadOneExpr(exprMenuIdx)
+	perFrameRichTextMap[localsPanel.v[exprMenuIdx].Variable] = pfrt
+	return true
 }

@@ -8,18 +8,16 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/draw"
 	"io"
 	"math"
 	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
-	"unsafe"
 
 	"gioui.org/app"
 	"gioui.org/f32"
-	"gioui.org/font/opentype"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/profile"
@@ -36,7 +34,6 @@ import (
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 
-	ifont "golang.org/x/image/font"
 	"golang.org/x/image/math/fixed"
 	mkey "golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
@@ -56,6 +53,8 @@ type masterWindow struct {
 	textbuffer bytes.Buffer
 
 	closed bool
+
+	charAtlas map[charAtlasKey]map[rune]renderedGlyph
 }
 
 var clipboardStarted bool = false
@@ -365,7 +364,7 @@ func (mw *masterWindow) updateLocked(perfString string) {
 	if perfUpdate || mw.Perf {
 		t1 = time.Now()
 	}
-	nprimitives := mw.draw()
+	nprimitives := mw.draw(perfString)
 	if perfUpdate && nprimitives > 0 {
 		te = time.Now()
 
@@ -377,12 +376,16 @@ func (mw *masterWindow) updateLocked(perfString string) {
 		te = time.Now()
 		fps := 1.0 / te.Sub(t0).Seconds()
 
-		s := fmt.Sprintf("%0.4fms + %0.4fms (%0.2f)\n%s", t1.Sub(t0).Seconds()*1000, te.Sub(t1).Seconds()*1000, fps, perfString)
+		s0 := fmt.Sprintf("%0.4fms + %0.4fms (%0.2f) [ca]", t1.Sub(t0).Seconds()*1000, te.Sub(t1).Seconds()*1000, fps)
 
 		font := mw.Style().Font
-		txt := fontFace2fontFace(&font).layout(s, -1)
 
-		bounds := image.Point{X: maxLinesWidth(txt), Y: (txt[0].Ascent + txt[0].Descent).Ceil() * 2}
+		w := FontWidth(font, s0)
+		if w2 := FontWidth(font, perfString); w2 > w {
+			w = w2
+		}
+
+		bounds := image.Point{X: w, Y: (mw.ctx.Style.Font.Metrics().Ascent + mw.ctx.Style.Font.Metrics().Descent).Ceil() * 2}
 
 		pos := mw.size
 		pos.Y -= bounds.Y
@@ -392,21 +395,21 @@ func (mw *masterWindow) updateLocked(perfString string) {
 
 		paint.FillShape(&mw.ops, color.NRGBA{0xff, 0xff, 0xff, 0xff}, gioclip.UniformRRect(paintRect, 0).Op(&mw.ops))
 
-		drawText(&mw.ops, txt, font, color.RGBA{0x00, 0x00, 0x00, 0xff}, pos, bounds, paintRect)
+		drawText(&mw.ops, mw.charAtlas, font, color.RGBA{0x00, 0x00, 0x00, 0xff}, rect.FromRectangle(paintRect), s0+"\n"+perfString)
 	}
 }
 
-func (w *masterWindow) draw() int {
+func (w *masterWindow) draw(perfString string) int {
 	if !w.drawChanged() {
 		return 0
 	}
 
 	w.prevCmds = append(w.prevCmds[:0], w.ctx.cmds...)
 
-	return w.ctx.Draw(&w.ops, w.size, w.Perf)
+	return w.ctx.Draw(&w.ops, w.size, w.Perf, perfString)
 }
 
-func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
+func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool, perfString string) int {
 	ops.Reset()
 
 	if perf {
@@ -423,6 +426,12 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 	var scissorStack gioclip.Stack
 	scissorless := true
 
+	ctx.cmds = append(ctx.cmds, command.Command{Kind: command.TextCmd, Text: command.Text{String: perfString + "( )0123456789+.ms", Face: ctx.mw.Style().Font, Foreground: color.RGBA{0x00, 0x00, 0x00, 0xff}}})
+	charAtlas := ctx.mw.(*masterWindow).charAtlas
+	updateCharAtlas(ctx.cmds, &charAtlas)
+	ctx.mw.(*masterWindow).charAtlas = charAtlas
+	ctx.cmds = ctx.cmds[:len(ctx.cmds)-1]
+
 	for i := range ctx.cmds {
 		icmd := &ctx.cmds[i]
 		switch icmd.Kind {
@@ -430,7 +439,6 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 			if !scissorless {
 				scissorStack.Pop()
 			}
-			//scissorStack = op.Save(ops)
 			scissorStack = gioclip.Rect(icmd.Rect.Rectangle()).Push(ops)
 			scissorless = false
 
@@ -569,20 +577,9 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 			stack1.Pop()
 
 		case command.TextCmd:
-			txt := fontFace2fontFace(&icmd.Text.Face).layout(icmd.Text.String, -1)
-			if len(txt) <= 0 {
-				continue
-			}
-
-			bounds := image.Point{X: maxLinesWidth(txt), Y: (txt[0].Ascent + txt[0].Descent).Ceil()}
-			if bounds.X > icmd.W {
-				bounds.X = icmd.W
-			}
-			if bounds.Y > icmd.H {
-				bounds.Y = icmd.H
-			}
-
-			drawText(ops, txt, icmd.Text.Face, icmd.Text.Foreground, image.Point{icmd.X, icmd.Y}, bounds, n2iRect(icmd.Rect))
+			stack := gioclip.Rect(icmd.Rect.Rectangle()).Push(ops)
+			drawText(ops, charAtlas, icmd.Text.Face, icmd.Text.Foreground, icmd.Rect, icmd.Text.String)
+			stack.Pop()
 
 		default:
 			panic(UnknownCommandErr)
@@ -590,6 +587,42 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool) int {
 	}
 
 	return len(ctx.cmds)
+}
+
+func drawText(ops *op.Ops, charAtlas map[charAtlasKey]map[rune]renderedGlyph, fontFace font.Face, foreground color.RGBA, rect rect.Rect, str string) {
+	m := charAtlas[charAtlasKey{fontFace, foreground}]
+	if m == nil {
+		// this should never happen
+		m = make(map[rune]renderedGlyph)
+	}
+	face := fontFace.Face
+	dot := image.Point{rect.X, rect.Y}
+	prevC := rune(-1)
+	for _, ch := range str {
+		if ch == '\n' {
+			prevC = rune(-1)
+			dot.X = rect.X
+			dot.Y += FontHeight(fontFace)
+			continue
+		}
+		if prevC >= 0 {
+			dot.X += face.Kern(prevC, ch).Floor()
+		}
+		rg := m[ch]
+		if rg.img != nil && len(rg.img.Pix) > 0 {
+			if rg.op == nil {
+				imgop := paint.NewImageOp(rg.img)
+				rg.op = &imgop
+				m[ch] = rg
+			}
+			stack := op.Offset(image.Point{dot.X + rg.x, dot.Y + rg.y}).Push(ops)
+			rg.op.Add(ops)
+			paint.PaintOp{}.Add(ops)
+			stack.Pop()
+		}
+		dot.X += rg.advance.Floor()
+		prevC = ch
+	}
 }
 
 func n2iRect(r rect.Rect) image.Rectangle {
@@ -733,118 +766,6 @@ func maxLinesWidth(txt []text.Glyph) int {
 	return w
 }
 
-func drawText(ops *op.Ops, txt []text.Glyph, face font.Face, fgcolor color.RGBA, pos, bounds image.Point, paintRect image.Rectangle) {
-	clip := textPadding(txt)
-	clip.Max = clip.Max.Add(bounds)
-
-	paint.ColorOp{toNRGBA(fgcolor)}.Add(ops)
-
-	fc := fontFace2fontFace(&face)
-
-	it := linesIterator{txt: txt}
-	i := 0
-	stack3 := gioclip.UniformRRect(paintRect, 0).Push(ops)
-	for it.Next() {
-		txtline := it.Line()
-		txtstr := clipLine(txtline.Glyphs, clip)
-
-		stack1 := op.Offset(image.Point{pos.X, pos.Y + txtline.Ascent.Ceil() + i*FontHeight(face)}).Push(ops)
-		stack2 := fc.shape(txtstr).Push(ops)
-		paint.PaintOp{}.Add(ops)
-		stack2.Pop()
-		stack1.Pop()
-		i++
-	}
-	stack3.Pop()
-}
-
-type fontFace struct {
-	fnt     opentype.Face
-	shaper  *text.Shaper
-	fsize   fixed.Int26_6
-	metrics ifont.Metrics
-}
-
-func fontFace2fontFace(f *font.Face) *fontFace {
-	return (*fontFace)(unsafe.Pointer(f))
-}
-
-func (face *fontFace) layout(str string, width int) []text.Glyph {
-	if width < 0 {
-		width = 1e6
-	}
-	face.shaper.LayoutString(text.Parameters{
-		Font:     text.Font{},
-		PxPerEm:  face.fsize,
-		MinWidth: 0,
-		MaxWidth: width,
-		Locale:   system.Locale{}}, str)
-	gs := []text.Glyph{}
-	x := fixed.I(0)
-	y := int32(0)
-	for {
-		g, ok := face.shaper.NextGlyph()
-		if !ok {
-			break
-		}
-		if g.Y != y {
-			x = g.X
-			y = g.Y
-		} else {
-			g.X = x
-		}
-		g.Advance = fixed.I(g.Advance.Ceil())
-		x += g.Advance
-		gs = append(gs, g)
-	}
-	return gs
-}
-
-func (face *fontFace) shape(txtstr []text.Glyph) gioclip.Op {
-	return gioclip.Outline{face.shaper.Shape(txtstr)}.Op()
-}
-
-func ChangeFontWidthCache(size int) {
-}
-
-func FontWidth(f font.Face, str string) int {
-	if strings.Index(str, "\n") >= 0 {
-		maxwidth := 0
-		for str != "" {
-			rest := ""
-			if nl := strings.Index(str, "\n"); nl >= 0 {
-				cur := str[:nl]
-				rest = str[nl+1:]
-				str = cur
-			}
-			w := FontWidth(f, str)
-			if w > maxwidth {
-				maxwidth = w
-			}
-			str = rest
-		}
-		return maxwidth
-	}
-	text := fontFace2fontFace(&f).layout(str, -1)
-	if len(text) == 0 {
-		return 0
-	}
-	return (text[len(text)-1].Advance + text[len(text)-1].X - text[0].X).Ceil()
-}
-
-func glyphAdvance(f font.Face, ch rune) int {
-	txt := fontFace2fontFace(&f).layout(string(ch), 1e6)
-	return txt[0].Advance.Ceil()
-}
-
-func measureRunes(f font.Face, runes []rune) int {
-	text := fontFace2fontFace(&f).layout(string(runes), 1e6)
-	if len(text) == 0 {
-		return 0
-	}
-	return (text[len(text)-1].Advance + text[len(text)-1].X - text[0].X).Ceil()
-}
-
 ///////////////////////////////////////////////////////////////////////////////////
 // TEXT WIDGETS
 ///////////////////////////////////////////////////////////////////////////////////
@@ -903,36 +824,6 @@ func widgetText(o *command.Buffer, b rect.Rect, str string, t *textWidget, a lab
 	o.DrawText(lblrect, str, f, t.Text)
 }
 
-func widgetTextWrap(o *command.Buffer, b rect.Rect, str []rune, t *textWidget, f font.Face) {
-	var text textWidget
-
-	text.Padding = image.Point{0, 0}
-	text.Background = t.Background
-	text.Text = t.Text
-
-	b.W = max(b.W, 2*t.Padding.X)
-	b.H = max(b.H, 2*t.Padding.Y)
-	b.H = b.H - 2*t.Padding.Y
-
-	var line rect.Rect
-	line.X = b.X + t.Padding.X
-	line.Y = b.Y + t.Padding.Y
-	line.W = b.W - 2*t.Padding.X
-	line.H = 2*t.Padding.Y + FontHeight(f)
-
-	glyphs := fontFace2fontFace(&f).layout(string(str), line.W)
-
-	it := linesIterator{txt: glyphs}
-	for it.Next() {
-		txtline := it.Line()
-		if line.Y+line.H >= (b.Y + b.H) {
-			break
-		}
-		widgetText(o, line, string(str[txtline.RunesOffset:][:txtline.RunesCount]), &text, "LC", f)
-		line.Y += FontHeight(f) + 2*t.Padding.Y
-	}
-}
-
 func toNRGBA(c color.RGBA) color.NRGBA {
 	if c.A == 0xff {
 		return color.NRGBA{c.R, c.G, c.B, c.A}
@@ -942,4 +833,66 @@ func toNRGBA(c color.RGBA) color.NRGBA {
 	g = (g * 0xffff) / a
 	b = (b * 0xffff) / a
 	return color.NRGBA{uint8(r >> 8), uint8(g >> 8), uint8(b >> 8), uint8(a >> 8)}
+}
+
+type charAtlasKey struct {
+	face  font.Face
+	color color.RGBA
+}
+
+type renderedGlyph struct {
+	img     *image.RGBA
+	x, y    int
+	advance fixed.Int26_6
+	op      *paint.ImageOp
+}
+
+func updateCharAtlas(cmds []command.Command, allm *map[charAtlasKey]map[rune]renderedGlyph) {
+	seen := make(map[charAtlasKey]bool)
+	if *allm == nil {
+		*allm = make(map[charAtlasKey]map[rune]renderedGlyph)
+	}
+	for i := range cmds {
+		cmd := &cmds[i]
+		if cmd.Kind != command.TextCmd {
+			continue
+		}
+
+		k := charAtlasKey{cmd.Text.Face, cmd.Text.Foreground}
+		m := (*allm)[k]
+		if m == nil {
+			m = make(map[rune]renderedGlyph)
+			(*allm)[k] = m
+		}
+		seen[k] = true
+
+		for _, ch := range cmd.Text.String {
+			if _, ok := m[ch]; ok {
+				continue
+			}
+			face := cmd.Text.Face.Face
+			dr, mask, maskp, advance, ok := face.Glyph(fixed.P(0, cmd.Text.Face.Metrics().Ascent.Ceil()), ch)
+			img := image.NewRGBA(dr)
+			if ok {
+				draw.DrawMask(img, dr, image.NewUniform(cmd.Text.Foreground), image.Point{}, mask, maskp, draw.Over)
+			}
+			m[ch] = renderedGlyph{img: img, advance: advance, x: dr.Min.X, y: dr.Min.Y}
+			for i := 0; i < len(img.Pix); i += 4 {
+				c := color.RGBA{img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3]}
+				c2 := color.NRGBAModel.Convert(c).(color.NRGBA)
+				a := uint32(float64(c2.A) * 1.5)
+				if a > 0xff {
+					a = 0xff
+				}
+				c2.A = uint8(a)
+				c = color.RGBAModel.Convert(c2).(color.RGBA)
+				img.Pix[i], img.Pix[i+1], img.Pix[i+2], img.Pix[i+3] = c.R, c.G, c.B, c.A
+			}
+		}
+	}
+	for k := range *allm {
+		if !seen[k] {
+			delete(*allm, k)
+		}
+	}
 }

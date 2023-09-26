@@ -541,20 +541,11 @@ func (c *CustomFormatter) Format(v *Variable) {
 		v.Value = fmt.Sprintf("custom formatter error: %v", err)
 		return
 	}
+	v.reformatted = true
 	switch sv := sv.(type) {
 	case starlark.String:
 		v.Value = string(sv)
 	default:
 		v.Value = sv.String()
 	}
-}
-
-type expressionPanel struct {
-	asyncLoad asyncLoad
-	exprEd    nucular.TextEditor
-
-	loaded  string
-	loadErr error
-
-	v *Variable
 }

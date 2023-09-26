@@ -1416,6 +1416,16 @@ func (win *Window) TreePushNamed(type_ TreeType, name, title string, initial_ope
 }
 
 func (win *Window) TreePushCustom(type_ TreeType, name string, initial_open bool) (bounds rect.Rect, out *command.Buffer, ok bool) {
+	bounds, out, _, start := win.treePushCustom(type_, name, initial_open)
+	return bounds, out, start()
+}
+
+func (win *Window) TreePushNothing(type_ TreeType, name string, initial_open bool) (isopen bool, start func() bool) {
+	_, _, isopen, start = win.treePushCustom(type_, name, initial_open)
+	return isopen, start
+}
+
+func (win *Window) treePushCustom(type_ TreeType, name string, initial_open bool) (bounds rect.Rect, out *command.Buffer, isopen bool, start func() bool) {
 	/* cache some data */
 	layout := win.layout
 	style := &win.ctx.Style
@@ -1482,16 +1492,18 @@ func (win *Window) TreePushCustom(type_ TreeType, name string, initial_open bool
 		out = nil
 	}
 
-	/* increase x-axis cursor widget position pointer */
-	if node.Open {
-		layout.AtX = header.X + layout.Offset.X + style.Tab.Indent
-		//layout.Width = max(layout.Width, 2*panel_padding.X)
-		layout.Width -= (style.Tab.Indent + panel_padding.X)
-		layout.Row.TreeDepth++
-		win.curNode = node
-		return labelBounds, out, true
-	} else {
-		return labelBounds, out, false
+	return labelBounds, out, node.Open, func() bool {
+		/* increase x-axis cursor widget position pointer */
+		if node.Open {
+			layout.AtX = header.X + layout.Offset.X + style.Tab.Indent
+			//layout.Width = max(layout.Width, 2*panel_padding.X)
+			layout.Width -= (style.Tab.Indent + panel_padding.X)
+			layout.Row.TreeDepth++
+			win.curNode = node
+			return true
+		} else {
+			return false
+		}
 	}
 }
 

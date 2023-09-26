@@ -111,9 +111,9 @@ type Buffer struct {
 // It should then be populated with `AddRunes` and shapped with `Shape`.
 func NewBuffer() *Buffer {
 	return &Buffer{
-		ClusterLevel: MonotoneGraphemes,
-		maxOps:       maxOpsDefault,
-		planCache:    map[Face][]*shapePlan{},
+		ClusterLevel:  MonotoneGraphemes,
+		maxOps:        maxOpsDefault,
+		planCache:     map[Face][]*shapePlan{},
 	}
 }
 

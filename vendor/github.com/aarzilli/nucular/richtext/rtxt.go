@@ -14,6 +14,7 @@ import (
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/font"
 	"golang.org/x/image/math/fixed"
+	"golang.org/x/mobile/event/mouse"
 )
 
 type RichText struct {
@@ -22,10 +23,13 @@ type RichText struct {
 	styleSels  []styleSel // styling for the text in non-overlapping selections of increasing S
 	Sel        Sel        // selected text if this widget is selectable, cursor position will have S == E
 	Flags      Flags
-	flags      Flags      // flags for this widget
-	SelFgColor color.RGBA // foreground color for selection, zero value specifies that it should be copied from the window style
-	SelColor   color.RGBA // background color for selection, zero value specifies that it should be copied from the window style
-	Width      int        // maximum line width
+	flags      Flags                  // flags for this widget
+	SelFgColor color.RGBA             // foreground color for selection, zero value specifies that it should be copied from the window style
+	SelColor   color.RGBA             // background color for selection, zero value specifies that it should be copied from the window style
+	Width      int                    // maximum line width
+	Events     Events                 // events that happened during current frame
+	Group      *SelectionGroup        // selection group for this object, only one object in the group can have a selection
+	Replace    func(Sel, string) bool // if set and the Editable flag is set it will be called when the user wants to edit and should replace the specified selection with the given string
 
 	txtColor, selFgColor, selColor color.RGBA // default foreground color and background selected color
 
@@ -40,11 +44,16 @@ type RichText struct {
 	adv      []fixed.Int26_6 // advance for each rune in chunks
 	lines    []line          // line of text, possibly wrapped
 
-	down          bool  // a click/selection is in progress
-	isClick       bool  // the click/selection in progress could be a click (unless the mouse moves too much)
-	dragStart     int32 // stat of drag
-	lastClickTime time.Time
-	clickCount    int // number of consecutive clicks
+	down              bool  // a click/selection is in progress
+	isClick           bool  // the click/selection in progress could be a click (unless the mouse moves too much)
+	hadSelection      bool  // had a non-empty selection when the click/selection started
+	dragStart         int32 // stat of drag
+	lastClickTime     time.Time
+	clickCount        int // number of consecutive clicks
+	wasFocused        bool
+	pageKey, arrowKey int
+
+	undoEdit *undoEdit
 
 	followCursor bool // scroll to show cursor on screen
 
@@ -66,7 +75,9 @@ const (
 	Selectable
 	Clipboard
 	ShowTick
-	Keyboard
+	Keyboard // scrolling using keyboard
+	MimicLabel
+	Editable // supports editing
 )
 
 type FaceFlags uint16
@@ -85,6 +96,16 @@ const (
 	AlignCenter
 	AlignJustified
 )
+
+type Events uint8
+
+const (
+	Clicked Events = 1 << iota
+)
+
+type SelectionGroup struct {
+	cur *RichText
+}
 
 type chunk struct {
 	b []byte
@@ -131,6 +152,8 @@ type TextStyle struct {
 	Flags FaceFlags
 
 	Color, SelFgColor, BgColor color.RGBA // foreground color, selected foreground color, background color
+
+	LeftMarginHere bool // moves the left margin to this position, must be AlignLeft or AlignLeftDumb
 
 	Tooltip      func(*nucular.Window)
 	TooltipWidth int
@@ -218,6 +241,10 @@ const (
 
 func New(flags Flags) *RichText {
 	n := rand.Int()
+	if flags&Editable != 0 {
+		flags |= ShowTick
+		flags &^= Keyboard
+	}
 	return &RichText{
 		name:  fmt.Sprintf("richtext%d", n),
 		Flags: flags,
@@ -234,7 +261,7 @@ func New(flags Flags) *RichText {
 // 2. changed is true
 // 3. a link was clicked
 func (rtxt *RichText) Widget(w *nucular.Window, changed bool) *Ctor {
-	rtxt.initialize(w)
+	rtxt.initialize(w, &changed)
 	if rtxt.first || changed {
 		rtxt.changed = true
 		rtxt.ctor = Ctor{rtxt: rtxt, mode: ctorWidget, w: w}
@@ -246,7 +273,7 @@ func (rtxt *RichText) Widget(w *nucular.Window, changed bool) *Ctor {
 // Rows is like Widget but adds the contents as a series of rows instead of
 // a single widget.
 func (rtxt *RichText) Rows(w *nucular.Window, changed bool) *Ctor {
-	rtxt.initialize(w)
+	rtxt.initialize(w, &changed)
 	if rtxt.first || changed {
 		rtxt.changed = true
 		rtxt.ctor = Ctor{rtxt: rtxt, mode: ctorRows, w: w}
@@ -392,10 +419,14 @@ func (rtxt *RichText) Tail(n int) {
 
 	rtxt.adv = append(rtxt.adv[:0], rtxt.adv[runeoff:]...)
 	rtxt.reflow()
-
 }
 
-func (rtxt *RichText) initialize(w *nucular.Window) {
+// Len returns the length in physical lines of rtxt
+func (rtxt *RichText) Len() int {
+	return len(rtxt.lines)
+}
+
+func (rtxt *RichText) initialize(w *nucular.Window, changed *bool) {
 	style := w.Master().Style()
 	if (rtxt.SelColor != color.RGBA{}) {
 		rtxt.selColor = rtxt.SelColor
@@ -415,6 +446,26 @@ func (rtxt *RichText) initialize(w *nucular.Window) {
 	if rtxt.flags != rtxt.Flags {
 		rtxt.flags = rtxt.Flags
 		rtxt.changed = true
+	}
+
+	rtxt.wasFocused = rtxt.focused
+	if rtxt.flags&Keyboard != 0 && (w.Input().Mouse.Buttons[mouse.ButtonLeft].Down || w.Input().Mouse.Buttons[mouse.ButtonRight].Down) {
+		rtxt.focused = false
+	}
+	if rtxt.Group != nil && rtxt.Group.cur != rtxt {
+		rtxt.focused = false
+		rtxt.Sel.S = 0
+		rtxt.Sel.E = 0
+	}
+	if mw, _ := w.Master().(activateEditor); mw != nil && mw.ActivatingEditor() != nil {
+		rtxt.focused = false
+		rtxt.Sel.S = 0
+		rtxt.Sel.E = 0
+	}
+
+	rtxt.arrowKey, rtxt.pageKey = 0, 0
+	if rtxt.focused && (rtxt.flags&Keyboard != 0 || rtxt.flags&Editable != 0) {
+		rtxt.arrowKey, rtxt.pageKey = rtxt.handleKeyboard(w.Input(), changed)
 	}
 }
 
@@ -583,6 +634,18 @@ func (ctor *Ctor) SetStyleForSel(sel Sel, s TextStyle) {
 // Text adds text to the widget.
 func (ctor *Ctor) Text(text string) {
 	ctor.textChunk(chunk{s: text})
+}
+
+// LastChunkSel returns the selection for the last chunk added
+func (ctor *Ctor) LastChunkSel() Sel {
+	start := int32(0)
+	for i := range ctor.chunks {
+		if i == len(ctor.chunks)-1 {
+			return Sel{start, start + ctor.chunks[i].len()}
+		}
+		start += ctor.chunks[i].len()
+	}
+	return Sel{0, 0}
 }
 
 // TextBytes adds text to the widget.

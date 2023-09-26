@@ -165,7 +165,7 @@ type dNC struct {
 // 'reply' parameter function will be runned only on successful (*dNC).Write(b) with 'b' as parameter to 'reply'. The result will be stored in internal buffer and can be retrieved later via (*dNC).Read([...]) method.
 // It is users responsibility to stop and clean up resources with (*dNC).Close, if not needed anymore.
 // By default, the (*dNC).Write([...]) and (*dNC).Read([...]) methods are unlocked and will not result in error.
-// TODO make (*dNC).SetDeadline, (*dNC).SetReadDeadline, (*dNC).SetWriteDeadline work proprely.
+//TODO make (*dNC).SetDeadline, (*dNC).SetReadDeadline, (*dNC).SetWriteDeadline work proprely.
 func newDummyNetConn(name string, reply func([]byte) []byte) *dNC {
 
 	s := &dNC{

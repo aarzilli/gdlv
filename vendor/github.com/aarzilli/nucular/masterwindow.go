@@ -96,6 +96,10 @@ func (mw *masterWindowCommon) ActivateEditor(ed *TextEditor) {
 	mw.ctx.activateEditor = ed
 }
 
+func (mw *masterWindowCommon) ActivatingEditor() *TextEditor {
+	return mw.ctx.activateEditor
+}
+
 func (mw *masterWindowCommon) Style() *nstyle.Style {
 	return &mw.ctx.Style
 }

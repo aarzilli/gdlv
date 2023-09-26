@@ -3,6 +3,7 @@ package richtext
 import (
 	"image"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/aarzilli/nucular"
@@ -46,12 +47,19 @@ func (rtxt *RichText) handleClick(w *nucular.Window, r rect.Rect, in *nucular.In
 	if rtxt.down {
 		rtxt.focused = true
 		if in.Mouse.HoveringRect(r) {
+			rtxt.Group.grab(rtxt, w)
 			if !in.Mouse.Down(mouse.ButtonLeft) {
-				if rtxt.isClick && styleSel.isLink && in.Mouse.HoveringRect(r) {
-					if styleSel.link != nil {
-						styleSel.link()
-					} else if linkClick != nil {
-						*linkClick = line.coordToIndex(in.Mouse.Pos, chunkIdx, rtxt.adv)
+				if rtxt.isClick && in.Mouse.HoveringRect(r) {
+					if styleSel.isLink {
+						if styleSel.link != nil {
+							styleSel.link()
+						} else if linkClick != nil {
+							*linkClick = line.coordToIndex(in.Mouse.Pos, chunkIdx, rtxt.adv)
+						}
+					} else {
+						if !rtxt.hadSelection {
+							rtxt.Events |= Clicked
+						}
 					}
 				}
 				rtxt.down = false
@@ -72,7 +80,8 @@ func (rtxt *RichText) handleClick(w *nucular.Window, r rect.Rect, in *nucular.In
 			}
 		}
 	} else {
-		if in.Mouse.Down(mouse.ButtonLeft) && in.Mouse.HoveringRect(r) {
+		if in.Mouse.Down(mouse.ButtonLeft) && in.Mouse.HoveringRect(r) && in.Mouse.HasClickInRect(mouse.ButtonLeft, r) {
+			otherHadSelection := rtxt.Group.grab(rtxt, w)
 			rtxt.focused = true
 			q := line.coordToIndex(in.Mouse.Pos, chunkIdx, rtxt.adv)
 			if time.Since(rtxt.lastClickTime) < 200*time.Millisecond && q == rtxt.dragStart {
@@ -85,6 +94,7 @@ func (rtxt *RichText) handleClick(w *nucular.Window, r rect.Rect, in *nucular.In
 			}
 			rtxt.lastClickTime = time.Now()
 			rtxt.dragStart = q
+			rtxt.hadSelection = rtxt.Sel.S != rtxt.Sel.E || otherHadSelection
 			rtxt.Sel.S = rtxt.dragStart
 			rtxt.Sel.E = rtxt.Sel.S
 			rtxt.expandSelection()
@@ -105,25 +115,8 @@ func (rtxt *RichText) handleClick(w *nucular.Window, r rect.Rect, in *nucular.In
 func (rtxt *RichText) expandSelection() {
 	switch rtxt.clickCount {
 	case 2:
-		sline := rtxt.findLine(rtxt.Sel.S)
-		eline := rtxt.findLine(rtxt.Sel.E)
-
-		var citer citer
-		for citer.Init(sline, rtxt.Sel.S); citer.Valid(); citer.Prev() {
-			if citer.Char() == ' ' {
-				citer.Next()
-				break
-			}
-
-		}
-		rtxt.Sel.S = citer.off
-
-		for citer.Init(eline, rtxt.Sel.E); citer.Valid(); citer.Next() {
-			if citer.Char() == ' ' {
-				break
-			}
-		}
-		rtxt.Sel.E = citer.off
+		rtxt.Sel.S = rtxt.towd(rtxt.Sel.S, -1, false)
+		rtxt.Sel.E = rtxt.towd(rtxt.Sel.E, +1, false)
 	case 3:
 		sline := rtxt.findLine(rtxt.Sel.S)
 		eline := rtxt.findLine(rtxt.Sel.E)
@@ -132,6 +125,50 @@ func (rtxt *RichText) expandSelection() {
 			rtxt.Sel.E = eline.endoff()
 		}
 	}
+}
+
+func (rtxt *RichText) towd(start int32, dir int, forceAdvance bool) int32 {
+	first := true
+	line := rtxt.findLine(start)
+	var citer citer
+	citer.Init(line, start)
+	for {
+		if dir < 0 {
+			citer.PrevRune()
+		} else {
+			citer.NextRune()
+		}
+		if !citer.Valid() {
+			break
+		}
+		c := citer.Rune()
+		if !(unicode.IsLetter(c) || unicode.IsDigit(c) || (c == '_')) {
+			if first {
+				if dir > 0 {
+					break
+				}
+				if !forceAdvance {
+					citer.NextRune()
+				}
+			} else {
+				if dir < 0 {
+					citer.NextRune()
+				}
+			}
+			break
+		}
+		first = false
+	}
+	if !citer.Valid() {
+		if dir < 0 {
+			return 0
+		}
+		if len(rtxt.lines) == 0 {
+			return 0
+		}
+		return rtxt.lines[len(rtxt.lines)-1].endoff()
+	}
+	return citer.off
 }
 
 func (rtxt *RichText) findLine(q int32) line {
@@ -236,6 +273,9 @@ func (citer *citer) Char() byte {
 }
 
 func (citer *citer) Prev() {
+	if !citer.Valid() {
+		return
+	}
 	citer.j--
 	citer.off--
 	if citer.j < 0 {
@@ -256,6 +296,9 @@ func (citer *citer) Prev() {
 }
 
 func (citer *citer) Next() {
+	if !citer.Valid() {
+		return
+	}
 	citer.j++
 	citer.off++
 	for citer.j >= int(citer.line.chunks[citer.i].len()) {
@@ -268,27 +311,218 @@ func (citer *citer) Next() {
 	}
 }
 
-func (rtxt *RichText) handleKeyboard(in *nucular.Input) (arrowKey, pageKey int) {
-	if !rtxt.focused || rtxt.flags&Keyboard == 0 {
+func (citer *citer) NextRune() {
+	for {
+		citer.Next()
+		if !citer.Valid() {
+			return
+		}
+		if citer.Char()&0b1100_0000 != 0b1000_0000 {
+			return
+		}
+	}
+}
+
+func (citer *citer) PrevRune() {
+	for {
+		citer.Prev()
+		if !citer.Valid() {
+			return
+		}
+		if citer.Char()&0b1100_0000 != 0b1000_0000 {
+			return
+		}
+	}
+}
+
+func (citer *citer) Rune() rune {
+	chunk := citer.line.chunks[citer.i]
+	if chunk.b != nil {
+		c, _ := utf8.DecodeRune(chunk.b[citer.j:])
+		return c
+	}
+	c, _ := utf8.DecodeRuneInString(chunk.s[citer.j:])
+	return c
+}
+
+func (rtxt *RichText) handleKeyboard(in *nucular.Input, changed *bool) (arrowKey, pageKey int) {
+	if !rtxt.focused {
 		return
 	}
-
-	for _, k := range in.Keyboard.Keys {
-		switch {
-		case k.Modifiers == key.ModControl && k.Code == key.CodeC:
-			if rtxt.flags&Clipboard != 0 {
-				clipboard.Set(rtxt.Get(rtxt.Sel))
+	if rtxt.flags&Keyboard != 0 {
+		for _, k := range in.Keyboard.Keys {
+			switch {
+			case k.Modifiers == key.ModControl && k.Code == key.CodeC:
+				if rtxt.flags&Clipboard != 0 {
+					clipboard.Set(rtxt.Get(rtxt.Sel))
+				}
+			case k.Code == key.CodeUpArrow:
+				return -1, 0
+			case k.Code == key.CodeDownArrow:
+				return +1, 0
+			case k.Code == key.CodePageDown:
+				return 0, +1
+			case k.Code == key.CodePageUp:
+				return 0, -1
 			}
-		case k.Code == key.CodeUpArrow:
-			return -1, 0
-		case k.Code == key.CodeDownArrow:
-			return +1, 0
-		case k.Code == key.CodePageDown:
-			return 0, +1
-		case k.Code == key.CodePageUp:
-			return 0, -1
+		}
+	}
+	if rtxt.flags&Editable != 0 {
+		if in.Keyboard.Text != "" {
+			rtxt.replace(in.Keyboard.Text, changed)
+		}
+		for _, k := range in.Keyboard.Keys {
+			switch k.Code {
+			case key.CodeUpArrow:
+				//TODO: implement
+			case key.CodeDownArrow:
+				//TODO: implement
+			case key.CodeLeftArrow:
+				if k.Modifiers == 0 {
+					rtxt.Sel.E--
+					rtxt.Sel.S = rtxt.Sel.E
+				} else if k.Modifiers == key.ModControl {
+					rtxt.Sel.E = rtxt.towd(rtxt.Sel.E, -1, true)
+					rtxt.Sel.S = rtxt.Sel.E
+				}
+				rtxt.clampSel()
+			case key.CodeRightArrow:
+				if k.Modifiers == 0 {
+					rtxt.Sel.E++
+					rtxt.Sel.S = rtxt.Sel.E
+				} else {
+					rtxt.Sel.E = rtxt.towd(rtxt.Sel.E, +1, true)
+					rtxt.Sel.S = rtxt.Sel.E
+				}
+				rtxt.clampSel()
+			case key.CodePageDown:
+				if k.Modifiers == 0 {
+					return 0, +1
+				}
+			case key.CodePageUp:
+				if k.Modifiers == 0 {
+					return 0, -1
+				}
+			case key.CodeDeleteForward:
+				if rtxt.Sel.S == rtxt.Sel.E {
+					rtxt.Sel.E++
+				}
+				rtxt.clampSel()
+				rtxt.replace("", changed)
+				rtxt.Sel.S = rtxt.Sel.E
+			case key.CodeDeleteBackspace:
+				if rtxt.Sel.S == rtxt.Sel.E {
+					if k.Modifiers == 0 {
+						rtxt.Sel.S--
+					} else if k.Modifiers == key.ModControl {
+						rtxt.Sel.S = rtxt.towd(rtxt.Sel.S, -1, true)
+					}
+				}
+				rtxt.clampSel()
+				rtxt.replace("", changed)
+				rtxt.Sel.S = rtxt.Sel.E
+			case key.CodeHome:
+				rtxt.Sel.S = 0
+				rtxt.Sel.E = 0
+			case key.CodeA:
+				if k.Modifiers == key.ModControl {
+					rtxt.Sel.S = 0
+					rtxt.Sel.E = 0
+				}
+			case key.CodeEnd:
+				rtxt.Sel.S = int32(^uint32(0) >> 1)
+				rtxt.Sel.E = rtxt.Sel.S
+				rtxt.clampSel()
+			case key.CodeE:
+				if k.Modifiers == key.ModControl {
+					rtxt.Sel.S = int32(^uint32(0) >> 1)
+					rtxt.Sel.E = rtxt.Sel.S
+					rtxt.clampSel()
+				}
+			case key.CodeZ:
+				if k.Modifiers == key.ModControl {
+					rtxt.undo(changed)
+				}
+			case key.CodeReturnEnter:
+				if k.Modifiers == 0 {
+					rtxt.replace("\n", changed)
+				}
+			case key.CodeC:
+				if k.Modifiers == key.ModControl && rtxt.flags&Clipboard != 0 {
+					clipboard.Set(rtxt.Get(rtxt.Sel))
+				}
+			case key.CodeX:
+				if k.Modifiers == key.ModControl && rtxt.flags&Clipboard != 0 {
+					clipboard.Set(rtxt.Get(rtxt.Sel))
+					rtxt.replace("", changed)
+				}
+			case key.CodeV:
+				if k.Modifiers == key.ModControl && rtxt.flags&Clipboard != 0 {
+					rtxt.replace(clipboard.Get(), changed)
+				}
+			}
+		}
+	}
+	return 0, 0
+}
+
+func (rtxt *RichText) clampSel() {
+	endoff := int32(0)
+	if len(rtxt.lines) > 0 {
+		endoff = rtxt.lines[len(rtxt.lines)-1].endoff()
+	}
+
+	clampOne := func(x *int32) {
+		if *x > endoff {
+			*x = endoff
+		}
+		if *x < 0 {
+			*x = 0
 		}
 	}
 
-	return 0, 0
+	clampOne(&rtxt.Sel.S)
+	clampOne(&rtxt.Sel.E)
+
+	if rtxt.Sel.E < rtxt.Sel.S {
+		rtxt.Sel.S, rtxt.Sel.E = rtxt.Sel.E, rtxt.Sel.S
+	}
+}
+
+func (rtxt *RichText) replace(str string, changed *bool) {
+	if rtxt.Replace == nil {
+		return
+	}
+	if !rtxt.Replace(rtxt.Sel, str) {
+		return
+	}
+	*changed = true
+	rtxt.undoEdit = &undoEdit{Sel{rtxt.Sel.S, rtxt.Sel.S + int32(len(str))}, rtxt.Get(rtxt.Sel)}
+	rtxt.Sel.S = rtxt.Sel.S + int32(len(str))
+	rtxt.Sel.E = rtxt.Sel.S
+	rtxt.clampSel()
+}
+
+func (rtxt *RichText) undo(changed *bool) {
+	if rtxt.undoEdit != nil {
+		rtxt.Sel = rtxt.undoEdit.sel
+		rtxt.replace(rtxt.undoEdit.str, changed)
+	}
+}
+
+type undoEdit struct {
+	sel Sel
+	str string
+}
+
+func (grp *SelectionGroup) grab(rtxt *RichText, w *nucular.Window) bool {
+	if grp == nil {
+		return false
+	}
+	if grp.cur != nil && grp.cur != rtxt {
+		w.Master().Changed()
+	}
+	oldCur := grp.cur
+	grp.cur = rtxt
+	return oldCur != nil && oldCur.Sel.S != oldCur.Sel.E
 }

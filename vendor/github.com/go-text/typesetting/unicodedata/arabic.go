@@ -793,7 +793,6 @@ const LastArabicShape = 0x06d3
 //   - 1: final
 //   - 2: initial
 //   - 3: medial
-//
 // See also the bounds given by FirstArabicShape and LastArabicShape.
 var ArabicShaping = [...][4]uint16{ // required memory: 2 KB
 	{65152, 1569, 1569, 1569},

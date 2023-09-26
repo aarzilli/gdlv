@@ -210,6 +210,7 @@ var delayFrame bool
 var frameCount int
 
 func guiUpdate(w *nucular.Window) {
+	defer richTextCleanup()
 	df := delayFrame
 	delayFrame = false
 
