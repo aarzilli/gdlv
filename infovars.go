@@ -301,7 +301,7 @@ func updateGlobals(container *nucular.Window) {
 	defer additionalLoadMu.Unlock()
 
 	w.MenubarBegin()
-	w.Row(varRowHeight).Static(90, 0, 100, 100)
+	w.Row(varRowHeight).Static(90, 0, 110, 110)
 	w.Label("Filter:", "LC")
 	globalsPanel.filterEditor.Edit(w)
 	filter := string(globalsPanel.filterEditor.Buffer)
@@ -406,7 +406,7 @@ func updateLocals(container *nucular.Window) {
 	defer additionalLoadMu.Unlock()
 
 	w.MenubarBegin()
-	w.Row(varRowHeight).Static(90, 0, 100, 100)
+	w.Row(varRowHeight).Static(90, 0, 110, 110)
 	w.Label("Filter:", "LC")
 	localsPanel.filterEditor.Edit(w)
 	filter := string(localsPanel.filterEditor.Buffer)
