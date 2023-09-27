@@ -539,6 +539,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, clipb [
 		}
 		if w.MenuItem(label.TA("Remove expression", "LC")) {
 			removeExpression(exprMenuIdx)
+			return
 		}
 		if w.MenuItem(label.TA("Load parameters...", "LC")) {
 			w.Master().PopupOpen(fmt.Sprintf("Load parameters for %s", localsPanel.expressions[exprMenuIdx].Expr), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, configureLoadParameters(exprMenuIdx))
