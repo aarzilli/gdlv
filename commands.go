@@ -26,6 +26,7 @@ import (
 	"github.com/aarzilli/gdlv/internal/prettyprint"
 
 	"github.com/aarzilli/nucular"
+	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 	"github.com/aarzilli/nucular/richtext"
@@ -2200,7 +2201,7 @@ func writeGoroutineLong(w io.Writer, g *api.Goroutine, prefix string) {
 func writeLink(c *richtext.Ctor, style *style.Style, text string, fn func()) {
 	c.SetStyle(richtext.TextStyle{Face: style.Font, Color: linkColor, Flags: richtext.Underline})
 	c.Link(text, linkHoverColor, fn)
-	c.SetStyle(richtext.TextStyle{Face: style.Font})
+	c.SetStyle(richtext.TextStyle{Face: style.Font, Cursor: font.TextCursor})
 }
 
 func writeLinkToLocation(c *richtext.Ctor, style *style.Style, file string, line int, pc uint64) {

@@ -14,6 +14,7 @@ import (
 
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/clipboard"
+	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 	"github.com/aarzilli/nucular/richtext"
@@ -679,7 +680,7 @@ func variableHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v 
 		if flags.withAddr() {
 			c.Text(fmt.Sprintf("%#010x ", v.Addr))
 		}
-		c.SetStyle(richtext.TextStyle{Face: boldFace})
+		c.SetStyle(richtext.TextStyle{Face: boldFace, Cursor: font.TextCursor})
 		c.Text(v.DisplayName)
 		if exprMenu >= 0 {
 			exprSel := c.LastChunkSel()
@@ -768,12 +769,19 @@ func variableNoHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, 
 	if exprMenu >= 0 {
 		ed.Flags |= richtext.ShowTick | richtext.Editable
 	}
+	cursor := font.Cursor(0)
+	if exprMenu < 0 {
+		cursor = font.TextCursor
+	}
 	if c := ed.Widget(w, changed || v.reformatted); c != nil {
+		if exprMenu < 0 {
+			c.SetStyle(richtext.TextStyle{Cursor: cursor})
+		}
 		v.reformatted = false
 		if flags.withAddr() {
 			c.Text(fmt.Sprintf("%#010x ", v.Addr))
 		}
-		c.SetStyle(richtext.TextStyle{Face: boldFace})
+		c.SetStyle(richtext.TextStyle{Face: boldFace, Cursor: font.TextCursor})
 		c.Text(v.DisplayName)
 		if exprMenu >= 0 {
 			exprSel := c.LastChunkSel()
@@ -781,12 +789,12 @@ func variableNoHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, 
 				return exprEditReplace(exprMenu, exprSel, sel, str)
 			}
 		}
-		c.SetStyle(richtext.TextStyle{})
+		c.SetStyle(richtext.TextStyle{Cursor: cursor})
 		c.Text(" ")
 		c.Text(getDisplayType(v, flags.fullTypes()))
 		c.Text(" = ")
 		if wrap {
-			c.SetStyle(richtext.TextStyle{LeftMarginHere: true})
+			c.SetStyle(richtext.TextStyle{LeftMarginHere: true, Cursor: cursor})
 		}
 		c.Text(value)
 		c.End()

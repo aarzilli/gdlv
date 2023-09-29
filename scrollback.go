@@ -3,6 +3,7 @@ package main
 import (
 	"sync"
 
+	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/richtext"
 )
 
@@ -43,6 +44,7 @@ func (w *editorWriter) Write(b []byte) (int, error) {
 	scrollbackMu.Unlock()
 
 	c := scrollbackEditor.Append(true)
+	c.SetStyle(richtext.TextStyle{Cursor: font.TextCursor})
 	c.Text(string(b))
 	c.End()
 	scrollbackEditor.Tail(10000)

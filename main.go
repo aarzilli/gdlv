@@ -374,6 +374,7 @@ func updateCommandPanel(w *nucular.Window) {
 
 	w.Row(0).Dynamic(1)
 	if c := scrollbackEditor.Widget(w, scrollbackClear); c != nil {
+		c.SetStyle(richtext.TextStyle{Cursor: font.TextCursor})
 		scrollbackClear = false
 		c.Align(richtext.AlignLeftDumb)
 		if len(scrollbackPreInitWrite) > 0 {
