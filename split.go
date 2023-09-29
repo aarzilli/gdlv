@@ -221,7 +221,7 @@ func serializeLayout() string {
 	descale := func(x int) int {
 		return int(float64(x) / conf.Scaling)
 	}
-	wnd.Walk(func(title string, data interface{}, docked bool, size int, rect rect.Rect) {
+	wnd.Walk(func(_ *nucular.Window, title string, data interface{}, docked bool, size int, rect rect.Rect) {
 		title = cleanWindowTitle(title)
 		c := infoModeToCode[title]
 		if c == 0 {
@@ -360,16 +360,7 @@ func commandToolbar(sw *nucular.Window) {
 }
 
 func openWindow(m string) {
-	found := false
-	wnd.Walk(func(title string, data interface{}, docked bool, size int, rect rect.Rect) {
-		title = cleanWindowTitle(title)
-		if title == m {
-			// raise?
-			found = true
-			return
-		}
-	})
-	if found {
+	if findWindow(m) == nil {
 		return
 	}
 	bounds, ok := conf.SavedBounds[m]
@@ -378,4 +369,15 @@ func openWindow(m string) {
 	}
 	p := infoNameToPanel[m]
 	wnd.PopupOpen(m, p.Flags(m), bounds, true, p.update)
+}
+
+func findWindow(m string) *nucular.Window {
+	var found *nucular.Window
+	wnd.Walk(func(w *nucular.Window, title string, data interface{}, docked bool, size int, rect rect.Rect) {
+		title = cleanWindowTitle(title)
+		if title == m {
+			found = w
+		}
+	})
+	return found
 }

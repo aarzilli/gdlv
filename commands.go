@@ -450,10 +450,24 @@ and GDLV_BOLD_FONT to the path of two ttf files.
 		fmt.Fprintln(w, "    Ctrl +/- \t Zoom in/out")
 		fmt.Fprintln(w, "    Escape \t Focus command line")
 		fmt.Fprintln(w, "    Shift-F5, Ctrl-delete \t Request manual stop")
-		fmt.Fprintln(w, "    F5 \t Continue")
+		fmt.Fprintln(w, "    F5, Alt-enter \t Continue")
 		fmt.Fprintln(w, "    F10, Alt-right \t Next")
 		fmt.Fprintln(w, "    F11, Alt-down \t Step")
 		fmt.Fprintln(w, "    Shift-F11, Alt-up \t Step Out")
+		fmt.Fprintln(w, "    Shift-enter \t Add new variable to the variables window")
+		if err := w.Flush(); err != nil {
+			return err
+		}
+	}
+	fmt.Fprintln(out)
+	fmt.Fprintln(out, "Keybindings for the variables window:")
+	{
+		w := new(tabwriter.Writer)
+		w.Init(out, 0, 8, 0, ' ', 0)
+		fmt.Fprintln(w, "    Shift-up \t move to previous variable")
+		fmt.Fprintln(w, "    Shift-down \t move to next variable")
+		fmt.Fprintln(w, "    Shift-delete \t removes current expression")
+		fmt.Fprintln(w, "    Ctrl-o \t expands current variable")
 		if err := w.Flush(); err != nil {
 			return err
 		}
@@ -1242,7 +1256,7 @@ func printVar(out io.Writer, args string) error {
 	}
 	if nlcount > 20 && val.Kind != reflect.String {
 		fmt.Fprintln(out, "Expression added to variables panel")
-		addExpression(args)
+		addExpression(args, false)
 	} else {
 		fmt.Fprintln(out, valstr)
 	}
@@ -1255,7 +1269,7 @@ func printVar(out io.Writer, args string) error {
 }
 
 func displayVar(out io.Writer, args string) error {
-	addExpression(args)
+	addExpression(args, false)
 	return nil
 }
 

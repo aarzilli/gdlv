@@ -275,6 +275,7 @@ type Expr struct {
 	maxArrayValues, maxStringLen int
 	traced                       bool
 	exprSel                      richtext.Sel
+	focus                        bool
 }
 
 func loadGlobals(p *asyncLoad) {
@@ -468,10 +469,13 @@ func loadOneExpr(i int) {
 	localsPanel.v[i].reformatted = true
 }
 
-func addExpression(newexpr string) {
+func addExpression(newexpr string, focus bool) {
 	wnd.Lock()
 	localsPanel.expressions = append(localsPanel.expressions, Expr{Expr: newexpr})
 	localsPanel.v = append(localsPanel.v, nil)
+	if focus {
+		localsPanel.expressions[len(localsPanel.expressions)-1].focus = true
+	}
 	wnd.Unlock()
 	i := len(localsPanel.v) - 1
 	go func(i int) {
@@ -561,7 +565,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, ed *ric
 
 	if !isExpression && v.Expression != "" {
 		if w.MenuItem(label.TA("Add as expression", "LC")) {
-			go addExpression(v.Expression)
+			go addExpression(v.Expression, false)
 		}
 	}
 
@@ -768,6 +772,10 @@ func variableNoHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, 
 	ed, changed := richTextLookup(v.Variable, wrap, flags)
 	if exprMenu >= 0 {
 		ed.Flags |= richtext.ShowTick | richtext.Editable
+		if localsPanel.expressions[exprMenu].focus {
+			localsPanel.expressions[exprMenu].focus = false
+			w.Master().ActivateEditor(w, ed)
+		}
 	}
 	cursor := font.Cursor(0)
 	if exprMenu < 0 {

@@ -240,9 +240,11 @@ func guiUpdate(w *nucular.Window) {
 			mw.SetPerf(!mw.GetPerf())
 
 		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):
-			mw.ActivateEditor(&commandLineEditor)
+			mw.ActivateEditor(findWindow(infoCommand), &commandLineEditor)
 			mw.Changed()
 
+		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeReturnEnter):
+			fallthrough
 		case (e.Modifiers == 0) && (e.Code == key.CodeF5):
 			if !client.Running() && client != nil {
 				doCommand("continue")
@@ -274,6 +276,11 @@ func guiUpdate(w *nucular.Window) {
 		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeDeleteForward):
 			if client != nil {
 				doCommand("interrupt")
+			}
+
+		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeReturnEnter):
+			if findWindow(infoLocals) != nil {
+				go addExpression("", true)
 			}
 
 		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code1):
@@ -312,7 +319,7 @@ func guiUpdate(w *nucular.Window) {
 	frameCount++
 	if frameCount%200 == 0 {
 		changed := false
-		wnd.Walk(func(title string, data interface{}, docked bool, size int, rect rect.Rect) {
+		wnd.Walk(func(_ *nucular.Window, title string, data interface{}, docked bool, size int, rect rect.Rect) {
 			if docked {
 				return
 			}
@@ -404,7 +411,7 @@ func updateCommandPanel(w *nucular.Window) {
 	if client.Running() {
 		//commandLineEditor.Flags |= nucular.EditReadOnly
 		if !commandLineEditor.Active {
-			w.Master().ActivateEditor(&commandLineEditor)
+			w.Master().ActivateEditor(w, &commandLineEditor)
 		}
 	} else {
 		commandLineEditor.Flags &= ^nucular.EditReadOnly
@@ -814,7 +821,7 @@ func refreshState(toframe refreshToFrame, clearKind clearKind, state *api.Debugg
 		oldFrameOffset = curFrameOffset
 	}
 
-	wnd.Walk(func(title string, data interface{}, docked bool, splitSize int, rect rect.Rect) {
+	wnd.Walk(func(_ *nucular.Window, title string, data interface{}, docked bool, splitSize int, rect rect.Rect) {
 		if asyncLoad, ok := data.(*asyncLoad); ok && asyncLoad != nil {
 			if title == "Details" && clearKind != clearNothing && clearKind != clearBreakpoint {
 				asyncLoad.clear()

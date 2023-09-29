@@ -25,4 +25,6 @@ require (
 	golang.org/x/text v0.8.0 // indirect
 )
 
+replace github.com/aarzilli/nucular => ../nucular/
+
 go 1.17
