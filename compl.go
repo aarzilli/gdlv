@@ -4,6 +4,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -76,7 +77,7 @@ func lastWord(seps []rune) string {
 	for i := start; i > 0; i-- {
 		for _, sep := range seps {
 			if buf[i] == sep {
-				return string(buf[i+1:])
+				return string(buf[i+1 : start+1])
 			}
 		}
 	}
@@ -90,12 +91,17 @@ func completeWord(word string, completionLists ...[]string) {
 			cm.add(compl)
 		}
 	}
-	cm.finish()
+	cm.finish(cleins, &editorWriter{false})
 }
 
 func completeVariable() {
 	word := lastWord([]rune{' '})
 	cm := completeMachine{word: word}
+	completeAddVariables(&cm)
+	cm.finish(cleins, &editorWriter{false})
+}
+
+func completeAddVariables(cm *completeMachine) {
 	func() {
 		localsPanel.asyncLoad.mu.Lock()
 		defer localsPanel.asyncLoad.mu.Unlock()
@@ -121,8 +127,6 @@ func completeVariable() {
 			cm.add(globalsPanel.globals[i].Name)
 		}
 	}()
-
-	cm.finish()
 }
 
 func completeCommand() {
@@ -135,7 +139,7 @@ func completeCommand() {
 			cm.add(alias)
 		}
 	}
-	cm.finish()
+	cm.finish(cleins, &editorWriter{false})
 }
 
 func completeWindow() {
@@ -146,7 +150,7 @@ func completeWindow() {
 	for _, w := range infoModes {
 		cm.add(strings.ToLower(w))
 	}
-	cm.finish()
+	cm.finish(cleins, &editorWriter{false})
 }
 
 func completeFilesystem() {
@@ -200,23 +204,28 @@ func (cm *completeMachine) add(compl string) {
 	}
 }
 
-func (cm *completeMachine) finish() {
+func cleins(s string) {
+	commandLineEditor.Text([]rune(s))
+}
+
+func (cm *completeMachine) finish(insert func(string), additional io.Writer) {
 	cm.compls = dedup(cm.compls)
 	switch len(cm.compls) {
 	case 0:
 		return
 	case 1:
-		commandLineEditor.Text([]rune(cm.compls[0][len(cm.word):]))
+		insert(cm.compls[0][len(cm.word):])
 	default:
 		compl := commonPrefix(cm.compls)
-		commandLineEditor.Text([]rune(compl[len(cm.word):]))
-		out := editorWriter{false}
+		insert(compl[len(cm.word):])
 		more := ""
 		if len(cm.compls) > 5 {
 			more = "..."
 			cm.compls = cm.compls[:5]
 		}
-		fmt.Fprintf(&out, "Completions: %s%s\n", strings.Join(cm.compls, ", "), more)
+		if additional != nil {
+			fmt.Fprintf(additional, "Completions: %s%s\n", strings.Join(cm.compls, ", "), more)
+		}
 	}
 }
 

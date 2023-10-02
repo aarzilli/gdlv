@@ -642,6 +642,8 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 			if perfUpdate {
 				txttim += time.Since(t0)
 			}
+		case command.CursorCmd:
+			// not supported by shiny
 		default:
 			panic(UnknownCommandErr)
 		}

@@ -23,13 +23,13 @@ type RichText struct {
 	styleSels  []styleSel // styling for the text in non-overlapping selections of increasing S
 	Sel        Sel        // selected text if this widget is selectable, cursor position will have S == E
 	Flags      Flags
-	flags      Flags                  // flags for this widget
-	SelFgColor color.RGBA             // foreground color for selection, zero value specifies that it should be copied from the window style
-	SelColor   color.RGBA             // background color for selection, zero value specifies that it should be copied from the window style
-	Width      int                    // maximum line width
-	Events     Events                 // events that happened during current frame
-	Group      *SelectionGroup        // selection group for this object, only one object in the group can have a selection
-	Replace    func(Sel, string) bool // if set and the Editable flag is set it will be called when the user wants to edit and should replace the specified selection with the given string
+	flags      Flags                   // flags for this widget
+	SelFgColor color.RGBA              // foreground color for selection, zero value specifies that it should be copied from the window style
+	SelColor   color.RGBA              // background color for selection, zero value specifies that it should be copied from the window style
+	Width      int                     // maximum line width
+	Events     Events                  // events that happened during current frame
+	Group      *SelectionGroup         // selection group for this object, only one object in the group can have a selection
+	Replace    func(Sel, *string) bool // if set and the Editable flag is set it will be called when the user wants to edit and should replace the specified selection with the given string
 
 	txtColor, selFgColor, selColor color.RGBA // default foreground color and background selected color
 
@@ -101,6 +101,7 @@ type Events uint8
 
 const (
 	Clicked Events = 1 << iota
+	Active
 )
 
 type SelectionGroup struct {
@@ -148,8 +149,9 @@ func (chunk chunk) str() string {
 }
 
 type TextStyle struct {
-	Face  font.Face
-	Flags FaceFlags
+	Face   font.Face
+	Cursor font.Cursor
+	Flags  FaceFlags
 
 	Color, SelFgColor, BgColor color.RGBA // foreground color, selected foreground color, background color
 
@@ -458,14 +460,24 @@ func (rtxt *RichText) initialize(w *nucular.Window, changed *bool) {
 		rtxt.Sel.E = 0
 	}
 	if mw, _ := w.Master().(activateEditor); mw != nil && mw.ActivatingEditor() != nil {
-		rtxt.focused = false
-		rtxt.Sel.S = 0
-		rtxt.Sel.E = 0
+		if mw.ActivatingEditor() == rtxt {
+			rtxt.focused = true
+			rtxt.Group.grab(rtxt, w)
+		} else {
+			rtxt.focused = false
+			rtxt.Sel.S = 0
+			rtxt.Sel.E = 0
+		}
 	}
 
 	rtxt.arrowKey, rtxt.pageKey = 0, 0
 	if rtxt.focused && (rtxt.flags&Keyboard != 0 || rtxt.flags&Editable != 0) {
 		rtxt.arrowKey, rtxt.pageKey = rtxt.handleKeyboard(w.Input(), changed)
+	}
+
+	rtxt.Events = 0
+	if rtxt.focused {
+		rtxt.Events |= Active
 	}
 }
 

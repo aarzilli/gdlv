@@ -33,6 +33,9 @@ type KeyboardInput struct {
 type Input struct {
 	Keyboard KeyboardInput
 	Mouse    MouseInput
+
+	activateEditor       interface{}
+	activateEditorWindow *Window
 }
 
 func (win *Window) Input() *Input {

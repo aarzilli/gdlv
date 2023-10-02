@@ -1102,15 +1102,8 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 	/* update edit state */
 	prev_state := ed.Active
 
-	if ed.win.ctx.activateEditor != nil {
-		if ed.win.ctx.activateEditor == ed {
-			ed.Active = true
-			if ed.win.flags&windowDocked != 0 {
-				ed.win.ctx.dockedWindowFocus = ed.win.idx
-			}
-		} else {
-			ed.Active = false
-		}
+	if ed.win.ctx.Input.activateEditor != nil {
+		ed.Active = ed.win.ctx.Input.activateEditor == ed
 	}
 
 	is_hovered := inp.Mouse.HoveringRect(bounds)
@@ -1237,7 +1230,7 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 				if ed.Flags&EditCtrlEnterNewline != 0 && e.Modifiers&key.ModShift != 0 {
 					ed.Text([]rune{'\n'})
 					cursor_follow = true
-				} else if ed.Flags&EditSigEnter != 0 {
+				} else if ed.Flags&EditSigEnter != 0 && e.Modifiers == 0 {
 					ret = EditInactive
 					ret |= EditDeactivated
 					if ed.Flags&EditReadOnly == 0 {
@@ -1409,6 +1402,7 @@ func (d *drawableTextEditor) Draw(z *nstyle.Style, out *command.Buffer) {
 	state := d.State
 	style := d.Style
 	bounds := d.Bounds
+	out.Cursor(d.Area, font.TextCursor)
 	font := z.Font
 	area := d.Area
 	row_height := d.RowHeight

@@ -48,15 +48,13 @@ func (rtxt *RichText) drawWidget(w *nucular.Window) *Ctor {
 }
 
 type activateEditor interface {
-	ActivatingEditor() *nucular.TextEditor
+	ActivatingEditor() interface{}
 }
 
 func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 	if viewporth == 0 {
 		viewporth = w.Bounds.H - w.At().Y
 	}
-
-	rtxt.Events = 0
 
 	rtxt.first = false
 	// this small row is necessary so that LayoutAvailableWidth will give us
@@ -201,22 +199,22 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 					s := rtxt.Sel.S - line.off[i]
 					chunk1 := chunk.sub(0, s)
 					w1 := line.chunkWidthEx(i, 0, chunk1, rtxt.adv)
-					drawChunk(w, out, &p, chunk1, siter.styleSel, w1, line.h, line.asc)
+					drawChunk(w, out, &p, chunk1, siter.styleSel, w1, line.h, line.asc, rowSpacing)
 
 					if chunkrng.contains(rtxt.Sel.E) {
 						e := rtxt.Sel.E - line.off[i]
 						chunk2 := chunk.sub(s, e)
 						w2 := line.chunkWidthEx(i, s, chunk2, rtxt.adv)
-						rtxt.drawSelectedChunk(w, out, &p, chunk2, siter.styleSel, w2, line.h, line.asc)
+						rtxt.drawSelectedChunk(w, out, &p, chunk2, siter.styleSel, w2, line.h, line.asc, rowSpacing)
 
 						chunk3 := chunk.sub(e, chunk.len())
 						w3 := line.chunkWidthEx(i, e, chunk3, rtxt.adv)
-						drawChunk(w, out, &p, chunk3, siter.styleSel, w3, line.h, line.asc)
+						drawChunk(w, out, &p, chunk3, siter.styleSel, w3, line.h, line.asc, rowSpacing)
 						insel = selAfter
 					} else {
 						chunk2 := chunk.sub(s, chunk.len())
 						w2 := line.chunkWidthEx(i, s, chunk2, rtxt.adv)
-						rtxt.drawSelectedChunk(w, out, &p, chunk2, siter.styleSel, w2, line.h, line.asc)
+						rtxt.drawSelectedChunk(w, out, &p, chunk2, siter.styleSel, w2, line.h, line.asc, rowSpacing)
 						insel = selInside
 					}
 				} else {
@@ -228,17 +226,17 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 					e := rtxt.Sel.E - line.off[i]
 					chunk1 := chunk.sub(0, e)
 					w1 := line.chunkWidthEx(i, 0, chunk1, rtxt.adv)
-					rtxt.drawSelectedChunk(w, out, &p, chunk1, siter.styleSel, w1, line.h, line.asc)
+					rtxt.drawSelectedChunk(w, out, &p, chunk1, siter.styleSel, w1, line.h, line.asc, rowSpacing)
 
 					chunk2 := chunk.sub(e, chunk.len())
 					w2 := line.chunkWidthEx(i, e, chunk2, rtxt.adv)
-					drawChunk(w, out, &p, chunk2, siter.styleSel, w2, line.h, line.asc)
+					drawChunk(w, out, &p, chunk2, siter.styleSel, w2, line.h, line.asc, rowSpacing)
 					insel = selAfter
 				} else if chunkrng.S >= rtxt.Sel.E {
 					insel = selAfter
 					simpleDrawChunk = true
 				} else {
-					rtxt.drawSelectedChunk(w, out, &p, chunk, siter.styleSel, line.w[i], line.h, line.asc)
+					rtxt.drawSelectedChunk(w, out, &p, chunk, siter.styleSel, line.w[i], line.h, line.asc, rowSpacing)
 				}
 
 			case selAfter:
@@ -249,7 +247,7 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 			}
 
 			if simpleDrawChunk {
-				drawChunk(w, out, &p, chunk, siter.styleSel, line.w[i], line.h, line.asc)
+				drawChunk(w, out, &p, chunk, siter.styleSel, line.w[i], line.h, line.asc, rowSpacing)
 				if insel == selTick && (rtxt.flags&ShowTick != 0) && (rtxt.wasFocused || (rtxt.flags&Keyboard == 0 && rtxt.flags&Editable == 0)) && chunkrng.contains(rtxt.Sel.S) {
 					x := p.X - line.w[i] + line.chunkWidth(i, rtxt.Sel.S-line.off[i], rtxt.adv)
 					rtxt.drawTick(w, out, image.Point{x, p.Y}, line.h, siter.styleSel.Color, lineidx)
@@ -323,13 +321,13 @@ func (rtxt *RichText) drawTick(w *nucular.Window, out *command.Buffer, p image.P
 	out.StrokeLine(image.Point{p.X, p.Y}, image.Point{p.X, p.Y + lineh}, linethick, color)
 }
 
-func (rtxt *RichText) drawSelectedChunk(w *nucular.Window, out *command.Buffer, p *image.Point, chunk chunk, styleSel styleSel, width, lineh, lineasc int) {
+func (rtxt *RichText) drawSelectedChunk(w *nucular.Window, out *command.Buffer, p *image.Point, chunk chunk, styleSel styleSel, width, lineh, lineasc int, rowSpacing int) {
 	styleSel.BgColor = rtxt.selColor
 	styleSel.Color = styleSel.SelFgColor
-	drawChunk(w, out, p, chunk, styleSel, width, lineh, lineasc)
+	drawChunk(w, out, p, chunk, styleSel, width, lineh, lineasc, rowSpacing)
 }
 
-func drawChunk(w *nucular.Window, out *command.Buffer, p *image.Point, chunk chunk, styleSel styleSel, width, lineh, lineasc int) {
+func drawChunk(w *nucular.Window, out *command.Buffer, p *image.Point, chunk chunk, styleSel styleSel, width, lineh, lineasc int, rowSpacing int) {
 	if chunk.isspacing() {
 		if debugDrawBoundingBoxes && width > 0 {
 			yoff := alignBaseline(lineh, lineasc, styleSel.Face)
@@ -339,6 +337,10 @@ func drawChunk(w *nucular.Window, out *command.Buffer, p *image.Point, chunk chu
 		if styleSel.BgColor != (color.RGBA{}) && width > 0 {
 			r := rect.Rect{X: p.X, Y: p.Y, H: lineh, W: width}
 			out.FillRect(r, 0, styleSel.BgColor)
+		}
+		if styleSel.Cursor != 0 {
+			b2 := rect.Rect{X: p.X, Y: p.Y, H: lineh + rowSpacing, W: width}
+			out.Cursor(b2, styleSel.Cursor)
 		}
 	} else {
 		r := rect.Rect{X: p.X, Y: p.Y, H: lineh, W: width}
@@ -373,6 +375,17 @@ func drawChunk(w *nucular.Window, out *command.Buffer, p *image.Point, chunk chu
 			m := styleSel.Face.Metrics()
 			y := p.Y + lineasc + m.Descent.Ceil() - m.Ascent.Ceil()/2
 			out.StrokeLine(image.Point{p.X, y}, image.Point{p.X + width, y}, linethick, styleSel.Color)
+		}
+
+		b2 := r
+		b2.H += rowSpacing
+
+		if styleSel.isLink && styleSel.Cursor == 0 {
+			out.Cursor(b2, font.PointerCursor)
+		}
+
+		if styleSel.Cursor != 0 {
+			out.Cursor(b2, styleSel.Cursor)
 		}
 	}
 

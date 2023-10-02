@@ -404,23 +404,27 @@ func (rtxt *RichText) handleKeyboard(in *nucular.Input, changed *bool) (arrowKey
 					return 0, -1
 				}
 			case key.CodeDeleteForward:
-				if rtxt.Sel.S == rtxt.Sel.E {
-					rtxt.Sel.E++
-				}
-				rtxt.clampSel()
-				rtxt.replace("", changed)
-				rtxt.Sel.S = rtxt.Sel.E
-			case key.CodeDeleteBackspace:
-				if rtxt.Sel.S == rtxt.Sel.E {
-					if k.Modifiers == 0 {
-						rtxt.Sel.S--
-					} else if k.Modifiers == key.ModControl {
-						rtxt.Sel.S = rtxt.towd(rtxt.Sel.S, -1, true)
+				if k.Modifiers == 0 {
+					if rtxt.Sel.S == rtxt.Sel.E {
+						rtxt.Sel.E++
 					}
+					rtxt.clampSel()
+					rtxt.replace("", changed)
+					rtxt.Sel.S = rtxt.Sel.E
 				}
-				rtxt.clampSel()
-				rtxt.replace("", changed)
-				rtxt.Sel.S = rtxt.Sel.E
+			case key.CodeDeleteBackspace:
+				if k.Modifiers == 0 || k.Modifiers == key.ModControl {
+					if rtxt.Sel.S == rtxt.Sel.E {
+						if k.Modifiers == 0 {
+							rtxt.Sel.S--
+						} else if k.Modifiers == key.ModControl {
+							rtxt.Sel.S = rtxt.towd(rtxt.Sel.S, -1, true)
+						}
+					}
+					rtxt.clampSel()
+					rtxt.replace("", changed)
+					rtxt.Sel.S = rtxt.Sel.E
+				}
 			case key.CodeHome:
 				rtxt.Sel.S = 0
 				rtxt.Sel.E = 0
@@ -442,6 +446,10 @@ func (rtxt *RichText) handleKeyboard(in *nucular.Input, changed *bool) (arrowKey
 			case key.CodeZ:
 				if k.Modifiers == key.ModControl {
 					rtxt.undo(changed)
+				}
+			case key.CodeTab:
+				if k.Modifiers == 0 {
+					rtxt.replace("\t", changed)
 				}
 			case key.CodeReturnEnter:
 				if k.Modifiers == 0 {
@@ -493,7 +501,7 @@ func (rtxt *RichText) replace(str string, changed *bool) {
 	if rtxt.Replace == nil {
 		return
 	}
-	if !rtxt.Replace(rtxt.Sel, str) {
+	if !rtxt.Replace(rtxt.Sel, &str) {
 		return
 	}
 	*changed = true

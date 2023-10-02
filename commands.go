@@ -454,7 +454,7 @@ and GDLV_BOLD_FONT to the path of two ttf files.
 		fmt.Fprintln(w, "    F10, Alt-right \t Next")
 		fmt.Fprintln(w, "    F11, Alt-down \t Step")
 		fmt.Fprintln(w, "    Shift-F11, Alt-up \t Step Out")
-		fmt.Fprintln(w, "    Shift-enter \t Add new variable to the variables window")
+		fmt.Fprintln(w, "    Shift-enter \t Add new expression to the variables window")
 		if err := w.Flush(); err != nil {
 			return err
 		}
@@ -464,10 +464,10 @@ and GDLV_BOLD_FONT to the path of two ttf files.
 	{
 		w := new(tabwriter.Writer)
 		w.Init(out, 0, 8, 0, ' ', 0)
-		fmt.Fprintln(w, "    Shift-up \t move to previous variable")
-		fmt.Fprintln(w, "    Shift-down \t move to next variable")
+		fmt.Fprintln(w, "    Shift-up \t move to previous expression")
+		fmt.Fprintln(w, "    Shift-down \t move to next expression")
 		fmt.Fprintln(w, "    Shift-delete \t removes current expression")
-		fmt.Fprintln(w, "    Ctrl-o \t expands current variable")
+		fmt.Fprintln(w, "    Ctrl-o \t expands current expression")
 		if err := w.Flush(); err != nil {
 			return err
 		}

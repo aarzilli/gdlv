@@ -31,6 +31,7 @@ type Command struct {
 	CircleFilled   CircleFilled
 	Image          Image
 	Text           Text
+	Cursor         font.Cursor
 }
 
 type CommandKind uint8
@@ -43,6 +44,7 @@ const (
 	CircleFilledCmd
 	ImageCmd
 	TextCmd
+	CursorCmd
 )
 
 type Line struct {
@@ -177,5 +179,17 @@ func (b *Buffer) DrawImage(r rect.Rect, img *image.RGBA) {
 	cmd.Kind = ImageCmd
 	cmd.Rect = r
 	cmd.Image.Img = img
+	b.Commands = append(b.Commands, cmd)
+}
+
+func (b *Buffer) Cursor(r rect.Rect, cursor font.Cursor) {
+	if !r.Intersect(&b.Clip) {
+		return
+	}
+
+	var cmd Command
+	cmd.Kind = CursorCmd
+	cmd.Rect = r
+	cmd.Cursor = cursor
 	b.Commands = append(b.Commands, cmd)
 }

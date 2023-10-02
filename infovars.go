@@ -21,6 +21,8 @@ import (
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/gdlv/internal/prettyprint"
+
+	"golang.org/x/mobile/event/key"
 )
 
 type numberMode int
@@ -276,6 +278,7 @@ type Expr struct {
 	traced                       bool
 	exprSel                      richtext.Sel
 	focus                        bool
+	autocompl                    infovarAutocompl
 }
 
 func loadGlobals(p *asyncLoad) {
@@ -689,7 +692,7 @@ func variableHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v 
 		if exprMenu >= 0 {
 			exprSel := c.LastChunkSel()
 			localsPanel.expressions[exprMenu].exprSel = exprSel
-			ed.Replace = func(sel richtext.Sel, str string) bool {
+			ed.Replace = func(sel richtext.Sel, str *string) bool {
 				return exprEditReplace(exprMenu, exprSel, sel, str)
 			}
 		}
@@ -741,6 +744,7 @@ func variableHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v 
 			}
 		}
 	}
+	handleKeyboardVar(w, ed, &exprMenu)
 
 	lblrect := w.LastWidgetBounds
 	lblrect.W = w.Bounds.W
@@ -793,7 +797,7 @@ func variableNoHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, 
 		c.Text(v.DisplayName)
 		if exprMenu >= 0 {
 			exprSel := c.LastChunkSel()
-			ed.Replace = func(sel richtext.Sel, str string) bool {
+			ed.Replace = func(sel richtext.Sel, str *string) bool {
 				return exprEditReplace(exprMenu, exprSel, sel, str)
 			}
 		}
@@ -807,6 +811,8 @@ func variableNoHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, 
 		c.Text(value)
 		c.End()
 	}
+
+	handleKeyboardVar(w, ed, &exprMenu)
 
 	if wrap {
 		if v.requestedLines == 0 {
@@ -1271,6 +1277,60 @@ func hexdumpWindow(w *nucular.Window, v *Variable) {
 	v.ed.Edit(w)
 }
 
+func handleKeyboardVar(w *nucular.Window, ed *richtext.RichText, exprMenu *int) {
+	if ed.Events&richtext.Active == 0 {
+		return
+	}
+	if *exprMenu < 0 {
+		return
+	}
+
+	activateExpr := func(i int) {
+		if i >= 0 && i < len(localsPanel.v) {
+			pfrt := perFrameRichTextMap[localsPanel.v[i].Variable]
+			if pfrt.ed != nil {
+				pfrt.ed.Sel.S = 0
+				pfrt.ed.Sel.E = 0
+				w.Master().ActivateEditor(w, pfrt.ed)
+			}
+		}
+	}
+
+	kbd := &w.Input().Keyboard
+	for _, k := range kbd.Keys {
+		switch {
+		case k.Modifiers == key.ModShift && k.Code == key.CodeDeleteForward:
+			if *exprMenu+1 < len(localsPanel.v) {
+				activateExpr(*exprMenu + 1)
+			} else if *exprMenu-1 >= 0 {
+				activateExpr(*exprMenu - 1)
+			}
+			for k := range perFrameRichTextMap {
+				pfrt := perFrameRichTextMap[k]
+				pfrt.used = true
+				perFrameRichTextMap[k] = pfrt
+			}
+			removeExpression(*exprMenu)
+			*exprMenu = -1
+			return
+
+		case k.Modifiers == key.ModShift && k.Code == key.CodeUpArrow:
+			activateExpr(*exprMenu - 1)
+
+		case k.Modifiers == key.ModShift && k.Code == key.CodeDownArrow:
+			activateExpr(*exprMenu + 1)
+
+		case k.Modifiers == key.ModControl && k.Code == key.CodeO:
+			v := localsPanel.v[*exprMenu]
+			if w.TreeIsOpen(v.Varname) {
+				w.TreeClose(v.Varname)
+			} else {
+				w.TreeOpen(v.Varname)
+			}
+		}
+	}
+}
+
 var perFrameRichTextGroup = &richtext.SelectionGroup{}
 var perFrameRichTextMap = map[*api.Variable]*perFrameRichText{}
 
@@ -1308,26 +1368,80 @@ func richTextCleanup() {
 	}
 }
 
-func exprEditReplace(exprMenuIdx int, exprSel, sel richtext.Sel, str string) bool {
+func exprEditReplace(exprMenuIdx int, exprSel, sel richtext.Sel, str *string) bool {
 	if exprMenuIdx >= len(localsPanel.expressions) {
 		return false
 	}
-	for i := range str {
-		if str[i] == '\n' {
+	for i := range *str {
+		if (*str)[i] == '\n' {
 			return false
 		}
 	}
+	expr := localsPanel.expressions[exprMenuIdx].Expr
 	sel.S -= exprSel.S
 	sel.E -= exprSel.S
-	expr := localsPanel.expressions[exprMenuIdx].Expr
 	if sel.S < 0 || sel.S > int32(len(expr)) || sel.E < 0 || sel.E > int32(len(expr)) {
 		return false
 	}
 
-	expr = expr[:sel.S] + str + expr[sel.E:]
+	if *str == "\t" {
+		if sel.S != sel.E {
+			return false
+		}
+		word := infovarLastWord(expr, int(sel.S))
+		cm := completeMachine{word: word}
+		if d := sel.S - int32(len(word)) - 1; d >= 0 && d < int32(len(expr)) && expr[d] == '.' && d == localsPanel.expressions[exprMenuIdx].autocompl.dotPos {
+			for _, ac := range localsPanel.expressions[exprMenuIdx].autocompl.list {
+				cm.add(ac)
+			}
+		} else {
+			completeAddVariables(&cm)
+		}
+		cm.finish(func(s string) {
+			*str = s
+			expr = expr[:sel.S] + s + expr[sel.E:]
+		}, nil)
+		if *str == "\t" {
+			return false
+		}
+	} else {
+		expr = expr[:sel.S] + *str + expr[sel.E:]
+	}
+
+	if *str == "." {
+		ac := []string{}
+		v := localsPanel.v[exprMenuIdx]
+		if v.Kind == reflect.Struct {
+			for i := range v.Children {
+				if v.Children[i].Name != "" {
+					ac = append(ac, v.Children[i].Name)
+				}
+			}
+			localsPanel.expressions[exprMenuIdx].autocompl = infovarAutocompl{sel.S, ac}
+		}
+	}
+
 	localsPanel.expressions[exprMenuIdx].Expr = expr
 	pfrt := perFrameRichTextMap[localsPanel.v[exprMenuIdx].Variable]
+	delete(perFrameRichTextMap, localsPanel.v[exprMenuIdx].Variable)
 	loadOneExpr(exprMenuIdx)
 	perFrameRichTextMap[localsPanel.v[exprMenuIdx].Variable] = pfrt
 	return true
+}
+
+type infovarAutocompl struct {
+	dotPos int32
+	list   []string
+}
+
+func infovarLastWord(expr string, start int) string {
+	if start >= len(expr) {
+		start--
+	}
+	for i := start; i > 0; i-- {
+		if expr[i] == ' ' || expr[i] == '.' {
+			return expr[i+1 : start+1]
+		}
+	}
+	return expr[:start+1]
 }

@@ -22,16 +22,15 @@ const dumpFrame = false
 var UnknownCommandErr = errors.New("unknown command")
 
 type context struct {
-	mw             MasterWindow
-	Input          Input
-	Style          nstyle.Style
-	Windows        []*Window
-	DockedWindows  dockedTree
-	changed        int32
-	activateEditor *TextEditor
-	cmds           []command.Command
-	trashFrame     bool
-	autopos        image.Point
+	mw            MasterWindow
+	Input         Input
+	Style         nstyle.Style
+	Windows       []*Window
+	DockedWindows dockedTree
+	changed       int32
+	cmds          []command.Command
+	trashFrame    bool
+	autopos       image.Point
 
 	finalCmds command.Buffer
 
@@ -208,7 +207,6 @@ func (ctx *context) Reset() {
 			return w
 		})
 	}
-	ctx.activateEditor = nil
 	in := &ctx.Input
 	in.Mouse.Buttons[mouse.ButtonLeft].Clicked = false
 	in.Mouse.Buttons[mouse.ButtonMiddle].Clicked = false
@@ -221,6 +219,13 @@ func (ctx *context) Reset() {
 }
 
 func (ctx *context) Restack() {
+	defer func() {
+		if ctx.Input.activateEditorWindow != nil {
+			ctx.Input.activateEditorWindow = nil
+		} else {
+			ctx.Input.activateEditor = nil
+		}
+	}()
 	clicked := false
 	for _, b := range []mouse.Button{mouse.ButtonLeft, mouse.ButtonRight, mouse.ButtonMiddle} {
 		if ctx.Input.Mouse.Buttons[b].Clicked && ctx.Input.Mouse.Buttons[b].Down {
@@ -228,7 +233,7 @@ func (ctx *context) Restack() {
 			break
 		}
 	}
-	if !clicked {
+	if !clicked && ctx.Input.activateEditorWindow == nil {
 		return
 	}
 	ctx.dockedWindowFocus = 0
@@ -252,7 +257,7 @@ func (ctx *context) Restack() {
 		if ctx.Windows[i].flags&windowTooltip != 0 {
 			continue
 		}
-		if ctx.restackClick(ctx.Windows[i]) {
+		if ctx.restackClick(ctx.Windows[i]) || ctx.Input.activateEditorWindow == ctx.Windows[i] {
 			found = true
 			if toplevelIdx != i {
 				newToplevel := ctx.Windows[i]
@@ -273,6 +278,9 @@ func (ctx *context) Restack() {
 	}
 	ctx.DockedWindows.Walk(func(w *Window) *Window {
 		if ctx.restackClick(w) && (w.flags&windowDocked != 0) {
+			ctx.dockedWindowFocus = w.idx
+		}
+		if ctx.Input.activateEditorWindow == w {
 			ctx.dockedWindowFocus = w.idx
 		}
 		return w
@@ -305,24 +313,24 @@ func (ctx *context) FindFocus() {
 }
 
 func (ctx *context) Walk(fn WindowWalkFn) {
-	fn(ctx.Windows[0].title, ctx.Windows[0].Data, false, 0, ctx.Windows[0].Bounds)
+	fn(ctx.Windows[0], ctx.Windows[0].title, ctx.Windows[0].Data, false, 0, ctx.Windows[0].Bounds)
 	ctx.DockedWindows.walkExt(func(t *dockedTree) {
 		switch t.Type {
 		case dockedNodeHoriz:
-			fn("", nil, true, t.Split.Size, rect.Rect{})
+			fn(t.W, "", nil, true, t.Split.Size, rect.Rect{})
 		case dockedNodeVert:
-			fn("", nil, true, -t.Split.Size, rect.Rect{})
+			fn(t.W, "", nil, true, -t.Split.Size, rect.Rect{})
 		case dockedNodeLeaf:
 			if t.W == nil {
-				fn("", nil, true, 0, rect.Rect{})
+				fn(nil, "", nil, true, 0, rect.Rect{})
 			} else {
-				fn(t.W.title, t.W.Data, true, 0, t.W.Bounds)
+				fn(t.W, t.W.title, t.W.Data, true, 0, t.W.Bounds)
 			}
 		}
 	})
 	for _, win := range ctx.Windows[1:] {
 		if win.flags&WindowNonmodal != 0 {
-			fn(win.title, win.Data, false, 0, win.Bounds)
+			fn(win, win.title, win.Data, false, 0, win.Bounds)
 		}
 	}
 }
