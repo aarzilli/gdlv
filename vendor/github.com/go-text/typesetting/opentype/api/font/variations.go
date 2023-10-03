@@ -42,8 +42,9 @@ func (mv mvar) getVar(tag Tag, coords []float32) float32 {
 // ---------------------------------- gvar ----------------------------------
 
 type gvar struct {
-	sharedTuples [][]float32
-	variations   [][]tupleVariation // length glyphCount
+	sharedTuples         [][]float32        // with size tupleCount x axisCount
+	variations           [][]tupleVariation // with length glyphCount
+	sharedTupleActiveIdx []int              // with length tupleCount
 }
 
 func newGvar(table tables.Gvar, glyf tables.Glyf) (gvar, error) {
@@ -52,8 +53,9 @@ func newGvar(table tables.Gvar, glyf tables.Glyf) (gvar, error) {
 	}
 
 	out := gvar{
-		sharedTuples: make([][]float32, len(table.SharedTuples.SharedTuples)),
-		variations:   make([][]tupleVariation, len(table.GlyphVariationDatas)),
+		sharedTuples:         make([][]float32, len(table.SharedTuples.SharedTuples)),
+		variations:           make([][]tupleVariation, len(table.GlyphVariationDatas)),
+		sharedTupleActiveIdx: make([]int, len(table.SharedTuples.SharedTuples)),
 	}
 	for i, ts := range table.SharedTuples.SharedTuples {
 		out.sharedTuples[i] = ts.Values
@@ -72,6 +74,24 @@ func newGvar(table tables.Gvar, glyf tables.Glyf) (gvar, error) {
 		}
 		out.variations[i] = tvs
 	}
+
+	// For shared tuples that only have one axis active, share the index of
+	// that axis as a cache. This will speed up caclulateScalar() a lot
+	// for fonts with lots of axes and many "monovar" tuples.
+	for i, tuple := range out.sharedTuples {
+		idx := -1
+		for j, peak := range tuple {
+			if peak != 0 {
+				if idx != -1 { // two peaks or more, do not cache
+					idx = -1
+					break
+				}
+				idx = j
+			}
+		}
+		out.sharedTupleActiveIdx[i] = idx
+	}
+
 	return out, nil
 }
 
@@ -83,23 +103,31 @@ type tupleVariation struct {
 	deltas []int16
 }
 
-// sharedTuples has length _ x axisCount
-func (t tupleVariation) calculateScalar(coords []float32, sharedTuples [][]float32) float32 {
+// sharedTuples has length tupleCount x axisCount
+// sharedTupleActiveIdx has length tupleCount
+func (t tupleVariation) calculateScalar(coords []float32, sharedTuples [][]float32, sharedTupleActiveIdx []int) float32 {
+	startIdx, endIdx := 0, len(coords)
 	peakTuple := t.PeakTuple.Values
-	if peakTuple == nil { // use shared tuple
+	if peakTuple == nil { // no peak specified -> use shared tuple
 		index := t.Index()
 		if int(index) >= len(sharedTuples) { // should not happend
 			return 0.
 		}
 		peakTuple = sharedTuples[index]
+
+		// use the cache to restrict the range
+		if v := sharedTupleActiveIdx[index]; v != -1 {
+			startIdx = v
+			endIdx = startIdx + 1
+		}
 	}
 
 	startTuple, endTuple := t.IntermediateTuples[0].Values, t.IntermediateTuples[1].Values
 	hasIntermediate := startTuple != nil
 
 	var scalar float32 = 1.
-	for i, v := range coords {
-		peak := peakTuple[i]
+	for i := startIdx; i < endIdx; i++ {
+		v, peak := coords[i], peakTuple[i]
 		if peak == 0 || v == peak {
 			continue
 		}
@@ -294,14 +322,16 @@ func unpackDeltas(data []byte, pointNumbersCount int) ([]int16, error) {
 }
 
 // update `points` in place
-func (gvar gvar) applyDeltasToPoints(glyph tables.GlyphID, coords []float32, points []contourPoint) {
+func (gvar gvar) applyDeltasToPoints(glyph gID, coords []float32, points []contourPoint) {
 	// adapted from harfbuzz/src/hb-ot-var-gvar-table.hh
 
 	if int(glyph) >= len(gvar.variations) { // should not happend
 		return
 	}
-	/* Save original points for inferred delta calculation */
+
+	// save original points for inferred delta calculation
 	origPoints := append([]contourPoint(nil), points...)
+	// flag is used to indicate referenced point
 	deltas := make([]contourPoint, len(points))
 
 	var endPoints []int // index into points
@@ -313,7 +343,7 @@ func (gvar gvar) applyDeltasToPoints(glyph tables.GlyphID, coords []float32, poi
 
 	varData := gvar.variations[glyph]
 	for _, tuple := range varData {
-		scalar := tuple.calculateScalar(coords, gvar.sharedTuples)
+		scalar := tuple.calculateScalar(coords, gvar.sharedTuples, gvar.sharedTupleActiveIdx)
 		if scalar == 0 {
 			continue
 		}
@@ -392,10 +422,9 @@ func (gvar gvar) applyDeltasToPoints(glyph tables.GlyphID, coords []float32, poi
 			startPoint = endPoint + 1
 		}
 
-		/* apply specified / inferred deltas to points */
+		// apply specified / inferred deltas to points
 		for i, d := range deltas {
-			points[i].X += d.X
-			points[i].Y += d.Y
+			points[i].translate(d.X, d.Y)
 		}
 	}
 }
@@ -425,19 +454,19 @@ func inferDelta(targetVal, prevVal, nextVal, prevDelta, nextDelta float32) float
 		return nextDelta
 	}
 
-	/* linear interpolation */
+	// linear interpolation
 	r := (targetVal - prevVal) / (nextVal - prevVal)
-	return (1.-r)*prevDelta + r*nextDelta
+	return prevDelta + r*(nextDelta-prevDelta)
 }
 
 // ------------------------------ hvar/vvar ------------------------------
 
-func getAdvanceVar(t *tables.HVAR, glyph tables.GlyphID, coords []float32) float32 {
+func getAdvanceDeltaUnscaled(t *tables.HVAR, glyph tables.GlyphID, coords []float32) float32 {
 	index := t.AdvanceWidthMapping.Index(glyph)
 	return t.ItemVariationStore.GetDelta(index, coords)
 }
 
-func getSideBearingVar(t *tables.HVAR, glyph tables.GlyphID, coords []float32) float32 {
+func getLsbDeltaUnscaled(t *tables.HVAR, glyph tables.GlyphID, coords []float32) float32 {
 	if t.LsbMapping == nil {
 		return 0
 	}

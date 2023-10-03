@@ -3,7 +3,7 @@ package harfbuzz
 import (
 	"unicode"
 
-	"github.com/go-text/typesetting/unicodedata"
+	ucd "github.com/go-text/typesetting/unicodedata"
 )
 
 // uni exposes some lookup functions for Unicode properties.
@@ -47,36 +47,36 @@ const (
 
 // correspondance with *unicode.RangeTable classes
 var generalCategories = [...]*unicode.RangeTable{
-	control:            unicode.Cc,
-	format:             unicode.Cf,
+	control:            ucd.Cc,
+	format:             ucd.Cf,
 	unassigned:         nil,
-	privateUse:         unicode.Co,
-	surrogate:          unicode.Cs,
-	lowercaseLetter:    unicode.Ll,
-	modifierLetter:     unicode.Lm,
-	otherLetter:        unicode.Lo,
-	titlecaseLetter:    unicode.Lt,
-	uppercaseLetter:    unicode.Lu,
-	spacingMark:        unicode.Mc,
-	enclosingMark:      unicode.Me,
-	nonSpacingMark:     unicode.Mn,
-	decimalNumber:      unicode.Nd,
-	letterNumber:       unicode.Nl,
-	otherNumber:        unicode.No,
-	connectPunctuation: unicode.Pc,
-	dashPunctuation:    unicode.Pd,
-	closePunctuation:   unicode.Pe,
-	finalPunctuation:   unicode.Pf,
-	initialPunctuation: unicode.Pi,
-	otherPunctuation:   unicode.Po,
-	openPunctuation:    unicode.Ps,
-	currencySymbol:     unicode.Sc,
-	modifierSymbol:     unicode.Sk,
-	mathSymbol:         unicode.Sm,
-	otherSymbol:        unicode.So,
-	lineSeparator:      unicode.Zl,
-	paragraphSeparator: unicode.Zp,
-	spaceSeparator:     unicode.Zs,
+	privateUse:         ucd.Co,
+	surrogate:          ucd.Cs,
+	lowercaseLetter:    ucd.Ll,
+	modifierLetter:     ucd.Lm,
+	otherLetter:        ucd.Lo,
+	titlecaseLetter:    ucd.Lt,
+	uppercaseLetter:    ucd.Lu,
+	spacingMark:        ucd.Mc,
+	enclosingMark:      ucd.Me,
+	nonSpacingMark:     ucd.Mn,
+	decimalNumber:      ucd.Nd,
+	letterNumber:       ucd.Nl,
+	otherNumber:        ucd.No,
+	connectPunctuation: ucd.Pc,
+	dashPunctuation:    ucd.Pd,
+	closePunctuation:   ucd.Pe,
+	finalPunctuation:   ucd.Pf,
+	initialPunctuation: ucd.Pi,
+	otherPunctuation:   ucd.Po,
+	openPunctuation:    ucd.Ps,
+	currencySymbol:     ucd.Sc,
+	modifierSymbol:     ucd.Sk,
+	mathSymbol:         ucd.Sm,
+	otherSymbol:        ucd.So,
+	lineSeparator:      ucd.Zl,
+	paragraphSeparator: ucd.Zp,
+	spaceSeparator:     ucd.Zs,
 }
 
 func (g generalCategory) isMark() bool {
@@ -286,14 +286,12 @@ var modifiedCombiningClass = [256]uint8{
 type unicodeFuncs struct{}
 
 func (unicodeFuncs) modifiedCombiningClass(u rune) uint8 {
-	/* This hack belongs to the USE shaper (for Tai Tham):
-	 * Reorder SAKOT to ensure it comes after any tone marks. */
+	// Reorder SAKOT to ensure it comes after any tone marks.
 	if u == 0x1A60 {
 		return 254
 	}
 
-	/* This hack belongs to the Tibetan shaper:
-	 * Reorder PADMA to ensure it comes after any vowel marks. */
+	// Reorder PADMA to ensure it comes after any vowel marks.
 	if u == 0x0FC6 {
 		return 254
 	}
@@ -301,7 +299,7 @@ func (unicodeFuncs) modifiedCombiningClass(u rune) uint8 {
 	if u == 0x0F39 {
 		return 127
 	}
-	return modifiedCombiningClass[unicodedata.LookupCombiningClass(u)]
+	return modifiedCombiningClass[ucd.LookupCombiningClass(u)]
 }
 
 // IsDefaultIgnorable returns `true` for
@@ -368,13 +366,13 @@ func (unicodeFuncs) generalCategory(ch rune) generalCategory {
 }
 
 func (unicodeFuncs) isExtendedPictographic(ch rune) bool {
-	return unicode.Is(unicodedata.Extended_Pictographic, ch)
+	return unicode.Is(ucd.Extended_Pictographic, ch)
 }
 
 // returns the mirroring Glyph code point (for bi-directional
 // replacement) of a code point, or itself
 func (unicodeFuncs) mirroring(ch rune) rune {
-	out, _ := unicodedata.LookupMirrorChar(ch)
+	out, _ := ucd.LookupMirrorChar(ch)
 	return out
 }
 
@@ -446,32 +444,34 @@ func (unicodeFuncs) isVariationSelector(r rune) bool {
 	return (0xFE00 <= r && r <= 0xFE0F) || (0xE0100 <= r && r <= 0xE01EF)
 }
 
-func (unicodeFuncs) decompose(ab rune) (a, b rune, ok bool) { return unicodedata.Decompose(ab) }
-func (unicodeFuncs) compose(a, b rune) (rune, bool)         { return unicodedata.Compose(a, b) }
+func (unicodeFuncs) decompose(ab rune) (a, b rune, ok bool) { return ucd.Decompose(ab) }
+func (unicodeFuncs) compose(a, b rune) (rune, bool)         { return ucd.Compose(a, b) }
 
 /* Prepare */
 
-/* Implement enough of Unicode Graphemes here that shaping
- * in reverse-direction wouldn't break graphemes.  Namely,
- * we mark all marks and ZWJ and ZWJ,Extended_Pictographic
- * sequences as continuations.  The foreach_grapheme()
- * macro uses this bit.
- *
- * https://www.unicode.org/reports/tr29/#Regex_Definitions
- */
+func isRegionalIndicator(r rune) bool { return 0x1F1E6 <= r && r <= 0x1F1FF }
+
+// Implement enough of Unicode Graphemes here that shaping
+// in reverse-direction wouldn't break graphemes.  Namely,
+// we mark all marks and ZWJ and ZWJ,Extended_Pictographic
+// sequences as continuations.  The foreach_grapheme()
+// macro uses this bit.
+//
+// https://www.unicode.org/reports/tr29/#Regex_Definitions
 func (b *Buffer) setUnicodeProps() {
 	info := b.Info
 	for i := 0; i < len(info); i++ {
+		r := info[i].codepoint
 		info[i].setUnicodeProps(b)
 
 		/* Marks are already set as continuation by the above line.
 		 * Handle Emoji_Modifier and ZWJ-continuation. */
-		if info[i].unicode.generalCategory() == modifierSymbol && (0x1F3FB <= info[i].codepoint && info[i].codepoint <= 0x1F3FF) {
+		if info[i].unicode.generalCategory() == modifierSymbol && (0x1F3FB <= r && r <= 0x1F3FF) {
 			info[i].setContinuation()
-		} else if i != 0 && 0x1F1E6 <= info[i].codepoint && info[i].codepoint <= 0x1F1FF {
+		} else if i != 0 && isRegionalIndicator(r) {
 			/* Regional_Indicators are hairy as hell...
 			* https://github.com/harfbuzz/harfbuzz/issues/2265 */
-			if 0x1F1E6 <= info[i-1].codepoint && info[i-1].codepoint <= 0x1F1FF && !info[i-1].isContinuation() {
+			if isRegionalIndicator(info[i-1].codepoint) && !info[i-1].isContinuation() {
 				info[i].setContinuation()
 			}
 		} else if info[i].isZwj() {
@@ -481,19 +481,20 @@ func (b *Buffer) setUnicodeProps() {
 				info[i].setUnicodeProps(b)
 				info[i].setContinuation()
 			}
-		} else if 0xE0020 <= info[i].codepoint && info[i].codepoint <= 0xE007F {
-			/* Or part of the Other_Grapheme_Extend that is not marks.
-			 * As of Unicode 11 that is just:
-			 *
-			 * 200C          ; Other_Grapheme_Extend # Cf       ZERO WIDTH NON-JOINER
-			 * FF9E..FF9F    ; Other_Grapheme_Extend # Lm   [2] HALFWIDTH KATAKANA VOICED SOUND MARK..HALFWIDTH KATAKANA SEMI-VOICED SOUND MARK
-			 * E0020..E007F  ; Other_Grapheme_Extend # Cf  [96] TAG SPACE..CANCEL TAG
-			 *
-			 * ZWNJ is special, we don't want to merge it as there's no need, and keeping
-			 * it separate results in more granular clusters.  Ignore Katakana for now.
-			 * Tags are used for Emoji sub-region flag sequences:
-			 * https://github.com/harfbuzz/harfbuzz/issues/1556
-			 */
+		} else if (0xFF9E <= r && r <= 0xFF9F) || (0xE0020 <= r && r <= 0xE007F) {
+			// Or part of the Other_Grapheme_Extend that is not marks.
+			// As of Unicode 15 that is just:
+			//
+			// 200C          ; Other_Grapheme_Extend # Cf       ZERO WIDTH NON-JOINER
+			// FF9E..FF9F    ; Other_Grapheme_Extend # Lm   [2] HALFWIDTH KATAKANA VOICED SOUND MARK..HALFWIDTH KATAKANA SEMI-VOICED SOUND MARK
+			// E0020..E007F  ; Other_Grapheme_Extend # Cf  [96] TAG SPACE..CANCEL TAG
+			//
+			// ZWNJ is special, we don't want to merge it as there's no need, and keeping
+			// it separate results in more granular clusters.
+			// Tags are used for Emoji sub-region flag sequences:
+			// https://github.com/harfbuzz/harfbuzz/issues/1556
+			// Katakana ones were requested:
+			// https://github.com/harfbuzz/harfbuzz/issues/3844
 			info[i].setContinuation()
 		}
 	}
@@ -547,19 +548,26 @@ func (b *Buffer) ensureNativeDirection() {
 	direction := b.Props.Direction
 	horizDir := getHorizontalDirection(b.Props.Script)
 
-	/* Numeric runs in natively-RTL scripts are actually native-LTR, so we reset
-	 * the horiz_dir if the run contains at least one decimal-number char, and no
-	 * letter chars (ideally we should be checking for chars with strong
-	 * directionality but hb-unicode currently lacks bidi categories).
-	 *
-	 * This allows digit sequences in Arabic etc to be shaped in "native"
-	 * direction, so that features like ligatures will work as intended.
-	 *
-	 * https://github.com/harfbuzz/harfbuzz/issues/501
-	 */
+	// Numeric runs in natively-RTL scripts are actually native-LTR, so we reset
+	// the horiz_dir if the run contains at least one decimal-number char, and no
+	// letter chars (ideally we should be checking for chars with strong
+	// directionality but hb-unicode currently lacks bidi categories).
+	//
+	// This allows digit sequences in Arabic etc to be shaped in "native"
+	// direction, so that features like ligatures will work as intended.
+	//
+	// https://github.com/harfbuzz/harfbuzz/issues/501
+	//
+	// Similar thing about Regional_Indicators; They are bidi=L, but Script=Common.
+	// If they are present in a run of natively-RTL text, they get assigned a script
+	// with natively RTL direction, which would result in wrong shaping if we
+	// assign such native RTL direction to them then. Detect that as well.
+	//
+	// https://github.com/harfbuzz/harfbuzz/issues/3314
+	//
 
 	if horizDir == RightToLeft && direction == LeftToRight {
-		var foundNumber, foundLetter bool
+		var foundNumber, foundLetter, foundRi bool
 		for _, info := range b.Info {
 			gc := info.unicode.generalCategory()
 			if gc == decimalNumber {
@@ -567,9 +575,11 @@ func (b *Buffer) ensureNativeDirection() {
 			} else if gc.isLetter() {
 				foundLetter = true
 				break
+			} else if isRegionalIndicator(info.codepoint) {
+				foundRi = true
 			}
 		}
-		if foundNumber && !foundLetter {
+		if (foundNumber || foundRi) && !foundLetter {
 			horizDir = LeftToRight
 		}
 	}

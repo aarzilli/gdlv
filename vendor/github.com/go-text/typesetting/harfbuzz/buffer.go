@@ -1,8 +1,6 @@
 package harfbuzz
 
 import (
-	"math"
-
 	"github.com/go-text/typesetting/language"
 	"github.com/go-text/typesetting/opentype/tables"
 )
@@ -30,15 +28,18 @@ const (
 	bsfHasDefaultIgnorables
 	bsfHasSpaceFallback
 	bsfHasGPOSAttachment
-	bsfHasUnsafeToBreak
+	// bsfHasUnsafeToBreak
 	bsfHasCGJ
+	bsfHasGlyphFlags
+	bsfHasBrokenSyllable
+
 	bsfDefault bufferScratchFlags = 0x00000000
 
-	// reserved for complex shapers' internal use.
-	bsfComplex0 bufferScratchFlags = 0x01000000
-	bsfComplex1 bufferScratchFlags = 0x02000000
-	bsfComplex2 bufferScratchFlags = 0x04000000
-	bsfComplex3 bufferScratchFlags = 0x08000000
+	// reserved for shapers' internal use.
+	bsfShaper0 bufferScratchFlags = 0x01000000
+	bsfShaper1 bufferScratchFlags = 0x02000000
+	bsfShaper2 bufferScratchFlags = 0x04000000
+	bsfShaper3 bufferScratchFlags = 0x08000000
 )
 
 // maximum length of additional context added outside
@@ -100,7 +101,7 @@ type Buffer struct {
 
 	serial       uint
 	idx          int                // Cursor into `info` and `pos` arrays
-	scratchFlags bufferScratchFlags /* Have space-fallback, etc. */
+	scratchFlags bufferScratchFlags // Have space-fallback, etc.
 
 	haveOutput bool
 
@@ -111,9 +112,9 @@ type Buffer struct {
 // It should then be populated with `AddRunes` and shapped with `Shape`.
 func NewBuffer() *Buffer {
 	return &Buffer{
-		ClusterLevel:  MonotoneGraphemes,
-		maxOps:        maxOpsDefault,
-		planCache:     map[Face][]*shapePlan{},
+		ClusterLevel: MonotoneGraphemes,
+		maxOps:       maxOpsDefault,
+		planCache:    map[Face][]*shapePlan{},
 	}
 }
 
@@ -218,6 +219,7 @@ func (b *Buffer) GuessSegmentProperties() {
 // Clear resets `b` to its initial empty state (including user settings).
 // This method should be used to reuse the allocated memory.
 func (b *Buffer) Clear() {
+	b.ClusterLevel = 0
 	b.Flags = 0
 	b.Invisible = 0
 	b.NotFound = 0
@@ -246,8 +248,15 @@ func (b *Buffer) cur(i int) *GlyphInfo { return &b.Info[b.idx+i] }
 func (b *Buffer) curPos(i int) *GlyphPosition { return &b.Pos[b.idx+i] }
 
 // returns the last glyph of `outInfo`
-func (b Buffer) prev() *GlyphInfo {
+func (b *Buffer) prev() *GlyphInfo {
 	return &b.outInfo[len(b.outInfo)-1]
+}
+
+func (b *Buffer) digest() (d setDigest) {
+	for _, glyph := range b.Info {
+		d.add(gID(glyph.Glyph))
+	}
+	return d
 }
 
 // func (b Buffer) has_separate_output() bool { return info != b.outInfo }
@@ -356,6 +365,49 @@ func (b *Buffer) resetMasks(mask GlyphMask) {
 	}
 }
 
+// Adds glyph flags in mask to infos with clusters between start and end.
+// The start index will be from out-buffer if [fromOutBuffer] is true.
+// If [interior] is true, then the cluster having the minimum value is skipped.
+func (b *Buffer) setGlyphFlags(mask GlyphMask, start, end int, interior, fromOutBuffer bool) {
+	end = min(end, len(b.Info))
+
+	if interior && !fromOutBuffer && end-start < 2 {
+		return
+	}
+
+	b.scratchFlags |= bsfHasGlyphFlags
+
+	info := b.Info
+	if !fromOutBuffer || !b.haveOutput {
+		if !interior {
+			for i := start; i < end; i++ {
+				info[i].Mask |= mask
+			}
+		} else {
+			cluster := b.findMinCluster(info, start, end, maxInt)
+			b.infosSetGlyphFlags(info, start, end, cluster, mask)
+		}
+	} else {
+		// assert (start <= out_len);
+		// assert (idx <= end);
+		outInfo := b.outInfo
+		if !interior {
+			for i := start; i < len(outInfo); i++ {
+				outInfo[i].Mask |= mask
+			}
+			for i := b.idx; i < end; i++ {
+				info[i].Mask |= mask
+			}
+		} else {
+			cluster := b.findMinCluster(info, b.idx, end, maxInt)
+			cluster = b.findMinCluster(outInfo, start, len(outInfo), cluster)
+
+			b.infosSetGlyphFlags(outInfo, start, len(outInfo), cluster, mask)
+			b.infosSetGlyphFlags(info, b.idx, end, cluster, mask)
+		}
+	}
+}
+
 func (b *Buffer) setMasks(value, mask GlyphMask, clusterStart, clusterEnd int) {
 	notMask := ^mask
 	value &= mask
@@ -387,18 +439,22 @@ func (b *Buffer) mergeClusters(start, end int) {
 		cluster = min(cluster, b.Info[i].Cluster)
 	}
 
-	/* Extend end */
-	for end < len(b.Info) && b.Info[end-1].Cluster == b.Info[end].Cluster {
-		end++
+	// Extend end
+	if cluster != b.Info[end-1].Cluster {
+		for end < len(b.Info) && b.Info[end-1].Cluster == b.Info[end].Cluster {
+			end++
+		}
 	}
 
-	/* Extend start */
-	for b.idx < start && b.Info[start-1].Cluster == b.Info[start].Cluster {
-		start--
+	// Extend start
+	if cluster != b.Info[start].Cluster {
+		for b.idx < start && b.Info[start-1].Cluster == b.Info[start].Cluster {
+			start--
+		}
 	}
 
-	/* If we hit the start of buffer, continue in out-buffer. */
-	if b.idx == start {
+	// If we hit the start of buffer, continue in out-buffer.
+	if b.idx == start && b.Info[start].Cluster != cluster {
 		startC := b.Info[start].Cluster
 		for i := len(b.outInfo); i != 0 && b.outInfo[i-1].Cluster == startC; i-- {
 			b.outInfo[i-1].setCluster(cluster, 0)
@@ -412,20 +468,21 @@ func (b *Buffer) mergeClusters(start, end int) {
 
 // merge clusters for deleting current glyph, and skip it.
 func (b *Buffer) deleteGlyph() {
-	/* The logic here is duplicated in hb_ot_hide_default_ignorables(). */
+	// The logic here is duplicated in hb_ot_hide_default_ignorables().
 
 	cluster := b.Info[b.idx].Cluster
-	if b.idx+1 < len(b.Info) && cluster == b.Info[b.idx+1].Cluster {
+	if L := len(b.outInfo); b.idx+1 < len(b.Info) && cluster == b.Info[b.idx+1].Cluster ||
+		L != 0 && cluster == b.outInfo[L-1].Cluster {
 		/* Cluster survives; do nothing. */
 		goto done
 	}
 
-	if len(b.outInfo) != 0 {
+	if L := len(b.outInfo); L != 0 {
 		/* Merge cluster backward. */
-		if cluster < b.outInfo[len(b.outInfo)-1].Cluster {
+		if cluster < b.outInfo[L-1].Cluster {
 			mask := b.Info[b.idx].Mask
-			oldCluster := b.outInfo[len(b.outInfo)-1].Cluster
-			for i := len(b.outInfo); i != 0 && b.outInfo[i-1].Cluster == oldCluster; i-- {
+			oldCluster := b.outInfo[L-1].Cluster
+			for i := L; i != 0 && b.outInfo[i-1].Cluster == oldCluster; i-- {
 				b.outInfo[i-1].setCluster(cluster, mask)
 			}
 		}
@@ -442,53 +499,133 @@ done:
 	b.skipGlyph()
 }
 
+func (b *Buffer) deleteGlyphsInplace(filter func(*GlyphInfo) bool) {
+	// Merge clusters and delete filtered glyphs.
+	// NOTE! We can't use out-buffer as we have positioning data.
+	var (
+		j    int
+		info = b.Info
+		pos  = b.Pos
+	)
+	for i := range info {
+		if filter(&info[i]) {
+			/* Merge clusters.
+			* Same logic as buffer.deleteGlyph(), but for in-place removal. */
+
+			cluster := info[i].Cluster
+			if i+1 < len(b.Info) && cluster == info[i+1].Cluster {
+				// Cluster survives; do nothing.
+				continue
+			}
+
+			if j != 0 {
+				// Merge cluster backward.
+				if cluster < info[j-1].Cluster {
+					mask := info[i].Mask
+					oldCluster := info[j-1].Cluster
+					for k := j; k != 0 && info[k-1].Cluster == oldCluster; k-- {
+						info[k-1].setCluster(cluster, mask)
+					}
+				}
+				continue
+			}
+
+			if i+1 < len(b.Info) {
+				// Merge cluster forward.
+				b.mergeClusters(i, i+2)
+			}
+
+			continue
+		}
+
+		if j != i {
+			info[j] = info[i]
+			pos[j] = pos[i]
+		}
+		j++
+	}
+	b.Info = b.Info[:j]
+	b.Pos = b.Pos[:j]
+}
+
 // unsafeToBreak adds the flag `GlyphFlagUnsafeToBreak`
 // when needed, between `start` and `end`.
 func (b *Buffer) unsafeToBreak(start, end int) {
-	if end-start < 2 {
+	b.setGlyphFlags(GlyphUnsafeToBreak|GlyphUnsafeToConcat, start, end, true, false)
+}
+
+func (b *Buffer) safeToInsertTatweel(start, end int) {
+	if (b.Flags & ProduceSafeToInsertTatweel) == 0 {
+		b.unsafeToBreak(start, end)
 		return
 	}
-	b.unsafeToBreakImpl(start, end)
+	b.setGlyphFlags(GlyphSafeToInsertTatweel, start, end, true, false)
 }
 
-func (b *Buffer) unsafeToBreakImpl(start, end int) {
-	cluster := findMinCluster(b.Info, start, end, maxInt)
-	b.unsafeToBreakSetMask(b.Info, start, end, cluster)
-}
-
-// return the smallest cluster between `cluster` and  infos[start:end]
-func findMinCluster(infos []GlyphInfo, start, end, cluster int) int {
-	for i := start; i < end; i++ {
-		cluster = min(cluster, infos[i].Cluster)
+// start = 0, end = maxInt
+func (b *Buffer) unsafeToConcat(start, end int) {
+	if (b.Flags & ProduceUnsafeToConcat) == 0 {
+		return
 	}
-	return cluster
-}
-
-func (b *Buffer) unsafeToBreakSetMask(infos []GlyphInfo,
-	start, end, cluster int,
-) {
-	for i := start; i < end; i++ {
-		if cluster != infos[i].Cluster {
-			b.scratchFlags |= bsfHasUnsafeToBreak
-			infos[i].Mask |= GlyphUnsafeToBreak
-		}
-	}
+	b.setGlyphFlags(GlyphUnsafeToConcat, start, end, true, false)
 }
 
 func (b *Buffer) unsafeToBreakFromOutbuffer(start, end int) {
-	if !b.haveOutput {
-		b.unsafeToBreakImpl(start, end)
+	b.setGlyphFlags(GlyphUnsafeToBreak|GlyphUnsafeToConcat, start, end, true, true)
+}
+
+func (b *Buffer) unsafeToConcatFromOutbuffer(start, end int) {
+	if (b.Flags & ProduceUnsafeToConcat) == 0 {
+		return
+	}
+	b.setGlyphFlags(GlyphUnsafeToConcat, start, end, false, true)
+}
+
+// return the smallest cluster between `cluster` and  infos[start:end]
+func (b *Buffer) findMinCluster(infos []GlyphInfo, start, end, cluster int) int {
+	if start == end {
+		return cluster
+	}
+	if b.ClusterLevel == Characters {
+		for i := start; i < end; i++ {
+			cluster = min(cluster, infos[i].Cluster)
+		}
+		return cluster
+	}
+	return min(cluster, min(infos[start].Cluster, infos[end-1].Cluster))
+}
+
+func (b *Buffer) infosSetGlyphFlags(infos []GlyphInfo, start, end, cluster int, mask GlyphMask) {
+	if start == end {
 		return
 	}
 
-	//   assert (start <= out_len);
-	//   assert (idx <= end);
+	clusterFirst := infos[start].Cluster
+	clusterLast := infos[end-1].Cluster
 
-	cluster := math.MaxInt32
-	cluster = findMinCluster(b.outInfo, start, len(b.outInfo), cluster)
-	cluster = findMinCluster(b.Info, b.idx, end, cluster)
-	b.unsafeToBreakSetMask(b.outInfo, start, len(b.outInfo), cluster)
-	b.unsafeToBreakSetMask(b.Info, b.idx, end, cluster)
+	if b.ClusterLevel == Characters || (cluster != clusterFirst && cluster != clusterLast) {
+		for i := start; i < end; i++ {
+			if cluster != infos[i].Cluster {
+				b.scratchFlags |= bsfHasGlyphFlags
+				infos[i].Mask |= mask
+			}
+		}
+		return
+	}
+
+	/* Monotone clusters */
+
+	if cluster == clusterFirst {
+		for i := end; start < i && infos[i-1].Cluster != clusterFirst; i-- {
+			b.scratchFlags |= bsfHasGlyphFlags
+			infos[i-1].Mask |= mask
+		}
+	} else /* cluster == clusterLast */ {
+		for i := start; i < end && infos[i].Cluster != clusterLast; i++ {
+			b.scratchFlags |= bsfHasGlyphFlags
+			infos[i].Mask |= mask
+		}
+	}
 }
 
 // reset `b.outInfo`, and adjust `pos` to have

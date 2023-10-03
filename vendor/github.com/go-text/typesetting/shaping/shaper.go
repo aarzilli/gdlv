@@ -14,6 +14,17 @@ import (
 // for each operation.
 type HarfbuzzShaper struct {
 	buf *harfbuzz.Buffer
+
+	fonts fontLRU
+
+	features []harfbuzz.Feature
+}
+
+// SetFontCacheSize adjusts the size of the font cache within the shaper.
+// It is safe to adjust the size after using the shaper, though shrinking
+// it may result in many evictions on the next shaping.
+func (h *HarfbuzzShaper) SetFontCacheSize(size int) {
+	h.fonts.maxSize = size
 }
 
 var _ Shaper = (*HarfbuzzShaper)(nil)
@@ -52,6 +63,7 @@ func (t *HarfbuzzShaper) Shape(input Input) Output {
 	} else {
 		t.buf.Clear()
 	}
+
 	runes, start, end := input.Text, input.RunStart, input.RunEnd
 	if end < start {
 		// Try to guess what the caller actually wanted.
@@ -74,12 +86,32 @@ func (t *HarfbuzzShaper) Shape(input Input) Output {
 	t.buf.Props.Language = input.Language
 	t.buf.Props.Script = input.Script
 
-	font := harfbuzz.NewFont(input.Face)
+	// reuse font when possible
+	font, ok := t.fonts.Get(input.Face.Font)
+	if !ok { // create a new font and cache it
+		font = harfbuzz.NewFont(input.Face)
+		t.fonts.Put(input.Face.Font, font)
+	}
+	// adjust the user provided fields
 	font.XScale = int32(input.Size.Ceil()) << scaleShift
 	font.YScale = font.XScale
 
+	if L := len(input.FontFeatures); cap(t.features) < L {
+		t.features = make([]harfbuzz.Feature, L)
+	} else {
+		t.features = t.features[0:L]
+	}
+	for i, f := range input.FontFeatures {
+		t.features[i] = harfbuzz.Feature{
+			Tag:   f.Tag,
+			Value: f.Value,
+			Start: harfbuzz.FeatureGlobalStart,
+			End:   harfbuzz.FeatureGlobalEnd,
+		}
+	}
+
 	// Actually use harfbuzz to shape the text.
-	t.buf.Shape(font, nil)
+	t.buf.Shape(font, t.features)
 
 	// Convert the shaped text into an Output.
 	glyphs := make([]Glyph, len(t.buf.Info))
@@ -152,10 +184,10 @@ func countClusters(glyphs []Glyph, textLen int, dir di.Direction) {
 			if nextCluster == -1 {
 				nextCluster = textLen
 			}
-			switch dir {
-			case di.DirectionLTR:
+			switch dir.Progression() {
+			case di.FromTopLeft:
 				runesInCluster = nextCluster - currentCluster
-			case di.DirectionRTL:
+			case di.TowardTopLeft:
 				runesInCluster = previousCluster - currentCluster
 			}
 			previousCluster = g

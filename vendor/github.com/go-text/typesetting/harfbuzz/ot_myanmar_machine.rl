@@ -7,13 +7,12 @@ package harfbuzz
 // myanmar_syllable_type_t
 const  (
   myanmarConsonantSyllable = iota
-  myanmarPunctuationCluster
   myanmarBrokenCluster
   myanmarNonMyanmarCluster
 )
 
 %%{
-  machine myanmarSyllableMachine;
+  machine myaSM;
   alphtype byte;
   write exports;
   write data;
@@ -21,32 +20,36 @@ const  (
 
 %%{
 
-export A    = 10;
-export As   = 18;
+# Spec category D is folded into GB; D0 is not implemented by Uniscribe and as such folded into D
+# Spec category P is folded into GB
+
 export C    = 1;
-export D    = 32;
-export D0   = 20;
-export DB   = 3;
-export GB   = 11;
-export H    = 4;
 export IV   = 2;
-export MH   = 21;
-export ML   = 33;
-export MR   = 22;
-export MW   = 23;
-export MY   = 24;
-export PT   = 25;
-export V    = 8;
-export VAbv = 26;
-export VBlw = 27;
-export VPre = 28;
-export VPst = 29;
-export VS   = 30;
-export ZWJ  = 6;
+export DB   = 3;	# Dot below	     = OT_N
+export H    = 4;
 export ZWNJ = 5;
-export Ra   = 16;
-export P    = 31;
-export CS   = 19;
+export ZWJ  = 6;
+export SM    = 8;	# Visarga and Shan tones
+export GB   = 10;	# 		     = OT_PLACEHOLDER
+export DOTTEDCIRCLE = 11;
+export A    = 9;
+export Ra   = 15;
+export CS   = 18;
+
+export VAbv = 20;
+export VBlw = 21;
+export VPre = 22;
+export VPst = 23;
+
+# 32+ are for Myanmar-specific values
+export As   = 32;	# Asat
+export MH   = 35;	# Medial Ha
+export MR   = 36;	# Medial Ra
+export MW   = 37;	# Medial Wa, Shan Wa
+export MY   = 38;	# Medial Ya, Mon Na, Mon Ma
+export PT   = 39;	# Pwo and other tones
+export VS   = 40;	# Variation selectors
+export ML   = 41;	# Medial Mon La
 
 j = ZWJ|ZWNJ;			# Joiners
 k = (Ra As H);			# Kinzi
@@ -58,19 +61,17 @@ main_vowel_group = (VPre.VS?)* VAbv* VBlw* A* (DB As?)?;
 post_vowel_group = VPst MH? ML? As* VAbv* A* (DB As?)?;
 pwo_tone_group = PT A* DB? As?;
 
-complex_syllable_tail = As* medial_group main_vowel_group post_vowel_group* pwo_tone_group* V* j?;
+complex_syllable_tail = As* medial_group main_vowel_group post_vowel_group* pwo_tone_group* SM* j?;
 syllable_tail = (H (c|IV).VS?)* (H | complex_syllable_tail);
 
-consonant_syllable =	(k|CS)? (c|IV|D|GB).VS? syllable_tail;
-punctuation_cluster =	P V;
+consonant_syllable =	(k|CS)? (c|IV|GB|DOTTEDCIRCLE).VS? syllable_tail;
 broken_cluster =	k? VS? syllable_tail;
 other =			any;
 
 main := |*
 	consonant_syllable	=> { foundSyllableMyanmar (myanmarConsonantSyllable, ts, te, info, &syllableSerial); };
 	j			=> { foundSyllableMyanmar (myanmarNonMyanmarCluster, ts, te, info, &syllableSerial); };
-	punctuation_cluster	=> { foundSyllableMyanmar (myanmarPunctuationCluster, ts, te, info, &syllableSerial); };
-	broken_cluster		=> { foundSyllableMyanmar (myanmarBrokenCluster, ts, te, info, &syllableSerial); };
+	broken_cluster		=> { foundSyllableMyanmar (myanmarBrokenCluster, ts, te, info, &syllableSerial); buffer.scratchFlags |= bsfHasBrokenSyllable };
 	other			=> { foundSyllableMyanmar (myanmarNonMyanmarCluster, ts, te, info, &syllableSerial); };
 *|;
 

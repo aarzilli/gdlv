@@ -136,7 +136,7 @@ func (c *otApplyContext) applyGSUB(table tables.GSUBLookup) bool {
 		return false
 	}
 
-	if debugMode >= 2 {
+	if debugMode {
 		fmt.Printf("\tAPPLY - type %T at index %d\n", table, c.buffer.idx)
 	}
 
@@ -191,18 +191,19 @@ func (c *otApplyContext) applyGSUB(table tables.GSUBLookup) bool {
 			return false // no chaining to this type
 		}
 		lB, lL := len(data.BacktrackCoverages), len(data.LookaheadCoverages)
+
 		hasMatch, startIndex := c.matchBacktrack(get1N(&c.indices, 0, lB), matchCoverage(data.BacktrackCoverages))
 		if !hasMatch {
 			return false
 		}
 
-		hasMatch, endIndex := c.matchLookahead(get1N(&c.indices, 0, lL), matchCoverage(data.LookaheadCoverages), 1)
+		hasMatch, endIndex := c.matchLookahead(get1N(&c.indices, 0, lL), matchCoverage(data.LookaheadCoverages), c.buffer.idx+1)
 		if !hasMatch {
 			return false
 		}
 
 		c.buffer.unsafeToBreakFromOutbuffer(startIndex, endIndex)
-		c.setGlyphProps(GID(data.SubstituteGlyphIDs[index]))
+		c.setGlyphClass(GID(data.SubstituteGlyphIDs[index]))
 		c.buffer.cur(0).Glyph = GID(data.SubstituteGlyphIDs[index])
 		// Note: We DON'T decrease buffer.idx.  The main loop does it
 		// for us.  This is useful for preventing surprises if someone
@@ -234,7 +235,7 @@ func (c *otApplyContext) applySubsSequence(seq []gID) {
 			if ligID == 0 {
 				c.buffer.cur(0).setLigPropsForMark(0, uint8(i))
 			}
-			c.setGlyphPropsExt(GID(g), klass, false, true)
+			c.setGlyphClassExt(GID(g), klass, false, true)
 			c.buffer.outputGlyphIndex(GID(g))
 		}
 		c.buffer.skipGlyph()
@@ -284,11 +285,12 @@ func (c *otApplyContext) applySubsLigature(ligatureSet []tables.Ligature) bool {
 
 		var matchPositions [maxContextLength]int
 
-		ok, matchLength, totalComponentCount := c.matchInput(lig.ComponentGlyphIDs, matchGlyph, &matchPositions)
+		ok, matchEnd, totalComponentCount := c.matchInput(lig.ComponentGlyphIDs, matchGlyph, &matchPositions)
 		if !ok {
+			c.buffer.unsafeToConcat(c.buffer.idx, matchEnd)
 			continue
 		}
-		c.ligateInput(count, matchPositions, matchLength, lig.LigatureGlyph, totalComponentCount)
+		c.ligateInput(count, matchPositions, matchEnd, lig.LigatureGlyph, totalComponentCount)
 
 		return true
 	}

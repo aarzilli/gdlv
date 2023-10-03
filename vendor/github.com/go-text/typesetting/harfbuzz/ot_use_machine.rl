@@ -17,7 +17,7 @@ const (
 )
 
 %%{
-  machine useSyllableMachine;
+  machine useSM;
   alphtype byte;
   write exports;
   write data;
@@ -39,14 +39,16 @@ export H	= 12; # HALANT
 
 export HN	= 13; # HALANT_NUM
 export ZWNJ	= 14; # Zero width non-joiner
+export WJ	= 16; # Word joiner
 export R	= 18; # REPHA
 export CS	= 43; # CONS_WITH_STACKER
-export HVM	= 44; # HALANT_OR_VOWEL_MODIFIER
+export IS	= 44; # INVISIBLE_STACKER
 export Sk	= 48; # SAKOT
 export G	= 49; # HIEROGLYPH
 export J	= 50; # HIEROGLYPH_JOINER
 export SB	= 51; # HIEROGLYPH_SEGMENT_BEGIN
 export SE	= 52; # HIEROGLYPH_SEGMENT_END
+export HVM	= 53; # HALANT_OR_VOWEL_MODIFIER
 
 export FAbv	= 24; # CONS_FINAL_ABOVE
 export FBlw	= 25; # CONS_FINAL_BELOW
@@ -71,11 +73,11 @@ export FMAbv	= 45; # CONS_FINAL_MOD	UIPC = Top
 export FMBlw	= 46; # CONS_FINAL_MOD	UIPC = Bottom
 export FMPst	= 47; # CONS_FINAL_MOD	UIPC = Not_Applicable
 
-h = H | HVM | Sk;
+h = H | HVM | IS | Sk;
 
 consonant_modifiers = CMAbv* CMBlw* ((h B | SUB) CMAbv? CMBlw*)*;
 medial_consonants = MPre? MAbv? MBlw? MPst?;
-dependent_vowels = VPre* VAbv* VBlw* VPst*;
+dependent_vowels = VPre* VAbv* VBlw* VPst* | H;
 vowel_modifiers = HVM? VMPre* VMAbv* VMBlw* VMPst*;
 final_consonants = FAbv* FBlw* FPst*;
 final_modifiers = FMAbv* FMBlw* | FMPst?;
@@ -99,7 +101,7 @@ symbol_cluster_tail = SMAbv+ SMBlw* | SMBlw+;
 
 virama_terminated_cluster_tail =
 	consonant_modifiers
-	h
+	IS
 ;
 virama_terminated_cluster =
 	complex_syllable_start
@@ -117,27 +119,28 @@ standard_cluster =
 	complex_syllable_start
 	complex_syllable_tail
 ;
+tail = complex_syllable_tail | sakot_terminated_cluster_tail | symbol_cluster_tail | virama_terminated_cluster_tail;
 broken_cluster =
 	R?
-	(complex_syllable_tail | number_joiner_terminated_cluster_tail | numeral_cluster_tail | symbol_cluster_tail | virama_terminated_cluster_tail | sakot_terminated_cluster_tail)
+	(tail | number_joiner_terminated_cluster_tail | numeral_cluster_tail)
 ;
 
 number_joiner_terminated_cluster = N number_joiner_terminated_cluster_tail;
 numeral_cluster = N numeral_cluster_tail?;
-symbol_cluster = (O | GB) symbol_cluster_tail?;
+symbol_cluster = (O | GB) tail?;
 hieroglyph_cluster = SB+ | SB* G SE* (J SE* (G SE*)?)*;
 
 other = any;
 
 main := |*
-	virama_terminated_cluster		=> { foundSyllableUSE (useViramaTerminatedCluster,data, ts, te, info, &syllableSerial); };
-	sakot_terminated_cluster		=> { foundSyllableUSE (useSakotTerminatedCluster,data, ts, te, info, &syllableSerial); };
-	standard_cluster			=> { foundSyllableUSE (useStandardCluster,data, ts, te, info, &syllableSerial); };
-	number_joiner_terminated_cluster	=> { foundSyllableUSE (useNumberJoinerTerminatedCluster,data, ts, te, info, &syllableSerial); };
-	numeral_cluster				=> { foundSyllableUSE (useNumeralCluster,data, ts, te, info, &syllableSerial); };
-	symbol_cluster				=> { foundSyllableUSE (useSymbolCluster,data, ts, te, info, &syllableSerial); };
-	hieroglyph_cluster			=> { foundSyllableUSE (useHieroglyphCluster,data, ts, te, info, &syllableSerial); };
-	broken_cluster				=> { foundSyllableUSE (useBrokenCluster,data, ts, te, info, &syllableSerial); };
+	virama_terminated_cluster ZWNJ?		=> { foundSyllableUSE (useViramaTerminatedCluster,data, ts, te, info, &syllableSerial); };
+	sakot_terminated_cluster ZWNJ?		=> { foundSyllableUSE (useSakotTerminatedCluster,data, ts, te, info, &syllableSerial); };
+	standard_cluster ZWNJ?			=> { foundSyllableUSE (useStandardCluster,data, ts, te, info, &syllableSerial); };
+	number_joiner_terminated_cluster ZWNJ?	=> { foundSyllableUSE (useNumberJoinerTerminatedCluster,data, ts, te, info, &syllableSerial); };
+	numeral_cluster ZWNJ?				=> { foundSyllableUSE (useNumeralCluster,data, ts, te, info, &syllableSerial); };
+	symbol_cluster ZWNJ?				=> { foundSyllableUSE (useSymbolCluster,data, ts, te, info, &syllableSerial); };
+	hieroglyph_cluster ZWNJ?			=> { foundSyllableUSE (useHieroglyphCluster,data, ts, te, info, &syllableSerial); };
+	broken_cluster ZWNJ?				=> { foundSyllableUSE (useBrokenCluster,data, ts, te, info, &syllableSerial); buffer.scratchFlags |= bsfHasBrokenSyllable; };
 	other					=> { foundSyllableUSE (useNonCluster,data, ts, te, info, &syllableSerial); };
 *|;
 

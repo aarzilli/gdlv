@@ -140,7 +140,7 @@ func (sc Script) GetLangSys(index uint16) LangSys {
 		if sc.DefaultLangSys != nil {
 			return *sc.DefaultLangSys
 		}
-		return LangSys{}
+		return LangSys{RequiredFeatureIndex: 0xFFFF}
 	}
 	return sc.LangSys[index]
 }
@@ -216,16 +216,20 @@ func (lk ExtensionPos) Cov() Coverage         { return nil } // not used anyway
 // FindGlyph performs a binary search in the list, returning the record for `secondGlyph`,
 // or `nil` if not found.
 func (ps PairSet) FindGlyph(secondGlyph GlyphID) *PairValueRecord {
-	low, high := 0, len(ps.PairValueRecords)
+	low, high := 0, int(ps.pairValueCount)
 	for low < high {
 		mid := low + (high-low)/2 // avoid overflow when computing mid
-		p := ps.PairValueRecords[mid].SecondGlyph
+		rec, err := ps.data.get(mid)
+		if err != nil { // argh...
+			return nil
+		}
+		p := rec.SecondGlyph
 		if secondGlyph < p {
 			high = mid
 		} else if secondGlyph > p {
 			low = mid + 1
 		} else {
-			return &ps.PairValueRecords[mid]
+			return &rec
 		}
 	}
 	return nil

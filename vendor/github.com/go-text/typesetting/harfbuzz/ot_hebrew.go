@@ -58,7 +58,7 @@ func (complexShaperHebrew) compose(c *otNormalizeContext, a, b rune) (rune, bool
 			if a == 0x05D9 { /* YOD */
 				return 0xFB1D, true
 			}
-		case 0x05B7: /* patah */
+		case 0x05B7: /* PATAH */
 			if a == 0x05F2 { /* YIDDISH YOD YOD */
 				return 0xFB1F, true
 			} else if a == 0x05D0 { /* ALEF */
@@ -119,4 +119,22 @@ func (complexShaperHebrew) normalizationPreference() normalizationMode {
 func (complexShaperHebrew) gposTag() tables.Tag {
 	// https://github.com/harfbuzz/harfbuzz/issues/347#issuecomment-267838368
 	return loader.NewTag('h', 'e', 'b', 'r')
+}
+
+func (complexShaperHebrew) reorderMarks(_ *otShapePlan, buffer *Buffer, start, end int) {
+	info := buffer.Info
+
+	for i := start + 2; i < end; i++ {
+		c0 := info[i-2].getModifiedCombiningClass()
+		c1 := info[i-1].getModifiedCombiningClass()
+		c2 := info[i-0].getModifiedCombiningClass()
+
+		if (c0 == mcc17 || c0 == mcc18) /* patach or qamats */ &&
+			(c1 == mcc10 || c1 == mcc14) /* sheva or hiriq */ &&
+			(c2 == mcc22 || c2 == combiningClassBelow) /* meteg or below */ {
+			buffer.mergeClusters(i-1, i+1)
+			info[i-1], info[i] = info[i], info[i-1] // swap
+			break
+		}
+	}
 }

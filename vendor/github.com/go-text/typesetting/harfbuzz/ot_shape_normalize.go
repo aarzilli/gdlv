@@ -152,7 +152,10 @@ func (c *otNormalizeContext) decomposeCurrentCharacter(shortest bool) {
 
 	if buffer.cur(0).isUnicodeSpace() {
 		spaceType := uni.spaceFallbackType(u)
-		if spaceGlyph, ok := c.font.face.NominalGlyph(0x0020); spaceType != notSpace && ok {
+		if spaceGlyph, ok := c.font.face.NominalGlyph(0x0020); spaceType != notSpace && (ok || buffer.Invisible != 0) {
+			if !ok {
+				spaceGlyph = buffer.Invisible
+			}
 			buffer.cur(0).setUnicodeSpaceFallbackType(spaceType)
 			nextChar(buffer, spaceGlyph)
 			buffer.scratchFlags |= bsfHasSpaceFallback
@@ -173,8 +176,9 @@ func (c *otNormalizeContext) decomposeCurrentCharacter(shortest bool) {
 }
 
 func (c *otNormalizeContext) handleVariationSelectorCluster(end int) {
+	/* Currently if there's a variation-selector we give-up on normalization, it's just too hard. */
 	buffer := c.buffer
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Printf("NORMALIZE - variation selector cluster at index %d\n", buffer.idx)
 	}
 	font := c.font
@@ -210,7 +214,7 @@ func (c *otNormalizeContext) handleVariationSelectorCluster(end int) {
 
 func (c *otNormalizeContext) decomposeMultiCharCluster(end int, shortCircuit bool) {
 	buffer := c.buffer
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Printf("NORMALIZE - decompose multi char cluster at index %d\n", buffer.idx)
 	}
 
@@ -325,7 +329,7 @@ func otShapeNormalize(plan *otShapePlan, buffer *Buffer, font *Font) {
 	/* Second round, reorder (inplace) */
 
 	if !allSimple {
-		if debugMode >= 1 {
+		if debugMode {
 			fmt.Println("NORMALIZE - start reorder")
 		}
 		count = len(buffer.Info)
@@ -353,7 +357,7 @@ func otShapeNormalize(plan *otShapePlan, buffer *Buffer, font *Font) {
 
 			i = end
 		}
-		if debugMode >= 1 {
+		if debugMode {
 			fmt.Println("NORMALIZE - end reorder")
 		}
 	}
@@ -376,7 +380,7 @@ func otShapeNormalize(plan *otShapePlan, buffer *Buffer, font *Font) {
 		(mode == nmComposedDiacritics ||
 			mode == nmComposedDiacriticsNoShortCircuit) {
 
-		if debugMode >= 1 {
+		if debugMode {
 			fmt.Println("NORMALIZE - recompose")
 		}
 

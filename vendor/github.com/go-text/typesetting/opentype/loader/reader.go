@@ -126,9 +126,8 @@ func NewLoaders(file Resource) ([]*Loader, error) {
 	return out, nil
 }
 
-func (pr *Loader) findTableBuffer(s tableSection) ([]byte, error) {
-	var buf []byte
-
+// dst is an optional storage which may be provided to reduce allocations.
+func (pr *Loader) findTableBuffer(s tableSection, dst []byte) ([]byte, error) {
 	if s.length != 0 && s.length < s.zLength {
 		zbuf := io.NewSectionReader(pr.file, int64(s.offset), int64(s.length))
 		r, err := zlib.NewReader(zbuf)
@@ -137,17 +136,23 @@ func (pr *Loader) findTableBuffer(s tableSection) ([]byte, error) {
 		}
 		defer r.Close()
 
-		buf = make([]byte, s.zLength)
-		if _, err := io.ReadFull(r, buf); err != nil {
+		if cap(dst) < int(s.zLength) {
+			dst = make([]byte, s.zLength)
+		}
+		dst = dst[0:s.zLength]
+		if _, err := io.ReadFull(r, dst); err != nil {
 			return nil, err
 		}
 	} else {
-		buf = make([]byte, s.length)
-		if _, err := pr.file.ReadAt(buf, int64(s.offset)); err != nil {
+		if cap(dst) < int(s.length) {
+			dst = make([]byte, s.length)
+		}
+		dst = dst[0:s.length]
+		if _, err := pr.file.ReadAt(dst, int64(s.offset)); err != nil {
 			return nil, err
 		}
 	}
-	return buf, nil
+	return dst, nil
 }
 
 // HasTable returns true if [table] is present.
@@ -159,12 +164,18 @@ func (pr *Loader) HasTable(table Tag) bool {
 // RawTable returns the binary content of the given table,
 // or an error if not found.
 func (pr *Loader) RawTable(tag Tag) ([]byte, error) {
+	return pr.RawTableTo(tag, nil)
+}
+
+// RawTable writes the binary content of the given table to [dst], returning it,
+// or an error if not found.
+func (pr *Loader) RawTableTo(tag Tag, dst []byte) ([]byte, error) {
 	s, found := pr.tables[tag]
 	if !found {
 		return nil, fmt.Errorf("missing table %s", tag)
 	}
 
-	return pr.findTableBuffer(s)
+	return pr.findTableBuffer(s, dst)
 }
 
 func parseOneFont(file Resource, offset uint32, relativeOffset bool) (parser *Loader, err error) {

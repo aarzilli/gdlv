@@ -107,7 +107,7 @@ func positionFinishOffsetsGPOS(buffer *Buffer) {
 	/* Handle attachments */
 	if buffer.scratchFlags&bsfHasGPOSAttachment != 0 {
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Println("POSITION - handling attachments")
 		}
 
@@ -133,7 +133,7 @@ func (c *otApplyContext) applyGPOS(table tables.GPOSLookup) bool {
 		return false
 	}
 
-	if debugMode >= 2 {
+	if debugMode {
 		fmt.Printf("\tAPPLY - type %T at index %d\n", table, c.buffer.idx)
 	}
 
@@ -149,22 +149,15 @@ func (c *otApplyContext) applyGPOS(table tables.GPOSLookup) bool {
 	case tables.PairPos:
 		skippyIter := &c.iterInput
 		skippyIter.reset(buffer.idx, 1)
-		if !skippyIter.next() {
+		if ok, unsafeTo := skippyIter.next(); !ok {
+			buffer.unsafeToConcat(buffer.idx, unsafeTo)
 			return false
 		}
 		switch inner := data.Data.(type) {
 		case tables.PairPosData1:
-			set := inner.PairSets[index]
-			record := set.FindGlyph(gID(buffer.Info[skippyIter.idx].Glyph))
-			if record == nil {
-				return false
-			}
-			c.applyGPOSPair(inner.ValueFormat1, inner.ValueFormat2, record.ValueRecord1, record.ValueRecord2, skippyIter.idx)
+			return c.applyGPOSPair1(inner, index)
 		case tables.PairPosData2:
-			class1, _ := inner.ClassDef1.Class(gID(glyphID))
-			class2, _ := inner.ClassDef2.Class(gID(buffer.Info[skippyIter.idx].Glyph))
-			vals := inner.Class1Records[class1][class2]
-			c.applyGPOSPair(inner.ValueFormat1, inner.ValueFormat2, vals.ValueRecord1, vals.ValueRecord2, skippyIter.idx)
+			return c.applyGPOSPair2(inner)
 		}
 
 	case tables.CursivePos:
@@ -287,19 +280,65 @@ func reverseCursiveMinorOffset(pos []GlyphPosition, i int, direction Direction, 
 	pos[j].attachType = type_
 }
 
-func (c *otApplyContext) applyGPOSPair(f1, f2 tables.ValueFormat, v1, v2 tables.ValueRecord, pos int) {
+func (c *otApplyContext) applyGPOSPair1(inner tables.PairPosData1, index int) bool {
 	buffer := c.buffer
+	skippyIter := &c.iterInput
+	pos := skippyIter.idx
+	set := inner.PairSets[index]
+	record := set.FindGlyph(gID(buffer.Info[skippyIter.idx].Glyph))
+	if record == nil {
+		buffer.unsafeToConcat(buffer.idx, pos+1)
+		return false
+	}
 
-	ap1 := c.applyGPOSValueRecord(f1, v1, buffer.curPos(0))
-	ap2 := c.applyGPOSValueRecord(f2, v2, &buffer.Pos[pos])
+	ap1 := c.applyGPOSValueRecord(inner.ValueFormat1, record.ValueRecord1, buffer.curPos(0))
+	ap2 := c.applyGPOSValueRecord(inner.ValueFormat2, record.ValueRecord2, &buffer.Pos[pos])
 
 	if ap1 || ap2 {
 		buffer.unsafeToBreak(buffer.idx, pos+1)
 	}
-	buffer.idx = pos
-	if f2 != 0 {
-		buffer.idx++
+
+	if inner.ValueFormat2 != 0 {
+		// https://github.com/harfbuzz/harfbuzz/issues/3824
+		// https://github.com/harfbuzz/harfbuzz/issues/3888#issuecomment-1326781116
+		pos++
+		buffer.unsafeToBreak(buffer.idx, pos+1)
 	}
+	buffer.idx = pos
+	return true
+}
+
+func (c *otApplyContext) applyGPOSPair2(inner tables.PairPosData2) bool {
+	buffer := c.buffer
+	skippyIter := &c.iterInput
+
+	glyphID := buffer.cur(0).Glyph
+	class2, ok2 := inner.ClassDef2.Class(gID(buffer.Info[skippyIter.idx].Glyph))
+	if !ok2 {
+		buffer.unsafeToConcat(buffer.idx, skippyIter.idx+1)
+		return false
+	}
+
+	class1, _ := inner.ClassDef1.Class(gID(glyphID))
+	vals := inner.Record(class1, class2)
+
+	ap1 := c.applyGPOSValueRecord(inner.ValueFormat1, vals.ValueRecord1, buffer.curPos(0))
+	ap2 := c.applyGPOSValueRecord(inner.ValueFormat2, vals.ValueRecord2, &buffer.Pos[skippyIter.idx])
+
+	if ap1 || ap2 {
+		buffer.unsafeToBreak(buffer.idx, skippyIter.idx+1)
+	} else {
+		buffer.unsafeToConcat(buffer.idx, skippyIter.idx+1)
+	}
+
+	if inner.ValueFormat2 != 0 {
+		// https://github.com/harfbuzz/harfbuzz/issues/3824
+		// https://github.com/harfbuzz/harfbuzz/issues/3888#issuecomment-1326781116
+		skippyIter.idx++
+		buffer.unsafeToBreak(buffer.idx, skippyIter.idx+1)
+	}
+	buffer.idx = skippyIter.idx
+	return true
 }
 
 func (c *otApplyContext) applyGPOSCursive(data tables.CursivePos, covIndex int) bool {
@@ -312,23 +351,26 @@ func (c *otApplyContext) applyGPOSCursive(data tables.CursivePos, covIndex int) 
 
 	skippyIter := &c.iterInput
 	skippyIter.reset(buffer.idx, 1)
-	if !skippyIter.prev() {
+	if ok, unsafeFrom := skippyIter.prev(); !ok {
+		buffer.unsafeToConcatFromOutbuffer(unsafeFrom, buffer.idx+1)
 		return false
 	}
 
 	prevIndex, ok := data.Cov().Index(gID(buffer.Info[skippyIter.idx].Glyph))
 	if !ok {
+		buffer.unsafeToConcatFromOutbuffer(skippyIter.idx, buffer.idx+1)
 		return false
 	}
 	prevRecord := data.EntryExits[prevIndex]
 	if prevRecord.ExitAnchor == nil {
+		buffer.unsafeToConcatFromOutbuffer(skippyIter.idx, buffer.idx+1)
 		return false
 	}
 
 	i := skippyIter.idx
 	j := buffer.idx
 
-	buffer.unsafeToBreak(i, j)
+	buffer.unsafeToBreak(i, j+1)
 	exitX, exitY := c.getAnchor(prevRecord.ExitAnchor, buffer.Info[i].Glyph)
 	entryX, entryY := c.getAnchor(thisRecord.EntryAnchor, buffer.Info[j].Glyph)
 
@@ -399,10 +441,15 @@ func (c *otApplyContext) applyGPOSCursive(data tables.CursivePos, covIndex int) 
 		pos[child].XOffset = xOffset
 	}
 
-	/* If parent was attached to child, break them free.
+	/* If parent was attached to child, separate them.
 	 * https://github.com/harfbuzz/harfbuzz/issues/2469 */
 	if pos[parent].attachChain == -pos[child].attachChain {
 		pos[parent].attachChain = 0
+		if c.direction.isHorizontal() {
+			pos[parent].YOffset = 0
+		} else {
+			pos[parent].XOffset = 0
+		}
 	}
 
 	buffer.idx++
@@ -447,19 +494,19 @@ func (c *otApplyContext) getAnchor(anchor tables.Anchor, glyph GID) (x, y float3
 	}
 }
 
-func (c *otApplyContext) applyGPOSMarks(marks tables.MarkArray, markIndex, glyphIndex int, anchors [][]tables.Anchor, glyphPos int) bool {
+func (c *otApplyContext) applyGPOSMarks(marks tables.MarkArray, markIndex, glyphIndex int, anchors tables.AnchorMatrix, glyphPos int) bool {
 	buffer := c.buffer
 	markClass := marks.MarkRecords[markIndex].MarkClass
 	markAnchor := marks.MarkAnchors[markIndex]
 
-	glyphAnchor := anchors[glyphIndex][markClass]
+	glyphAnchor := anchors.Anchor(glyphIndex, int(markClass))
 	// If this subtable doesn't have an anchor for this base and this class,
 	// return false such that the subsequent subtables have a chance at it.
 	if glyphAnchor == nil {
 		return false
 	}
 
-	buffer.unsafeToBreak(glyphPos, buffer.idx)
+	buffer.unsafeToBreak(glyphPos, buffer.idx+1)
 	markX, markY := c.getAnchor(markAnchor, buffer.cur(0).Glyph)
 	baseX, baseY := c.getAnchor(glyphAnchor, buffer.Info[glyphPos].Glyph)
 
@@ -477,37 +524,58 @@ func (c *otApplyContext) applyGPOSMarks(marks tables.MarkArray, markIndex, glyph
 func (c *otApplyContext) applyGPOSMarkToBase(data tables.MarkBasePos, markIndex int) bool {
 	buffer := c.buffer
 
-	// now we search backwards for a non-mark glyph
+	// Now we search backwards for a non-mark glyph.
+	// We don't use skippy_iter.prev() to avoid O(n^2) behavior.
+
 	skippyIter := &c.iterInput
-	skippyIter.reset(buffer.idx, 1)
 	skippyIter.matcher.lookupProps = uint32(otIgnoreMarks)
-	for {
-		if !skippyIter.prev() {
-			return false
-		}
-		// We only want to attach to the first of a MultipleSubst sequence.
-		// https://github.com/harfbuzz/harfbuzz/issues/740
-		// Reject others...
-		// ...but stop if we find a mark in the MultipleSubst sequence:
-		// https://github.com/harfbuzz/harfbuzz/issues/1020
-		if !buffer.Info[skippyIter.idx].multiplied() || buffer.Info[skippyIter.idx].getLigComp() == 0 ||
-			skippyIter.idx == 0 || buffer.Info[skippyIter.idx-1].isMark() ||
-			buffer.Info[skippyIter.idx].getLigID() != buffer.Info[skippyIter.idx-1].getLigID() ||
-			buffer.Info[skippyIter.idx].getLigComp() != buffer.Info[skippyIter.idx-1].getLigComp()+1 {
-			break
-		}
-		skippyIter.reject()
+
+	if c.lastBaseUntil > buffer.idx {
+		c.lastBaseUntil = 0
+		c.lastBase = -1
 	}
 
-	/* Checking that matched glyph is actually a base glyph by GDEF is too strong; disabled */
-	//if (!_hb_glyph_info_is_base_glyph (&buffer.Info[skippyIter.idx])) { return false; }
+	for j := buffer.idx; j > c.lastBaseUntil; j-- {
+		ma := skippyIter.match(&buffer.Info[j-1])
+		if ma == match {
+			// https://github.com/harfbuzz/harfbuzz/issues/4124
 
-	baseIndex, ok := data.BaseCoverage.Index(gID(buffer.Info[skippyIter.idx].Glyph))
-	if !ok {
+			// We only want to attach to the first of a MultipleSubst sequence.
+			// https://github.com/harfbuzz/harfbuzz/issues/740
+			// Reject others...
+			// ...but stop if we find a mark in the MultipleSubst sequence:
+			// https://github.com/harfbuzz/harfbuzz/issues/1020
+			idx := j - 1
+			accept := !buffer.Info[idx].multiplied() || buffer.Info[idx].getLigComp() == 0 ||
+				idx == 0 || buffer.Info[idx-1].isMark() ||
+				buffer.Info[idx].getLigID() != buffer.Info[idx-1].getLigID() ||
+				buffer.Info[idx].getLigComp() != buffer.Info[idx-1].getLigComp()+1
+
+			_, covered := data.BaseCoverage.Index(gID(buffer.Info[idx].Glyph))
+			if !accept && !covered {
+				ma = skip
+			}
+		}
+		if ma == match {
+			c.lastBase = j - 1
+			break
+		}
+	}
+
+	c.lastBaseUntil = buffer.idx
+	if c.lastBase == -1 {
+		buffer.unsafeToConcatFromOutbuffer(0, buffer.idx+1)
 		return false
 	}
 
-	return c.applyGPOSMarks(data.MarkArray, markIndex, baseIndex, data.BaseArray.BaseAnchors, skippyIter.idx)
+	idx := c.lastBase
+	baseIndex, ok := data.BaseCoverage.Index(gID(buffer.Info[idx].Glyph))
+	if !ok {
+		buffer.unsafeToConcatFromOutbuffer(idx, buffer.idx+1)
+		return false
+	}
+
+	return c.applyGPOSMarks(data.MarkArray, markIndex, baseIndex, data.BaseArray.Anchors(), idx)
 }
 
 func (c *otApplyContext) applyGPOSMarkToLigature(data tables.MarkLigPos, markIndex int) bool {
@@ -515,22 +583,36 @@ func (c *otApplyContext) applyGPOSMarkToLigature(data tables.MarkLigPos, markInd
 
 	// now we search backwards for a non-mark glyph
 	skippyIter := &c.iterInput
-	skippyIter.reset(buffer.idx, 1)
 	skippyIter.matcher.lookupProps = uint32(otIgnoreMarks)
-	if !skippyIter.prev() {
+	if c.lastBaseUntil > buffer.idx {
+		c.lastBaseUntil = 0
+		c.lastBase = -1
+	}
+
+	for j := buffer.idx; j > c.lastBaseUntil; j-- {
+		ma := skippyIter.match(&buffer.Info[j-1])
+		if ma == match {
+			c.lastBase = j - 1
+			break
+		}
+	}
+	c.lastBaseUntil = buffer.idx
+	if c.lastBase == -1 {
+		c.buffer.unsafeToConcatFromOutbuffer(0, buffer.idx+1)
 		return false
 	}
 
-	j := skippyIter.idx
-	ligIndex, ok := data.LigatureCoverage.Index(gID(buffer.Info[j].Glyph))
+	idx := c.lastBase
+	ligIndex, ok := data.LigatureCoverage.Index(gID(buffer.Info[idx].Glyph))
 	if !ok {
+		c.buffer.unsafeToConcatFromOutbuffer(idx, c.buffer.idx+1)
 		return false
 	}
 
-	ligAttach := data.LigatureArray.LigatureAttachs[ligIndex].ComponentAnchors
+	ligAttach := data.LigatureArray.LigatureAttachs[ligIndex].Anchors()
 
 	// Find component to attach to
-	compCount := len(ligAttach)
+	compCount := ligAttach.Len()
 	if compCount == 0 {
 		return false
 	}
@@ -539,7 +621,7 @@ func (c *otApplyContext) applyGPOSMarkToLigature(data tables.MarkLigPos, markInd
 	// is identical to the ligature ID of the found ligature.  If yes, we
 	// can directly use the component index.  If not, we attach the mark
 	// glyph to the last component of the ligature.
-	ligID := buffer.Info[j].getLigID()
+	ligID := buffer.Info[idx].getLigID()
 	markID := buffer.cur(0).getLigID()
 	markComp := buffer.cur(0).getLigComp()
 	compIndex := compCount - 1
@@ -547,7 +629,7 @@ func (c *otApplyContext) applyGPOSMarkToLigature(data tables.MarkLigPos, markInd
 		compIndex = min(compCount, int(buffer.cur(0).getLigComp())) - 1
 	}
 
-	return c.applyGPOSMarks(data.MarkArray, markIndex, compIndex, ligAttach, skippyIter.idx)
+	return c.applyGPOSMarks(data.MarkArray, markIndex, compIndex, ligAttach, idx)
 }
 
 func (c *otApplyContext) applyGPOSMarkToMark(data tables.MarkMarkPos, mark1Index int) bool {
@@ -557,7 +639,7 @@ func (c *otApplyContext) applyGPOSMarkToMark(data tables.MarkMarkPos, mark1Index
 	skippyIter := &c.iterInput
 	skippyIter.reset(buffer.idx, 1)
 	skippyIter.matcher.lookupProps = c.lookupProps &^ uint32(ignoreFlags)
-	if !skippyIter.prev() {
+	if ok, _ := skippyIter.prev(); !ok {
 		return false
 	}
 
@@ -595,5 +677,5 @@ good:
 		return false
 	}
 
-	return c.applyGPOSMarks(data.Mark1Array, mark1Index, mark2Index, data.Mark2Array.Mark2Anchors, j)
+	return c.applyGPOSMarks(data.Mark1Array, mark1Index, mark2Index, data.Mark2Array.Anchors(), j)
 }

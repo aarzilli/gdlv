@@ -94,7 +94,10 @@ type wlDisplay struct {
 
 	// Notification pipe fds.
 	notify struct {
-		read, write int
+		read int
+
+		mu    sync.Mutex
+		write int
 	}
 
 	repeat repeatState
@@ -953,7 +956,12 @@ func gio_onPointerAxis(data unsafe.Pointer, p *C.struct_wl_pointer, t, axis C.ui
 	case C.WL_POINTER_AXIS_HORIZONTAL_SCROLL:
 		w.scroll.dist.X += v
 	case C.WL_POINTER_AXIS_VERTICAL_SCROLL:
-		w.scroll.dist.Y += v
+		// horizontal scroll if shift + mousewheel(up/down) pressed.
+		if w.disp.xkb.Modifiers() == key.ModShift {
+			w.scroll.dist.X += v
+		} else {
+			w.scroll.dist.Y += v
+		}
 	}
 }
 
@@ -1003,7 +1011,12 @@ func gio_onPointerAxisDiscrete(data unsafe.Pointer, p *C.struct_wl_pointer, axis
 	case C.WL_POINTER_AXIS_HORIZONTAL_SCROLL:
 		w.scroll.steps.X += int(discrete)
 	case C.WL_POINTER_AXIS_VERTICAL_SCROLL:
-		w.scroll.steps.Y += int(discrete)
+		// horizontal scroll if shift + mousewheel(up/down) pressed.
+		if w.disp.xkb.Modifiers() == key.ModShift {
+			w.scroll.steps.X += int(discrete)
+		} else {
+			w.scroll.steps.Y += int(discrete)
+		}
 	}
 }
 
@@ -1432,6 +1445,11 @@ func (w *window) SetAnimating(anim bool) {
 // Wakeup wakes up the event loop through the notification pipe.
 func (d *wlDisplay) wakeup() {
 	oneByte := make([]byte, 1)
+	d.notify.mu.Lock()
+	defer d.notify.mu.Unlock()
+	if d.notify.write == 0 {
+		return
+	}
 	if _, err := syscall.Write(d.notify.write, oneByte); err != nil && err != syscall.EAGAIN {
 		panic(fmt.Errorf("failed to write to pipe: %v", err))
 	}
@@ -1810,10 +1828,12 @@ func newWLDisplay() (*wlDisplay, error) {
 }
 
 func (d *wlDisplay) destroy() {
+	d.notify.mu.Lock()
 	if d.notify.write != 0 {
 		syscall.Close(d.notify.write)
 		d.notify.write = 0
 	}
+	d.notify.mu.Unlock()
 	if d.notify.read != 0 {
 		syscall.Close(d.notify.read)
 		d.notify.read = 0

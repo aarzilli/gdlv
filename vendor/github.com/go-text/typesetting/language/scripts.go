@@ -12,8 +12,9 @@ import (
 type Script uint32
 
 // ParseScript simply converts a 4 bytes string into its binary encoding.
+// If [script] is longer, only its 4 first bytes are used.
 func ParseScript(script string) (Script, error) {
-	if len(script) != 4 {
+	if len(script) < 4 {
 		return 0, fmt.Errorf("invalid script string: %s", script)
 	}
 	return Script(binary.BigEndian.Uint32([]byte(script))), nil
@@ -23,15 +24,15 @@ func ParseScript(script string) (Script, error) {
 // Unicode Standard Annex #24), and returns Unknown if not found.
 func LookupScript(r rune) Script {
 	// binary search
-	for i, j := 0, len(scriptRanges); i < j; {
+	for i, j := 0, len(ScriptRanges); i < j; {
 		h := i + (j-i)/2
-		entry := scriptRanges[h]
-		if r < entry.start {
+		entry := ScriptRanges[h]
+		if r < entry.Start {
 			j = h
-		} else if entry.end < r {
+		} else if entry.End < r {
 			i = h + 1
 		} else {
-			return entry.script
+			return entry.Script
 		}
 	}
 	return Unknown

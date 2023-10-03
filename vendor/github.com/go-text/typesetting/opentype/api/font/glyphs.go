@@ -70,8 +70,8 @@ func (f *Face) getPointsForGlyph(gid tables.GlyphID, currentDepth int, allPoints
 
 	hDelta := float32(g.XMin - getSideBearing(gid, f.hmtx))
 	vOrig := float32(g.YMax + getSideBearing(gid, f.vmtx))
-	hAdv := float32(f.getBaseAdvance(gid, f.hmtx))
-	vAdv := float32(f.getBaseAdvance(gid, f.vmtx))
+	hAdv := float32(f.getBaseAdvance(gid, f.hmtx, false))
+	vAdv := float32(f.getBaseAdvance(gid, f.vmtx, true))
 	phantoms[phantomLeft].X = hDelta
 	phantoms[phantomRight].X = hAdv + hDelta
 	phantoms[phantomTop].Y = vOrig

@@ -136,6 +136,8 @@ func Decompose(ab rune) (a, b rune, ok bool) {
 	if a, b, ok = decomposeHangul(ab); ok {
 		return a, b, true
 	}
+
+	// Check if it's a single-character decomposition.
 	if m1, ok := decompose1[ab]; ok {
 		return m1, 0, true
 	}
@@ -149,6 +151,7 @@ func Decompose(ab rune) (a, b rune, ok bool) {
 // points by canonical equivalence, returning the composed code, if successful.
 // It returns `false` otherwise
 func Compose(a, b rune) (rune, bool) {
+	// Hangul is handled algorithmically.
 	if ab, ok := composeHangul(a, b); ok {
 		return ab, true
 	}

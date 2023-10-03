@@ -146,7 +146,7 @@ func (sp *otShapePlan) otLayoutKern(font *Font, buffer *Buffer) {
 
 var otTagLatinScript = loader.NewTag('l', 'a', 't', 'n')
 
-// SelectScript selects an OpenType script from the `scriptTags` array,
+// selectScript selects an OpenType script from the `scriptTags` array,
 // returning its index in the Scripts slice and the script tag.
 //
 // If `table` does not have any of the requested scripts, then `DFLT`,
@@ -155,7 +155,7 @@ var otTagLatinScript = loader.NewTag('l', 'a', 't', 'n')
 //
 // An additional boolean if returned : it is `true` if one of the requested scripts is selected, or `false` if a fallback
 // script is selected or if no scripts are selected.
-func SelectScript(table *font.Layout, scriptTags []tables.Tag) (int, tables.Tag, bool) {
+func selectScript(table *font.Layout, scriptTags []tables.Tag) (int, tables.Tag, bool) {
 	for _, tag := range scriptTags {
 		if scriptIndex := table.FindScript(tag); scriptIndex != -1 {
 			return scriptIndex, tag, true
@@ -181,12 +181,12 @@ func SelectScript(table *font.Layout, scriptTags []tables.Tag) (int, tables.Tag,
 	return NoScriptIndex, NoScriptIndex, false
 }
 
-// SelectLanguage fetches the index of the first language tag from `languageTags` in the specified layout table,
+// selectLanguage fetches the index of the first language tag from `languageTags` in the specified layout table,
 // underneath `scriptIndex`.
 // It not found, the `dflt` language tag is searched.
 // Return `true` if the requested language tag is found, `false` otherwise.
 // If `scriptIndex` is `NoScriptIndex` or if no language is found, `DefaultLanguageIndex` is returned.
-func SelectLanguage(table *font.Layout, scriptIndex int, languageTags []tables.Tag) (int, bool) {
+func selectLanguage(table *font.Layout, scriptIndex int, languageTags []tables.Tag) (int, bool) {
 	if scriptIndex == NoScriptIndex {
 		return DefaultLanguageIndex, false
 	}
@@ -217,7 +217,7 @@ func findFeature(g *font.Layout, featureTag tables.Tag) uint16 {
 // Fetches the index of a given feature tag in the specified face's GSUB table
 // or GPOS table, underneath the specified script and language.
 // Return `NoFeatureIndex` it the the feature is not found.
-func FindFeatureForLang(table *font.Layout, scriptIndex, languageIndex int, featureTag tables.Tag) uint16 {
+func findFeatureForLang(table *font.Layout, scriptIndex, languageIndex int, featureTag tables.Tag) uint16 {
 	if scriptIndex == NoScriptIndex {
 		return NoFeatureIndex
 	}
@@ -235,11 +235,11 @@ func FindFeatureForLang(table *font.Layout, scriptIndex, languageIndex int, feat
 // Fetches the tag of a requested feature index in the given layout table,
 // underneath the specified script and language. Returns -1 if no feature is requested.
 func getRequiredFeature(g *font.Layout, scriptIndex, languageIndex int) (uint16, tables.Tag) {
-	if scriptIndex == NoScriptIndex || languageIndex == DefaultLanguageIndex {
+	if scriptIndex == NoScriptIndex {
 		return NoFeatureIndex, 0
 	}
 
-	l := g.Scripts[scriptIndex].LangSys[languageIndex]
+	l := g.Scripts[scriptIndex].GetLangSys(uint16(languageIndex))
 	if l.RequiredFeatureIndex == 0xFFFF {
 		return NoFeatureIndex, 0
 	}
@@ -356,22 +356,16 @@ func otLayoutPositionFinishOffsets(_ *Font, buffer *Buffer) {
 	positionFinishOffsetsGPOS(buffer)
 }
 
-func clearSyllables(_ *otShapePlan, _ *Font, buffer *Buffer) {
-	info := buffer.Info
-	for i := range info {
-		info[i].syllable = 0
-	}
-}
-
 func glyphInfoSubstituted(info *GlyphInfo) bool {
 	return (info.glyphProps & substituted) != 0
 }
 
-func clearSubstitutionFlags(_ *otShapePlan, _ *Font, buffer *Buffer) {
+func clearSubstitutionFlags(_ *otShapePlan, _ *Font, buffer *Buffer) bool {
 	info := buffer.Info
 	for i := range info {
 		info[i].glyphProps &= ^substituted
 	}
+	return false
 }
 
 func reverseGraphemes(b *Buffer) {

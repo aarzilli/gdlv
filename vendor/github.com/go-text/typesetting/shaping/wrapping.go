@@ -275,24 +275,38 @@ func (option breakOption) isValid(runeToGlyph []int, out Output) bool {
 
 // breaker generates line breaking candidates for a text.
 type breaker struct {
-	segmenter  *segmenter.LineIterator
-	totalRunes int
+	wordSegmenter     *segmenter.LineIterator
+	graphemeSegmenter *segmenter.GraphemeIterator
+	totalRunes        int
+	// unusedWordBreak is a break requested from the breaker in a previous iteration
+	// but which was not chosen as the line ending. Subsequent invocations of
+	// WrapLine should start with this break.
+	unusedWordBreak breakOption
+	// previousWordBreak tracks the previous line breaking candidate, if any. It is
+	// used to identify the range of runes between the previous and current
+	// candidate.
+	previousWordBreak breakOption
+	// isUnusedWord indicates that the unusedBreak field is valid.
+	isUnusedWord        bool
+	unusedGraphemeBreak breakOption
+	isUnusedGrapheme    bool
 }
 
 // newBreaker returns a breaker initialized to break the provided text.
 func newBreaker(seg *segmenter.Segmenter, text []rune) *breaker {
 	seg.Init(text)
 	br := &breaker{
-		segmenter:  seg.LineIterator(),
-		totalRunes: len(text),
+		wordSegmenter:     seg.LineIterator(),
+		graphemeSegmenter: seg.GraphemeIterator(),
+		totalRunes:        len(text),
 	}
 	return br
 }
 
-// next returns a naive break candidate which may be invalid.
-func (b *breaker) next() (option breakOption, ok bool) {
-	if b.segmenter.Next() {
-		currentSegment := b.segmenter.Line()
+// nextWordRaw returns a naive break candidate on a uax#14 boundary which may be invalid.
+func (b *breaker) nextWordRaw() (option breakOption, ok bool) {
+	if b.wordSegmenter.Next() {
+		currentSegment := b.wordSegmenter.Line()
 		// Note : we dont use penalties for Mandatory Breaks so far,
 		// we could add it with currentSegment.IsMandatoryBreak
 		option := breakOption{
@@ -302,6 +316,86 @@ func (b *breaker) next() (option breakOption, ok bool) {
 	}
 	// Unicode rules impose to always break at the end
 	return breakOption{}, false
+}
+
+// nextGraphemeRaw returns a naive break candidate on a uax#29 boundary which may be invalid.
+func (b *breaker) nextGraphemeRaw() (option breakOption, ok bool) {
+	if b.graphemeSegmenter.Next() {
+		currentSegment := b.graphemeSegmenter.Grapheme()
+		// Note : we dont use penalties for Mandatory Breaks so far,
+		// we could add it with currentSegment.IsMandatoryBreak
+		option := breakOption{
+			breakAtRune: currentSegment.Offset + len(currentSegment.Text) - 1,
+		}
+		return option, true
+	}
+	// Unicode rules impose to always break at the end
+	return breakOption{}, false
+}
+
+// nextWordBreak returns the next rune offset at which the line can be broken
+// on a UAX#14 boundary if any. If it returns false, there are no more candidates.
+func (l *breaker) nextWordBreak() (breakOption, bool) {
+	var option breakOption
+	if l.isUnusedWord {
+		option = l.unusedWordBreak
+		l.isUnusedWord = false
+	} else {
+		var breakOk bool
+		option, breakOk = l.nextWordRaw()
+		if !breakOk {
+			return option, false
+		}
+		l.previousWordBreak = l.unusedWordBreak
+		l.unusedWordBreak = option
+	}
+	return option, true
+}
+
+func (l *breaker) markWordOptionUnused() {
+	l.isUnusedWord = true
+}
+
+// nextGraphemeBreak returns the next grapheme cluster boundary break between
+// the previous and current word boundary, if any. If it returns false, there are no
+// more candidates between the previous and current word boundaries.
+func (l *breaker) nextGraphemeBreak() (breakOption, bool) {
+	for {
+		var (
+			option  breakOption
+			breakOk bool
+		)
+		if l.isUnusedGrapheme {
+			l.isUnusedGrapheme = false
+			option = l.unusedGraphemeBreak
+			breakOk = true
+		} else {
+			option, breakOk = l.nextGraphemeRaw()
+		}
+		if !breakOk {
+			return option, false
+		}
+		// We don't want to consider the previous word break position in general, as it has already
+		// been tried. The one exception to this is when we're iterating the very first time, in
+		// which case the previousWordBreak will have its zero value and we still want to consider
+		// breaking after the first rune if there's a grapheme cluseter boundary there.
+		if option.breakAtRune <= l.previousWordBreak.breakAtRune && l.previousWordBreak.breakAtRune > 0 {
+			continue
+		}
+		l.unusedGraphemeBreak = option
+		if option.breakAtRune > l.unusedWordBreak.breakAtRune {
+			// We've walked the grapheme iterator past the end of the line wrapping
+			// candidate, so mark that we may need to re-check this break option
+			// when evaluating the next segment.
+			l.isUnusedGrapheme = true
+			return option, false
+		}
+		return option, true
+	}
+}
+
+func (l *breaker) markGraphemeOptionUnused() {
+	l.isUnusedGrapheme = true
 }
 
 // Range indicates the location of a sequence of elements within a longer slice.
@@ -331,6 +425,40 @@ type WrapConfig struct {
 	// to indicate that further paragraphs of text were truncated. This field has
 	// no effect if TruncateAfterLines is zero.
 	TextContinues bool
+	// BreakPolicy determines under what circumstances the wrapper will consider
+	// breaking in between UAX#14 line breaking candidates, or "within words" in
+	// many scripts.
+	BreakPolicy LineBreakPolicy
+}
+
+// LineBreakPolicy specifies when considering a line break within a "word" or UAX#14
+// segment is allowed.
+type LineBreakPolicy uint8
+
+const (
+	// WhenNecessary means that lines will only be broken within words when the word
+	// cannot fit on the next line by itself or during truncation to preserve as much
+	// of the final word as possible.
+	WhenNecessary LineBreakPolicy = iota
+	// Never means that words will never be broken internally, allowing them to exceed
+	// the specified maxWidth.
+	Never
+	// Always means that lines will always choose to break within words if it means that
+	// more text can fit on the line.
+	Always
+)
+
+func (l LineBreakPolicy) String() string {
+	switch l {
+	case WhenNecessary:
+		return "WhenNecessary"
+	case Never:
+		return "Never"
+	case Always:
+		return "Always"
+	default:
+		return "unknown"
+	}
 }
 
 // WithTruncator returns a copy of WrapConfig with the Truncator field set to the
@@ -362,6 +490,220 @@ func (r *runMapper) mapRun(runIdx int, run Output) {
 	}
 }
 
+// RunIterator defines a type that can incrementally provide shaped text.
+type RunIterator interface {
+	// Next returns the next run in the iterator, if any. If there is a next run,
+	// its index, content, and true will be returned, and the iterator will advance
+	// to the following element. Otherwise Next returns an undefined index, an empty
+	// Output, and false.
+	Next() (index int, run Output, isValid bool)
+	// Peek returns the same thing Next() would, but does not advance the iterator (so the
+	// next call to Next() will return the same thing).
+	Peek() (index int, run Output, isValid bool)
+	// Save marks the current iterator position such that the iterator can return to it later
+	// when Restore() is called. Only one position may be saved at a time, with subsequent
+	// calls to Save() overriding the current value.
+	Save()
+	// Restore resets the iteration state to the most recently Save()-ed position.
+	Restore()
+}
+
+// shapedRunSlice is a [RunIterator] built from already-shaped text.
+type shapedRunSlice struct {
+	runs     []Output
+	idx      int
+	savedIdx int
+}
+
+var _ RunIterator = (*shapedRunSlice)(nil)
+
+// NewSliceIterator returns a [RunIterator] backed by an already-shaped slice of [Output]s.
+func NewSliceIterator(outs []Output) RunIterator {
+	return &shapedRunSlice{
+		runs: outs,
+	}
+}
+
+// Reset configures the runSlice for reuse with the given shaped text.
+func (r *shapedRunSlice) Reset(outs []Output) {
+	r.runs = outs
+	r.idx = 0
+	r.savedIdx = 0
+}
+
+// Next implements [RunIterator.Next].
+func (r *shapedRunSlice) Next() (int, Output, bool) {
+	idx, run, ok := r.Peek()
+	if ok {
+		r.idx++
+	}
+	return idx, run, ok
+}
+
+// Peek implements [RunIterator.Peek].
+func (r *shapedRunSlice) Peek() (int, Output, bool) {
+	if r.idx >= len(r.runs) {
+		return r.idx, Output{}, false
+	}
+	next := r.runs[r.idx]
+	return r.idx, next, true
+}
+
+// Save implements [RunIterator.Save].
+func (r *shapedRunSlice) Save() {
+	r.savedIdx = r.idx
+}
+
+// Restore implements [RunIterator.Restore].
+func (r *shapedRunSlice) Restore() {
+	r.idx = r.savedIdx
+}
+
+// wrapBuffer provides reusable buffers for line wrapping. When using a
+// wrapBuffer, returned line wrapping results will use memory stored within
+// the buffer. This means that the same buffer cannot be reused for another
+// wrapping operation while the wrapped lines are still in use (unless they
+// are deeply copied). If necessary, using a multiple WrapBuffers can work
+// around this restriction.
+type wrapBuffer struct {
+	// paragraph is a buffer holding paragraph allocated (primarily) from subregions
+	// of the line field.
+	paragraph []Line
+	// line is a large buffer of Outputs that is used to build lines.
+	line []Output
+	// lineUsed is the index of the first unused element in line.
+	lineUsed int
+	// lineExhausted indicates whether the previous shaping used all of line.
+	lineExhausted bool
+	// alt is a smaller temporary buffer that holds candidate lines while
+	// they are being built.
+	alt []Output
+	// altAdvance is the sum of the advances of each run in alt.
+	altAdvance fixed.Int26_6
+	// altSave is a slice into alt used to save and restore the state of the alt buffer.
+	altSave []Output
+	// altAdvanceSave is the altAdvance of the altSave field.
+	altAdvanceSave fixed.Int26_6
+	// best is a slice holding the best known line. When possible, it
+	// is a subslice of line, but if line runs out of capacity it will
+	// be heap allocated.
+	best []Output
+	// bestInLine tracks whether the current best is allocated from within line.
+	bestInLine bool
+}
+
+func (w *wrapBuffer) reset() {
+	if cap(w.paragraph) < 10 {
+		w.paragraph = make([]Line, 0, 10)
+	}
+	w.paragraph = w.paragraph[:0]
+	if cap(w.alt) < 10 {
+		w.alt = make([]Output, 0, 10)
+	}
+	w.alt = w.alt[:0]
+	w.altAdvance = 0
+	w.altSave = w.alt[:0]
+	w.altAdvanceSave = 0
+	if cap(w.line) < 100 {
+		w.line = make([]Output, 0, 100)
+	}
+	w.line = w.line[:0]
+	w.lineUsed = 0
+	w.best = nil
+	w.bestInLine = false
+	if w.lineExhausted {
+		w.lineExhausted = false
+		// Trigger the go slice growth heuristic by appending an element to
+		// the capacity.
+		w.line = append(w.line[:cap(w.line)], Output{})[:0]
+	}
+}
+
+// singleRunParagraph is an optimized helper for quickly constructing
+// a []Line containing only a single run.
+func (w *wrapBuffer) singleRunParagraph(run Output) []Line {
+	w.paragraph = w.paragraph[:0]
+	s := w.line[w.lineUsed : w.lineUsed+1]
+	s[0] = run
+	w.paragraphAppend(s)
+	return w.finalParagraph()
+}
+
+func (w *wrapBuffer) paragraphAppend(line []Output) {
+	w.paragraph = append(w.paragraph, line)
+}
+
+func (w *wrapBuffer) finalParagraph() []Line {
+	return w.paragraph
+}
+
+func (w *wrapBuffer) startLine() {
+	w.alt = w.alt[:0]
+	w.altAdvance = 0
+	w.altSave = w.alt[:0]
+	w.altAdvanceSave = 0
+	w.best = nil
+	w.bestInLine = false
+}
+
+// candidateAppend adds the given run to the current line wrapping candidate.
+func (w *wrapBuffer) candidateAppend(run Output) {
+	w.alt = append(w.alt, run)
+	w.altAdvance = w.altAdvance + run.Advance
+}
+
+// candidateSave captures the current state of the line candidate, enabling it to
+// be restored by a call to candidateRestore(). Only one state can be saved at a
+// time, and a subsequent call to candidateSave will override any current saved
+// state.
+func (w *wrapBuffer) candidateSave() {
+	w.altSave = w.alt
+	w.altAdvanceSave = w.altAdvance
+}
+
+// candidateRestore resets the state of the line candidate to the state at the time
+// of the most recent call to candidateSave().
+func (w *wrapBuffer) candidateRestore() {
+	w.alt = w.altSave
+	w.altAdvance = w.altAdvanceSave
+}
+
+func (w *wrapBuffer) candidateAdvance() fixed.Int26_6 {
+	return w.altAdvance
+}
+
+// markCandidateBest marks that the current line wrapping candidate is the best
+// known line wrapping candidate with the given suffixes. Providing suffixes does
+// not modify the current candidate, but does ensure that the "best" candidate ends
+// with them.
+func (w *wrapBuffer) markCandidateBest(suffixes ...Output) {
+	neededLen := len(w.alt) + len(suffixes)
+	if len(w.line[w.lineUsed:cap(w.line)]) < neededLen {
+		w.lineExhausted = true
+		w.best = make([]Output, neededLen)
+		w.bestInLine = false
+	} else {
+		w.best = w.line[w.lineUsed : w.lineUsed+neededLen]
+		w.bestInLine = true
+	}
+	n := copy(w.best, w.alt)
+	copy(w.best[n:], suffixes)
+}
+
+// hasBest returns whether there is currently a known valid line wrapping candidate
+// for the line.
+func (w *wrapBuffer) hasBest() bool {
+	return len(w.best) > 0
+}
+
+// finalizeBest commits the storage for the current best line and returns it.
+func (w *wrapBuffer) finalizeBest() []Output {
+	if w.bestInLine {
+		w.lineUsed += len(w.best)
+	}
+	return w.best
+}
+
 // LineWrapper holds reusable state for a line wrapping operation. Reusing
 // LineWrappers for multiple paragraphs should improve performance.
 type LineWrapper struct {
@@ -375,18 +717,13 @@ type LineWrapper struct {
 	// breaker provides line-breaking candidates.
 	breaker *breaker
 
+	// scratch holds wrapping algorithm storage buffers for reuse.
+	scratch wrapBuffer
+
 	// mapper tracks rune->glyphCluster mappings.
 	mapper runMapper
-	// unusedBreak is a break requested from the breaker in a previous iteration
-	// but which was not chosen as the line ending. Subsequent invocations of
-	// WrapLine should start with this break.
-	unusedBreak breakOption
-	// isUnused indicates that the unusedBreak field is valid.
-	isUnused bool
 	// glyphRuns holds the runs of shaped text being wrapped.
-	glyphRuns []Output
-	// currentRun holds the index in use within glyphRuns.
-	currentRun int
+	glyphRuns RunIterator
 	// lineStartRune is the rune index of the first rune on the next line to
 	// be shaped.
 	lineStartRune int
@@ -395,100 +732,88 @@ type LineWrapper struct {
 }
 
 // Prepare initializes the LineWrapper for the given paragraph and shaped text.
-// It must be called prior to invoking WrapNextLine.
-func (l *LineWrapper) Prepare(config WrapConfig, paragraph []rune, shapedRuns ...Output) {
+// It must be called prior to invoking WrapNextLine. Prepare invalidates any
+// lines previously returned by this wrapper.
+func (l *LineWrapper) Prepare(config WrapConfig, paragraph []rune, runs RunIterator) {
 	l.config = config
 	l.truncating = l.config.TruncateAfterLines > 0
 	l.breaker = newBreaker(&l.seg, paragraph)
-	l.glyphRuns = shapedRuns
-	l.isUnused = false
-	l.currentRun = 0
+	l.glyphRuns = runs
 	l.lineStartRune = 0
 	l.more = true
 	l.mapper.valid = false
+	l.scratch.reset()
 }
 
 // WrapParagraph wraps the paragraph's shaped glyphs to a constant maxWidth.
 // It is equivalent to iteratively invoking WrapLine with a constant maxWidth.
 // If the config has a non-zero TruncateAfterLines, WrapParagraph will return at most
 // that many lines. The truncated return value is the count of runes truncated from
-// the end of the text.
-func (l *LineWrapper) WrapParagraph(config WrapConfig, maxWidth int, paragraph []rune, shapedRuns ...Output) (_ []Line, truncated int) {
-	if len(shapedRuns) == 1 && shapedRuns[0].Advance.Ceil() < maxWidth && !(config.TextContinues && config.TruncateAfterLines == 1) {
-		return []Line{shapedRuns}, 0
+// the end of the text. The returned lines are only valid until the next call to
+// [*LineWrapper.WrapParagraph] or [*LineWrapper.Prepare].
+func (l *LineWrapper) WrapParagraph(config WrapConfig, maxWidth int, paragraph []rune, runs RunIterator) (_ []Line, truncated int) {
+	l.scratch.reset()
+	// Check whether we can skip line wrapping altogether for the simple single-run-that-fits case.
+	if !(config.TextContinues && config.TruncateAfterLines == 1) {
+		runs.Save()
+		_, firstRun, hasFirst := runs.Next()
+		_, _, hasSecond := runs.Peek()
+		if hasFirst && !hasSecond {
+			if firstRun.Advance.Ceil() <= maxWidth {
+				return l.scratch.singleRunParagraph(firstRun), 0
+			}
+		}
+		runs.Restore()
 	}
-	l.Prepare(config, paragraph, shapedRuns...)
-	var lines []Line
+
+	l.Prepare(config, paragraph, runs)
 	var done bool
 	for !done {
 		var line Line
 		line, truncated, done = l.WrapNextLine(maxWidth)
-		lines = append(lines, line)
-	}
-	return lines, truncated
-}
-
-// nextBreakOption returns the next rune offset at which the line can be broken,
-// if any. If it returns false, there are no more candidates.
-func (l *LineWrapper) nextBreakOption() (breakOption, bool) {
-	var option breakOption
-	if l.isUnused {
-		option = l.unusedBreak
-		l.isUnused = false
-	} else {
-		var breakOk bool
-		option, breakOk = l.breaker.next()
-		if !breakOk {
-			return option, false
+		if line != nil {
+			l.scratch.paragraphAppend(line)
 		}
-		l.unusedBreak = option
 	}
-	return option, true
+	return l.scratch.finalParagraph(), truncated
 }
 
-type fillResult uint8
-
-const (
-	// noCandidate indicates that it is not possible to compose a new line candidate using the provided
-	// breakOption, so the best known line should be used instead.
-	noCandidate fillResult = iota
-	// noRunWithBreak indicates that none of the runs available to the line wrapper contain the break
-	// option, so the returned candidate is the best option.
-	noRunWithBreak
-	// newCandidate indicates that the returned line candidate is valid.
-	newCandidate
-)
-
-// fillUntil tries to fill the provided line candidate slice with runs until it reaches a run containing the
-// provided break option. It returns the index of the run containing the option, the new width of the candidate
-// line, the contents of the new candidate line, and a result indicating how to proceed.
-func (l *LineWrapper) fillUntil(option breakOption, startRunIdx int, startWidth fixed.Int26_6, lineCandidate []Output) (newRunIdx int, newWidth fixed.Int26_6, newLineCandidate []Output, status fillResult) {
-	run := l.glyphRuns[startRunIdx]
-	for option.breakAtRune >= run.Runes.Count+run.Runes.Offset {
+// fillUntil tries to fill the line candidate slice with runs until it reaches a run containing the
+// provided break option.
+func (l *LineWrapper) fillUntil(runs RunIterator, option breakOption) {
+	currRunIndex, run, more := runs.Peek()
+	for more && option.breakAtRune >= run.Runes.Count+run.Runes.Offset {
 		if l.lineStartRune >= run.Runes.Offset+run.Runes.Count {
-			startRunIdx++
-			if startRunIdx >= len(l.glyphRuns) {
-				return startRunIdx, startWidth, lineCandidate, noCandidate
-			}
-			run = l.glyphRuns[startRunIdx]
+			// Consume the run we peeked (which we know is valid)
+			_, _, _ = runs.Next()
+
+			currRunIndex, run, more = runs.Peek()
 			continue
 		} else if l.lineStartRune > run.Runes.Offset {
 			// If part of this run has already been used on a previous line, trim
 			// the runes corresponding to those glyphs off.
-			l.mapper.mapRun(startRunIdx, run)
+			l.mapper.mapRun(currRunIndex, run)
 			run = cutRun(run, l.mapper.mapping, l.lineStartRune, run.Runes.Count+run.Runes.Offset)
 		}
 		// While the run being processed doesn't contain the current line breaking
 		// candidate, just append it to the candidate line.
-		lineCandidate = append(lineCandidate, run)
-		startWidth += run.Advance
-		startRunIdx++
-		if startRunIdx >= len(l.glyphRuns) {
-			return startRunIdx, startWidth, lineCandidate, noRunWithBreak
-		}
-		run = l.glyphRuns[startRunIdx]
+		l.scratch.candidateAppend(run)
+		// Consume the run we peeked (which we know is valid)
+		_, _, _ = runs.Next()
+
+		currRunIndex, run, more = runs.Peek()
 	}
-	return startRunIdx, startWidth, lineCandidate, newCandidate
+}
+
+// lineConfig tracks settings for line wrapping a single line of text.
+type lineConfig struct {
+	// truncating indicates whether this line is being truncated (if sufficiently long).
+	truncating bool
+	// maxWidth is the maximum space a line can occupy.
+	maxWidth int
+	// truncatedMaxWidth holds the maximum width of the line available for text if the truncator
+	// is occupying part of the line.
+	truncatedMaxWidth int
 }
 
 // WrapNextLine wraps the shaped glyphs of a paragraph to a particular max width.
@@ -496,14 +821,22 @@ func (l *LineWrapper) fillUntil(option breakOption, startRunIdx int, startWidth 
 // be wrapped to different widths within the same paragraph. When done is true,
 // subsequent calls to WrapNextLine (without calling Prepare) will return a nil line.
 // The truncated return value is the count of runes truncated from the end of the line,
-// if this line was truncated.
+// if this line was truncated. The returned line is only valid until the next call to
+// [*LineWrapper.Prepare] or [*LineWrapper.WrapParagraph].
 func (l *LineWrapper) WrapNextLine(maxWidth int) (finalLine Line, truncated int, done bool) {
+	// If we've already finished the paragraph, don't do any more work.
+	if !l.more {
+		return nil, 0, true
+	}
 	defer func() {
+		// Update the start position of the next line.
 		if len(finalLine) > 0 {
 			finalRun := finalLine[len(finalLine)-1]
 			l.lineStartRune = finalRun.Runes.Count + finalRun.Runes.Offset
 		}
+		// Check whether we've exhausted the text.
 		done = done || l.lineStartRune >= l.breaker.totalRunes
+		// Implement truncation if needed.
 		if l.truncating {
 			l.config.TruncateAfterLines--
 			insertTruncator := false
@@ -516,131 +849,230 @@ func (l *LineWrapper) WrapNextLine(maxWidth int) (finalLine Line, truncated int,
 				finalLine = append(finalLine, l.config.Truncator)
 			}
 		}
+		// Mark the paragraph as complete if needed.
 		if done {
 			l.more = false
 		}
 	}()
-	if !l.more {
-		return nil, truncated, true
-	} else if len(l.glyphRuns) == 0 {
-		return nil, truncated, true
-	} else if len(l.glyphRuns[0].Glyphs) == 0 {
-		// Pass empty lines through as empty.
-		l.glyphRuns[0].Runes = Range{Count: l.breaker.totalRunes}
-		return Line([]Output{l.glyphRuns[0]}), truncated, true
-	} else if len(l.glyphRuns) == 1 && l.glyphRuns[0].Advance.Ceil() < maxWidth && !(l.config.TextContinues && l.config.TruncateAfterLines == 1) {
-		return Line(l.glyphRuns), truncated, true
+	// If the iterator is empty, return early.
+	_, firstRun, hasFirst := l.glyphRuns.Peek()
+	if !hasFirst {
+		return nil, 0, true
 	}
-
-	// lineCandidate is filled with runs as we search for valid line breaks. When we find a valid
-	// option, we commit it into bestCandidate and keep looking.
-	var lineCandidate, bestCandidate []Output
-	// lineWidth tracks the width of the lineCandidate.
-	lineWidth := fixed.I(0)
-	var result fillResult
-
-	// lineRun tracks the glyph run in use by the lineCandidate. It is
-	// incremented separately so that the candidate search can run ahead of the
-	// l.currentRun.
-	lineRun := l.currentRun
-
-	// truncating tracks whether this line should consider truncation options.
+	l.scratch.startLine()
 	truncating := l.config.TruncateAfterLines == 1
-	// truncatedMaxWidth holds the maximum width of the line available for text if the truncator
-	// is occupying part of the line.
-	truncatedMaxWidth := maxWidth - l.config.Truncator.Advance.Ceil()
 
+	// If we're not truncating, the iterator contains only one run, and that run fits, take the fast path.
+	if !(l.config.TextContinues && truncating) && firstRun.Runes.Offset == l.lineStartRune && firstRun.Advance.Ceil() <= maxWidth {
+		// Save current iterator state so we can peek ahead.
+		l.glyphRuns.Save()
+		// Advance beyond firstRun, which we already know from the Peek() above.
+		_, _, _ = l.glyphRuns.Next()
+		_, _, hasSecond := l.glyphRuns.Peek()
+		emptyLine := len(firstRun.Glyphs) == 0
+		if emptyLine || !hasSecond {
+			if emptyLine {
+				// Pass empty lines through as empty.
+				firstRun.Runes = Range{Count: l.breaker.totalRunes}
+			}
+			l.scratch.candidateAppend(firstRun)
+			l.scratch.markCandidateBest()
+			return l.scratch.finalizeBest(), 0, true
+		}
+		// Restore iterator state in preparation for real line wrapping algorithm.
+		l.glyphRuns.Restore()
+	}
+
+	config := lineConfig{
+		truncating:        truncating,
+		maxWidth:          maxWidth,
+		truncatedMaxWidth: maxWidth - l.config.Truncator.Advance.Ceil(),
+	}
+	done = l.wrapNextLine(config)
+	finalLine = l.scratch.finalizeBest()
+	return finalLine, 0, done
+}
+
+// checkpoint captures both the current candidate line and the corresponding run iteration
+// state. These can be restored together by calling restore().
+func (l *LineWrapper) checkpoint() {
+	l.scratch.candidateSave()
+	l.glyphRuns.Save()
+}
+
+// restore resets the current candidate line and corresponding run iteration state to the
+// values at the last call to checkpoint().
+func (l *LineWrapper) restore() {
+	l.scratch.candidateRestore()
+	l.glyphRuns.Restore()
+}
+
+// wrapNextLine iteratively processes line breaking candidates, building a line within the
+// wrapper's scratch [WrapBuffer]. It returns whether the paragraph is finished once it has
+// successfully built a line.
+func (l *LineWrapper) wrapNextLine(config lineConfig) (done bool) {
 	for {
-		option, ok := l.nextBreakOption()
+		l.checkpoint()
+		option, ok := l.breaker.nextWordBreak()
 		if !ok {
-			return bestCandidate, truncated, true
+			break
 		}
-		lineRun, lineWidth, lineCandidate, result = l.fillUntil(
-			option,
-			lineRun,
-			lineWidth,
-			lineCandidate,
-		)
-		if result == noCandidate {
-			return bestCandidate, truncated, true
-		} else if result == noRunWithBreak {
-			return lineCandidate, truncated, true
-		}
-		run := l.glyphRuns[lineRun]
-		l.mapper.mapRun(lineRun, run)
-		if !option.isValid(l.mapper.mapping, run) {
-			// Reject invalid line break candidate and acquire a new one.
+		switch result, candidateRun := l.processBreakOption(option, config); result {
+		case breakInvalid:
+			l.restore()
 			continue
-		}
-		candidateRun := cutRun(run, l.mapper.mapping, l.lineStartRune, option.breakAtRune)
-		candidateLineWidth := (candidateRun.Advance + lineWidth).Ceil()
-		if candidateLineWidth > maxWidth {
-			// The run doesn't fit on the line.
-			if len(bestCandidate) < 1 {
-				if truncating {
-					return bestCandidate, truncated, true
+		case fits:
+			l.scratch.markCandidateBest(candidateRun)
+			continue
+		case endLine:
+			// Found a valid line ending the text, append the candidateRun and use it.
+			l.scratch.markCandidateBest(candidateRun)
+			return true
+		case truncated:
+			// The candidateRun does not fit.
+			if !l.scratch.hasBest() {
+				l.scratch.markCandidateBest()
+			}
+			if l.config.BreakPolicy == Never {
+				return true
+			}
+			// Fall through to try grapheme breaking.
+		case newLineBeforeBreak:
+			l.restore()
+			// We found a valid line that didn't use this break, so mark that it can be
+			// reused on the next iteration.
+			l.breaker.markWordOptionUnused()
+			if l.config.BreakPolicy == Never || (l.config.BreakPolicy == WhenNecessary && !config.truncating) {
+				return false
+			}
+			// Fall through to try grapheme breaking.
+		case cannotFit:
+			if l.config.BreakPolicy == Never {
+				if config.truncating {
+					return true
 				}
-				// There is no existing candidate that fits, and we have just hit the
-				// first line breaking candidate. Commit this break position as the
-				// best available, even though it doesn't fit.
-				lineCandidate = append(lineCandidate, candidateRun)
-				l.currentRun = lineRun
-				return lineCandidate, truncated, false
-			} else {
-				// The line is a valid, shorter wrapping. Return it and mark that
-				// we should reuse the current line break candidate on the next
-				// line.
-				l.isUnused = true
-				return bestCandidate, truncated, false
+				l.scratch.markCandidateBest(candidateRun)
+				return false
 			}
-		} else if truncating && candidateLineWidth > truncatedMaxWidth {
-			// The run would not fit if truncated.
-			finalRunRune := candidateRun.Runes.Count + candidateRun.Runes.Offset
-			if finalRunRune == l.breaker.totalRunes && !l.config.TextContinues {
-				// The run contains the entire end of the text, so no truncation is
-				// necessary.
-				bestCandidate = commitCandidate(bestCandidate, lineCandidate, candidateRun)
-				l.currentRun = lineRun
-				return bestCandidate, truncated, true
-			}
-			// We must truncate the line in order to show it.
-			return bestCandidate, truncated, true
-		} else {
-			// The run does fit on the line. Commit this line as the best known
-			// line, but keep lineCandidate unmodified so that later break
-			// options can be attempted to see if a more optimal solution is
-			// available.
-			bestCandidate = commitCandidate(bestCandidate, lineCandidate, candidateRun)
-			l.currentRun = lineRun
+			// Fall through to try grapheme breaking.
 		}
+		// Ensure that the grapheme breaking has access to
+		// all runs we already tried in the iterator.
+		l.restore()
+		// segment using UAX#29 grapheme clustering here and try
+		// breaking again using only those boundaries to find a viable break in cases
+		// where no UAX#14 breaks were viable above.
+		for {
+			l.checkpoint()
+			option, ok := l.breaker.nextGraphemeBreak()
+			if !ok {
+				break
+			}
+			switch result, candidateRun := l.processBreakOption(option, config); result {
+			case breakInvalid:
+				l.restore()
+				continue
+			case fits:
+				// If we found at least one viable line candidate, we aren't using the word break option.
+				l.scratch.markCandidateBest(candidateRun)
+				l.breaker.markWordOptionUnused()
+				continue
+			case endLine:
+				l.scratch.markCandidateBest(candidateRun)
+				return true
+			case truncated:
+				if !l.scratch.hasBest() {
+					l.scratch.markCandidateBest()
+				}
+				return true
+			case newLineBeforeBreak:
+				l.restore()
+				// If we found at least one viable line candidate, we aren't using the word break option.
+				l.breaker.markWordOptionUnused()
+				l.breaker.markGraphemeOptionUnused()
+				return false
+			case cannotFit:
+				if config.truncating {
+					// Don't append the candidate grapheme to leave as much space as possible for the
+					// truncator.
+					return true
+				}
+				// If no graphemes fit, we should still use one so that the line contains something. Maybe
+				// the next grapheme will fit on the next line.
+				l.scratch.markCandidateBest(candidateRun)
+				l.breaker.markWordOptionUnused()
+				return false
+			}
+		}
+		return false
 	}
+	return true
 }
 
-// commitCandidate efficiently updates destination to contain append(source, newRuns...),
-// returning the resulting slice. This operation only makes sense when destination
-// is not known to contain the elements of source already.
-func commitCandidate(destination, source []Output, newRuns ...Output) []Output {
-	destination = resize(destination, len(source), len(source)+1)
-	destination = destination[:copy(destination, source)]
-	destination = append(destination, newRuns...)
-	return destination
-}
+type processBreakResult uint8
 
-// resize returns input resized to have the provided length and at least the provided
-// capacity. It may copy the data if the provided capacity is greater than the capacity
-// of in. If the provided length is greater than the provided capacity, the capacity will
-// be used as the length.
-func resize(input []Output, length, capacity int) []Output {
-	if length > capacity {
-		length = capacity
+const (
+	// breakInvalid indicates that the provided break candidate is incompatible with the shaped
+	// text and should be skipped.
+	breakInvalid processBreakResult = iota
+	// endLine indicates that the candidate fits on the line and terminates the text.
+	endLine
+	// truncated indicates that the candidate does not fit on the line and that truncation needs to
+	// occur.
+	truncated
+	// newLineBeforeBreak indicates that the candidate contains a valid line, but the latest break
+	// option could not fit.
+	newLineBeforeBreak
+	// fits indicates that the text up to the break option fit within the line and that another break
+	// option can be attempted.
+	fits
+	// cannotFit indicates that this is the first break option on the line, and that even this option cannot
+	// fit within the space available. When cannotFit is returned, the scratch buffer's candidate will contain
+	// the run that cannot fit, but it will not be committed as the best option. The choice of how to handle
+	// this is left to higher-level logic.
+	cannotFit
+)
+
+// processBreakOption evaluates whether the provided breakOption can fit onto the current line wrapping line.
+func (l *LineWrapper) processBreakOption(option breakOption, config lineConfig) (processBreakResult, Output) {
+	// Discard break options on previous lines.
+	if option.breakAtRune < l.lineStartRune {
+		return breakInvalid, Output{}
 	}
-	out := input
-	if cap(input) < capacity {
-		out = make([]Output, capacity)
-		copy(out, input)
+
+	// Fill candidate line with runs until the run containing the break option.
+	l.fillUntil(l.glyphRuns, option)
+
+	currRunIndex, run, _ := l.glyphRuns.Peek()
+	l.mapper.mapRun(currRunIndex, run)
+	if !option.isValid(l.mapper.mapping, run) {
+		// Reject invalid line break candidate and acquire a new one.
+		return breakInvalid, Output{}
 	}
-	if len(out) != length {
-		out = out[:length]
+	candidateRun := cutRun(run, l.mapper.mapping, l.lineStartRune, option.breakAtRune)
+	candidateLineWidth := (candidateRun.Advance + l.scratch.candidateAdvance()).Ceil()
+	if candidateLineWidth > config.maxWidth {
+		// The run doesn't fit on the line.
+		if !l.scratch.hasBest() {
+			return cannotFit, candidateRun
+		} else {
+			return newLineBeforeBreak, candidateRun
+		}
+	} else if config.truncating && candidateLineWidth > config.truncatedMaxWidth {
+		// The run would not fit if truncated.
+		finalRunRune := candidateRun.Runes.Count + candidateRun.Runes.Offset
+		if finalRunRune == l.breaker.totalRunes && !l.config.TextContinues {
+			// The run contains the entire end of the text, so no truncation is
+			// necessary.
+			return endLine, candidateRun
+		}
+		// We must truncate the line in order to show it.
+		return truncated, candidateRun
+	} else {
+		// The run does fit on the line. Commit this line as the best known
+		// line, but keep lineCandidate unmodified so that later break
+		// options can be attempted to see if a more optimal solution is
+		// available.
+		return fits, candidateRun
 	}
-	return out
 }

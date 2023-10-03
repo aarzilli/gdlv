@@ -15,7 +15,7 @@ const  (
 )
 
 %%{
-  machine indicSyllableMachine;
+  machine indSM;
   alphtype byte;
   write exports;
   write data;
@@ -23,6 +23,8 @@ const  (
 
 %%{
 
+
+export X    = 0;
 export C    = 1;
 export V    = 2;
 export N    = 3;
@@ -31,15 +33,17 @@ export ZWNJ = 5;
 export ZWJ  = 6;
 export M    = 7;
 export SM   = 8;
-export A    = 10;
-export PLACEHOLDER = 11;
-export DOTTEDCIRCLE = 12;
-export RS    = 13;
-export Repha = 15;
-export Ra    = 16;
-export CM    = 17;
-export Symbol= 18;
-export CS    = 19;
+export A    = 9;
+export VD   = 9;
+export PLACEHOLDER = 10;
+export DOTTEDCIRCLE = 11;
+export RS    = 12;
+export MPst  = 13;
+export Repha = 14;
+export Ra    = 15;
+export CM    = 16;
+export Symbol= 17;
+export CS    = 18;
 
 c = (C | Ra);			# is_consonant
 n = ((ZWNJ?.RS)? (N.N?)?);	# is_consonant_modifier
@@ -47,10 +51,9 @@ z = ZWJ|ZWNJ;			# is_joiner
 reph = (Ra H | Repha);		# possible reph
 
 cn = c.ZWJ?.n?;
-forced_rakar = ZWJ H ZWJ Ra;
 symbol = Symbol.N?;
-matra_group = z*.M.N?.(H | forced_rakar)?;
-syllable_tail = (z?.SM.SM?.ZWNJ?)? A*;
+matra_group = z*.(M | SM? MPst).N?.H?;
+syllable_tail = (z?.SM.SM?.ZWNJ?)? (A | VD)*;
 halant_group = (z?.H.(ZWJ.N?)?);
 final_halant_group = halant_group | H.ZWNJ;
 medial_group = CM?;
@@ -70,7 +73,7 @@ main := |*
 	vowel_syllable		=> { foundSyllableIndic (indicVowelSyllable,ts, te, info, &syllableSerial); };
 	standalone_cluster	=> { foundSyllableIndic (indicStandaloneCluster,ts, te, info, &syllableSerial); };
 	symbol_cluster		=> { foundSyllableIndic (indicSymbolCluster,ts, te, info, &syllableSerial); };
-	broken_cluster		=> { foundSyllableIndic (indicBrokenCluster,ts, te, info, &syllableSerial); };
+	broken_cluster		=> { foundSyllableIndic (indicBrokenCluster,ts, te, info, &syllableSerial); buffer.scratchFlags |= bsfHasBrokenSyllable; };
 	other			=> { foundSyllableIndic (indicNonIndicCluster,ts, te, info, &syllableSerial); };
 *|;
 

@@ -5,6 +5,7 @@ package material
 import (
 	"image/color"
 
+	"gioui.org/font"
 	"gioui.org/internal/f32color"
 	"gioui.org/layout"
 	"gioui.org/op"
@@ -15,8 +16,14 @@ import (
 )
 
 type EditorStyle struct {
-	Font     text.Font
-	TextSize unit.Sp
+	Font font.Font
+	// LineHeight controls the distance between the baselines of lines of text.
+	// If zero, a sensible default will be used.
+	LineHeight unit.Sp
+	// LineHeightScale applies a scaling factor to the LineHeight. If zero, a
+	// sensible default will be used.
+	LineHeightScale float32
+	TextSize        unit.Sp
 	// Color is the text color.
 	Color color.NRGBA
 	// Hint contains the text displayed when the editor is empty.
@@ -32,7 +39,10 @@ type EditorStyle struct {
 
 func Editor(th *Theme, editor *widget.Editor, hint string) EditorStyle {
 	return EditorStyle{
-		Editor:         editor,
+		Editor: editor,
+		Font: font.Font{
+			Typeface: th.Face,
+		},
 		TextSize:       th.TextSize,
 		Color:          th.Palette.Fg,
 		shaper:         th.Shaper,
@@ -60,7 +70,12 @@ func (e EditorStyle) Layout(gtx layout.Context) layout.Dimensions {
 	}
 
 	macro := op.Record(gtx.Ops)
-	tl := widget.Label{Alignment: e.Editor.Alignment, MaxLines: maxlines}
+	tl := widget.Label{
+		Alignment:       e.Editor.Alignment,
+		MaxLines:        maxlines,
+		LineHeight:      e.LineHeight,
+		LineHeightScale: e.LineHeightScale,
+	}
 	dims := tl.Layout(gtx, e.shaper, e.Font, e.TextSize, e.Hint, hintColor)
 	call := macro.Stop()
 
@@ -70,6 +85,8 @@ func (e EditorStyle) Layout(gtx layout.Context) layout.Dimensions {
 	if h := dims.Size.Y; gtx.Constraints.Min.Y < h {
 		gtx.Constraints.Min.Y = h
 	}
+	e.Editor.LineHeight = e.LineHeight
+	e.Editor.LineHeightScale = e.LineHeightScale
 	dims = e.Editor.Layout(gtx, e.shaper, e.Font, e.TextSize, textColor, selectionColor)
 	if e.Editor.Len() == 0 {
 		call.Add(gtx.Ops)

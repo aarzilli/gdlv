@@ -3,7 +3,6 @@
 package tables
 
 import (
-	"encoding/binary"
 	"fmt"
 )
 
@@ -78,29 +77,17 @@ type PairPosData1 struct {
 // binarygen: argument=valueFormat1  ValueFormat
 // binarygen: argument=valueFormat2  ValueFormat
 type PairSet struct {
-	pairValueCount   uint16            // Number of PairValueRecords
-	PairValueRecords []PairValueRecord `isOpaque:""` // [pairValueCount] Array of PairValueRecords, ordered by glyph ID of the second glyph.
+	pairValueCount uint16 // Number of PairValueRecords
+	// we store the compressed form to avoid wasting to much memory
+	data pairValueRecords `isOpaque:""`
 }
 
-func (ps *PairSet) parsePairValueRecords(src []byte, fmt1, fmt2 ValueFormat) error {
-	out := make([]PairValueRecord, ps.pairValueCount)
-	offsetR := 2
-	var err error
-	for i := range out {
-		if L := len(src); L < 2+offsetR {
-			return fmt.Errorf("EOF: expected length: %d, got %d", 2+offsetR, L)
-		}
-		out[i].SecondGlyph = GlyphID(binary.BigEndian.Uint16(src[offsetR:]))
-		out[i].ValueRecord1, offsetR, err = parseValueRecord(fmt1, src, offsetR+2)
-		if err != nil {
-			return fmt.Errorf("invalid pair set table: %s", err)
-		}
-		out[i].ValueRecord2, offsetR, err = parseValueRecord(fmt2, src, offsetR)
-		if err != nil {
-			return fmt.Errorf("invalid pair set table: %s", err)
-		}
+func (ps *PairSet) parseData(src []byte, fmt1, fmt2 ValueFormat) error {
+	recNbUint16 := 1 + fmt1.size() + fmt2.size()                         // in uint16
+	if exp := 2 + recNbUint16*2*int(ps.pairValueCount); len(src) < exp { //
+		return fmt.Errorf("EOF: expected length: %d, got %d", exp, len(src))
 	}
-	ps.PairValueRecords = out
+	ps.data = pairValueRecords{data: src, fmt1: fmt1, fmt2: fmt2}
 	return nil
 }
 
@@ -111,35 +98,24 @@ type PairPosData2 struct {
 	ValueFormat1 ValueFormat //	Defines the types of data in valueRecord1 — for the first glyph in the pair (may be zero).
 	ValueFormat2 ValueFormat //	Defines the types of data in valueRecord2 — for the second glyph in the pair (may be zero).
 
-	ClassDef1     ClassDef       `offsetSize:"Offset16"` // Offset to ClassDef table, from beginning of PairPos subtable — for the first glyph of the pair.
-	ClassDef2     ClassDef       `offsetSize:"Offset16"` // Offset to ClassDef table, from beginning of PairPos subtable — for the second glyph of the pair.
-	class1Count   uint16         //	Number of classes in classDef1 table — includes Class 0.
-	class2Count   uint16         //	Number of classes in classDef2 table — includes Class 0.
-	Class1Records []Class1Record `isOpaque:""` //[class1Count]	Array of Class1 records, ordered by classes in classDef1.
+	ClassDef1   ClassDef `offsetSize:"Offset16"` // Offset to ClassDef table, from beginning of PairPos subtable — for the first glyph of the pair.
+	ClassDef2   ClassDef `offsetSize:"Offset16"` // Offset to ClassDef table, from beginning of PairPos subtable — for the second glyph of the pair.
+	class1Count uint16   //	Number of classes in classDef1 table — includes Class 0.
+	class2Count uint16   //	Number of classes in classDef2 table — includes Class 0.
+
+	classData []byte `subsliceStart:"AtStart" arrayCount:"ToEnd"`
 }
 
-func (pp *PairPosData2) parseClass1Records(src []byte) error {
+// Record returns the record for the given classes, which must come from ClassDef1
+// and ClassDef2
+func (pp *PairPosData2) Record(class1, class2 uint16) Class2Record {
 	const headerSize = 16 // including posFormat and coverageOffset
-
-	pp.Class1Records = make([]Class1Record, pp.class1Count)
-
-	offset := headerSize
-	for i := range pp.Class1Records {
-		vi := make(Class1Record, pp.class2Count)
-		for j := range vi {
-			var err error
-			vi[j].ValueRecord1, offset, err = parseValueRecord(pp.ValueFormat1, src, offset)
-			if err != nil {
-				return err
-			}
-			vi[j].ValueRecord2, offset, err = parseValueRecord(pp.ValueFormat2, src, offset)
-			if err != nil {
-				return err
-			}
-		}
-		pp.Class1Records[i] = vi
-	}
-	return nil
+	size2 := (pp.ValueFormat1.size() + pp.ValueFormat2.size()) * 2
+	size1 := int(pp.class2Count) * size2
+	offset := headerSize + size1*int(class1) + size2*int(class2)
+	v1, newOffset, _ := parseValueRecord(pp.ValueFormat1, pp.classData, offset)
+	v2, _, _ := parseValueRecord(pp.ValueFormat2, pp.classData, newOffset)
+	return Class2Record{v1, v2}
 }
 
 // DeviceTableHeader is the common header for DeviceTable
@@ -208,40 +184,13 @@ type MarkBasePos struct {
 
 type BaseArray struct {
 	baseRecords []anchorOffsets `arrayCount:"FirstUint16"` //  [markClassCount] Array of offsets (one per mark class) to Anchor tables. Offsets are from beginning of BaseArray table, ordered by class (offsets may be NULL).
-	BaseAnchors [][]Anchor      `isOpaque:""`
+	data        []byte          `arrayCount:"ToEnd" subsliceStart:"AtStart"`
 }
 
-func (ba *BaseArray) parseBaseAnchors(src []byte, _ int) (err error) {
-	ba.BaseAnchors, err = resolveAnchorOffsets(ba.baseRecords, src)
-	return err
-}
+func (ba BaseArray) Anchors() AnchorMatrix { return AnchorMatrix{ba.baseRecords, ba.data} }
 
 type anchorOffsets struct {
 	offsets []Offset16 // Array of offsets to Anchor tables, with external length
-}
-
-// resolveAnchorOffsets resolve the offsset using the given input slice
-func resolveAnchorOffsets(offsets []anchorOffsets, src []byte) ([][]Anchor, error) {
-	out := make([][]Anchor, len(offsets))
-	var err error
-	for i, list := range offsets {
-		bi := make([]Anchor, len(list.offsets))
-		for j, offset := range list.offsets {
-			if offset == 0 {
-				continue
-			}
-
-			if L := len(src); L < int(offset) {
-				return nil, fmt.Errorf("EOF: expected length: %d, got %d", offset, L)
-			}
-			bi[j], _, err = ParseAnchor(src[offset:])
-			if err != nil {
-				return nil, err
-			}
-		}
-		out[i] = bi
-	}
-	return out, nil
 }
 
 type MarkLigPos struct {
@@ -261,13 +210,10 @@ type LigatureAttach struct {
 	// [componentCount]	Array of Component records, ordered in writing direction.
 	// Each element is an array of offsets (one per class, length = [markClassCount]) to Anchor tables. Offsets are from beginning of LigatureAttach table, ordered by class (offsets may be NULL).
 	componentRecords []anchorOffsets `arrayCount:"FirstUint16"`
-	ComponentAnchors [][]Anchor      `isOpaque:""`
+	data             []byte          `arrayCount:"ToEnd" subsliceStart:"AtStart"`
 }
 
-func (la *LigatureAttach) parseComponentAnchors(src []byte, _ int) (err error) {
-	la.ComponentAnchors, err = resolveAnchorOffsets(la.componentRecords, src)
-	return err
-}
+func (la LigatureAttach) Anchors() AnchorMatrix { return AnchorMatrix{la.componentRecords, la.data} }
 
 type MarkMarkPos struct {
 	PosFormat      uint16     //	Format identifier: format = 1
@@ -282,13 +228,10 @@ type Mark2Array struct {
 	// [mark2Count]	Array of Mark2Records, in Coverage order.
 	// Each element if an array of offsets (one per class, length = [markClassCount]) to Anchor tables. Offsets are from beginning of Mark2Array table, in class order (offsets may be NULL).
 	mark2Records []anchorOffsets `arrayCount:"FirstUint16"`
-	Mark2Anchors [][]Anchor      `isOpaque:""`
+	data         []byte          `arrayCount:"ToEnd" subsliceStart:"AtStart"`
 }
 
-func (ma *Mark2Array) parseMark2Anchors(src []byte, _ int) (err error) {
-	ma.Mark2Anchors, err = resolveAnchorOffsets(ma.mark2Records, src)
-	return err
-}
+func (ma Mark2Array) Anchors() AnchorMatrix { return AnchorMatrix{ma.mark2Records, ma.data} }
 
 type ContextualPos struct {
 	Data ContextualPosITF

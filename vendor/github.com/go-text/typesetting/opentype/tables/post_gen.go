@@ -20,7 +20,7 @@ func ParsePost(src []byte) (Post, int, error) {
 	item.italicAngle = binary.BigEndian.Uint32(src[4:])
 	item.UnderlinePosition = int16(binary.BigEndian.Uint16(src[8:]))
 	item.UnderlineThickness = int16(binary.BigEndian.Uint16(src[10:]))
-	item.isFixedPitch = binary.BigEndian.Uint32(src[12:])
+	item.IsFixedPitch = binary.BigEndian.Uint32(src[12:])
 	item.memoryUsage[0] = binary.BigEndian.Uint32(src[16:])
 	item.memoryUsage[1] = binary.BigEndian.Uint32(src[20:])
 	item.memoryUsage[2] = binary.BigEndian.Uint32(src[24:])

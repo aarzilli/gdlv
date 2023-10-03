@@ -1239,6 +1239,12 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 					ed.Active = false
 				}
 
+			case key.CodeTab:
+				if e.Modifiers == 0 {
+					ed.Text([]rune{'\t'})
+					cursor_follow = true
+				}
+
 			case key.CodeX:
 				if e.Modifiers&clipboardModifier != 0 {
 					cut = true

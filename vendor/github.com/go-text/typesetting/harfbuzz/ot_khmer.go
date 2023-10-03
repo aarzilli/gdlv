@@ -21,11 +21,11 @@ var khmerFeatures = [...]otMapFeature{
 	* Basic features.
 	* These features are applied in order, one at a time, after reordering.
 	 */
-	{loader.NewTag('p', 'r', 'e', 'f'), ffManualJoiners},
-	{loader.NewTag('b', 'l', 'w', 'f'), ffManualJoiners},
-	{loader.NewTag('a', 'b', 'v', 'f'), ffManualJoiners},
-	{loader.NewTag('p', 's', 't', 'f'), ffManualJoiners},
-	{loader.NewTag('c', 'f', 'a', 'r'), ffManualJoiners},
+	{loader.NewTag('p', 'r', 'e', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('b', 'l', 'w', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('a', 'b', 'v', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('p', 's', 't', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('c', 'f', 'a', 'r'), ffManualJoiners | ffPerSyllable},
 	/*
 	* Other features.
 	* These features are applied all at once after clearing syllables.
@@ -70,15 +70,16 @@ func (cs *complexShaperKhmer) collectFeatures(plan *otShapePlanner) {
 	*
 	* https://github.com/harfbuzz/harfbuzz/issues/974
 	 */
-	map_.enableFeature(loader.NewTag('l', 'o', 'c', 'l'))
-	map_.enableFeature(loader.NewTag('c', 'c', 'm', 'p'))
+	map_.enableFeatureExt(loader.NewTag('l', 'o', 'c', 'l'), ffPerSyllable, 1)
+	map_.enableFeatureExt(loader.NewTag('c', 'c', 'm', 'p'), ffPerSyllable, 1)
 
 	i := 0
 	for ; i < khmerBasicFeatures; i++ {
 		map_.addFeatureExt(khmerFeatures[i].tag, khmerFeatures[i].flags, 1)
 	}
 
-	map_.addGSUBPause(clearSyllables)
+	// https://github.com/harfbuzz/harfbuzz/issues/3531
+	map_.addGSUBPause(nil)
 
 	for ; i < khmerNumFeatures; i++ {
 		map_.addFeatureExt(khmerFeatures[i].tag, khmerFeatures[i].flags, 1)
@@ -130,64 +131,19 @@ func (cs *complexShaperKhmer) setupMasks(_ *otShapePlan, buffer *Buffer, _ *Font
 	}
 }
 
-/* Note: This enum is duplicated in the -machine.rl source file.
- * Not sure how to avoid duplication. */
-const (
-	otRobatic = 20
-	otXgroup  = 21
-	otYgroup  = 22
-)
-
 func setKhmerProperties(info *GlyphInfo) {
 	u := info.codepoint
 	type_ := indicGetCategories(u)
-	cat := uint8(type_ & 0xFF)
-	pos := uint8(type_ >> 8)
-
-	/*
-	 * Re-assign category
-	 *
-	 * These categories are experimentally extracted from what Uniscribe allows.
-	 */
-	switch u {
-	case 0x179A:
-		cat = otRa
-
-	case 0x17CC, 0x17C9, 0x17CA:
-		cat = otRobatic
-
-	case 0x17C6, 0x17CB, 0x17CD, 0x17CE, 0x17CF, 0x17D0, 0x17D1:
-		cat = otXgroup
-
-	case 0x17C7, 0x17C8, 0x17DD, 0x17D3: /* Just guessing. Uniscribe doesn't categorize it. */
-		cat = otYgroup
-	}
-
-	/*
-	 * Re-assign position.
-	 */
-	if cat == otM {
-		switch pos {
-		case posPreC:
-			cat = otVPre
-		case posBelowC:
-			cat = otVBlw
-		case posAboveC:
-			cat = otVAbv
-		case posPostC:
-			cat = otVPst
-		}
-	}
-
-	info.complexCategory = cat
+	info.complexCategory = uint8(type_ & 0xFF)
 }
 
-func setupSyllablesKhmer(_ *otShapePlan, _ *Font, buffer *Buffer) {
+func setupSyllablesKhmer(_ *otShapePlan, _ *Font, buffer *Buffer) bool {
 	findSyllablesKhmer(buffer)
 	iter, count := buffer.syllableIterator()
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		buffer.unsafeToBreak(start, end)
 	}
+	return false
 }
 
 func foundSyllableKhmer(syllableType uint8, ts, te int, info []GlyphInfo, syllableSerial *uint8) {
@@ -230,10 +186,10 @@ func (khmerPlan *khmerShapePlan) reorderConsonantSyllable(buffer *Buffer, start,
 		 * the 'pref' OpenType feature applied to them.
 		 * """
 		 */
-		if info[i].complexCategory == otCoeng && numCoengs <= 2 && i+1 < end {
+		if info[i].complexCategory == khmSM_ex_H && numCoengs <= 2 && i+1 < end {
 			numCoengs++
 
-			if info[i+1].complexCategory == otRa {
+			if info[i+1].complexCategory == khmSM_ex_Ra {
 				for j := 0; j < 2; j++ {
 					info[i+j].Mask |= khmerPlan.maskArray[khmerPref]
 				}
@@ -260,7 +216,7 @@ func (khmerPlan *khmerShapePlan) reorderConsonantSyllable(buffer *Buffer, start,
 
 				numCoengs = 2 /* Done. */
 			}
-		} else if info[i].complexCategory == otVPre { /* Reorder left matra piece. */
+		} else if info[i].complexCategory == khmSM_ex_VPre { /* Reorder left matra piece. */
 			/* Move to the start. */
 			buffer.mergeClusters(start, i+1)
 			t := info[i]
@@ -279,20 +235,22 @@ func (cs *complexShaperKhmer) reorderSyllableKhmer(buffer *Buffer, start, end in
 	}
 }
 
-func (cs *complexShaperKhmer) reorderKhmer(_ *otShapePlan, font *Font, buffer *Buffer) {
-	if debugMode >= 1 {
+func (cs *complexShaperKhmer) reorderKhmer(_ *otShapePlan, font *Font, buffer *Buffer) bool {
+	if debugMode {
 		fmt.Println("KHMER - start reordering khmer")
 	}
 
-	syllabicInsertDottedCircles(font, buffer, khmerBrokenCluster, otDOTTEDCIRCLE, otRepha, -1)
+	ret := syllabicInsertDottedCircles(font, buffer, khmerBrokenCluster, khmSM_ex_DOTTEDCIRCLE, -1, -1)
 	iter, count := buffer.syllableIterator()
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		cs.reorderSyllableKhmer(buffer, start, end)
 	}
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("KHMER - end reordering khmer")
 	}
+
+	return ret
 }
 
 func (complexShaperKhmer) decompose(c *otNormalizeContext, ab rune) (rune, rune, bool) {

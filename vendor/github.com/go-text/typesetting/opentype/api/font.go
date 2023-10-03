@@ -181,9 +181,15 @@ type BitmapFormat uint8
 
 const (
 	_ BitmapFormat = iota
+	// The [GlyphBitmap.Data] slice stores a black or white (0/1)
+	// bit image, whose length L satisfies
+	// L * 8 >= [GlyphBitmap.Width] * [GlyphBitmap.Height]
 	BlackAndWhite
+	// The [GlyphBitmap.Data] slice stores a PNG encoded image
 	PNG
+	// The [GlyphBitmap.Data] slice stores a JPG encoded image
 	JPG
+	// The [GlyphBitmap.Data] slice stores a TIFF encoded image
 	TIFF
 )
 
@@ -204,6 +210,6 @@ type FontID struct {
 	Index uint16
 
 	// For variable fonts, stores 1 + the instance index.
-	// (0 to ignore variations).
+	// It is set to 0 to ignore variations, or for non variable fonts.
 	Instance uint16
 }

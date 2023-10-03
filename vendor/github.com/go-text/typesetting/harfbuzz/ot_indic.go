@@ -16,6 +16,32 @@ import (
 //   - when `true`, Uniscribe behavior is reproduced
 var UniscribeBugCompatible = false
 
+// Keep in sync with the code generator.
+const (
+	posStart = iota
+
+	posRaToBecomeReph
+	posPreM
+	posPreC
+
+	posBaseC
+	posAfterMain
+
+	posAboveC
+
+	posBeforeSub
+	posBelowC
+	posAfterSub
+
+	posBeforePost
+	posPostC
+	posAfterPost
+
+	posSmvd
+
+	posEnd
+)
+
 var _ otComplexShaper = (*complexShaperIndic)(nil)
 
 // Indic shaper.
@@ -31,12 +57,13 @@ type complexShaperIndic struct {
  * cannot happen in a consonant syllable.  The plus side however is, we can call the
  * consonant syllable logic from the vowel syllable function and get it all right! */
 const (
-	medialFlags    = 1 << otCM
-	consonantFlags = 1<<otC | 1<<otCS | 1<<otRa | medialFlags | 1<<otV | 1<<otPLACEHOLDER | 1<<otDOTTEDCIRCLE
-	joinerFlags    = 1<<otZWJ | 1<<otZWNJ
+	consonantFlags = 1<<indSM_ex_C | 1<<indSM_ex_CS |
+		1<<indSM_ex_Ra | 1<<indSM_ex_CM | 1<<indSM_ex_V |
+		1<<indSM_ex_PLACEHOLDER | 1<<indSM_ex_DOTTEDCIRCLE
+	joinerFlags = 1<<indSM_ex_ZWJ | 1<<indSM_ex_ZWNJ
 )
 
-func isOneOf(info *GlyphInfo, flags uint) bool {
+func isOneOf(info *GlyphInfo, flags uint32) bool {
 	/* If it ligated, all bets are off. */
 	if info.ligated() {
 		return false
@@ -53,199 +80,13 @@ func isConsonant(info *GlyphInfo) bool {
 }
 
 func isHalant(info *GlyphInfo) bool {
-	return isOneOf(info, 1<<otH)
-}
-
-func isDeva(u rune) bool { return u & ^0x7F == 0x0900 }
-func isBeng(u rune) bool { return u & ^0x7F == 0x0980 }
-func isGuru(u rune) bool { return u & ^0x7F == 0x0A00 }
-func isGujr(u rune) bool { return u & ^0x7F == 0x0A80 }
-func isOrya(u rune) bool { return u & ^0x7F == 0x0B00 }
-func isTaml(u rune) bool { return u & ^0x7F == 0x0B80 }
-func isTelu(u rune) bool { return u & ^0x7F == 0x0C00 }
-func isKnda(u rune) bool { return u & ^0x7F == 0x0C80 }
-func isMlym(u rune) bool { return u & ^0x7F == 0x0D00 }
-func isSinh(u rune) bool { return u & ^0x7F == 0x0D80 }
-
-func matraPositionIndic(u rune, side uint8) uint8 {
-	switch side {
-	case posPreC:
-		return posPreM
-	case posPostC:
-		switch {
-		case isDeva(u):
-			return posAfterSub
-		case isBeng(u):
-			return posAfterPost
-		case isGuru(u):
-			return posAfterPost
-		case isGujr(u):
-			return posAfterPost
-		case isOrya(u):
-			return posAfterPost
-		case isTaml(u):
-			return posAfterPost
-		case isTelu(u):
-			if u <= 0x0C42 {
-				return posBeforeSub
-			}
-			return posAfterSub
-		case isKnda(u):
-			if u < 0x0CC3 || u > 0xCD6 {
-				return posBeforeSub
-			}
-			return posAfterSub
-		case isMlym(u):
-			return posAfterPost
-		case isSinh(u):
-			return posAfterSub
-		default:
-			return posAfterSub
-		}
-	case posAboveC: /* BENG and MLYM don't have top matras. */
-		switch {
-		case isDeva(u):
-			return posAfterSub
-		case isGuru(u):
-			return posAfterPost /* Deviate from spec */
-		case isGujr(u):
-			return posAfterSub
-		case isOrya(u):
-			return posAfterMain
-		case isTaml(u):
-			return posAfterSub
-		case isTelu(u):
-			return posBeforeSub
-		case isKnda(u):
-			return posBeforeSub
-		case isSinh(u):
-			return posAfterSub
-		default:
-			return posAfterSub
-
-		}
-	case posBelowC:
-		switch {
-		case isDeva(u):
-			return posAfterSub
-		case isBeng(u):
-			return posAfterSub
-		case isGuru(u):
-			return posAfterPost
-		case isGujr(u):
-			return posAfterPost
-		case isOrya(u):
-			return posAfterSub
-		case isTaml(u):
-			return posAfterPost
-		case isTelu(u):
-			return posBeforeSub
-		case isKnda(u):
-			return posBeforeSub
-		case isMlym(u):
-			return posAfterPost
-		case isSinh(u):
-			return posAfterSub
-		default:
-			return posAfterSub
-		}
-	}
-	return side
-}
-
-func isRa(u rune) bool {
-	switch u {
-	case 0x0930, /* Devanagari */
-		0x09B0, /* Bengali */
-		0x09F0, /* Bengali */
-		0x0A30, /* Gurmukhi */ /* No Reph */
-		0x0AB0, /* Gujarati */
-		0x0B30, /* Oriya */
-		0x0BB0, /* Tamil */  /* No Reph */
-		0x0C30, /* Telugu */ /* Reph formed only with ZWJ */
-		0x0CB0, /* Kannada */
-		0x0D30, /* Malayalam */ /* No Reph, Logical Repha */
-		0x0DBB: /* Sinhala */   /* Reph formed only with ZWJ */
-		return true
-	default:
-		return false
-	}
+	return isOneOf(info, 1<<indSM_ex_H)
 }
 
 func (info *GlyphInfo) setIndicProperties() {
 	u := info.codepoint
-	info.complexCategory, info.complexAux = computeIndicProperties(u)
-}
-
-func computeIndicProperties(u rune) (cat, pos uint8) {
 	type_ := indicGetCategories(u)
-	cat = uint8(type_ & 0xFF)
-	pos = uint8(type_ >> 8)
-
-	/*
-	 * Re-assign category
-	 */
-
-	/* The following act more like the Bindus. */
-	if 0x0953 <= u && u <= 0x0954 {
-		cat = otSM
-		/* The following act like consonants. */
-	} else if (0x0A72 <= u && u <= 0x0A73) || (0x1CF5 <= u && u <= 0x1CF6) {
-		cat = otC
-	} else if 0x1CE2 <= u && u <= 0x1CE8 {
-		cat = otA
-	} else if u == 0x1CED {
-		cat = otA
-		/* The following take marks in standalone clusters, similar to Avagraha. */
-	} else if 0xA8F2 <= u && u <= 0xA8F7 || 0x1CE9 <= u && u <= 0x1CEC || 0x1CEE <= u && u <= 0x1CF1 {
-		cat = otSymbol
-	} else if u == 0x0A51 {
-		/* https://github.com/harfbuzz/harfbuzz/issues/524 */
-		cat = otM
-		pos = posBelowC
-
-		/* According to ScriptExtensions.txt, these Grantha marks may also be used in Tamil,
-		 * so the Indic shaper needs to know their categories. */
-	} else if u == 0x11301 || u == 0x11303 {
-		cat = otSM
-	} else if u == 0x1133B || u == 0x1133C {
-		cat = otN
-	} else if u == 0x0AFB {
-		cat = otN /* https://github.com/harfbuzz/harfbuzz/issues/552 */
-	} else if u == 0x0B55 {
-		cat = otN /* https://github.com/harfbuzz/harfbuzz/issues/2849 */
-	} else if u == 0x0980 {
-		cat = otPLACEHOLDER /* https://github.com/harfbuzz/harfbuzz/issues/538 */
-	} else if u == 0x09FC {
-		cat = otPLACEHOLDER /* https://github.com/harfbuzz/harfbuzz/pull/1613 */
-	} else if u == 0x0C80 {
-		cat = otPLACEHOLDER /* https://github.com/harfbuzz/harfbuzz/pull/623 */
-	} else if 0x2010 <= u && u <= 0x2011 {
-		cat = otPLACEHOLDER
-	} else if u == 0x25CC {
-		cat = otDOTTEDCIRCLE
-	}
-
-	/*
-	 * Re-assign position.
-	 */
-
-	if 1<<cat&consonantFlags != 0 {
-		pos = posBaseC
-		if isRa(u) {
-			cat = otRa
-		}
-	} else if cat == otM {
-		pos = matraPositionIndic(u, pos)
-	} else if 1<<cat&(1<<otSM /* | FLAG (otVd) */ |1<<otA|1<<otSymbol) != 0 {
-		pos = posSmvd
-	}
-
-	if u == 0x0B01 {
-		pos = posBeforeSub /* Oriya Bindu is BeforeSub in the spec. */
-	}
-
-	return cat, pos
+	info.complexCategory, info.complexAux = uint8(type_&0xFF), uint8(type_>>8)
 }
 
 type indicWouldSubstituteFeature struct {
@@ -278,12 +119,6 @@ func (ws indicWouldSubstituteFeature) wouldSubstitute(glyphs []GID, font *Font) 
  * instead of adding a new flag in these structs.
  */
 
-// base_position_t
-const (
-	basePosLastSinhala = iota
-	basePosLast
-)
-
 // reph_position_t
 const (
 	rephPosAfterMain  = posAfterMain
@@ -310,7 +145,6 @@ type indicConfig struct {
 	script     language.Script
 	hasOldSpec bool
 	virama     rune
-	basePos    uint8
 	rephPos    uint8
 	rephMode   uint8
 	blwfMode   uint8
@@ -318,42 +152,34 @@ type indicConfig struct {
 
 var indicConfigs = [...]indicConfig{
 	/* Default.  Should be first. */
-	{0, false, 0, basePosLast, rephPosBeforePost, rephModeImplicit, blwfModePreAndPost},
-	{language.Devanagari, true, 0x094D, basePosLast, rephPosBeforePost, rephModeImplicit, blwfModePreAndPost},
-	{language.Bengali, true, 0x09CD, basePosLast, rephPosAfterSub, rephModeImplicit, blwfModePreAndPost},
-	{language.Gurmukhi, true, 0x0A4D, basePosLast, rephPosBeforeSub, rephModeImplicit, blwfModePreAndPost},
-	{language.Gujarati, true, 0x0ACD, basePosLast, rephPosBeforePost, rephModeImplicit, blwfModePreAndPost},
-	{language.Oriya, true, 0x0B4D, basePosLast, rephPosAfterMain, rephModeImplicit, blwfModePreAndPost},
-	{language.Tamil, true, 0x0BCD, basePosLast, rephPosAfterPost, rephModeImplicit, blwfModePreAndPost},
-	{language.Telugu, true, 0x0C4D, basePosLast, rephPosAfterPost, rephModeExplicit, blwfModePostOnly},
-	{language.Kannada, true, 0x0CCD, basePosLast, rephPosAfterPost, rephModeImplicit, blwfModePostOnly},
-	{language.Malayalam, true, 0x0D4D, basePosLast, rephPosAfterMain, rephModeLogRepha, blwfModePreAndPost},
-	{
-		language.Sinhala, false, 0x0DCA, basePosLastSinhala,
-		rephPosAfterPost, rephModeExplicit, blwfModePreAndPost,
-	},
+	{0, false, 0, rephPosBeforePost, rephModeImplicit, blwfModePreAndPost},
+	{language.Devanagari, true, 0x094D, rephPosBeforePost, rephModeImplicit, blwfModePreAndPost},
+	{language.Bengali, true, 0x09CD, rephPosAfterSub, rephModeImplicit, blwfModePreAndPost},
+	{language.Gurmukhi, true, 0x0A4D, rephPosBeforeSub, rephModeImplicit, blwfModePreAndPost},
+	{language.Gujarati, true, 0x0ACD, rephPosBeforePost, rephModeImplicit, blwfModePreAndPost},
+	{language.Oriya, true, 0x0B4D, rephPosAfterMain, rephModeImplicit, blwfModePreAndPost},
+	{language.Tamil, true, 0x0BCD, rephPosAfterPost, rephModeImplicit, blwfModePreAndPost},
+	{language.Telugu, true, 0x0C4D, rephPosAfterPost, rephModeExplicit, blwfModePostOnly},
+	{language.Kannada, true, 0x0CCD, rephPosAfterPost, rephModeImplicit, blwfModePostOnly},
+	{language.Malayalam, true, 0x0D4D, rephPosAfterMain, rephModeLogRepha, blwfModePreAndPost},
 }
-
-/*
- * Indic shaper.
- */
 
 var indicFeatures = [...]otMapFeature{
 	/*
 	* Basic features.
 	* These features are applied in order, one at a time, after initial_reordering.
 	 */
-	{loader.NewTag('n', 'u', 'k', 't'), ffGlobalManualJoiners},
-	{loader.NewTag('a', 'k', 'h', 'n'), ffGlobalManualJoiners},
-	{loader.NewTag('r', 'p', 'h', 'f'), ffManualJoiners},
-	{loader.NewTag('r', 'k', 'r', 'f'), ffGlobalManualJoiners},
-	{loader.NewTag('p', 'r', 'e', 'f'), ffManualJoiners},
-	{loader.NewTag('b', 'l', 'w', 'f'), ffManualJoiners},
-	{loader.NewTag('a', 'b', 'v', 'f'), ffManualJoiners},
-	{loader.NewTag('h', 'a', 'l', 'f'), ffManualJoiners},
-	{loader.NewTag('p', 's', 't', 'f'), ffManualJoiners},
-	{loader.NewTag('v', 'a', 't', 'u'), ffGlobalManualJoiners},
-	{loader.NewTag('c', 'j', 'c', 't'), ffGlobalManualJoiners},
+	{loader.NewTag('n', 'u', 'k', 't'), ffGlobalManualJoiners | ffPerSyllable},
+	{loader.NewTag('a', 'k', 'h', 'n'), ffGlobalManualJoiners | ffPerSyllable},
+	{loader.NewTag('r', 'p', 'h', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('r', 'k', 'r', 'f'), ffGlobalManualJoiners | ffPerSyllable},
+	{loader.NewTag('p', 'r', 'e', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('b', 'l', 'w', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('a', 'b', 'v', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('h', 'a', 'l', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('p', 's', 't', 'f'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('v', 'a', 't', 'u'), ffGlobalManualJoiners | ffPerSyllable},
+	{loader.NewTag('c', 'j', 'c', 't'), ffGlobalManualJoiners | ffPerSyllable},
 	/*
 	* Other features.
 	* These features are applied all at once, after final_reordering
@@ -361,12 +187,12 @@ var indicFeatures = [...]otMapFeature{
 	* Default Bengali font in Windows for example has intermixed
 	* lookups for init,pres,abvs,blws features.
 	 */
-	{loader.NewTag('i', 'n', 'i', 't'), ffManualJoiners},
-	{loader.NewTag('p', 'r', 'e', 's'), ffGlobalManualJoiners},
-	{loader.NewTag('a', 'b', 'v', 's'), ffGlobalManualJoiners},
-	{loader.NewTag('b', 'l', 'w', 's'), ffGlobalManualJoiners},
-	{loader.NewTag('p', 's', 't', 's'), ffGlobalManualJoiners},
-	{loader.NewTag('h', 'a', 'l', 'n'), ffGlobalManualJoiners},
+	{loader.NewTag('i', 'n', 'i', 't'), ffManualJoiners | ffPerSyllable},
+	{loader.NewTag('p', 'r', 'e', 's'), ffGlobalManualJoiners | ffPerSyllable},
+	{loader.NewTag('a', 'b', 'v', 's'), ffGlobalManualJoiners | ffPerSyllable},
+	{loader.NewTag('b', 'l', 'w', 's'), ffGlobalManualJoiners | ffPerSyllable},
+	{loader.NewTag('p', 's', 't', 's'), ffGlobalManualJoiners | ffPerSyllable},
+	{loader.NewTag('h', 'a', 'l', 'n'), ffGlobalManualJoiners | ffPerSyllable},
 }
 
 // in the same order as the indicFeatures array
@@ -400,10 +226,10 @@ func (cs *complexShaperIndic) collectFeatures(plan *otShapePlanner) {
 	/* Do this before any lookups have been applied. */
 	map_.addGSUBPause(setupSyllablesIndic)
 
-	map_.enableFeature(loader.NewTag('l', 'o', 'c', 'l'))
+	map_.enableFeatureExt(loader.NewTag('l', 'o', 'c', 'l'), ffPerSyllable, 1)
 	/* The Indic specs do not require ccmp, but we apply it here since if
 	* there is a use of it, it's typically at the beginning. */
-	map_.enableFeature(loader.NewTag('c', 'c', 'm', 'p'))
+	map_.enableFeatureExt(loader.NewTag('c', 'c', 'm', 'p'), ffPerSyllable, 1)
 
 	i := 0
 	map_.addGSUBPause(cs.initialReorderingIndic)
@@ -418,12 +244,11 @@ func (cs *complexShaperIndic) collectFeatures(plan *otShapePlanner) {
 	for ; i < indicNumFeatures; i++ {
 		map_.addFeatureExt(indicFeatures[i].tag, indicFeatures[i].flags, 1)
 	}
-
-	map_.addGSUBPause(clearSyllables)
 }
 
 func (complexShaperIndic) overrideFeatures(plan *otShapePlanner) {
 	plan.map_.disableFeature(loader.NewTag('l', 'i', 'g', 'a'))
+	plan.map_.addGSUBPause(nil)
 }
 
 type indicShapePlan struct {
@@ -542,12 +367,13 @@ func (cs *complexShaperIndic) setupMasks(plan *otShapePlan, buffer *Buffer, _ *F
 	}
 }
 
-func setupSyllablesIndic(_ *otShapePlan, _ *Font, buffer *Buffer) {
+func setupSyllablesIndic(_ *otShapePlan, _ *Font, buffer *Buffer) bool {
 	findSyllablesIndic(buffer)
 	iter, count := buffer.syllableIterator()
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		buffer.unsafeToBreak(start, end)
 	}
+	return false
 }
 
 func foundSyllableIndic(syllableType uint8, ts, te int, info []GlyphInfo, syllableSerial *uint8) {
@@ -561,10 +387,6 @@ func foundSyllableIndic(syllableType uint8, ts, te int, info []GlyphInfo, syllab
 }
 
 func (indicPlan *indicShapePlan) updateConsonantPositionsIndic(font *Font, buffer *Buffer) {
-	if indicPlan.config.basePos != basePosLast {
-		return
-	}
-
 	virama := indicPlan.loadViramaGlyph(font)
 	if virama != 0 {
 		info := buffer.Info
@@ -587,9 +409,9 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 	* Ra+h+ZWJ must behave like Ra+ZWJ+h... */
 	if buffer.Props.Script == language.Kannada &&
 		start+3 <= end &&
-		isOneOf(&info[start], 1<<otRa) &&
-		isOneOf(&info[start+1], 1<<otH) &&
-		isOneOf(&info[start+2], 1<<otZWJ) {
+		isOneOf(&info[start], 1<<indSM_ex_Ra) &&
+		isOneOf(&info[start+1], 1<<indSM_ex_H) &&
+		isOneOf(&info[start+2], 1<<indSM_ex_ZWJ) {
 		buffer.mergeClusters(start+1, start+3)
 		info[start+1], info[start+2] = info[start+2], info[start+1]
 	}
@@ -618,7 +440,7 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 		limit := start
 		if indicPlan.maskArray[indicRphf] != 0 && start+3 <= end &&
 			((indicPlan.config.rephMode == rephModeImplicit && !isJoiner(&info[start+2])) ||
-				(indicPlan.config.rephMode == rephModeExplicit && info[start+2].complexCategory == otZWJ)) {
+				(indicPlan.config.rephMode == rephModeExplicit && info[start+2].complexCategory == indSM_ex_ZWJ)) {
 			/* See if it matches the 'rphf' feature. */
 			glyphs := [3]GID{info[start].Glyph, info[start+1].Glyph, 0}
 			if indicPlan.config.rephMode == rephModeExplicit {
@@ -634,7 +456,7 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 				base = start
 				hasReph = true
 			}
-		} else if indicPlan.config.rephMode == rephModeLogRepha && info[start].complexCategory == otRepha {
+		} else if indicPlan.config.rephMode == rephModeLogRepha && info[start].complexCategory == indSM_ex_Repha {
 			limit += 1
 			for limit < end && isJoiner(&info[limit]) {
 				limit++
@@ -643,79 +465,46 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 			hasReph = true
 		}
 
-		switch indicPlan.config.basePos {
-		case basePosLast:
-			{
-				/* . starting from the end of the syllable, move backwards */
-				i := end
-				seenBelow := false
-				for do := true; do; do = i > limit {
-					i--
-					/* . until a consonant is found */
-					if isConsonant(&info[i]) {
-						/* . that does not have a below-base or post-base form
-						 * (post-base forms have to follow below-base forms), */
-						if info[i].complexAux != posBelowC &&
-							(info[i].complexAux != posPostC || seenBelow) {
-							base = i
-							break
-						}
-						if info[i].complexAux == posBelowC {
-							seenBelow = true
-						}
-
-						/* . or that is not a pre-base-reordering Ra,
-						 *
-						 * IMPLEMENTATION NOTES:
-						 *
-						 * Our pre-base-reordering Ra's are marked posPostC, so will be skipped
-						 * by the logic above already.
-						 */
-
-						/* . or arrive at the first consonant. The consonant stopped at will
-						 * be the base. */
+		{
+			/* . starting from the end of the syllable, move backwards */
+			i := end
+			seenBelow := false
+			for do := true; do; do = i > limit {
+				i--
+				/* . until a consonant is found */
+				if isConsonant(&info[i]) {
+					/* . that does not have a below-base or post-base form
+					 * (post-base forms have to follow below-base forms), */
+					if info[i].complexAux != posBelowC &&
+						(info[i].complexAux != posPostC || seenBelow) {
 						base = i
-					} else {
-						/* A ZWJ after a Halant stops the base search, and requests an explicit
-						 * half form.
-						 * A ZWJ before a Halant, requests a subjoined form instead, and hence
-						 * search continues.  This is particularly important for Bengali
-						 * sequence Ra,H,Ya that should form Ya-Phalaa by subjoining Ya. */
-						if start < i &&
-							info[i].complexCategory == otZWJ &&
-							info[i-1].complexCategory == otH {
-							break
-						}
+						break
 					}
-				}
-			}
-		case basePosLastSinhala:
-			{
-				/* Sinhala base positioning is slightly different from main Indic, in that:
-				 * 1. Its ZWJ behavior is different,
-				 * 2. We don't need to look into the font for consonant positions.
-				 */
-
-				if !hasReph {
-					base = limit
-				}
-
-				/* Find the last base consonant that is not blocked by ZWJ.  If there is
-				 * a ZWJ right before a base consonant, that would request a subjoined form. */
-				for i := limit; i < end; i++ {
-					if isConsonant(&info[i]) {
-						if limit < i && info[i-1].complexCategory == otZWJ {
-							break
-						} else {
-							base = i
-						}
+					if info[i].complexAux == posBelowC {
+						seenBelow = true
 					}
-				}
 
-				/* Mark all subsequent consonants as below. */
-				for i := base + 1; i < end; i++ {
-					if isConsonant(&info[i]) {
-						info[i].complexAux = posBelowC
+					/* . or that is not a pre-base-reordering Ra,
+					 *
+					 * IMPLEMENTATION NOTES:
+					 *
+					 * Our pre-base-reordering Ra's are marked posPostC, so will be skipped
+					 * by the logic above already.
+					 */
+
+					/* . or arrive at the first consonant. The consonant stopped at will
+					 * be the base. */
+					base = i
+				} else {
+					/* A ZWJ after a Halant stops the base search, and requests an explicit
+					 * half form.
+					 * A ZWJ before a Halant, requests a subjoined form instead, and hence
+					 * search continues.  This is particularly important for Bengali
+					 * sequence Ra,H,Ya that should form Ya-Phalaa by subjoining Ya. */
+					if start < i &&
+						info[i].complexCategory == indSM_ex_ZWJ &&
+						info[i-1].complexCategory == indSM_ex_H {
+						break
 					}
 				}
 			}
@@ -772,20 +561,6 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 		info[base].complexAux = posBaseC
 	}
 
-	/* Mark final consonants.  A final consonant is one appearing after a matra.
-	* Happens in Sinhala. */
-	for i := base + 1; i < end; i++ {
-		if info[i].complexCategory == otM {
-			for j := i + 1; j < end; j++ {
-				if isConsonant(&info[j]) {
-					info[j].complexAux = posFinalC
-					break
-				}
-			}
-			break
-		}
-	}
-
 	/* Handle beginning Ra */
 	if hasReph {
 		info[start].complexAux = posRaToBecomeReph
@@ -822,17 +597,17 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 	if indicPlan.isOldSpec {
 		disallowDoubleHalants := buffer.Props.Script == language.Kannada
 		for i := base + 1; i < end; i++ {
-			if info[i].complexCategory == otH {
+			if info[i].complexCategory == indSM_ex_H {
 				var j int
 				for j = end - 1; j > i; j-- {
 					if isConsonant(&info[j]) ||
-						(disallowDoubleHalants && info[j].complexCategory == otH) {
+						(disallowDoubleHalants && info[j].complexCategory == indSM_ex_H) {
 						break
 					}
 				}
-				if info[j].complexCategory != otH && j > i {
+				if info[j].complexCategory != indSM_ex_H && j > i {
 					/* Move Halant to after last consonant. */
-					if debugMode >= 2 {
+					if debugMode {
 						fmt.Printf("INDIC - halant: switching glyph %d to %d (and shifting between)", i, j)
 					}
 					t := info[i]
@@ -848,17 +623,13 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 	{
 		var lastPos uint8 = posStart
 		for i := start; i < end; i++ {
-			if 1<<info[i].complexCategory&(joinerFlags|1<<otN|1<<otRS|medialFlags|1<<otH) != 0 {
+			if 1<<info[i].complexCategory&(joinerFlags|1<<indSM_ex_N|1<<indSM_ex_RS|1<<indSM_ex_CM|1<<indSM_ex_H) != 0 {
 				info[i].complexAux = lastPos
-				if info[i].complexCategory == otH && info[i].complexAux == posPreM {
+				if info[i].complexCategory == indSM_ex_H && info[i].complexAux == posPreM {
 					/*
 					* Uniscribe doesn't move the Halant with Left Matra.
-					* TEST: U+092B,U+093F,U+094DE
-					* We follow.  This is important for the Sinhala
-					* U+0DDA split matra since it decomposes to U+0DD9,U+0DCA
-					* where U+0DD9 is a left matra and U+0DCA is the virama.
-					* We don't want to move the virama with the left matra.
-					* TEST: U+0D9A,U+0DDA
+					* TEST: U+092B,U+093F,U+094D
+					* We follow.
 					 */
 					for j := i; j > start; j-- {
 						if info[j-1].complexAux != posPreM {
@@ -868,6 +639,11 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 					}
 				}
 			} else if info[i].complexAux != posSmvd {
+				if info[i].complexCategory == indSM_ex_MPst &&
+					i > start && info[i-1].complexCategory == indSM_ex_SM {
+					info[i-1].complexAux = info[i].complexAux
+				}
+
 				lastPos = info[i].complexAux
 			}
 		}
@@ -885,7 +661,7 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 					}
 				}
 				last = i
-			} else if info[i].complexCategory == otM {
+			} else if ic := info[i].complexCategory; ic == indSM_ex_M || ic == indSM_ex_MPst {
 				last = i
 			}
 		}
@@ -900,20 +676,43 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 
 		/* Sit tight, rock 'n roll! */
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Printf("INDIC - post-base: sorting between glyph %d and %d\n", start, end)
 		}
 
 		subSlice := info[start:end]
 		sort.SliceStable(subSlice, func(i, j int) bool { return subSlice[i].complexAux < subSlice[j].complexAux })
-		/* Find base again */
+
+		// Find base again; also flip left-matra sequence.
+		firstLeftMatra := end
+		lastLeftMatra := end
 		base = end
 		for i := start; i < end; i++ {
 			if info[i].complexAux == posBaseC {
 				base = i
 				break
+			} else if info[i].complexAux == posPreM {
+				if firstLeftMatra == end {
+					firstLeftMatra = i
+				}
+				lastLeftMatra = i
 			}
 		}
+
+		/* https://github.com/harfbuzz/harfbuzz/issues/3863 */
+		if firstLeftMatra < lastLeftMatra {
+			/* No need to merge clusters, handled later. */
+			buffer.reverseRange(firstLeftMatra, lastLeftMatra+1)
+			/* Reverse back nuktas, etc. */
+			i := firstLeftMatra
+			for j := i; j <= lastLeftMatra; j++ {
+				if ic := info[j].complexCategory; ic == indSM_ex_M || ic == indSM_ex_MPst {
+					buffer.reverseRange(i, j+1)
+					i = j + 1
+				}
+			}
+		}
+
 		// Things are out-of-control for post base positions, they may shuffle
 		// around like crazy.  In old-spec mode, we move halants around, so in
 		// that case merge all clusters after base.  Otherwise, check the sort
@@ -1025,10 +824,10 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 		 * Test case: U+0924,U+094D,U+0930,U+094d,U+200D,U+0915
 		 */
 		for i := start; i+1 < base; i++ {
-			if info[i].complexCategory == otRa &&
-				info[i+1].complexCategory == otH &&
+			if info[i].complexCategory == indSM_ex_Ra &&
+				info[i+1].complexCategory == indSM_ex_H &&
 				(i+2 == base ||
-					info[i+2].complexCategory != otZWJ) {
+					info[i+2].complexCategory != indSM_ex_ZWJ) {
 				info[i].Mask |= indicPlan.maskArray[indicBlwf]
 				info[i+1].Mask |= indicPlan.maskArray[indicBlwf]
 			}
@@ -1056,7 +855,7 @@ func (indicPlan *indicShapePlan) initialReorderingConsonantSyllable(font *Font, 
 	/* Apply ZWJ/ZWNJ effects */
 	for i := start + 1; i < end; i++ {
 		if isJoiner(&info[i]) {
-			nonJoiner := info[i].complexCategory == otZWNJ
+			nonJoiner := info[i].complexCategory == indSM_ex_ZWNJ
 			j := i
 
 			for do := true; do; do = (j > start && !isConsonant(&info[j])) {
@@ -1084,7 +883,7 @@ func (indicPlan *indicShapePlan) initialReorderingStandaloneCluster(font *Font, 
 		/* For dotted-circle, this is what Uniscribe does:
 		 * If dotted-circle is the last glyph, it just does nothing.
 		 * Ie. It doesn't form Reph. */
-		if buffer.Info[end-1].complexCategory == otDOTTEDCIRCLE {
+		if buffer.Info[end-1].complexCategory == indSM_ex_DOTTEDCIRCLE {
 			return
 		}
 	}
@@ -1102,23 +901,25 @@ func (indicPlan *indicShapePlan) initialReorderingSyllableIndic(font *Font, buff
 	}
 }
 
-func (cs *complexShaperIndic) initialReorderingIndic(_ *otShapePlan, font *Font, buffer *Buffer) {
-	if debugMode >= 1 {
+func (cs *complexShaperIndic) initialReorderingIndic(_ *otShapePlan, font *Font, buffer *Buffer) bool {
+	if debugMode {
 		fmt.Println("INDIC - start reordering indic initial")
 	}
 
 	cs.plan.updateConsonantPositionsIndic(font, buffer)
-	syllabicInsertDottedCircles(font, buffer, indicBrokenCluster,
-		otDOTTEDCIRCLE, otRepha, posEnd)
+	ret := syllabicInsertDottedCircles(font, buffer, indicBrokenCluster,
+		indSM_ex_DOTTEDCIRCLE, indSM_ex_Repha, posEnd)
 
 	iter, count := buffer.syllableIterator()
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		cs.plan.initialReorderingSyllableIndic(font, buffer, start, end)
 	}
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("INDIC - end reordering indic initial")
 	}
+
+	return ret
 }
 
 func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan, buffer *Buffer, start, end int) {
@@ -1137,7 +938,7 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 			if info[i].Glyph == viramaGlyph &&
 				info[i].ligated() && info[i].multiplied() {
 				/* This will make sure that this glyph passes isHalant() test. */
-				info[i].complexCategory = otH
+				info[i].complexCategory = indSM_ex_H
 				info[i].clearLigatedAndMultiplied()
 			}
 		}
@@ -1167,10 +968,15 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 							for base < end && isHalant(&info[base]) {
 								base++
 							}
-							info[base].complexAux = posBaseC
+							if base < end {
+								info[base].complexAux = posBaseC
+							}
 
 							tryPref = false
 						}
+						break
+					}
+					if base == end {
 						break
 					}
 				}
@@ -1201,11 +1007,11 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 			break
 		}
 	}
-	if base == end && start < base && isOneOf(&info[base-1], 1<<otZWJ) {
+	if base == end && start < base && isOneOf(&info[base-1], 1<<indSM_ex_ZWJ) {
 		base--
 	}
 	if base < end {
-		for start < base && isOneOf(&info[base], 1<<otN|1<<otH) {
+		for start < base && isOneOf(&info[base], 1<<indSM_ex_N|1<<indSM_ex_H) {
 			base--
 		}
 	}
@@ -1251,7 +1057,7 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 		 */
 		if buffer.Props.Script != language.Malayalam && buffer.Props.Script != language.Tamil {
 		search:
-			for newPos > start && !isOneOf(&info[newPos], 1<<otM|1<<otH) {
+			for newPos > start && !isOneOf(&info[newPos], 1<<indSM_ex_M|1<<indSM_ex_MPst|1<<indSM_ex_H) {
 				newPos--
 			}
 			/* If we found no Halant we are done.
@@ -1260,7 +1066,7 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 			if isHalant(&info[newPos]) && info[newPos].complexAux != posPreM {
 				if newPos+1 < end {
 					/* . If ZWJ follows this halant, matra is NOT repositioned after this halant. */
-					if info[newPos+1].complexCategory == otZWJ {
+					if info[newPos+1].complexCategory == indSM_ex_ZWJ {
 						/* Keep searching. */
 						if newPos > start {
 							newPos--
@@ -1290,7 +1096,7 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 						base--
 					}
 
-					if debugMode >= 2 {
+					if debugMode {
 						fmt.Printf("INDIC - matras: switching glyph %d to %d (and shifting between)", oldPos, newPos)
 					}
 
@@ -1334,7 +1140,7 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 	*   to make it work without the reordering.
 	 */
 	if start+1 < end && info[start].complexAux == posRaToBecomeReph &&
-		(info[start].complexCategory == otRepha) != info[start].ligatedAndDidntMultiply() {
+		(info[start].complexCategory == indSM_ex_Repha) != info[start].ligatedAndDidntMultiply() {
 		var newRephPos int
 		rephPos := indicPlan.config.rephPos
 
@@ -1444,7 +1250,7 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 			 */
 			if !indicPlan.uniscribeBugCompatible && isHalant(&info[newRephPos]) {
 				for i := base + 1; i < newRephPos; i++ {
-					if info[i].complexCategory == otM {
+					if ic := info[i].complexCategory; ic == indSM_ex_M || ic == indSM_ex_MPst {
 						/* Ok, got it. */
 						newRephPos--
 					}
@@ -1457,7 +1263,7 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 	reph_move:
 		{
 
-			if debugMode >= 2 {
+			if debugMode {
 				fmt.Printf("INDIC - reph: switching glyph %d to %d (and shifting between)", start, newRephPos)
 			}
 
@@ -1505,7 +1311,7 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 					* We want to position matra after them.
 					 */
 					if buffer.Props.Script != language.Malayalam && buffer.Props.Script != language.Tamil {
-						for newPos > start && !isOneOf(&info[newPos-1], 1<<otM|1<<otH) {
+						for newPos > start && !isOneOf(&info[newPos-1], 1<<indSM_ex_M|1<<indSM_ex_MPst|1<<indSM_ex_H) {
 							newPos--
 						}
 					}
@@ -1522,7 +1328,7 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 						oldPos := i
 						buffer.mergeClusters(newPos, oldPos+1)
 
-						if debugMode >= 2 {
+						if debugMode {
 							fmt.Printf("INDIC - pre-base: switching glyph %d to %d (and shifting between)", oldPos, newPos)
 						}
 
@@ -1553,24 +1359,24 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(plan *otShapePlan,
 
 	// Finish off the clusters and go home!
 	if indicPlan.uniscribeBugCompatible {
-		/* Uniscribe merges the entire syllable into a single cluster... Except for Tamil & Sinhala.
+		/* Uniscribe merges the entire syllable into a single cluster... Except for Tamil.
 		 * This means, half forms are submerged into the main consonant's cluster.
 		 * This is unnecessary, and makes cursor positioning harder, but that's what
 		 * Uniscribe does. */
 		switch plan.props.Script {
-		case language.Tamil, language.Sinhala:
+		case language.Tamil:
 		default:
 			buffer.mergeClusters(start, end)
 		}
 	}
 }
 
-func (indicPlan *indicShapePlan) finalReorderingIndic(plan *otShapePlan, font *Font, buffer *Buffer) {
+func (indicPlan *indicShapePlan) finalReorderingIndic(plan *otShapePlan, font *Font, buffer *Buffer) bool {
 	if len(buffer.Info) == 0 {
-		return
+		return false
 	}
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("INDIC - start reordering indic final")
 	}
 
@@ -1579,13 +1385,17 @@ func (indicPlan *indicShapePlan) finalReorderingIndic(plan *otShapePlan, font *F
 		indicPlan.finalReorderingSyllableIndic(plan, buffer, start, end)
 	}
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("INDIC - end reordering indic final")
 	}
+
+	return false
 }
 
-func (complexShaperIndic) preprocessText(_ *otShapePlan, buffer *Buffer, _ *Font) {
-	preprocessTextVowelConstraints(buffer)
+func (ci complexShaperIndic) preprocessText(_ *otShapePlan, buffer *Buffer, _ *Font) {
+	if !ci.plan.uniscribeBugCompatible {
+		preprocessTextVowelConstraints(buffer)
+	}
 }
 
 func (cs *complexShaperIndic) decompose(c *otNormalizeContext, ab rune) (rune, rune, bool) {
@@ -1601,42 +1411,6 @@ func (cs *complexShaperIndic) decompose(c *otNormalizeContext, ab rune) (rune, r
 		/*
 		 * Decompose split matras that don't have Unicode decompositions.
 		 */
-	}
-
-	if ab == 0x0DDA || (0x0DDC <= ab && ab <= 0x0DDE) {
-		/*
-		 * Sinhala split matras...  Let the fun begin.
-		 *
-		 * These four characters have Unicode decompositions.  However, Uniscribe
-		 * decomposes them "Khmer-style", that is, it uses the character itself to
-		 * get the second half.  The first half of all four decompositions is always
-		 * U+0DD9.
-		 *
-		 * Now, there are buggy fonts, namely, the widely used lklug.ttf, that are
-		 * broken with Uniscribe.  But we need to support them.  As such, we only
-		 * do the Uniscribe-style decomposition if the character is transformed into
-		 * its "sec.half" form by the 'pstf' feature.  Otherwise, we fall back to
-		 * Unicode decomposition.
-		 *
-		 * Note that we can't unconditionally use Unicode decomposition.  That would
-		 * break some other fonts, that are designed to work with Uniscribe, and
-		 * don't have positioning features for the Unicode-style decomposition.
-		 *
-		 * Argh...
-		 *
-		 * The Uniscribe behavior is now documented in the newly published Sinhala
-		 * spec in 2012:
-		 *
-		 *   https://docs.microsoft.com/en-us/typography/script-development/sinhala#shaping
-		 */
-
-		indicPlan := cs.plan
-		glyph, ok := c.font.face.NominalGlyph(ab)
-		if indicPlan.uniscribeBugCompatible ||
-			(ok && indicPlan.pstf.wouldSubstitute([]GID{glyph}, c.font)) {
-			/* Ok, safe to use Uniscribe-style decomposition. */
-			return 0x0DD9, ab, true
-		}
 	}
 
 	return uni.decompose(ab)

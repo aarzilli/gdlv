@@ -30,7 +30,6 @@ type otShapePlanner struct {
 	shaper                        otComplexShaper
 	props                         SegmentProperties
 	tables                        *font.Font // also used by the map builders
-	aatMap                        aatMapBuilder
 	map_                          otMapBuilder
 	applyMorx                     bool
 	scriptZeroMarks               bool
@@ -42,7 +41,6 @@ func newOtShapePlanner(tables *font.Font, props SegmentProperties) *otShapePlann
 	out.props = props
 	out.tables = tables
 	out.map_ = newOtMapBuilder(tables, props)
-	out.aatMap = aatMapBuilder{tables: tables}
 
 	/* https://github.com/harfbuzz/harfbuzz/issues/2124 */
 	out.applyMorx = len(tables.Morx) != 0 && (props.Direction.isHorizontal() || len(tables.GSUB.Lookups) == 0)
@@ -64,9 +62,6 @@ func (planner *otShapePlanner) compile(plan *otShapePlan, key otShapePlanKey) {
 	plan.props = planner.props
 	plan.shaper = planner.shaper
 	planner.map_.compile(&plan.map_, key)
-	if planner.applyMorx {
-		planner.aatMap.compile(&plan.aatMap)
-	}
 
 	plan.fracMask = plan.map_.getMask1(loader.NewTag('f', 'r', 'a', 'c'))
 	plan.numrMask = plan.map_.getMask1(loader.NewTag('n', 'u', 'm', 'r'))
@@ -143,8 +138,7 @@ type otShapePlan struct {
 	shaper otComplexShaper
 	props  SegmentProperties
 
-	aatMap aatMap
-	map_   otMap
+	map_ otMap
 
 	fracMask GlyphMask
 	numrMask GlyphMask
@@ -182,11 +176,7 @@ func (sp *otShapePlan) init0(tables *font.Font, props SegmentProperties, userFea
 }
 
 func (sp *otShapePlan) substitute(font *Font, buffer *Buffer) {
-	if sp.applyMorx {
-		sp.aatLayoutSubstitute(font, buffer)
-	} else {
-		sp.map_.substitute(sp, font, buffer)
-	}
+	sp.map_.substitute(sp, font, buffer)
 }
 
 func (sp *otShapePlan) position(font *Font, buffer *Buffer) {
@@ -287,13 +277,6 @@ func (planner *otShapePlanner) collectFeatures(userFeatures []Feature) {
 			ftag = ffGLOBAL
 		}
 		map_.addFeatureExt(f.Tag, ftag, f.Value)
-	}
-
-	if planner.applyMorx {
-		aatMap := &planner.aatMap
-		for _, f := range userFeatures {
-			aatMap.addFeature(f.Tag, f.Value)
-		}
 	}
 
 	planner.shaper.overrideFeatures(planner)
@@ -558,8 +541,8 @@ func synthesizeGlyphClasses(buffer *Buffer) {
 
 func (c *otContext) substituteBeforePosition() {
 	buffer := c.buffer
-	// normalize and sets Glyph
 
+	// substituteDefault : normalize and sets Glyph
 	c.otRotateChars()
 
 	otShapeNormalize(c.plan, buffer, c.font)
@@ -571,7 +554,11 @@ func (c *otContext) substituteBeforePosition() {
 		fallbackMarkPositionRecategorizeMarks(buffer)
 	}
 
-	// Glyph fields are now set up ...
+	if debugMode {
+		fmt.Println("BEFORE SUBSTITUTE:", c.buffer.Info)
+	}
+
+	// substitutePan : glyph fields are now set up ...
 	// ... apply complex substitution from font
 
 	layoutSubstituteStart(c.font, buffer)
@@ -580,20 +567,30 @@ func (c *otContext) substituteBeforePosition() {
 		synthesizeGlyphClasses(c.buffer)
 	}
 
+	if c.plan.applyMorx {
+		c.plan.aatLayoutSubstitute(c.font, c.buffer, c.userFeatures)
+	}
+
 	c.plan.substitute(c.font, buffer)
+
+	//
+	if c.plan.applyMorx && c.plan.applyGpos {
+		aatLayoutRemoveDeletedGlyphs(buffer)
+	}
 }
 
 func (c *otContext) substituteAfterPosition() {
-	hideDefaultIgnorables(c.buffer, c.font)
-	if c.plan.applyMorx {
-		aatLayoutRemoveDeletedGlyphsInplace(c.buffer)
+	if c.plan.applyMorx && !c.plan.applyGpos {
+		aatLayoutRemoveDeletedGlyphs(c.buffer)
 	}
 
-	if debugMode >= 1 {
-		fmt.Printf("POSTPROCESS glyphs start (%T)\n", c.plan.shaper)
+	hideDefaultIgnorables(c.buffer, c.font)
+
+	if debugMode {
+		fmt.Println("POSTPROCESS glyphs start")
 	}
 	c.plan.shaper.postprocessGlyphs(c.plan, c.buffer, c.font)
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("POSTPROCESS glyphs end ")
 	}
 }
@@ -650,7 +647,7 @@ func (c *otContext) positionComplex() {
 	* hanging over the next glyph after the final reordering.
 	*
 	* Note: If fallback positioning happens, we don't care about
-	* this as it will be overriden. */
+	* this as it will be overridden. */
 	adjustOffsetsWhenZeroing := c.plan.adjustMarkPositioningWhenZeroing && c.buffer.Props.Direction.isForward()
 
 	// we change glyph origin to what GPOS expects (horizontal), apply GPOS, change it back.
@@ -697,7 +694,7 @@ func (c *otContext) position() {
 
 	c.positionDefault()
 
-	if debugMode >= 2 {
+	if debugMode {
 		fmt.Println("AFTER DEFAULT POSITION", c.buffer.Pos)
 	}
 
@@ -711,9 +708,21 @@ func (c *otContext) position() {
 /* Propagate cluster-level glyph flags to be the same on all cluster glyphs.
  * Simplifies using them. */
 func propagateFlags(buffer *Buffer) {
-	if buffer.scratchFlags&bsfHasUnsafeToBreak == 0 {
+	if buffer.scratchFlags&bsfHasGlyphFlags == 0 {
 		return
 	}
+
+	/* If we are producing SAFE_TO_INSERT_TATWEEL, then do two things:
+	 *
+	 * - If the places that the Arabic shaper marked as SAFE_TO_INSERT_TATWEEL,
+	 *   are UNSAFE_TO_BREAK, then clear the SAFE_TO_INSERT_TATWEEL,
+	 * - Any place that is SAFE_TO_INSERT_TATWEEL, is also now UNSAFE_TO_BREAK.
+	 *
+	 * We couldn't make this interaction earlier. It has to be done here.
+	 */
+	flipTatweel := buffer.Flags&ProduceSafeToInsertTatweel != 0
+
+	clearConcat := (buffer.Flags & ProduceUnsafeToConcat) == 0
 
 	info := buffer.Info
 
@@ -721,15 +730,25 @@ func propagateFlags(buffer *Buffer) {
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		var mask uint32
 		for i := start; i < end; i++ {
-			if info[i].Mask&GlyphUnsafeToBreak != 0 {
-				mask = GlyphUnsafeToBreak
-				break
-			}
+			mask |= info[i].Mask & glyphFlagDefined
 		}
-		if mask != 0 {
-			for i := start; i < end; i++ {
-				info[i].Mask |= mask
+
+		if flipTatweel {
+			if mask&GlyphUnsafeToBreak != 0 {
+				mask &= ^GlyphSafeToInsertTatweel
 			}
+			if mask&GlyphSafeToInsertTatweel != 0 {
+				mask |= GlyphUnsafeToBreak | GlyphUnsafeToConcat
+			}
+
+		}
+
+		if clearConcat {
+			mask &= ^GlyphUnsafeToConcat
+		}
+
+		for i := start; i < end; i++ {
+			info[i].Mask = mask
 		}
 	}
 }
@@ -753,8 +772,6 @@ func newShaperOpentype(tables *font.Font, coords []float32) *shaperOpentype {
 	out.tables = tables
 	return &out
 }
-
-func (shaperOpentype) kind() shaperKind { return skOpentype }
 
 func (sp *shaperOpentype) compile(props SegmentProperties, userFeatures []Feature) {
 	sp.plan.init0(sp.tables, props, userFeatures, sp.key)
@@ -781,29 +798,29 @@ func (sp *shaperOpentype) shape(font *Font, buffer *Buffer, features []Feature) 
 
 	c.buffer.formClusters()
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("FORMING CLUSTER :", c.buffer.Info)
 	}
 
 	c.buffer.ensureNativeDirection()
 
-	if debugMode >= 1 {
-		fmt.Printf("PREPROCESS text start (complex shaper %T)\n", c.plan.shaper)
+	if debugMode {
+		fmt.Printf("PREPROCESS text start\n")
 	}
 	c.plan.shaper.preprocessText(c.plan, c.buffer, c.font)
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("PREPROCESS text end:", c.buffer.Info)
 	}
 
 	c.substituteBeforePosition() // apply GSUB
 
-	if debugMode >= 2 {
+	if debugMode {
 		fmt.Println("AFTER SUBSTITUTE", c.buffer.Info)
 	}
 
 	c.position()
 
-	if debugMode >= 2 {
+	if debugMode {
 		fmt.Println("AFTER POSITION", c.buffer.Pos)
 	}
 

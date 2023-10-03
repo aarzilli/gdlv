@@ -7,6 +7,7 @@ import (
 	"sort"
 
 	"github.com/go-text/typesetting/opentype/api/font"
+	"github.com/go-text/typesetting/opentype/loader"
 	"github.com/go-text/typesetting/opentype/tables"
 )
 
@@ -15,12 +16,14 @@ import (
 type otMapFeatureFlags uint8
 
 const (
-	ffGLOBAL              otMapFeatureFlags = 1 << iota /* Feature applies to all characters; results in no mask allocated for it. */
-	ffHasFallback                                       /* Has fallback implementation, so include mask bit even if feature not found. */
-	ffManualZWNJ                                        /* Don't skip over ZWNJ when matching **context**. */
-	ffManualZWJ                                         /* Don't skip over ZWJ when matching **input**. */
-	ffGlobalSearch                                      /* If feature not found in LangSys, look for it in global feature list and pick one. */
-	ffRandom                                            /* Randomly select a glyph from an AlternateSubstFormat1 subtable. */
+	ffGLOBAL       otMapFeatureFlags = 1 << iota /* Feature applies to all characters; results in no mask allocated for it. */
+	ffHasFallback                                /* Has fallback implementation, so include mask bit even if feature not found. */
+	ffManualZWNJ                                 /* Don't skip over ZWNJ when matching **context**. */
+	ffManualZWJ                                  /* Don't skip over ZWJ when matching **input**. */
+	ffGlobalSearch                               /* If feature not found in LangSys, look for it in global feature list and pick one. */
+	ffRandom                                     /* Randomly select a glyph from an AlternateSubstFormat1 subtable. */
+	ffPerSyllable                                /* Contain lookup application to within syllable. */
+
 	ffNone                otMapFeatureFlags = 0
 	ffManualJoiners                         = ffManualZWNJ | ffManualZWJ
 	ffGlobalManualJoiners                   = ffGLOBAL | ffManualJoiners
@@ -71,13 +74,13 @@ func newOtMapBuilder(tables *font.Font, props SegmentProperties) otMapBuilder {
 
 	/* Fetch script/language indices for GSUB/GPOS.  We need these later to skip
 	* features not available in either table and not waste precious bits for them. */
-	scriptTags, languageTags := NewOTTagsFromScriptAndLanguage(props.Script, props.Language)
+	scriptTags, languageTags := newOTTagsFromScriptAndLanguage(props.Script, props.Language)
 
-	out.scriptIndex[0], out.chosenScript[0], out.foundScript[0] = SelectScript(&tables.GSUB.Layout, scriptTags)
-	out.languageIndex[0], _ = SelectLanguage(&tables.GSUB.Layout, out.scriptIndex[0], languageTags)
+	out.scriptIndex[0], out.chosenScript[0], out.foundScript[0] = selectScript(&tables.GSUB.Layout, scriptTags)
+	out.languageIndex[0], _ = selectLanguage(&tables.GSUB.Layout, out.scriptIndex[0], languageTags)
 
-	out.scriptIndex[1], out.chosenScript[1], out.foundScript[1] = SelectScript(&tables.GPOS.Layout, scriptTags)
-	out.languageIndex[1], _ = SelectLanguage(&tables.GPOS.Layout, out.scriptIndex[1], languageTags)
+	out.scriptIndex[1], out.chosenScript[1], out.foundScript[1] = selectScript(&tables.GPOS.Layout, scriptTags)
+	out.languageIndex[1], _ = selectLanguage(&tables.GPOS.Layout, out.scriptIndex[1], languageTags)
 
 	return out
 }
@@ -95,7 +98,9 @@ func (mb *otMapBuilder) addFeatureExt(tag tables.Tag, flags otMapFeatureFlags, v
 	mb.featureInfos = append(mb.featureInfos, info)
 }
 
-type pauseFunc func(plan *otShapePlan, font *Font, buffer *Buffer)
+// Pause functions return true if new glyph indices might have been
+// added to the buffer.  This is used to update buffer digest.
+type pauseFunc func(plan *otShapePlan, font *Font, buffer *Buffer) bool
 
 func (mb *otMapBuilder) addPause(tableIndex int, fn pauseFunc) {
 	s := stageInfo{
@@ -112,6 +117,8 @@ func (mb *otMapBuilder) addGPOSPause(fn pauseFunc) { mb.addPause(1, fn) }
 func (mb *otMapBuilder) enableFeatureExt(tag tables.Tag, flags otMapFeatureFlags, value uint32) {
 	mb.addFeatureExt(tag, ffGLOBAL|flags, value)
 }
+
+// shortand for enableFeatureExt(tag, None, 1)
 func (mb *otMapBuilder) enableFeature(tag tables.Tag)  { mb.enableFeatureExt(tag, ffNone, 1) }
 func (mb *otMapBuilder) addFeature(tag tables.Tag)     { mb.addFeatureExt(tag, ffNone, 1) }
 func (mb *otMapBuilder) disableFeature(tag tables.Tag) { mb.addFeatureExt(tag, ffGLOBAL, 0) }
@@ -199,7 +206,7 @@ func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
 			if requiredFeatureTag[tableIndex] == info.Tag {
 				requiredFeatureStage[tableIndex] = info.stage[tableIndex]
 			}
-			featureIndex[tableIndex] = FindFeatureForLang(table, mb.scriptIndex[tableIndex], mb.languageIndex[tableIndex], info.Tag)
+			featureIndex[tableIndex] = findFeatureForLang(table, mb.scriptIndex[tableIndex], mb.languageIndex[tableIndex], info.Tag)
 			found = found || featureIndex[tableIndex] != NoFeatureIndex
 		}
 		if !found && (info.flags&ffGlobalSearch) != 0 {
@@ -219,6 +226,7 @@ func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
 		map_.autoZWNJ = info.flags&ffManualZWNJ == 0
 		map_.autoZWJ = info.flags&ffManualZWJ == 0
 		map_.random = info.flags&ffRandom != 0
+		map_.perSyllable = info.flags&ffPerSyllable != 0
 		if (info.flags&ffGLOBAL) != 0 && info.maxValue == 1 {
 			// uses the global bit
 			map_.shift = globalBitShift
@@ -232,7 +240,7 @@ func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
 		map_.mask1 = (1 << map_.shift) & map_.mask
 		map_.needsFallback = !found
 
-		if debugMode >= 1 {
+		if debugMode {
 			fmt.Printf("\tMAP - adding feature %s (%d) for stage %v\n", info.Tag, info.Tag, info.stage)
 		}
 
@@ -245,13 +253,15 @@ func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
 
 	// collect lookup indices for features
 	for tableIndex, table := range tables {
+		// Collect lookup indices for features
 		stageIndex := 0
 		lastNumLookups := 0
 		for stage := 0; stage < mb.currentStage[tableIndex]; stage++ {
 			if requiredFeatureIndex[tableIndex] != NoFeatureIndex &&
 				requiredFeatureStage[tableIndex] == stage {
+				const emptyTag = 0x20202020 // ("    ")
 				m.addLookups(table, tableIndex, requiredFeatureIndex[tableIndex],
-					key[tableIndex], globalBitMask, true, true, false)
+					key[tableIndex], globalBitMask, true, true, false, false, emptyTag)
 			}
 
 			for _, feat := range m.features {
@@ -262,7 +272,10 @@ func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
 						feat.mask,
 						feat.autoZWNJ,
 						feat.autoZWJ,
-						feat.random)
+						feat.random,
+						feat.perSyllable,
+						feat.tag,
+					)
 				}
 			}
 			// sort lookups and merge duplicates
@@ -282,7 +295,7 @@ func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
 						ls[j].autoZWJ = ls[j].autoZWJ && ls[i].autoZWJ
 					}
 				}
-				m.lookups[tableIndex] = m.lookups[tableIndex][:j+1]
+				m.lookups[tableIndex] = ls[:j+1]
 			}
 
 			lastNumLookups = len(m.lookups[tableIndex])
@@ -299,6 +312,17 @@ func (mb *otMapBuilder) compile(m *otMap, key otShapePlanKey) {
 	}
 }
 
+func (mb *otMapBuilder) hasFeature(tag loader.Tag) bool {
+	tables := [2]*font.Layout{&mb.tables.GSUB.Layout, &mb.tables.GPOS.Layout}
+
+	for tableIndex, table := range tables {
+		if findFeatureForLang(table, mb.scriptIndex[tableIndex], mb.languageIndex[tableIndex], tag) != NoFeatureIndex {
+			return true
+		}
+	}
+	return false
+}
+
 type featureMap struct {
 	tag           tables.Tag /* should be first for our bsearch to work */
 	index         [2]uint16  /* GSUB/GPOS */
@@ -310,11 +334,10 @@ type featureMap struct {
 	autoZWNJ      bool      // = 1;
 	autoZWJ       bool      // = 1;
 	random        bool      // = 1;
-
-	// int cmp (const hb_tag_t tag_) const
-	// { return tag_ < tag ? -1 : tag_ > tag ? 1 : 0; }
+	perSyllable   bool
 }
 
+// by tag
 func bsearchFeature(features []featureMap, tag tables.Tag) *featureMap {
 	low, high := 0, len(features)
 	for low < high {
@@ -332,11 +355,13 @@ func bsearchFeature(features []featureMap, tag tables.Tag) *featureMap {
 }
 
 type lookupMap struct {
-	index    uint16
-	autoZWNJ bool // = 1;
-	autoZWJ  bool // = 1;
-	random   bool // = 1;
-	mask     GlyphMask
+	index       uint16
+	autoZWNJ    bool // = 1;
+	autoZWJ     bool // = 1;
+	random      bool // = 1;
+	perSyllable bool
+	featureTag  loader.Tag
+	mask        GlyphMask
 
 	// HB_INTERNAL static int cmp (const void *pa, const void *pb)
 	// {
@@ -412,16 +437,18 @@ func (m *otMap) getStageLookups(tableIndex, stage int) []lookupMap {
 }
 
 func (m *otMap) addLookups(table *font.Layout, tableIndex int, featureIndex uint16, variationsIndex int,
-	mask GlyphMask, autoZwnj, autoZwj, random bool,
+	mask GlyphMask, autoZwnj, autoZwj, random, perSyllable bool, featureTag loader.Tag,
 ) {
 	lookupIndices := getFeatureLookupsWithVar(table, featureIndex, variationsIndex)
 	for _, lookupInd := range lookupIndices {
 		lookup := lookupMap{
-			mask:     mask,
-			index:    lookupInd,
-			autoZWNJ: autoZwnj,
-			autoZWJ:  autoZwj,
-			random:   random,
+			mask:        mask,
+			index:       lookupInd,
+			autoZWNJ:    autoZwnj,
+			autoZWJ:     autoZwj,
+			random:      random,
+			perSyllable: perSyllable,
+			featureTag:  featureTag,
 		}
 		m.lookups[tableIndex] = append(m.lookups[tableIndex], lookup)
 	}
@@ -429,28 +456,28 @@ func (m *otMap) addLookups(table *font.Layout, tableIndex int, featureIndex uint
 
 // apply the GSUB table
 func (m *otMap) substitute(plan *otShapePlan, font *Font, buffer *Buffer) {
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("SUBSTITUTE - start table GSUB")
 	}
 
 	proxy := otProxy{otProxyMeta: proxyGSUB, accels: font.gsubAccels}
 	m.apply(proxy, plan, font, buffer)
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("SUBSTITUTE - end table GSUB")
 	}
 }
 
 // apply the GPOS table
 func (m *otMap) position(plan *otShapePlan, font *Font, buffer *Buffer) {
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("POSITION - start table GPOS")
 	}
 
 	proxy := otProxy{otProxyMeta: proxyGPOS, accels: font.gposAccels}
 	m.apply(proxy, plan, font, buffer)
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("POSITION - end table GPOS")
 	}
 }
@@ -463,42 +490,59 @@ func (m *otMap) apply(proxy otProxy, plan *otShapePlan, font *Font, buffer *Buff
 
 	for stageI, stage := range m.stages[tableIndex] {
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Printf("\tAPPLY - stage %d\n", stageI)
 		}
 
 		for ; i < stage.lastLookup; i++ {
-			lookupIndex := m.lookups[tableIndex][i].index
+			lookup := m.lookups[tableIndex][i]
+			lookupIndex := lookup.index
 
-			if debugMode >= 1 {
+			if debugMode {
 				fmt.Printf("\t\tLookup %d start\n", lookupIndex)
 			}
 
-			c.lookupIndex = lookupIndex
-			c.setLookupMask(m.lookups[tableIndex][i].mask)
-			c.setAutoZWJ(m.lookups[tableIndex][i].autoZWJ)
-			c.setAutoZWNJ(m.lookups[tableIndex][i].autoZWNJ)
-			c.random = m.lookups[tableIndex][i].random
+			// c.digest is a digest of all the current glyphs in the buffer
+			// (plus some past glyphs).
+			//
+			// Only try applying the lookup if there is any overlap. */
+			accel := &proxy.accels[lookupIndex]
+			if accel.digest.mayHaveDigest(c.digest) {
 
-			// pathological cases
-			if len(c.buffer.Info) > c.buffer.maxLen {
-				return
+				c.lookupIndex = lookupIndex
+				c.lookupMask = lookup.mask
+				c.autoZWJ = lookup.autoZWJ
+				c.autoZWNJ = lookup.autoZWNJ
+				c.random = lookup.random
+				c.perSyllable = lookup.perSyllable
+
+				// pathological cases
+				if len(c.buffer.Info) > c.buffer.maxLen {
+					return
+				}
+				c.applyString(proxy.otProxyMeta, accel)
 			}
-			c.applyString(proxy.otProxyMeta, &proxy.accels[lookupIndex])
 
-			if debugMode >= 1 {
-				fmt.Println("\t\tLookup end")
-				fmt.Println(c.buffer.Info)
+			if debugMode {
+				fmt.Print("\t\tLookup end : ")
+				if proxy.tableIndex == 0 {
+					fmt.Println(c.buffer.Info)
+				} else {
+					fmt.Println(c.buffer.Pos)
+				}
 			}
 
 		}
 
 		if stage.pauseFunc != nil {
-			if debugMode >= 1 {
+			if debugMode {
 				fmt.Println("\t\tExecuting pause function")
 			}
 
-			stage.pauseFunc(plan, font, buffer)
+			if stage.pauseFunc(plan, font, buffer) {
+				// Refresh working buffer digest since buffer changed.
+				c.digest = buffer.digest()
+			}
 		}
 	}
 }

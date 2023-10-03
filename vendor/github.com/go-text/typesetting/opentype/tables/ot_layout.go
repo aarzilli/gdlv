@@ -359,8 +359,11 @@ func (mp *MarkBasePos) Sanitize() error {
 	if exp, got := mp.markCoverage.Len(), len(mp.MarkArray.MarkRecords); exp != got {
 		return fmt.Errorf("GPOS: invalid MarkBasePos marks count (%d != %d)", exp, got)
 	}
-	if exp, got := mp.BaseCoverage.Len(), len(mp.BaseArray.BaseAnchors); exp != got {
+	if exp, got := mp.BaseCoverage.Len(), len(mp.BaseArray.baseRecords); exp != got {
 		return fmt.Errorf("GPOS: invalid MarkBasePos marks count (%d != %d)", exp, got)
+	}
+	if err := mp.BaseArray.Anchors().sanitizeOffsets(); err != nil {
+		return err
 	}
 
 	return nil
@@ -550,6 +553,30 @@ func parseValueRecord(format ValueFormat, data []byte, offset int) (out ValueRec
 	return out, offset + 2*size, err
 }
 
+type pairValueRecords struct {
+	data       []byte // start with the item count
+	fmt1, fmt2 ValueFormat
+}
+
+// panic if index is out of range
+func (ps pairValueRecords) get(index int) (out PairValueRecord, err error) {
+	recLen := 1 + ps.fmt1.size() + ps.fmt2.size()
+	offset := 2 + 2*index*recLen
+
+	out.SecondGlyph = GlyphID(binary.BigEndian.Uint16(ps.data[offset:]))
+	v1, newOffset, err := parseValueRecord(ps.fmt1, ps.data, offset+2)
+	if err != nil {
+		return out, fmt.Errorf("invalid pair set table: %s", err)
+	}
+	v2, _, err := parseValueRecord(ps.fmt2, ps.data, newOffset)
+	if err != nil {
+		return out, fmt.Errorf("invalid pair set table: %s", err)
+	}
+	out.ValueRecord1 = v1
+	out.ValueRecord2 = v2
+	return out, nil
+}
+
 // DeviceTable is either an DeviceHinting for standard fonts,
 // or a DeviceVariation for variable fonts.
 type DeviceTable interface {
@@ -677,6 +704,44 @@ func (af *AnchorFormat3) parseYDevice(src []byte) error {
 	var err error
 	af.YDevice, err = parseDeviceTable(src, uint16(af.yDeviceOffset))
 	return err
+}
+
+// AnchorMatrix is a compact representation of a [][]Anchor
+type AnchorMatrix struct {
+	records []anchorOffsets
+	data    []byte
+}
+
+func (am AnchorMatrix) Len() int { return len(am.records) }
+
+func (am AnchorMatrix) sanitizeOffsets() error {
+	for _, list := range am.records {
+		for _, offset := range list.offsets {
+			if offset == 0 {
+				continue
+			}
+			if L := len(am.data); L < int(offset) {
+				return fmt.Errorf("EOF: expected length: %d, got %d", offset, L)
+			}
+		}
+	}
+	return nil
+}
+
+func (am AnchorMatrix) Anchor(index, class int) Anchor {
+	if len(am.records) < index {
+		return nil
+	}
+	offsets := am.records[index].offsets
+	if len(offsets) < class {
+		return nil
+	}
+	offset := offsets[class]
+	if offset == 0 {
+		return nil
+	}
+	anchor, _, _ := ParseAnchor(am.data[offset:]) // offset is sanitized
+	return anchor
 }
 
 type MarkArray struct {

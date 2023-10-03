@@ -1,13 +1,15 @@
 # dmitri.shuralyov.com/gpu/mtl v0.0.0-20201218220906-28db891af037
 ## explicit
 dmitri.shuralyov.com/gpu/mtl
-# gioui.org v0.0.0-20230404150518-c0d3f67b0468
-## explicit; go 1.18
+# gioui.org v0.3.0
+## explicit; go 1.19
 gioui.org/app
 gioui.org/app/internal/log
 gioui.org/app/internal/windows
 gioui.org/app/internal/xkb
 gioui.org/f32
+gioui.org/font
+gioui.org/font/gofont
 gioui.org/font/opentype
 gioui.org/gesture
 gioui.org/gpu
@@ -19,6 +21,7 @@ gioui.org/gpu/internal/vulkan
 gioui.org/internal/byteslice
 gioui.org/internal/cocoainit
 gioui.org/internal/d3d11
+gioui.org/internal/debug
 gioui.org/internal/egl
 gioui.org/internal/f32
 gioui.org/internal/f32color
@@ -57,7 +60,7 @@ gioui.org/shader/piet
 ## explicit
 github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/xproto
-# github.com/aarzilli/nucular v0.0.0-20231002133548-a7c48a828611
+# github.com/aarzilli/nucular v0.0.0-20231003125456-eaf9fcee24e3
 ## explicit; go 1.18
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard
@@ -75,16 +78,18 @@ github.com/go-delve/delve/pkg/goversion
 # github.com/go-gl/glfw/v3.3/glfw v0.0.0-20200222043503-6f7a984d4dc4
 ## explicit; go 1.10
 github.com/go-gl/glfw/v3.3/glfw
-# github.com/go-text/typesetting v0.0.0-20230329143336-a38d00edd832
+# github.com/go-text/typesetting v0.0.0-20230803102845-24e03d8b5372
 ## explicit; go 1.17
 github.com/go-text/typesetting/di
 github.com/go-text/typesetting/font
+github.com/go-text/typesetting/fontscan
 github.com/go-text/typesetting/harfbuzz
 github.com/go-text/typesetting/language
 github.com/go-text/typesetting/opentype/api
 github.com/go-text/typesetting/opentype/api/font
 github.com/go-text/typesetting/opentype/api/font/cff
 github.com/go-text/typesetting/opentype/api/font/cff/interpreter
+github.com/go-text/typesetting/opentype/api/metadata
 github.com/go-text/typesetting/opentype/loader
 github.com/go-text/typesetting/opentype/tables
 github.com/go-text/typesetting/segmenter
@@ -141,7 +146,18 @@ golang.org/x/exp/shiny/screen
 golang.org/x/image/ccitt
 golang.org/x/image/draw
 golang.org/x/image/font
+golang.org/x/image/font/gofont/gobold
+golang.org/x/image/font/gofont/gobolditalic
+golang.org/x/image/font/gofont/goitalic
+golang.org/x/image/font/gofont/gomedium
+golang.org/x/image/font/gofont/gomediumitalic
+golang.org/x/image/font/gofont/gomono
+golang.org/x/image/font/gofont/gomonobold
+golang.org/x/image/font/gofont/gomonobolditalic
+golang.org/x/image/font/gofont/gomonoitalic
 golang.org/x/image/font/gofont/goregular
+golang.org/x/image/font/gofont/gosmallcaps
+golang.org/x/image/font/gofont/gosmallcapsitalic
 golang.org/x/image/math/f32
 golang.org/x/image/math/f64
 golang.org/x/image/math/fixed

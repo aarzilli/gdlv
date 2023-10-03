@@ -7,6 +7,8 @@
 // which implement `PsOperatorHandler`.
 // It also provides helpers to interpret glyph outline descriptions,
 // shared between Type1 and CFF font formats.
+//
+// See https://adobe-type-tools.github.io/font-tech-notes/pdfs/5177.Type2.pdf
 package psinterpreter
 
 import (
@@ -249,7 +251,19 @@ func (p *Machine) parseNumber() (hasResult bool, err error) {
 		if len(p.instructions) < 5 {
 			return true, errInvalidCFFTable
 		}
-		number, hasResult = int32(be.Uint32(p.instructions[1:])), true
+		intValue := int32(be.Uint32(p.instructions[1:]))
+		if p.ctx == Type2Charstring {
+			// 5177.Type2.pdf section 3.2 "Charstring Number Encoding" says "If the
+			// charstring byte contains the value 255... [this] number is
+			// interpreted as a Fixed; that is, a signed number with 16 bits of
+			// fraction".
+			//
+			// we just round the 16.16 fixed point number to the closest integer value
+			number = (intValue >> 16) + (1 & (intValue >> 15)) // care with overflow
+			hasResult = true
+		} else {
+			number, hasResult = intValue, true
+		}
 		p.instructions = p.instructions[5:]
 	}
 

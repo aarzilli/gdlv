@@ -182,22 +182,18 @@ func (f *Font) VariationGlyph(ch, varSelector rune) (GID, bool) {
 }
 
 // do not take into account variations
-func (f *Font) getBaseAdvance(gid gID, table tables.Hmtx) int16 {
-	LM, LS := len(table.Metrics), len(table.LeftSideBearings)
-	index := int(gid)
-	if index < LM {
-		return table.Metrics[index].AdvanceWidth
-	} else if index < LS+LM { // return the last value
-		return table.Metrics[len(table.Metrics)-1].AdvanceWidth
-	} else {
-		/* If `table` is empty, it means we don't have the metrics table
-		 * for this direction: return default advance.  Otherwise, it means that the
-		 * glyph index is out of bound: return zero. */
-		if LM+LS == 0 {
+func (f *Font) getBaseAdvance(gid gID, table tables.Hmtx, isVertical bool) int16 {
+	/* If `table` is empty, it means we don't have the metrics table
+	 * for this direction: return default advance.  Otherwise, it means that the
+	 * glyph index is out of bound: return zero. */
+	if table.IsEmpty() {
+		if isVertical {
 			return int16(f.upem)
 		}
-		return 0
+		return int16(f.upem / 2)
 	}
+
+	return table.Advance(gid)
 }
 
 // return the base side bearing, handling invalid glyph index
@@ -233,12 +229,12 @@ func (f *Face) getGlyphAdvanceVar(gid gID, isVertical bool) float32 {
 }
 
 func (f *Face) HorizontalAdvance(gid GID) float32 {
-	advance := f.getBaseAdvance(gID(gid), f.hmtx)
+	advance := f.getBaseAdvance(gID(gid), f.hmtx, false)
 	if !f.isVar() {
 		return float32(advance)
 	}
 	if f.hvar != nil {
-		return float32(advance) + getAdvanceVar(f.hvar, gID(gid), f.Coords)
+		return float32(advance) + getAdvanceDeltaUnscaled(f.hvar, gID(gid), f.Coords)
 	}
 	return f.getGlyphAdvanceVar(gID(gid), false)
 }
@@ -248,14 +244,19 @@ func (f *Face) isVar() bool {
 	return len(f.Coords) != 0 && len(f.Coords) == len(f.Font.fvar)
 }
 
+// HasVerticalMetrics returns true if a the 'vmtx' table is present.
+// If not, client should avoid calls to [VerticalAdvance], which will returns a
+// defaut value.
+func (f *Font) HasVerticalMetrics() bool { return !f.vmtx.IsEmpty() }
+
 func (f *Face) VerticalAdvance(gid GID) float32 {
 	// return the opposite of the advance from the font
-	advance := f.getBaseAdvance(gID(gid), f.vmtx)
+	advance := f.getBaseAdvance(gID(gid), f.vmtx, true)
 	if !f.isVar() {
 		return -float32(advance)
 	}
 	if f.vvar != nil {
-		return -float32(advance) - getAdvanceVar(f.vvar, gID(gid), f.Coords)
+		return -float32(advance) - getAdvanceDeltaUnscaled(f.vvar, gID(gid), f.Coords)
 	}
 	return -f.getGlyphAdvanceVar(gID(gid), true)
 }
@@ -276,7 +277,7 @@ func (f *Face) getVerticalSideBearing(glyph gID) int16 {
 		return sideBearing
 	}
 	if f.vvar != nil {
-		return sideBearing + int16(getSideBearingVar(f.vvar, glyph, f.Coords))
+		return sideBearing + int16(getLsbDeltaUnscaled(f.vvar, glyph, f.Coords))
 	}
 	return f.getGlyphSideBearingVar(glyph, true)
 }
@@ -295,8 +296,16 @@ func (f *Face) GlyphVOrigin(glyph GID) (x, y int32, found bool) {
 	}
 
 	if extents, ok := f.getExtentsFromGlyf(gID(glyph)); ok {
-		tsb := f.getVerticalSideBearing(gID(glyph))
-		y = int32(extents.YBearing) + int32(tsb)
+		if f.HasVerticalMetrics() {
+			tsb := f.getVerticalSideBearing(gID(glyph))
+			y = int32(extents.YBearing) + int32(tsb)
+			return x, y, true
+		}
+
+		fontExtents, _ := f.FontHExtents()
+		advance := fontExtents.Ascender - fontExtents.Descender
+		diff := advance - -extents.Height
+		y = int32(extents.YBearing + (diff / 2))
 		return x, y, true
 	}
 

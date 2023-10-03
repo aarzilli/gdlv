@@ -12,7 +12,7 @@ const (
 )
 
 %%{
-  machine khmerSyllableMachine;
+  machine khmSM;
   alphtype byte;
   write exports;
   write data;
@@ -20,21 +20,25 @@ const (
 
 %%{
 
+# We use category H for spec category Coeng
+
 export C    = 1;
 export V    = 2;
+export H    = 4;
 export ZWNJ = 5;
 export ZWJ  = 6;
-export PLACEHOLDER = 11;
-export DOTTEDCIRCLE = 12;
-export Coeng= 14;
-export Ra   = 16;
-export Robatic = 20;
-export Xgroup  = 21;
-export Ygroup  = 22;
-export VAbv = 26;
-export VBlw = 27;
-export VPre = 28;
-export VPst = 29;
+export PLACEHOLDER = 10;
+export DOTTEDCIRCLE = 11;
+export Ra   = 15;
+
+export VAbv = 20;
+export VBlw = 21;
+export VPre = 22;
+export VPst = 23;
+
+export Robatic = 25;
+export Xgroup  = 26;
+export Ygroup  = 27;
 
 c = (C | Ra | V);
 cn = c.((ZWJ|ZWNJ)?.Robatic)?;
@@ -45,16 +49,16 @@ ygroup = Ygroup*;
 # This grammar was experimentally extracted from what Uniscribe allows.
 
 matra_group = VPre? xgroup VBlw? xgroup (joiner?.VAbv)? xgroup VPst?;
-syllable_tail = xgroup matra_group xgroup (Coeng.c)? ygroup;
+syllable_tail = xgroup matra_group xgroup (H.c)? ygroup;
 
 
-broken_cluster =	(Coeng.cn)* (Coeng | syllable_tail);
+broken_cluster =	Robatic? (H.cn)* (H | syllable_tail);
 consonant_syllable =	(cn|PLACEHOLDER|DOTTEDCIRCLE) broken_cluster;
 other =			any;
 
 main := |*
 	consonant_syllable	=> { foundSyllableKhmer (khmerConsonantSyllable, ts, te, info, &syllableSerial); };
-	broken_cluster		=> { foundSyllableKhmer (khmerBrokenCluster, ts, te, info, &syllableSerial); };
+	broken_cluster		=> { foundSyllableKhmer (khmerBrokenCluster, ts, te, info, &syllableSerial); buffer.scratchFlags |= bsfHasBrokenSyllable; };
 	other			=> { foundSyllableKhmer (khmerNonKhmerCluster, ts, te, info, &syllableSerial); };
 *|;
 

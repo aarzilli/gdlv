@@ -80,12 +80,47 @@ const (
 	// if breaking input text at the beginning of this cluster and shaping the two sides
 	// separately.
 	// This can be used to optimize paragraph layout, by avoiding re-shaping
-	// of each line after line-breaking, or limiting the reshaping to a small piece around the
-	// breaking point only.
-	GlyphUnsafeToBreak GlyphMask = 0x00000001
+	// of each line after line-breaking.
+	GlyphUnsafeToBreak GlyphMask = 1 << iota
+
+	// Indicates that if input text is changed on one side of the beginning of the cluster this glyph
+	// is part of, then the shaping results for the other side might change.
+	// Note that the absence of this flag will NOT by itself mean that it IS safe to concat text.
+	// Only two pieces of text both of which clear of this flag can be concatenated safely.
+	// This can be used to optimize paragraph layout, by avoiding re-shaping of each line
+	// after line-breaking, by limiting the reshaping to a small piece around the
+	// breaking positin only, even if the breaking position carries the
+	// [GlyphUnsafeToBreak] or when hyphenation or other text transformation
+	// happens at line-break position, in the following way:
+	// 	1. Iterate back from the line-break position until the first cluster start position that is
+	// 		NOT unsafe-to-concat,
+	// 	2. Shape the segment from there till the end of line,
+	// 	3. Check whether the resulting glyph-run also is clear of the unsafe-to-concat at its start-of-text position;
+	// 		if it is, just splice it into place and the line is shaped; If not, move on to a position further
+	// 		back that is clear of unsafe-to-concat and retry from there, and repeat.
+	// At the start of next line a similar algorithm can be implemented. That is:
+	// 	1. Iterate forward from the line-break position until the first cluster start position that is NOT unsafe-to-concat,
+	// 	2. Shape the segment from beginning of the line to that position,
+	// 	3. Check whether the resulting glyph-run also is clear of the unsafe-to-concat at its end-of-text position;
+	// 		if it is, just splice it into place and the beginning is shaped; If not, move on to a position further forward that is clear
+	// 	 	of unsafe-to-concat and retry up to there, and repeat.
+	// A slight complication will arise in the implementation of the algorithm above, because while our buffer API has a way to
+	// return flags for position corresponding to start-of-text, there is currently no position
+	// corresponding to end-of-text.  This limitation can be alleviated by shaping more text than needed
+	// and looking for unsafe-to-concat flag within text clusters.
+	// The [GlyphUnsafeToBreak] flag will always imply this flag.
+	// To use this flag, you must enable the buffer flag [ProduceUnsafeToConcat] during
+	// shaping, otherwise the buffer flag will not be reliably produced.
+	GlyphUnsafeToConcat
+
+	// In scripts that use elongation (Arabic, Mongolian, Syriac, etc.), this flag signifies
+	// that it is safe to insert a U+0640 TATWEEL character before this cluster for elongation.
+	// This flag does not determine the script-specific elongation places, but only
+	// when it is safe to do the elongation without interrupting text shaping.
+	GlyphSafeToInsertTatweel
 
 	// OR of all defined flags
-	glyphFlagDefined GlyphMask = GlyphUnsafeToBreak
+	glyphFlagDefined GlyphMask = GlyphUnsafeToBreak | GlyphUnsafeToConcat | GlyphSafeToInsertTatweel
 )
 
 // GlyphInfo holds information about the
@@ -156,7 +191,7 @@ type GlyphInfo struct {
 
 // String returns a simple description of the glyph of the form Glyph=Cluster(mask)
 func (info GlyphInfo) String() string {
-	return fmt.Sprintf("%d=%d(%d)", info.Glyph, info.Cluster, info.Mask)
+	return fmt.Sprintf("%d=%d(0x%x)", info.Glyph, info.Cluster, info.Mask&glyphFlagDefined)
 }
 
 func (info *GlyphInfo) setUnicodeProps(buffer *Buffer) {
@@ -173,11 +208,7 @@ func (info *GlyphInfo) setGeneralCategory(genCat generalCategory) {
 
 func (info *GlyphInfo) setCluster(cluster int, mask GlyphMask) {
 	if info.Cluster != cluster {
-		if mask&GlyphUnsafeToBreak != 0 {
-			info.Mask |= GlyphUnsafeToBreak
-		} else {
-			info.Mask &= ^GlyphUnsafeToBreak
-		}
+		info.Mask = (info.Mask & ^glyphFlagDefined) | (mask & glyphFlagDefined)
 	}
 	info.Cluster = cluster
 }

@@ -91,7 +91,7 @@ func (cs *complexShaperHangul) preprocessText(_ *otShapePlan, buffer *Buffer, fo
 	*
 	*   - LV can be precomposed, or decomposed.  Lets call those
 	*     <LV> and <L,V>,
-	*   - LVT can be fully precomposed, partically precomposed, or
+	*   - LVT can be fully precomposed, partially precomposed, or
 	*     fully decomposed.  Ie. <LVT>, <LV,T>, or <L,V,T>.
 	*
 	* The composition / decomposition is mechanical.  However, not

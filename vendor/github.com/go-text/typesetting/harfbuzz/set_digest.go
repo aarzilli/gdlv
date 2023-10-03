@@ -10,21 +10,21 @@ const maskBits = 4 * 8 // 4 = size(setDigestLowestBits)
 
 type setType = gID
 
-type setDigestLowestBits uint32
+type setBits uint32
 
-func maskFor(g setType, shift uint) setDigestLowestBits {
+func maskFor(g setType, shift uint) setBits {
 	return 1 << ((g >> shift) & (maskBits - 1))
 }
 
-func (sd *setDigestLowestBits) add(g setType, shift uint) { *sd |= maskFor(g, shift) }
+func (sd *setBits) add(g setType, shift uint) { *sd |= maskFor(g, shift) }
 
-func (sd *setDigestLowestBits) addRange(a, b setType, shift uint) {
+func (sd *setBits) addRange(a, b setType, shift uint) {
 	if (b>>shift)-(a>>shift) >= maskBits-1 {
-		*sd = ^setDigestLowestBits(0)
+		*sd = ^setBits(0)
 	} else {
 		mb := maskFor(b, shift)
 		ma := maskFor(a, shift)
-		var op setDigestLowestBits
+		var op setBits
 		if mb < ma {
 			op = 1
 		}
@@ -32,14 +32,18 @@ func (sd *setDigestLowestBits) addRange(a, b setType, shift uint) {
 	}
 }
 
-func (sd *setDigestLowestBits) addArray(arr []setType, shift uint) {
+func (sd *setBits) addArray(arr []setType, shift uint) {
 	for _, v := range arr {
 		sd.add(v, shift)
 	}
 }
 
-func (sd setDigestLowestBits) mayHave(g setType, shift uint) bool {
+func (sd setBits) mayHave(g setType, shift uint) bool {
 	return sd&maskFor(g, shift) != 0
+}
+
+func (sd setBits) mayHaveSet(g setBits) bool {
+	return sd&g != 0
 }
 
 /* This is a combination of digests that performs "best".
@@ -64,7 +68,7 @@ const (
 // The frozen-set can be used instead of a digest, to trade more
 // memory for 100% accuracy, but in practice, that doesn't look like
 // an attractive trade-off.
-type setDigest [3]setDigestLowestBits
+type setDigest [3]setBits
 
 // add adds the given rune to the set.
 func (sd *setDigest) add(g setType) {
@@ -95,6 +99,10 @@ func (sd *setDigest) addArray(arr []setType) {
 // Note that runes in the set are certain to return `true`.
 func (sd setDigest) mayHave(g setType) bool {
 	return sd[0].mayHave(g, shift0) && sd[1].mayHave(g, shift1) && sd[2].mayHave(g, shift2)
+}
+
+func (sd setDigest) mayHaveDigest(o setDigest) bool {
+	return sd[0].mayHaveSet(o[0]) && sd[1].mayHaveSet(o[1]) && sd[2].mayHaveSet(o[2])
 }
 
 func (sd *setDigest) collectCoverage(cov tables.Coverage) {

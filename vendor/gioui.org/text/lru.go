@@ -7,6 +7,7 @@ import (
 	"hash/maphash"
 	"image"
 
+	giofont "gioui.org/font"
 	"gioui.org/io/system"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -156,8 +157,11 @@ type layoutKey struct {
 	str                string
 	truncator          string
 	locale             system.Locale
-	font               Font
+	font               giofont.Font
 	forceTruncate      bool
+	wrapPolicy         WrapPolicy
+	lineHeight         fixed.Int26_6
+	lineHeightScale    float32
 }
 
 type pathKey struct {

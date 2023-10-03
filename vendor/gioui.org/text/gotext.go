@@ -6,18 +6,24 @@ import (
 	"bytes"
 	"image"
 	"io"
-	"sort"
+	"log"
+	"os"
 
 	"github.com/go-text/typesetting/di"
 	"github.com/go-text/typesetting/font"
+	"github.com/go-text/typesetting/fontscan"
 	"github.com/go-text/typesetting/language"
 	"github.com/go-text/typesetting/opentype/api"
+	"github.com/go-text/typesetting/opentype/api/metadata"
 	"github.com/go-text/typesetting/shaping"
 	"golang.org/x/exp/slices"
 	"golang.org/x/image/math/fixed"
 	"golang.org/x/text/unicode/bidi"
 
 	"gioui.org/f32"
+	giofont "gioui.org/font"
+	"gioui.org/font/opentype"
+	"gioui.org/internal/debug"
 	"gioui.org/io/system"
 	"gioui.org/op"
 	"gioui.org/op/clip"
@@ -30,7 +36,8 @@ type document struct {
 	lines     []line
 	alignment Alignment
 	// alignWidth is the width used when aligning text.
-	alignWidth int
+	alignWidth      int
+	unreadRuneCount int
 }
 
 // append adds the lines of other to the end of l and ensures they
@@ -46,6 +53,7 @@ func (l *document) reset() {
 	l.lines = l.lines[:0]
 	l.alignment = Start
 	l.alignWidth = 0
+	l.unreadRuneCount = 0
 }
 
 func max(a, b int) int {
@@ -73,8 +81,9 @@ type line struct {
 	// descent is the height below the baseline, including
 	// the line gap.
 	descent fixed.Int26_6
-	// bounds is the visible bounds of the line.
-	bounds fixed.Rectangle26_6
+	// lineHeight captures the gap that should exist between the baseline of this
+	// line and the previous (if any).
+	lineHeight fixed.Int26_6
 	// direction is the dominant direction of the line. This direction will be
 	// used to align the text content of the line, but may not match the actual
 	// direction of the runs of text within the line (such as an RTL sentence
@@ -84,6 +93,55 @@ type line struct {
 	runeCount int
 
 	yOffset int
+}
+
+// insertTrailingSyntheticNewline adds a synthetic newline to the final logical run of the line
+// with the given shaping cluster index.
+func (l *line) insertTrailingSyntheticNewline(newLineClusterIdx int) {
+	// If there was a newline at the end of this paragraph, insert a synthetic glyph representing it.
+	finalContentRun := len(l.runs) - 1
+	// If there was a trailing newline update the rune counts to include
+	// it on the last line of the paragraph.
+	l.runeCount += 1
+	l.runs[finalContentRun].Runes.Count += 1
+
+	syntheticGlyph := glyph{
+		id:           0,
+		clusterIndex: newLineClusterIdx,
+		glyphCount:   0,
+		runeCount:    1,
+		xAdvance:     0,
+		yAdvance:     0,
+		xOffset:      0,
+		yOffset:      0,
+	}
+	// Inset the synthetic newline glyph on the proper end of the run.
+	if l.runs[finalContentRun].Direction.Progression() == system.FromOrigin {
+		l.runs[finalContentRun].Glyphs = append(l.runs[finalContentRun].Glyphs, syntheticGlyph)
+	} else {
+		// Ensure capacity.
+		l.runs[finalContentRun].Glyphs = append(l.runs[finalContentRun].Glyphs, glyph{})
+		copy(l.runs[finalContentRun].Glyphs[1:], l.runs[finalContentRun].Glyphs)
+		l.runs[finalContentRun].Glyphs[0] = syntheticGlyph
+	}
+}
+
+func (l *line) setTruncatedCount(truncatedCount int) {
+	// If we've truncated the text with a truncator, adjust the rune counts within the
+	// truncator to make it represent the truncated text.
+	finalRunIdx := len(l.runs) - 1
+	l.runs[finalRunIdx].truncator = true
+	finalGlyphIdx := len(l.runs[finalRunIdx].Glyphs) - 1
+	// The run represents all of the truncated text.
+	l.runs[finalRunIdx].Runes.Count = truncatedCount
+	// Only the final glyph represents any runes, and it represents all truncated text.
+	for i := range l.runs[finalRunIdx].Glyphs {
+		if i == finalGlyphIdx {
+			l.runs[finalRunIdx].Glyphs[finalGlyphIdx].runeCount = truncatedCount
+		} else {
+			l.runs[finalRunIdx].Glyphs[finalGlyphIdx].runeCount = 0
+		}
+	}
 }
 
 // Range describes the position and quantity of a range of text elements
@@ -148,112 +206,18 @@ type runLayout struct {
 	truncator bool
 }
 
-// faceOrderer chooses the order in which faces should be applied to text.
-type faceOrderer struct {
-	def                 Font
-	faceScratch         []font.Face
-	fontDefaultOrder    map[Font]int
-	defaultOrderedFonts []Font
-	faces               map[Font]font.Face
-	faceToIndex         map[font.Face]int
-	fonts               []Font
-}
-
-func (f *faceOrderer) insert(fnt Font, face font.Face) {
-	if len(f.fonts) == 0 {
-		f.def = fnt
-	}
-	if f.fontDefaultOrder == nil {
-		f.fontDefaultOrder = make(map[Font]int)
-	}
-	if f.faces == nil {
-		f.faces = make(map[Font]font.Face)
-		f.faceToIndex = make(map[font.Face]int)
-	}
-	f.fontDefaultOrder[fnt] = len(f.faceScratch)
-	f.defaultOrderedFonts = append(f.defaultOrderedFonts, fnt)
-	f.faceScratch = append(f.faceScratch, face)
-	f.fonts = append(f.fonts, fnt)
-	f.faces[fnt] = face
-	f.faceToIndex[face] = f.fontDefaultOrder[fnt]
-}
-
-// resetFontOrder restores the fonts to a predictable order. It should be invoked
-// before any operation searching the fonts.
-func (c *faceOrderer) resetFontOrder() {
-	copy(c.fonts, c.defaultOrderedFonts)
-}
-
-func (c *faceOrderer) indexFor(face font.Face) int {
-	return c.faceToIndex[face]
-}
-
-func (c *faceOrderer) faceFor(idx int) font.Face {
-	if idx < len(c.defaultOrderedFonts) {
-		return c.faces[c.defaultOrderedFonts[idx]]
-	}
-	panic("face index not found")
-}
-
-// TODO(whereswaldon): this function could sort all faces by appropriateness for the
-// given font characteristics. This would ensure that (if possible) text using a
-// fallback font would select similar weights and emphases to the primary font.
-func (c *faceOrderer) sortedFacesForStyle(font Font) []font.Face {
-	c.resetFontOrder()
-	primary, ok := c.fontForStyle(font)
-	if !ok {
-		font.Typeface = c.def.Typeface
-		primary, ok = c.fontForStyle(font)
-		if !ok {
-			primary = c.def
-		}
-	}
-	return c.sorted(primary)
-}
-
-// fontForStyle returns the closest existing font to the requested font within the
-// same typeface.
-func (c *faceOrderer) fontForStyle(font Font) (Font, bool) {
-	if closest, ok := closestFont(font, c.fonts); ok {
-		return closest, true
-	}
-	font.Style = Regular
-	if closest, ok := closestFont(font, c.fonts); ok {
-		return closest, true
-	}
-	return font, false
-}
-
-// faces returns a slice of faces with primary as the first element and
-// the remaining faces ordered by insertion order.
-func (f *faceOrderer) sorted(primary Font) []font.Face {
-	// If we find primary, put it first, and omit it from the below sort.
-	lowest := 0
-	for i := range f.fonts {
-		if f.fonts[i] == primary {
-			if i != 0 {
-				f.fonts[0], f.fonts[i] = f.fonts[i], f.fonts[0]
-			}
-			lowest = 1
-			break
-		}
-	}
-	sorting := f.fonts[lowest:]
-	sort.Slice(sorting, func(i, j int) bool {
-		a := sorting[i]
-		b := sorting[j]
-		return f.fontDefaultOrder[a] < f.fontDefaultOrder[b]
-	})
-	for i, font := range f.fonts {
-		f.faceScratch[i] = f.faces[font]
-	}
-	return f.faceScratch
-}
-
 // shaperImpl implements the shaping and line-wrapping of opentype fonts.
 type shaperImpl struct {
 	// Fields for tracking fonts/faces.
-	orderer faceOrderer
+	fontMap      *fontscan.FontMap
+	faces        []font.Face
+	faceToIndex  map[font.Font]int
+	faceMeta     []giofont.Font
+	defaultFaces []string
+	logger       interface {
+		Printf(format string, args ...any)
+	}
+	parser parser
 
 	// Shaping and wrapping state.
 	shaper        shaping.HarfbuzzShaper
@@ -270,11 +234,60 @@ type shaperImpl struct {
 	bitmapGlyphCache bitmapCache
 }
 
+// debugLogger only logs messages if debug.Text is true.
+type debugLogger struct {
+	*log.Logger
+}
+
+func newDebugLogger() debugLogger {
+	return debugLogger{Logger: log.New(log.Writer(), "[text] ", log.Default().Flags())}
+}
+
+func (d debugLogger) Printf(format string, args ...any) {
+	if debug.Text.Load() {
+		d.Logger.Printf(format, args...)
+	}
+}
+
+func newShaperImpl(systemFonts bool, collection []FontFace) *shaperImpl {
+	var shaper shaperImpl
+	shaper.logger = newDebugLogger()
+	shaper.fontMap = fontscan.NewFontMap(shaper.logger)
+	shaper.faceToIndex = make(map[font.Font]int)
+	if systemFonts {
+		str, err := os.UserCacheDir()
+		if err != nil {
+			shaper.logger.Printf("failed resolving font cache dir: %v", err)
+			shaper.logger.Printf("skipping system font load")
+		}
+		if err := shaper.fontMap.UseSystemFonts(str); err != nil {
+			shaper.logger.Printf("failed loading system fonts: %v", err)
+		}
+	}
+	for _, f := range collection {
+		shaper.Load(f)
+		shaper.defaultFaces = append(shaper.defaultFaces, string(f.Font.Typeface))
+	}
+	shaper.shaper.SetFontCacheSize(32)
+	return &shaper
+}
+
 // Load registers the provided FontFace with the shaper, if it is compatible.
 // It returns whether the face is now available for use. FontFaces are prioritized
 // in the order in which they are loaded, with the first face being the default.
 func (s *shaperImpl) Load(f FontFace) {
-	s.orderer.insert(f.Font, f.Face.Face())
+	s.fontMap.AddFace(f.Face.Face(), opentype.FontToDescription(f.Font))
+	s.addFace(f.Face.Face(), f.Font)
+}
+
+func (s *shaperImpl) addFace(f font.Face, md giofont.Font) {
+	if _, ok := s.faceToIndex[f.Font]; ok {
+		return
+	}
+	idx := len(s.faces)
+	s.faceToIndex[f.Font] = idx
+	s.faces = append(s.faces, f)
+	s.faceMeta = append(s.faceMeta, md)
 }
 
 // splitByScript divides the inputs into new, smaller inputs on script boundaries
@@ -358,9 +371,26 @@ func (s *shaperImpl) splitBidi(input shaping.Input) []shaping.Input {
 	return splitInputs
 }
 
+// ResolveFace allows shaperImpl to implement shaping.FontMap, wrapping its fontMap
+// field and ensuring that any faces loaded as part of the search are registered with
+// ids so that they can be referred to by a GlyphID.
+func (s *shaperImpl) ResolveFace(r rune) font.Face {
+	face := s.fontMap.ResolveFace(r)
+	if face != nil {
+		family, aspect := s.fontMap.FontMetadata(face.Font)
+		md := opentype.DescriptionToFont(metadata.Description{
+			Family: family,
+			Aspect: aspect,
+		})
+		s.addFace(face, md)
+		return face
+	}
+	return nil
+}
+
 // splitByFaces divides the inputs by font coverage in the provided faces. It will use the slice provided in buf
 // as the backing storage of the returned slice if buf is non-nil.
-func (s *shaperImpl) splitByFaces(inputs []shaping.Input, faces []font.Face, buf []shaping.Input) []shaping.Input {
+func (s *shaperImpl) splitByFaces(inputs []shaping.Input, buf []shaping.Input) []shaping.Input {
 	var split []shaping.Input
 	if buf == nil {
 		split = make([]shaping.Input, 0, len(inputs))
@@ -368,54 +398,123 @@ func (s *shaperImpl) splitByFaces(inputs []shaping.Input, faces []font.Face, buf
 		split = buf
 	}
 	for _, input := range inputs {
-		split = append(split, shaping.SplitByFontGlyphs(input, faces)...)
+		split = append(split, shaping.SplitByFace(input, s)...)
 	}
 	return split
 }
 
 // shapeText invokes the text shaper and returns the raw text data in the shaper's native
 // format. It does not wrap lines.
-func (s *shaperImpl) shapeText(faces []font.Face, ppem fixed.Int26_6, lc system.Locale, txt []rune) []shaping.Output {
-	if len(faces) < 1 {
-		return nil
-	}
+func (s *shaperImpl) shapeText(ppem fixed.Int26_6, lc system.Locale, txt []rune) []shaping.Output {
 	lcfg := langConfig{
 		Language:  language.NewLanguage(lc.Language),
 		Direction: mapDirection(lc.Direction),
 	}
 	// Create an initial input.
-	input := toInput(faces[0], ppem, lcfg, txt)
+	input := toInput(nil, ppem, lcfg, txt)
+	if input.RunStart == input.RunEnd && len(s.faces) > 0 {
+		// Give the empty string a face. This is a necessary special case because
+		// the face splitting process works by resolving faces for each rune, and
+		// the empty string contains no runes.
+		input.Face = s.faces[0]
+	}
 	// Break input on font glyph coverage.
 	inputs := s.splitBidi(input)
-	inputs = s.splitByFaces(inputs, faces, s.splitScratch1[:0])
+	inputs = s.splitByFaces(inputs, s.splitScratch1[:0])
 	inputs = splitByScript(inputs, lcfg.Direction, s.splitScratch2[:0])
 	// Shape all inputs.
 	if needed := len(inputs) - len(s.outScratchBuf); needed > 0 {
 		s.outScratchBuf = slices.Grow(s.outScratchBuf, needed)
 	}
-	s.outScratchBuf = s.outScratchBuf[:len(inputs)]
-	for i := range inputs {
-		s.outScratchBuf[i] = s.shaper.Shape(inputs[i])
+	s.outScratchBuf = s.outScratchBuf[:0]
+	for _, input := range inputs {
+		if input.Face != nil {
+			s.outScratchBuf = append(s.outScratchBuf, s.shaper.Shape(input))
+		} else {
+			s.outScratchBuf = append(s.outScratchBuf, shaping.Output{
+				// Use the text size as the advance of the entire fake run so that
+				// it doesn't occupy zero space.
+				Advance: input.Size,
+				Size:    input.Size,
+				Glyphs: []shaping.Glyph{
+					{
+						Width:        input.Size,
+						Height:       input.Size,
+						XBearing:     0,
+						YBearing:     0,
+						XAdvance:     input.Size,
+						YAdvance:     input.Size,
+						XOffset:      0,
+						YOffset:      0,
+						ClusterIndex: input.RunStart,
+						RuneCount:    input.RunEnd - input.RunStart,
+						GlyphCount:   1,
+						GlyphID:      0,
+						Mask:         0,
+					},
+				},
+				LineBounds: shaping.Bounds{
+					Ascent:  input.Size,
+					Descent: 0,
+					Gap:     0,
+				},
+				GlyphBounds: shaping.Bounds{
+					Ascent:  input.Size,
+					Descent: 0,
+					Gap:     0,
+				},
+				Direction: input.Direction,
+				Runes: shaping.Range{
+					Offset: input.RunStart,
+					Count:  input.RunEnd - input.RunStart,
+				},
+			})
+		}
 	}
 	return s.outScratchBuf
 }
 
+func wrapPolicyToGoText(p WrapPolicy) shaping.LineBreakPolicy {
+	switch p {
+	case WrapGraphemes:
+		return shaping.Always
+	case WrapWords:
+		return shaping.Never
+	default:
+		return shaping.WhenNecessary
+	}
+}
+
 // shapeAndWrapText invokes the text shaper and returns wrapped lines in the shaper's native format.
-func (s *shaperImpl) shapeAndWrapText(faces []font.Face, params Parameters, txt []rune) (_ []shaping.Line, truncated int) {
+func (s *shaperImpl) shapeAndWrapText(params Parameters, txt []rune) (_ []shaping.Line, truncated int) {
 	wc := shaping.WrapConfig{
 		TruncateAfterLines: params.MaxLines,
 		TextContinues:      params.forceTruncate,
+		BreakPolicy:        wrapPolicyToGoText(params.WrapPolicy),
 	}
+	families := s.defaultFaces
+	if params.Font.Typeface != "" {
+		parsed, err := s.parser.parse(string(params.Font.Typeface))
+		if err != nil {
+			s.logger.Printf("Unable to parse typeface %q: %v", params.Font.Typeface, err)
+		} else {
+			families = parsed
+		}
+	}
+	s.fontMap.SetQuery(fontscan.Query{
+		Families: families,
+		Aspect:   opentype.FontToDescription(params.Font).Aspect,
+	})
 	if wc.TruncateAfterLines > 0 {
 		if len(params.Truncator) == 0 {
 			params.Truncator = "…"
 		}
 		// We only permit a single run as the truncator, regardless of whether more were generated.
 		// Just use the first one.
-		wc.Truncator = s.shapeText(faces, params.PxPerEm, params.Locale, []rune(params.Truncator))[0]
+		wc.Truncator = s.shapeText(params.PxPerEm, params.Locale, []rune(params.Truncator))[0]
 	}
 	// Wrap outputs into lines.
-	return s.wrapper.WrapParagraph(wc, params.MaxWidth, txt, s.shapeText(faces, params.PxPerEm, params.Locale, txt)...)
+	return s.wrapper.WrapParagraph(wc, params.MaxWidth, txt, shaping.NewSliceIterator(s.shapeText(params.PxPerEm, params.Locale, txt)))
 }
 
 // replaceControlCharacters replaces problematic unicode
@@ -458,82 +557,71 @@ func (s *shaperImpl) Layout(params Parameters, txt io.RuneReader) document {
 }
 
 func calculateYOffsets(lines []line) {
-	currentY := 0
-	prevDesc := fixed.I(0)
+	if len(lines) < 1 {
+		return
+	}
+	// Ceil the first value to ensure that we don't baseline it too close to the top of the
+	// viewport and cut off the top pixel.
+	currentY := lines[0].ascent.Ceil()
 	for i := range lines {
-		ascent, descent := lines[i].ascent, lines[i].descent
-		currentY += (prevDesc + ascent).Ceil()
+		if i > 0 {
+			currentY += lines[i].lineHeight.Round()
+		}
 		lines[i].yOffset = currentY
-		prevDesc = descent
 	}
 }
 
 // LayoutRunes shapes and wraps the text, and returns the result in Gio's shaped text format.
 func (s *shaperImpl) LayoutRunes(params Parameters, txt []rune) document {
 	hasNewline := len(txt) > 0 && txt[len(txt)-1] == '\n'
+	var ls []shaping.Line
+	var truncated int
 	if hasNewline {
 		txt = txt[:len(txt)-1]
 	}
-	ls, truncated := s.shapeAndWrapText(s.orderer.sortedFacesForStyle(params.Font), params, replaceControlCharacters(txt))
+	if params.MaxLines != 0 && hasNewline {
+		// If we might end up truncating a trailing newline, we must insert the truncator symbol
+		// on the final line (if we hit the limit).
+		params.forceTruncate = true
+	}
+	ls, truncated = s.shapeAndWrapText(params, replaceControlCharacters(txt))
 
-	didTruncate := truncated > 0 || (params.forceTruncate && params.MaxLines == len(ls))
-
-	if didTruncate && hasNewline {
-		// We've truncated the newline, since it was at the end and we've truncated some amount of runes
-		// before it.
+	hasTruncator := truncated > 0 || (params.forceTruncate && params.MaxLines == len(ls))
+	if hasTruncator && hasNewline {
+		// We have a truncator at the end of the line, so the newline is logically
+		// truncated as well.
 		truncated++
 		hasNewline = false
 	}
+
 	// Convert to Lines.
 	textLines := make([]line, len(ls))
+	maxHeight := fixed.Int26_6(0)
 	for i := range ls {
-		otLine := toLine(&s.orderer, ls[i], params.Locale.Direction)
-		isFinalLine := i == len(ls)-1
-		if isFinalLine && hasNewline {
-			// If there was a trailing newline update the rune counts to include
-			// it on the last line of the paragraph.
-			finalRunIdx := len(otLine.runs) - 1
-			otLine.runeCount += 1
-			otLine.runs[finalRunIdx].Runes.Count += 1
-
-			syntheticGlyph := glyph{
-				id:           0,
-				clusterIndex: len(txt),
-				glyphCount:   0,
-				runeCount:    1,
-				xAdvance:     0,
-				yAdvance:     0,
-				xOffset:      0,
-				yOffset:      0,
-			}
-			// Inset the synthetic newline glyph on the proper end of the run.
-			if otLine.runs[finalRunIdx].Direction.Progression() == system.FromOrigin {
-				otLine.runs[finalRunIdx].Glyphs = append(otLine.runs[finalRunIdx].Glyphs, syntheticGlyph)
-			} else {
-				// Ensure capacity.
-				otLine.runs[finalRunIdx].Glyphs = append(otLine.runs[finalRunIdx].Glyphs, glyph{})
-				copy(otLine.runs[finalRunIdx].Glyphs[1:], otLine.runs[finalRunIdx].Glyphs)
-				otLine.runs[finalRunIdx].Glyphs[0] = syntheticGlyph
-			}
+		otLine := toLine(s.faceToIndex, ls[i], params.Locale.Direction)
+		if otLine.lineHeight > maxHeight {
+			maxHeight = otLine.lineHeight
 		}
-		if isFinalLine && didTruncate {
-			// If we've truncated the text with a truncator, adjust the rune counts within the
-			// truncator to make it represent the truncated text.
-			finalRunIdx := len(otLine.runs) - 1
-			otLine.runs[finalRunIdx].truncator = true
-			finalGlyphIdx := len(otLine.runs[finalRunIdx].Glyphs) - 1
-			// The run represents all of the truncated text.
-			otLine.runs[finalRunIdx].Runes.Count = truncated
-			// Only the final glyph represents any runes, and it represents all truncated text.
-			for i := range otLine.runs[finalRunIdx].Glyphs {
-				if i == finalGlyphIdx {
-					otLine.runs[finalRunIdx].Glyphs[finalGlyphIdx].runeCount = truncated
-				} else {
-					otLine.runs[finalRunIdx].Glyphs[finalGlyphIdx].runeCount = 0
-				}
+		if isFinalLine := i == len(ls)-1; isFinalLine {
+			if hasNewline {
+				otLine.insertTrailingSyntheticNewline(len(txt))
+			}
+			if hasTruncator {
+				otLine.setTruncatedCount(truncated)
 			}
 		}
 		textLines[i] = otLine
+	}
+	if params.LineHeight != 0 {
+		maxHeight = params.LineHeight
+	}
+	if params.LineHeightScale == 0 {
+		params.LineHeightScale = 1.2
+	}
+
+	maxHeight = floatToFixed(fixedToFloat(maxHeight) * params.LineHeightScale)
+	for i := range textLines {
+		textLines[i].lineHeight = maxHeight
 	}
 	calculateYOffsets(textLines)
 	return document{
@@ -562,17 +650,22 @@ func (s *shaperImpl) Shape(pathOps *op.Ops, gs []Glyph) clip.PathSpec {
 			x = g.X
 		}
 		ppem, faceIdx, gid := splitGlyphID(g.ID)
-		face := s.orderer.faceFor(faceIdx)
-		ppemInt := ppem.Round()
-		scaleFactor := float32(ppemInt) / float32(face.Upem())
+		if faceIdx >= len(s.faces) {
+			continue
+		}
+		face := s.faces[faceIdx]
+		if face == nil {
+			continue
+		}
+		scaleFactor := fixedToFloat(ppem) / float32(face.Upem())
 		glyphData := face.GlyphData(gid)
 		switch glyphData := glyphData.(type) {
 		case api.GlyphOutline:
 			outline := glyphData
 			// Move to glyph position.
 			pos := f32.Point{
-				X: float32(g.X-x)/64 - float32(g.Offset.X)/64,
-				Y: -float32(g.Offset.Y) / 64,
+				X: fixedToFloat((g.X - x) - g.Offset.X),
+				Y: -fixedToFloat(g.Offset.Y),
 			}
 			builder.Move(pos.Sub(lastPos))
 			lastPos = pos
@@ -617,6 +710,14 @@ func (s *shaperImpl) Shape(pathOps *op.Ops, gs []Glyph) clip.PathSpec {
 	return builder.End()
 }
 
+func fixedToFloat(i fixed.Int26_6) float32 {
+	return float32(i) / 64.0
+}
+
+func floatToFixed(f float32) fixed.Int26_6 {
+	return fixed.Int26_6(f * 64)
+}
+
 // Bitmaps returns an op.CallOp that will display all bitmap glyphs within gs.
 // The positioning of the bitmaps uses the same logic as Shape(), so the returned
 // CallOp can be added at the same offset as the path data returned by Shape()
@@ -629,7 +730,13 @@ func (s *shaperImpl) Bitmaps(ops *op.Ops, gs []Glyph) op.CallOp {
 			x = g.X
 		}
 		_, faceIdx, gid := splitGlyphID(g.ID)
-		face := s.orderer.faceFor(faceIdx)
+		if faceIdx >= len(s.faces) {
+			continue
+		}
+		face := s.faces[faceIdx]
+		if face == nil {
+			continue
+		}
 		glyphData := face.GlyphData(gid)
 		switch glyphData := glyphData.(type) {
 		case api.GlyphBitmap:
@@ -656,10 +763,10 @@ func (s *shaperImpl) Bitmaps(ops *op.Ops, gs []Glyph) op.CallOp {
 				imgOp = bitmapData.img
 				imgSize = bitmapData.size
 			}
-			off := op.Offset(image.Point{
-				X: ((g.X - x) - g.Offset.X).Round(),
-				Y: g.Offset.Y.Round() - g.Ascent.Round(),
-			}).Push(ops)
+			off := op.Affine(f32.Affine2D{}.Offset(f32.Point{
+				X: fixedToFloat((g.X - x) - g.Offset.X),
+				Y: fixedToFloat(g.Offset.Y + g.Bounds.Min.Y),
+			})).Push(ops)
 			cl := clip.Rect{Max: imgSize}.Push(ops)
 
 			glyphSize := image.Rectangle{
@@ -757,7 +864,7 @@ func toGioGlyphs(in []shaping.Glyph, ppem fixed.Int26_6, faceIdx int) []glyph {
 }
 
 // toLine converts the output into a Line with the provided dominant text direction.
-func toLine(orderer *faceOrderer, o shaping.Line, dir system.TextDirection) line {
+func toLine(faceToIndex map[font.Font]int, o shaping.Line, dir system.TextDirection) line {
 	if len(o) < 1 {
 		return line{}
 	}
@@ -765,10 +872,18 @@ func toLine(orderer *faceOrderer, o shaping.Line, dir system.TextDirection) line
 		runs:      make([]runLayout, len(o)),
 		direction: dir,
 	}
+	maxSize := fixed.Int26_6(0)
 	for i := range o {
 		run := o[i]
+		if run.Size > maxSize {
+			maxSize = run.Size
+		}
+		var font font.Font
+		if run.Face != nil {
+			font = run.Face.Font
+		}
 		line.runs[i] = runLayout{
-			Glyphs: toGioGlyphs(run.Glyphs, run.Size, orderer.indexFor(run.Face)),
+			Glyphs: toGioGlyphs(run.Glyphs, run.Size, faceToIndex[font]),
 			Runes: Range{
 				Count:  run.Runes.Count,
 				Offset: line.runeCount,
@@ -779,13 +894,6 @@ func toLine(orderer *faceOrderer, o shaping.Line, dir system.TextDirection) line
 			PPEM:      run.Size,
 		}
 		line.runeCount += run.Runes.Count
-		if line.bounds.Min.Y > -run.LineBounds.Ascent {
-			line.bounds.Min.Y = -run.LineBounds.Ascent
-		}
-		if line.bounds.Max.Y < -run.LineBounds.Ascent+run.LineBounds.LineHeight() {
-			line.bounds.Max.Y = -run.LineBounds.Ascent + run.LineBounds.LineHeight()
-		}
-		line.bounds.Max.X += run.Advance
 		line.width += run.Advance
 		if line.ascent < run.LineBounds.Ascent {
 			line.ascent = run.LineBounds.Ascent
@@ -794,21 +902,8 @@ func toLine(orderer *faceOrderer, o shaping.Line, dir system.TextDirection) line
 			line.descent = -run.LineBounds.Descent + run.LineBounds.Gap
 		}
 	}
+	line.lineHeight = maxSize
 	computeVisualOrder(&line)
-	// Account for glyphs hanging off of either side in the bounds.
-	if len(line.visualOrder) > 0 {
-		runIdx := line.visualOrder[0]
-		run := o[runIdx]
-		if len(run.Glyphs) > 0 {
-			line.bounds.Min.X = run.Glyphs[0].LeftSideBearing()
-		}
-		runIdx = line.visualOrder[len(line.visualOrder)-1]
-		run = o[runIdx]
-		if len(run.Glyphs) > 0 {
-			lastGlyphIdx := len(run.Glyphs) - 1
-			line.bounds.Max.X += run.Glyphs[lastGlyphIdx].RightSideBearing()
-		}
-	}
 	return line
 }
 
@@ -868,44 +963,4 @@ func computeVisualOrder(l *line) {
 		l.runs[runIdx].X = x
 		x += l.runs[runIdx].Advance
 	}
-}
-
-// closestFont returns the closest Font in available by weight.
-// In case of equality the lighter weight will be returned.
-func closestFont(lookup Font, available []Font) (Font, bool) {
-	found := false
-	var match Font
-	for _, cf := range available {
-		if cf == lookup {
-			return lookup, true
-		}
-		if cf.Typeface != lookup.Typeface || cf.Variant != lookup.Variant || cf.Style != lookup.Style {
-			continue
-		}
-		if !found {
-			found = true
-			match = cf
-			continue
-		}
-		cDist := weightDistance(lookup.Weight, cf.Weight)
-		mDist := weightDistance(lookup.Weight, match.Weight)
-		if cDist < mDist {
-			match = cf
-		} else if cDist == mDist && cf.Weight < match.Weight {
-			match = cf
-		}
-	}
-	return match, found
-}
-
-// weightDistance returns the distance value between two font weights.
-func weightDistance(wa Weight, wb Weight) int {
-	// Avoid dealing with negative Weight values.
-	a := int(wa) + 400
-	b := int(wb) + 400
-	diff := a - b
-	if diff < 0 {
-		return -diff
-	}
-	return diff
 }

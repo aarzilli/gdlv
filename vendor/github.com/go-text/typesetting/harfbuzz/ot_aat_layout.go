@@ -77,6 +77,8 @@ const (
 	aatLayoutFeatureTypeLowerCase = 37
 	// [Upper Case](https://developer.apple.com/fonts/TrueType-Reference-Manual/RM09/AppendixF.html#Type38)
 	aatLayoutFeatureTypeUpperCase = 38
+	// [Language Tag](https://developer.apple.com/fonts/TrueType-Reference-Manual/RM09/AppendixF.html#Type39)
+	aatLayoutFeatureTypeLanguageTagType = 39
 )
 
 // The selectors defined for specifying AAT feature settings.
@@ -84,6 +86,10 @@ type aatLayoutFeatureSelector = uint16
 
 const (
 	/* Selectors for #aatLayoutFeatureTypeLigatures */
+	// for #aatLayoutFeatureTypeLigatures
+	aatLayoutFeatureSelectorRequiredLigaturesOn = 0
+	// for #aatLayoutFeatureTypeLigatures
+	aatLayoutFeatureSelectorRequiredLigaturesOff = 1
 	// for #aatLayoutFeatureTypeLigatures
 	aatLayoutFeatureSelectorCommonLigaturesOn = 2
 	// for #aatLayoutFeatureTypeLigatures
@@ -354,10 +360,10 @@ const (
 	aatLayoutFeatureSelectorUpperCasePetiteCaps = 2
 )
 
-/* Mapping from OpenType feature tags to AAT feature names and selectors.
- *
- * Table data courtesy of Apple.  Converted from mnemonics to integers
- * when moving to this file. */
+// Mapping from OpenType feature tags to AAT feature names and selectors.
+//
+// Table data courtesy of Apple.  Converted from mnemonics to integers
+// when moving to this file.
 var featureMappings = [...]aatFeatureMapping{
 	{loader.NewTag('a', 'f', 'r', 'c'), aatLayoutFeatureTypeFractions, aatLayoutFeatureSelectorVerticalFractions, aatLayoutFeatureSelectorNoFractions},
 	{loader.NewTag('c', '2', 'p', 'c'), aatLayoutFeatureTypeUpperCase, aatLayoutFeatureSelectorUpperCasePetiteCaps, aatLayoutFeatureSelectorDefaultUpperCase},
@@ -372,7 +378,7 @@ var featureMappings = [...]aatFeatureMapping{
 	{loader.NewTag('f', 'r', 'a', 'c'), aatLayoutFeatureTypeFractions, aatLayoutFeatureSelectorDiagonalFractions, aatLayoutFeatureSelectorNoFractions},
 	{loader.NewTag('f', 'w', 'i', 'd'), aatLayoutFeatureTypeTextSpacing, aatLayoutFeatureSelectorMonospacedText, 7},
 	{loader.NewTag('h', 'a', 'l', 't'), aatLayoutFeatureTypeTextSpacing, aatLayoutFeatureSelectorAltHalfWidthText, 7},
-	{loader.NewTag('h', 'i', 's', 't'), aatLayoutFeatureTypeLigatures, aatLayoutFeatureSelectorHistoricalLigaturesOn, aatLayoutFeatureSelectorHistoricalLigaturesOff},
+	{loader.NewTag('h', 'i', 's', 't'), 40, 0, 1},
 	{loader.NewTag('h', 'k', 'n', 'a'), aatLayoutFeatureTypeAlternateKana, aatLayoutFeatureSelectorAlternateHorizKanaOn, aatLayoutFeatureSelectorAlternateHorizKanaOff},
 	{loader.NewTag('h', 'l', 'i', 'g'), aatLayoutFeatureTypeLigatures, aatLayoutFeatureSelectorHistoricalLigaturesOn, aatLayoutFeatureSelectorHistoricalLigaturesOff},
 	{loader.NewTag('h', 'n', 'g', 'l'), aatLayoutFeatureTypeTransliteration, aatLayoutFeatureSelectorHanjaToHangul, aatLayoutFeatureSelectorNoTransliteration},
@@ -395,6 +401,7 @@ var featureMappings = [...]aatFeatureMapping{
 	{loader.NewTag('p', 'n', 'u', 'm'), aatLayoutFeatureTypeNumberSpacing, aatLayoutFeatureSelectorProportionalNumbers, 4},
 	{loader.NewTag('p', 'w', 'i', 'd'), aatLayoutFeatureTypeTextSpacing, aatLayoutFeatureSelectorProportionalText, 7},
 	{loader.NewTag('q', 'w', 'i', 'd'), aatLayoutFeatureTypeTextSpacing, aatLayoutFeatureSelectorQuarterWidthText, 7},
+	{loader.NewTag('r', 'l', 'i', 'g'), aatLayoutFeatureTypeLigatures, aatLayoutFeatureSelectorRequiredLigaturesOn, aatLayoutFeatureSelectorRequiredLigaturesOff},
 	{loader.NewTag('r', 'u', 'b', 'y'), aatLayoutFeatureTypeRubyKana, aatLayoutFeatureSelectorRubyKanaOn, aatLayoutFeatureSelectorRubyKanaOff},
 	{loader.NewTag('s', 'i', 'n', 'f'), aatLayoutFeatureTypeVerticalPosition, aatLayoutFeatureSelectorScientificInferiors, aatLayoutFeatureSelectorNormalPosition},
 	{loader.NewTag('s', 'm', 'c', 'p'), aatLayoutFeatureTypeLowerCase, aatLayoutFeatureSelectorLowerCaseSmallCaps, aatLayoutFeatureSelectorDefaultLowerCase},
@@ -434,10 +441,144 @@ var featureMappings = [...]aatFeatureMapping{
 	{loader.NewTag('v', 'k', 'n', 'a'), aatLayoutFeatureTypeAlternateKana, aatLayoutFeatureSelectorAlternateVertKanaOn, aatLayoutFeatureSelectorAlternateVertKanaOff},
 	{loader.NewTag('v', 'p', 'a', 'l'), aatLayoutFeatureTypeTextSpacing, aatLayoutFeatureSelectorAltProportionalText, 7},
 	{loader.NewTag('v', 'r', 't', '2'), aatLayoutFeatureTypeVerticalSubstitution, aatLayoutFeatureSelectorSubstituteVerticalFormsOn, aatLayoutFeatureSelectorSubstituteVerticalFormsOff},
+	{loader.NewTag('v', 'r', 't', 'r'), aatLayoutFeatureTypeVerticalSubstitution, 2, 3},
 	{loader.NewTag('z', 'e', 'r', 'o'), aatLayoutFeatureTypeTypographicExtras, aatLayoutFeatureSelectorSlashedZeroOn, aatLayoutFeatureSelectorSlashedZeroOff},
 }
 
 /* Note: This context is used for kerning, even without AAT, hence the condition. */
+
+type aatApplyContext struct {
+	plan      *otShapePlan
+	font      *Font
+	face      Face
+	buffer    *Buffer
+	gdefTable *tables.GDEF
+	ankrTable tables.Ankr
+
+	rangeFlags    []rangeFlags
+	subtableFlags GlyphMask
+}
+
+func newAatApplyContext(plan *otShapePlan, font *Font, buffer *Buffer) *aatApplyContext {
+	var out aatApplyContext
+	out.plan = plan
+	out.font = font
+	out.face = font.face
+	out.buffer = buffer
+	out.gdefTable = &font.face.GDEF
+	return &out
+}
+
+func (c *aatApplyContext) hasAnyFlags(flag GlyphMask) bool {
+	for _, fl := range c.rangeFlags {
+		if fl.flags&flag != 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func (c *aatApplyContext) applyMorx(chain font.MorxChain) {
+	//  Coverage, see https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6morx.html
+	const (
+		Vertical      = 0x80
+		Backwards     = 0x40
+		AllDirections = 0x20
+		Logical       = 0x10
+	)
+
+	for i, subtable := range chain.Subtables {
+
+		if !c.hasAnyFlags(subtable.Flags) {
+			continue
+		}
+
+		c.subtableFlags = subtable.Flags
+		if subtable.Coverage&AllDirections == 0 && c.buffer.Props.Direction.isVertical() !=
+			(subtable.Coverage&Vertical != 0) {
+			continue
+		}
+
+		/* Buffer contents is always in logical direction.  Determine if
+		we need to reverse before applying this subtable.  We reverse
+		back after if we did reverse indeed.
+
+		Quoting the spec:
+		"""
+		Bits 28 and 30 of the coverage field control the order in which
+		glyphs are processed when the subtable is run by the layout engine.
+		Bit 28 is used to indicate if the glyph processing direction is
+		the same as logical order or layout order. Bit 30 is used to
+		indicate whether glyphs are processed forwards or backwards within
+		that order.
+
+		Bit 30	Bit 28	Interpretation for Horizontal Text
+		0	0	The subtable is processed in layout order 	(the same order as the glyphs, which is
+			always left-to-right).
+		1	0	The subtable is processed in reverse layout order (the order opposite that of the glyphs, which is
+			always right-to-left).
+		0	1	The subtable is processed in logical order (the same order as the characters, which may be
+			left-to-right or right-to-left).
+		1	1	The subtable is processed in reverse logical order 	(the order opposite that of the characters, which
+			may be right-to-left or left-to-right).
+		"""
+		*/
+		var reverse bool
+		if subtable.Coverage&Logical != 0 {
+			reverse = subtable.Coverage&Backwards != 0
+		} else {
+			reverse = subtable.Coverage&Backwards != 0 != c.buffer.Props.Direction.isBackward()
+		}
+
+		if debugMode {
+			fmt.Printf("MORX - start chainsubtable %d\n", i)
+		}
+
+		if reverse {
+			c.buffer.Reverse()
+		}
+
+		c.applyMorxSubtable(subtable)
+
+		if reverse {
+			c.buffer.Reverse()
+		}
+
+		if debugMode {
+			fmt.Printf("MORX - end chainsubtable %d\n", i)
+			fmt.Println(c.buffer.Info)
+		}
+
+	}
+}
+
+func (c *aatApplyContext) applyMorxSubtable(subtable font.MorxSubtable) bool {
+	if debugMode {
+		fmt.Printf("\tMORX subtable %T\n", subtable.Data)
+	}
+	switch data := subtable.Data.(type) {
+	case font.MorxRearrangementSubtable:
+		var dc driverContextRearrangement
+		driver := newStateTableDriver(font.AATStateTable(data), c.buffer, c.face)
+		driver.drive(&dc, c)
+	case font.MorxContextualSubtable:
+		dc := driverContextContextual{table: data, gdef: c.gdefTable, hasGlyphClass: c.gdefTable.GlyphClassDef != nil}
+		driver := newStateTableDriver(data.Machine, c.buffer, c.face)
+		driver.drive(&dc, c)
+		return dc.ret
+	case font.MorxLigatureSubtable:
+		dc := driverContextLigature{table: data}
+		driver := newStateTableDriver(data.Machine, c.buffer, c.face)
+		driver.drive(&dc, c)
+	case font.MorxInsertionSubtable:
+		dc := driverContextInsertion{insertionAction: data.Insertions}
+		driver := newStateTableDriver(data.Machine, c.buffer, c.face)
+		driver.drive(&dc, c)
+	case font.MorxNonContextualSubtable:
+		return c.applyNonContextualSubtable(data)
+	}
+	return false
+}
 
 /**
  *
@@ -467,7 +608,7 @@ type driverContext interface {
 	transition(s stateTableDriver, entry tables.AATStateEntry)
 }
 
-func (s stateTableDriver) drive(c driverContext) {
+func (s stateTableDriver) drive(c driverContext, ac *aatApplyContext) {
 	const (
 		stateStartOfText = uint16(0)
 
@@ -480,13 +621,43 @@ func (s stateTableDriver) drive(c driverContext) {
 	}
 
 	state := stateStartOfText
+	// If there's only one range, we already checked the flag.
+	var lastRange int = -1 // index in ac.rangeFlags, or -1
+	if len(ac.rangeFlags) > 1 {
+		lastRange = 0
+	}
 	for s.buffer.idx = 0; ; {
+		// This block is copied in NoncontextualSubtable::apply. Keep in sync.
+		if lastRange != -1 {
+			range_ := lastRange
+			if s.buffer.idx < len(s.buffer.Info) {
+				cluster := s.buffer.cur(0).Cluster
+				for cluster < ac.rangeFlags[range_].clusterFirst {
+					range_--
+				}
+				for cluster > ac.rangeFlags[range_].clusterLast {
+					range_++
+				}
+
+				lastRange = range_
+			}
+			if !(ac.rangeFlags[range_].flags&ac.subtableFlags != 0) {
+				if s.buffer.idx == len(s.buffer.Info) {
+					break
+				}
+
+				state = stateStartOfText
+				s.buffer.nextGlyph()
+				continue
+			}
+		}
+
 		class := classEndOfText
 		if s.buffer.idx < len(s.buffer.Info) {
 			class = s.machine.GetClass(s.buffer.Info[s.buffer.idx].Glyph)
 		}
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Printf("\t\tState machine - state %d, class %d at index %d\n", state, class, s.buffer.idx)
 		}
 
@@ -548,7 +719,7 @@ func (s stateTableDriver) drive(c driverContext) {
 
 		state = nextState
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Printf("\t\tState machine - new state %d\n", state)
 		}
 
@@ -570,140 +741,6 @@ func (s stateTableDriver) drive(c driverContext) {
 	if !c.inPlace() {
 		s.buffer.swapBuffers()
 	}
-}
-
-type aatApplyContext struct {
-	plan      *otShapePlan
-	font      *Font
-	face      Face
-	buffer    *Buffer
-	gdefTable *tables.GDEF
-	ankrTable tables.Ankr
-}
-
-func newAatApplyContext(plan *otShapePlan, font *Font, buffer *Buffer) *aatApplyContext {
-	var out aatApplyContext
-	out.plan = plan
-	out.font = font
-	out.face = font.face
-	out.buffer = buffer
-	out.gdefTable = &font.face.GDEF
-	return &out
-}
-
-func (c *aatApplyContext) applyMorx(chain font.MorxChain, flags GlyphMask) {
-	//  Coverage, see https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6morx.html
-	const (
-		Vertical      = 0x80
-		Backwards     = 0x40
-		AllDirections = 0x20
-		Logical       = 0x10
-	)
-
-	for i, subtable := range chain.Subtables {
-
-		if subtable.Flags&flags == 0 {
-			continue
-		}
-
-		if subtable.Coverage&AllDirections == 0 && c.buffer.Props.Direction.isVertical() !=
-			(subtable.Coverage&Vertical != 0) {
-			continue
-		}
-
-		/* Buffer contents is always in logical direction.  Determine if
-		we need to reverse before applying this subtable.  We reverse
-		back after if we did reverse indeed.
-
-		Quoting the spec:
-		"""
-		Bits 28 and 30 of the coverage field control the order in which
-		glyphs are processed when the subtable is run by the layout engine.
-		Bit 28 is used to indicate if the glyph processing direction is
-		the same as logical order or layout order. Bit 30 is used to
-		indicate whether glyphs are processed forwards or backwards within
-		that order.
-
-		Bit 30	Bit 28	Interpretation for Horizontal Text
-		0	0	The subtable is processed in layout order 	(the same order as the glyphs, which is
-			always left-to-right).
-		1	0	The subtable is processed in reverse layout order (the order opposite that of the glyphs, which is
-			always right-to-left).
-		0	1	The subtable is processed in logical order (the same order as the characters, which may be
-			left-to-right or right-to-left).
-		1	1	The subtable is processed in reverse logical order 	(the order opposite that of the characters, which
-			may be right-to-left or left-to-right).
-		"""
-		*/
-		var reverse bool
-		if subtable.Coverage&Logical != 0 {
-			reverse = subtable.Coverage&Backwards != 0
-		} else {
-			reverse = subtable.Coverage&Backwards != 0 != c.buffer.Props.Direction.isBackward()
-		}
-
-		if debugMode >= 2 {
-			fmt.Printf("MORX - start chainsubtable %d\n", i)
-		}
-
-		if reverse {
-			reverseGraphemes(c.buffer)
-		}
-
-		c.applyMorxSubtable(subtable)
-
-		if reverse {
-			reverseGraphemes(c.buffer)
-		}
-
-		if debugMode >= 2 {
-			fmt.Printf("MORX - end chainsubtable %d\n", i)
-			fmt.Println(c.buffer.Info)
-		}
-
-	}
-}
-
-func (c *aatApplyContext) applyMorxSubtable(subtable font.MorxSubtable) bool {
-	if debugMode >= 2 {
-		fmt.Printf("\tMORX subtable %T\n", subtable.Data)
-	}
-	switch data := subtable.Data.(type) {
-	case font.MorxRearrangementSubtable:
-		var dc driverContextRearrangement
-		driver := newStateTableDriver(font.AATStateTable(data), c.buffer, c.face)
-		driver.drive(&dc)
-	case font.MorxContextualSubtable:
-		dc := driverContextContextual{table: data, gdef: c.gdefTable, hasGlyphClass: c.gdefTable.GlyphClassDef != nil}
-		driver := newStateTableDriver(data.Machine, c.buffer, c.face)
-		driver.drive(&dc)
-		return dc.ret
-	case font.MorxLigatureSubtable:
-		dc := driverContextLigature{table: data}
-		driver := newStateTableDriver(data.Machine, c.buffer, c.face)
-		driver.drive(&dc)
-	case font.MorxInsertionSubtable:
-		dc := driverContextInsertion{insertionAction: data.Insertions}
-		driver := newStateTableDriver(data.Machine, c.buffer, c.face)
-		driver.drive(&dc)
-	case font.MorxNonContextualSubtable:
-		var ret bool
-		gdef := c.gdefTable
-		hasGlyphClass := gdef.GlyphClassDef != nil
-		info := c.buffer.Info
-		for i := range c.buffer.Info {
-			replacement, has := data.Class.Class(gID(info[i].Glyph))
-			if has {
-				info[i].Glyph = GID(replacement)
-				if hasGlyphClass {
-					info[i].glyphProps = gdef.GlyphProps(gID(replacement))
-				}
-				ret = true
-			}
-		}
-		return ret
-	}
-	return false
 }
 
 // MorxRearrangemen flags
@@ -779,7 +816,7 @@ func (d *driverContextRearrangement) transition(driver stateTableDriver, entry t
 		reverseL := m>>4 == 3
 		reverseR := m&0x0F == 3
 
-		if d.end-d.start >= l+r {
+		if d.end-d.start >= l+r && d.end-d.start <= maxContextLength {
 			buffer.mergeClusters(d.start, min(buffer.idx+1, len(buffer.Info)))
 			buffer.mergeClusters(d.start, d.end)
 
@@ -902,7 +939,7 @@ func (driverContextLigature) isActionable(_ stateTableDriver, entry tables.AATSt
 func (dc *driverContextLigature) transition(driver stateTableDriver, entry tables.AATStateEntry) {
 	buffer := driver.buffer
 
-	if debugMode >= 2 {
+	if debugMode {
 		fmt.Printf("\tLigature - Ligature transition at %d\n", buffer.idx)
 	}
 
@@ -915,7 +952,7 @@ func (dc *driverContextLigature) transition(driver stateTableDriver, entry table
 		dc.matchPositions[dc.matchLength%len(dc.matchPositions)] = len(buffer.outInfo)
 		dc.matchLength++
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Printf("\tLigature - Set component at %d\n", len(buffer.outInfo))
 		}
 
@@ -923,7 +960,7 @@ func (dc *driverContextLigature) transition(driver stateTableDriver, entry table
 
 	if dc.isActionable(driver, entry) {
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Printf("\tLigature - Perform action with %d\n", dc.matchLength)
 		}
 
@@ -946,14 +983,14 @@ func (dc *driverContextLigature) transition(driver stateTableDriver, entry table
 		for do := true; do; do = action&tables.MLActionLast == 0 {
 			if cursor == 0 {
 				/* Stack underflow.  Clear the stack. */
-				if debugMode >= 2 {
+				if debugMode {
 					fmt.Println("\tLigature - Stack underflow")
 				}
 				dc.matchLength = 0
 				break
 			}
 
-			if debugMode >= 2 {
+			if debugMode {
 				fmt.Printf("\tLigature - Moving to stack position %d\n", cursor-1)
 			}
 
@@ -977,7 +1014,7 @@ func (dc *driverContextLigature) transition(driver stateTableDriver, entry table
 			componentData := dc.table.Components[componentIdx]
 			ligatureIdx += int(componentData)
 
-			if debugMode >= 2 {
+			if debugMode {
 				fmt.Printf("\tLigature - Action store %d last %d\n", action&tables.MLActionStore, action&tables.MLActionLast)
 			}
 
@@ -987,7 +1024,7 @@ func (dc *driverContextLigature) transition(driver stateTableDriver, entry table
 				}
 				lig := dc.table.Ligatures[ligatureIdx]
 
-				if debugMode >= 2 {
+				if debugMode {
 					fmt.Printf("\tLigature - Produced ligature %d\n", lig)
 				}
 
@@ -997,7 +1034,7 @@ func (dc *driverContextLigature) transition(driver stateTableDriver, entry table
 				/* Now go and delete all subsequent components. */
 				for dc.matchLength-1 > cursor {
 
-					if debugMode >= 2 {
+					if debugMode {
 						fmt.Println("\tLigature - Skipping ligature component")
 					}
 
@@ -1171,6 +1208,46 @@ func (dc *driverContextInsertion) transition(driver stateTableDriver, entry tabl
 	}
 }
 
+func (c *aatApplyContext) applyNonContextualSubtable(data font.MorxNonContextualSubtable) bool {
+	var ret bool
+	gdef := c.gdefTable
+	hasGlyphClass := gdef.GlyphClassDef != nil
+	info := c.buffer.Info
+	// If there's only one range, we already checked the flag.
+	var lastRange int = -1 // index in ac.rangeFlags, or -1
+	if len(c.rangeFlags) > 1 {
+		lastRange = 0
+	}
+	for i := range info {
+		// This block is copied in NoncontextualSubtable::apply. Keep in sync.
+		if lastRange != -1 {
+			range_ := lastRange
+			cluster := info[i].Cluster
+			for cluster < c.rangeFlags[range_].clusterFirst {
+				range_--
+			}
+			for cluster > c.rangeFlags[range_].clusterLast {
+				range_++
+			}
+
+			lastRange = range_
+			if c.rangeFlags[range_].flags&c.subtableFlags == 0 {
+				continue
+			}
+		}
+
+		replacement, has := data.Class.Class(gID(info[i].Glyph))
+		if has {
+			info[i].Glyph = GID(replacement)
+			if hasGlyphClass {
+				info[i].glyphProps = gdef.GlyphProps(gID(replacement))
+			}
+			ret = true
+		}
+	}
+	return ret
+}
+
 ///////
 
 type aatFeatureMapping struct {
@@ -1198,11 +1275,20 @@ func aatLayoutFindFeatureMapping(tag font.Tag) *aatFeatureMapping {
 	return nil
 }
 
-func (sp *otShapePlan) aatLayoutSubstitute(font *Font, buffer *Buffer) {
+func (sp *otShapePlan) aatLayoutSubstitute(font *Font, buffer *Buffer, features []Feature) {
 	morx := font.face.Morx
+	builder := newAatMapBuilder(font.face.Font, sp.props)
+	for _, feature := range features {
+		builder.addFeature(feature)
+	}
+	var map_ aatMap
+	builder.compile(&map_)
+
 	c := newAatApplyContext(sp, font, buffer)
+	c.buffer.unsafeToConcat(0, maxInt)
 	for i, chain := range morx {
-		c.applyMorx(chain, c.plan.aatMap.chainFlags[i])
+		c.rangeFlags = map_.chainFlags[i]
+		c.applyMorx(chain)
 	}
 	// NOTE: we dont support obsolete 'mort' table
 }
@@ -1216,10 +1302,8 @@ func aatLayoutZeroWidthDeletedGlyphs(buffer *Buffer) {
 	}
 }
 
-func aatLayoutRemoveDeletedGlyphsInplace(buffer *Buffer) {
-	otLayoutDeleteGlyphsInplace(buffer, func(info *GlyphInfo) bool {
-		return info.Glyph == 0xFFFF
-	})
+func aatLayoutRemoveDeletedGlyphs(buffer *Buffer) {
+	buffer.deleteGlyphsInplace(func(info *GlyphInfo) bool { return info.Glyph == 0xFFFF })
 }
 
 func (sp *otShapePlan) aatLayoutPosition(font *Font, buffer *Buffer) {
@@ -1233,6 +1317,7 @@ func (sp *otShapePlan) aatLayoutPosition(font *Font, buffer *Buffer) {
 func (c *aatApplyContext) applyKernx(kerx font.Kernx) {
 	var ret, seenCrossStream bool
 
+	c.buffer.unsafeToConcat(0, maxInt)
 	for i, st := range kerx {
 		var reverse bool
 
@@ -1245,7 +1330,7 @@ func (c *aatApplyContext) applyKernx(kerx font.Kernx) {
 		}
 		reverse = st.IsBackwards() != c.buffer.Props.Direction.isBackward()
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Printf("AAT kerx : start subtable %d\n", i)
 		}
 
@@ -1277,7 +1362,7 @@ func (c *aatApplyContext) applyKernx(kerx font.Kernx) {
 			c.buffer.Reverse()
 		}
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Printf("AAT kerx : end subtable %d\n", i)
 			fmt.Println(c.buffer.Pos)
 		}
@@ -1286,7 +1371,7 @@ func (c *aatApplyContext) applyKernx(kerx font.Kernx) {
 }
 
 func (c *aatApplyContext) applyKerxSubtable(st font.KernSubtable) bool {
-	if debugMode >= 2 {
+	if debugMode {
 		fmt.Printf("\tKERNX table %T\n", st.Data)
 	}
 	switch data := st.Data.(type) {
@@ -1305,7 +1390,7 @@ func (c *aatApplyContext) applyKerxSubtable(st font.KernSubtable) bool {
 		}
 		dc := driverContextKerx1{c: c, table: data, crossStream: crossStream}
 		driver := newStateTableDriver(data.Machine, c.buffer, c.face)
-		driver.drive(&dc)
+		driver.drive(&dc, c)
 	case font.Kern2:
 		if !c.plan.requestedKerning {
 			return false
@@ -1329,7 +1414,7 @@ func (c *aatApplyContext) applyKerxSubtable(st font.KernSubtable) bool {
 		}
 		dc := driverContextKerx4{c: c, table: data, actionType: data.ActionType()}
 		driver := newStateTableDriver(data.Machine, c.buffer, c.face)
-		driver.drive(&dc)
+		driver.drive(&dc, c)
 	case font.Kern6:
 		if !c.plan.requestedKerning {
 			return false

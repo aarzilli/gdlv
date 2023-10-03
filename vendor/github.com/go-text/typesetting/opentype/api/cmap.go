@@ -36,7 +36,11 @@ func (c cmapID) key() uint32 { return uint32(c.platform)<<16 | uint32(c.encoding
 // ProcessCmap sanitize the given 'cmap' subtable, and select the best encoding
 // when several subtables are given.
 // When present, the variation selectors are returned.
-func ProcessCmap(cmap tables.Cmap) (Cmap, UnicodeVariations, error) {
+// [os2FontPage] is used for legacy arabic fonts.
+//
+// The returned values are copied from the input 'cmap', meaning they do not
+// retain any reference on the input storage.
+func ProcessCmap(cmap tables.Cmap, os2FontPage tables.FontPage) (Cmap, UnicodeVariations, error) {
 	var (
 		candidateIds []cmapID
 		candidates   []Cmap
@@ -81,57 +85,46 @@ func ProcessCmap(cmap tables.Cmap) (Cmap, UnicodeVariations, error) {
 	}
 
 	// now find the best cmap, following harfbuzz/src/hb-ot-cmap-table.hh
-	const (
-		PlatformUnicode tables.PlatformID = iota
-		PlatformMac
-		PlatformIso /* deprecated */
-		PlatformMicrosoft
-		PlatformCustom
-		_
-		_
-		PlatformAdobe /* artificial */
-	)
-	const (
-		PEUnicodeDefault     = tables.EncodingID(0)
-		PEUnicodeBMP         = tables.EncodingID(3)
-		PEUnicodeFull        = tables.EncodingID(4)
-		PEUnicodeFull13      = tables.EncodingID(6)
-		PEMacRoman           = PEUnicodeDefault
-		PEMicrosoftSymbolCs  = tables.EncodingID(0)
-		PEMicrosoftUnicodeCs = tables.EncodingID(1)
-		PEMicrosoftUcs4      = tables.EncodingID(10)
-	)
 
 	// Prefer symbol if available.
-	if index := findSubtable(cmapID{PlatformMicrosoft, PEMicrosoftSymbolCs}, candidateIds); index != -1 {
-		return candidates[index], uv, nil
+	if index := findSubtable(cmapID{tables.PlatformMicrosoft, tables.PEMicrosoftSymbolCs}, candidateIds); index != -1 {
+		cm := candidates[index]
+		switch os2FontPage {
+		case tables.FPNone:
+			cm = remaperSymbol{cm}
+		case tables.FPSimpArabic:
+			cm = remaperPUASimp{cm}
+		case tables.FPTradArabic:
+			cm = remaperPUATrad{cm}
+		}
+		return cm, uv, nil
 	}
 
 	/* 32-bit subtables. */
-	if index := findSubtable(cmapID{PlatformMicrosoft, PEMicrosoftUcs4}, candidateIds); index != -1 {
+	if index := findSubtable(cmapID{tables.PlatformMicrosoft, tables.PEMicrosoftUcs4}, candidateIds); index != -1 {
 		return candidates[index], uv, nil
 	}
-	if index := findSubtable(cmapID{PlatformUnicode, PEUnicodeFull13}, candidateIds); index != -1 {
+	if index := findSubtable(cmapID{tables.PlatformUnicode, tables.PEUnicodeFull13}, candidateIds); index != -1 {
 		return candidates[index], uv, nil
 	}
-	if index := findSubtable(cmapID{PlatformUnicode, PEUnicodeFull}, candidateIds); index != -1 {
+	if index := findSubtable(cmapID{tables.PlatformUnicode, tables.PEUnicodeFull}, candidateIds); index != -1 {
 		return candidates[index], uv, nil
 	}
 
 	/* 16-bit subtables. */
-	if index := findSubtable(cmapID{PlatformMicrosoft, PEMicrosoftUnicodeCs}, candidateIds); index != -1 {
+	if index := findSubtable(cmapID{tables.PlatformMicrosoft, tables.PEMicrosoftUnicodeCs}, candidateIds); index != -1 {
 		return candidates[index], uv, nil
 	}
-	if index := findSubtable(cmapID{PlatformUnicode, PEUnicodeBMP}, candidateIds); index != -1 {
+	if index := findSubtable(cmapID{tables.PlatformUnicode, tables.PEUnicodeBMP}, candidateIds); index != -1 {
 		return candidates[index], uv, nil
 	}
-	if index := findSubtable(cmapID{PlatformUnicode, 2}, candidateIds); index != -1 { // deprecated
+	if index := findSubtable(cmapID{tables.PlatformUnicode, 2}, candidateIds); index != -1 { // deprecated
 		return candidates[index], uv, nil
 	}
-	if index := findSubtable(cmapID{PlatformUnicode, 1}, candidateIds); index != -1 { // deprecated
+	if index := findSubtable(cmapID{tables.PlatformUnicode, 1}, candidateIds); index != -1 { // deprecated
 		return candidates[index], uv, nil
 	}
-	if index := findSubtable(cmapID{PlatformUnicode, 0}, candidateIds); index != -1 { // deprecated
+	if index := findSubtable(cmapID{tables.PlatformUnicode, 0}, candidateIds); index != -1 { // deprecated
 		return candidates[index], uv, nil
 	}
 
@@ -162,11 +155,6 @@ func findSubtable(id cmapID, cmaps []cmapID) int {
 
 // ---------------------------------- Format 0 ----------------------------------
 
-var macintoshEncoding = [256]rune{
-	0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 196, 197, 199, 201, 209, 214, 220, 225, 224, 226, 228, 227, 229, 231, 233, 232, 234, 235, 237, 236, 238, 239, 241, 243, 242, 244, 246, 245, 250, 249, 251, 252, 8224, 176, 162, 163, 167, 8226, 182, 223, 174, 169, 8482, 180, 168, 8800, 198, 216, 8734, 177, 8804, 8805, 165, 181, 8706, 8721, 8719, 960, 8747, 170, 186, 937, 230, 248, 191, 161, 172, 8730, 402, 8776, 8710, 171, 187, 8230, 160, 192, 195, 213, 338, 339, 8211, 8212, 8220, 8221, 8216, 8217, 247, 9674, 255, 376, 8260, 8364,
-	8249, 8250, 64257, 64258, 8225, 183, 8218, 8222, 8240, 194, 202, 193, 203, 200, 205, 206, 207, 204, 211, 212, 63743, 210, 218, 219, 217, 305, 710, 732, 175, 728, 729, 730, 184, 733, 731, 711,
-}
-
 // use Macintosh encoding, storing indexIntoEncoding -> glyphIndex
 type cmap0 map[rune]uint8
 
@@ -176,7 +164,7 @@ func newCmap0(cm tables.CmapSubtable0) cmap0 {
 		if b == 0 {
 			continue
 		}
-		out[macintoshEncoding[b]] = gid
+		out[tables.DecodeMacintoshByte(byte(b))] = gid
 	}
 	return out
 }
@@ -565,3 +553,125 @@ func (t UnicodeVariations) GetGlyphVariant(r, selector rune) (GID, uint8) {
 	}
 	return 0, VariantNotFound
 }
+
+// Handle legacy font with remap
+// TODO: the Iter() and RuneRanges() method does not include the additional mapping
+
+type remaperSymbol struct {
+	Cmap
+}
+
+func (rs remaperSymbol) Lookup(r rune) (GID, bool) {
+	// try without map first
+	if g, ok := rs.Cmap.Lookup(r); ok {
+		return g, true
+	}
+
+	if r <= 0x00FF {
+		/* For symbol-encoded OpenType fonts, we duplicate the
+		 * U+F000..F0FF range at U+0000..U+00FF.  That's what
+		 * Windows seems to do, and that's hinted about at:
+		 * https://docs.microsoft.com/en-us/typography/opentype/spec/recom
+		 * under "Non-Standard (Symbol) Fonts". */
+		mapped := 0xF000 + r
+		return rs.Lookup(mapped)
+	}
+
+	return 0, false
+}
+
+type remaperPUASimp struct {
+	Cmap
+}
+
+func (rs remaperPUASimp) Lookup(r rune) (GID, bool) {
+	// try without map first
+	if g, ok := rs.Cmap.Lookup(r); ok {
+		return g, true
+	}
+
+	if mapped := arabicPUASimpMap(r); mapped != 0 {
+		return rs.Lookup(mapped)
+	}
+
+	return 0, false
+}
+
+type remaperPUATrad struct {
+	Cmap
+}
+
+func (rs remaperPUATrad) Lookup(r rune) (GID, bool) {
+	// try without map first
+	if g, ok := rs.Cmap.Lookup(r); ok {
+		return g, true
+	}
+
+	if mapped := arabicPUATradMap(r); mapped != 0 {
+		return rs.Lookup(mapped)
+	}
+
+	return 0, false
+}
+
+// ---------------------------- efficent rune set support -----------------------------------------
+
+// CmapRuneRanger is implemented by cmaps whose coverage is defined in terms
+// of rune ranges
+type CmapRuneRanger interface {
+	// RuneRanges returns a list of (start, end) rune pairs, both included.
+	// `dst` is an optional buffer used to reduce allocations
+	RuneRanges(dst [][2]rune) [][2]rune
+}
+
+var (
+	_ CmapRuneRanger = cmap4(nil)
+	_ CmapRuneRanger = (*cmap6or10)(nil)
+	_ CmapRuneRanger = cmap12(nil)
+	_ CmapRuneRanger = cmap13(nil)
+)
+
+func (cm cmap4) RuneRanges(dst [][2]rune) [][2]rune {
+	if cap(dst) < len(cm) {
+		dst = make([][2]rune, 0, len(cm))
+	}
+	dst = dst[:0]
+	for _, e := range cm {
+		start, end := rune(e.start), rune(e.end)
+		if L := len(dst); L != 0 && dst[L-1][1] == start {
+			// grow the previous range
+			dst[L-1][1] = end
+		} else {
+			dst = append(dst, [2]rune{start, end})
+		}
+	}
+	return dst
+}
+
+func (cm *cmap6or10) RuneRanges(dst [][2]rune) [][2]rune {
+	if cap(dst) < 1 {
+		dst = [][2]rune{{}}
+	}
+	dst = dst[:1]
+	dst[0] = [2]rune{cm.firstCode, cm.firstCode + rune(len(cm.entries)) - 1}
+	return dst
+}
+
+func (cm cmap12) RuneRanges(dst [][2]rune) [][2]rune {
+	if cap(dst) < len(cm) {
+		dst = make([][2]rune, 0, len(cm))
+	}
+	dst = dst[:0]
+	for _, e := range cm {
+		start, end := rune(e.StartCharCode), rune(e.EndCharCode)
+		if L := len(dst); L != 0 && dst[L-1][1] == start {
+			// grow the previous range
+			dst[L-1][1] = end
+		} else {
+			dst = append(dst, [2]rune{start, end})
+		}
+	}
+	return dst
+}
+
+func (cm cmap13) RuneRanges(dst [][2]rune) [][2]rune { return cmap12(cm).RuneRanges(dst) }

@@ -150,7 +150,8 @@ func zeroMarkAdvances(buffer *Buffer, start, end int, adjustOffsetsWhenZeroing b
 }
 
 func positionMark(font *Font, buffer *Buffer, baseExtents *GlyphExtents,
-	i int, combiningClass uint8) {
+	i int, combiningClass uint8,
+) {
 	markExtents, ok := font.GlyphExtents(buffer.Info[i].Glyph)
 	if !ok {
 		return
@@ -225,7 +226,8 @@ func positionMark(font *Font, buffer *Buffer, baseExtents *GlyphExtents,
 }
 
 func positionAroundBase(plan *otShapePlan, font *Font, buffer *Buffer,
-	base, end int, adjustOffsetsWhenZeroing bool) {
+	base, end int, adjustOffsetsWhenZeroing bool,
+) {
 	buffer.unsafeToBreak(base, end)
 
 	baseExtents, ok := font.GlyphExtents(buffer.Info[base].Glyph)
@@ -312,7 +314,8 @@ func positionAroundBase(plan *otShapePlan, font *Font, buffer *Buffer,
 }
 
 func positionCluster(plan *otShapePlan, font *Font, buffer *Buffer,
-	start, end int, adjustOffsetsWhenZeroing bool) {
+	start, end int, adjustOffsetsWhenZeroing bool,
+) {
 	if end-start < 2 {
 		return
 	}
@@ -337,7 +340,8 @@ func positionCluster(plan *otShapePlan, font *Font, buffer *Buffer,
 }
 
 func fallbackMarkPosition(plan *otShapePlan, font *Font, buffer *Buffer,
-	adjustOffsetsWhenZeroing bool) {
+	adjustOffsetsWhenZeroing bool,
+) {
 	var start int
 	info := buffer.Info
 	for i := 1; i < len(info); i++ {
@@ -351,7 +355,7 @@ func fallbackMarkPosition(plan *otShapePlan, font *Font, buffer *Buffer,
 
 // adjusts width of various spaces.
 func fallbackSpaces(font *Font, buffer *Buffer) {
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("POSITION - applying fallback spaces")
 	}
 	info := buffer.Info
@@ -360,6 +364,15 @@ func fallbackSpaces(font *Font, buffer *Buffer) {
 	for i, inf := range info {
 		if !inf.isUnicodeSpace() || inf.ligated() {
 			continue
+		}
+
+		// If font had no ASCII space and we used the invisible glyph, give it a 1/4 EM default advance.
+		if buffer.Invisible != 0 && info[i].Glyph == buffer.Invisible {
+			if horizontal {
+				pos[i].XAdvance = +font.XScale / 4
+			} else {
+				pos[i].YAdvance = -font.YScale / 4
+			}
 		}
 
 		spaceType := inf.getUnicodeSpaceFallbackType()

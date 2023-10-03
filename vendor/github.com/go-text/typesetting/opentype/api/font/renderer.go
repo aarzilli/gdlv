@@ -12,6 +12,11 @@ import (
 	"github.com/go-text/typesetting/opentype/api"
 )
 
+var (
+	errEmptySbixTable   = errors.New("empty 'sbix' table")
+	errEmptyBitmapTable = errors.New("empty bitmap table")
+)
+
 // GlyphData returns the glyph content for [gid], or nil if
 // not found.
 func (f *Face) GlyphData(gid GID) api.GlyphData {
@@ -53,7 +58,7 @@ func (f *Face) GlyphData(gid GID) api.GlyphData {
 func (sb sbix) glyphData(gid gID, xPpem, yPpem uint16) (api.GlyphBitmap, error) {
 	st := sb.chooseStrike(xPpem, yPpem)
 	if st == nil {
-		return api.GlyphBitmap{}, errors.New("empty 'sbix' table")
+		return api.GlyphBitmap{}, errEmptySbixTable
 	}
 
 	glyph := strikeGlyph(st, gid, 0)
@@ -71,7 +76,7 @@ func (sb sbix) glyphData(gid gID, xPpem, yPpem uint16) (api.GlyphBitmap, error) 
 func (bt bitmap) glyphData(gid gID, xPpem, yPpem uint16) (api.GlyphBitmap, error) {
 	st := bt.chooseStrike(xPpem, yPpem)
 	if st == nil || st.ppemX == 0 || st.ppemY == 0 {
-		return api.GlyphBitmap{}, errors.New("empty bitmap table")
+		return api.GlyphBitmap{}, errEmptyBitmapTable
 	}
 
 	subtable := st.findTable(gid)
@@ -94,6 +99,11 @@ func (bt bitmap) glyphData(gid gID, xPpem, yPpem uint16) (api.GlyphBitmap, error
 		out.Format = api.PNG
 	case 2, 5:
 		out.Format = api.BlackAndWhite
+		// ensure data length
+		L := out.Width * out.Height // in bits
+		if len(out.Data)*8 < L {
+			return api.GlyphBitmap{}, fmt.Errorf("EOF in glyph bitmap: expected %d, got %d", L, len(out.Data)*8)
+		}
 	default:
 		return api.GlyphBitmap{}, fmt.Errorf("unsupported format %d in bitmap table", subtable.imageFormat)
 	}
@@ -147,11 +157,16 @@ func midPoint(p, q api.SegmentPoint) api.SegmentPoint {
 
 // build the segments from the resolved contour points
 func buildSegments(points []contourPoint) []api.Segment {
+	if len(points) == 0 {
+		return nil
+	}
+
 	var (
 		firstOnCurveValid, firstOffCurveValid, lastOffCurveValid bool
 		firstOnCurve, firstOffCurve, lastOffCurve                api.SegmentPoint
-		out                                                      []api.Segment
 	)
+
+	out := make([]api.Segment, 0, len(points)+2)
 
 	for _, point := range points {
 		p := point.SegmentPoint
@@ -256,10 +271,16 @@ func buildSegments(points []contourPoint) []api.Segment {
 	return out
 }
 
+type errGlyphOutOfRange int
+
+func (e errGlyphOutOfRange) Error() string {
+	return fmt.Sprintf("out of range glyph %d", e)
+}
+
 // apply variation when needed
 func (f *Face) glyphDataFromGlyf(glyph gID) (api.GlyphOutline, error) {
 	if int(glyph) >= len(f.glyf) {
-		return api.GlyphOutline{}, fmt.Errorf("out of range glyph %d", glyph)
+		return api.GlyphOutline{}, errGlyphOutOfRange(glyph)
 	}
 	var points []contourPoint
 	f.getPointsForGlyph(glyph, 0, &points)

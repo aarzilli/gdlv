@@ -425,7 +425,8 @@ func (w *window) Perform(acts system.Action) {
 		switch a {
 		case system.ActionCenter:
 			r := C.getScreenFrame(window) // the screen size of the window
-			sz := w.config.Size
+			screenScale := float32(C.getScreenBackingScale())
+			sz := w.config.Size.Div(int(screenScale))
 			x := (int(r.size.width) - sz.X) / 2
 			y := (int(r.size.height) - sz.Y) / 2
 			C.setScreenFrame(window, C.CGFloat(x), C.CGFloat(y), C.CGFloat(sz.X), C.CGFloat(sz.Y))
@@ -522,6 +523,8 @@ func gio_onMouse(view, evt C.CFTypeRef, cdir C.int, cbtn C.NSInteger, x, y, dx, 
 		btn = pointer.ButtonPrimary
 	case 1:
 		btn = pointer.ButtonSecondary
+	case 2:
+		btn = pointer.ButtonTertiary
 	}
 	var typ pointer.Type
 	switch cdir {
@@ -787,13 +790,13 @@ func configFor(scale float32) unit.Metric {
 //export gio_onClose
 func gio_onClose(view C.CFTypeRef) {
 	w := mustView(view)
-	w.displayLink.Close()
 	w.w.Event(ViewEvent{})
-	deleteView(view)
 	w.w.Event(system.DestroyEvent{})
+	w.displayLink.Close()
+	w.displayLink = nil
+	deleteView(view)
 	C.CFRelease(w.view)
 	w.view = 0
-	w.displayLink = nil
 }
 
 //export gio_onHide

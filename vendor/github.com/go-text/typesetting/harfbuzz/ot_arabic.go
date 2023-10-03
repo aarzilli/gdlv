@@ -8,14 +8,13 @@ import (
 	"github.com/go-text/typesetting/opentype/api/font"
 	"github.com/go-text/typesetting/opentype/loader"
 	"github.com/go-text/typesetting/opentype/tables"
-	ucd "github.com/go-text/typesetting/unicodedata"
 )
 
 // ported from harfbuzz/src/hb-ot-shape-complex-arabic.cc, hb-ot-shape-complex-arabic-fallback.hh Copyright © 2010,2012  Google, Inc. Behdad Esfahbod
 
 var _ otComplexShaper = (*complexShaperArabic)(nil)
 
-const flagArabicHasStch = bsfComplex0
+const flagArabicHasStch = bsfShaper0
 
 /* See:
  * https://github.com/harfbuzz/harfbuzz/commit/6e6f82b6f3dde0fc6c3c7d991d9ec6cfff57823d#commitcomment-14248516 */
@@ -44,6 +43,22 @@ func isWord(genCat generalCategory) bool {
  * Joining types:
  */
 
+// arabicJoining is a property used to shape Arabic runes.
+// See the table arabicJoinings.
+type arabicJoining byte
+
+const (
+	ajU          arabicJoining = 'U' // Un-joining, e.g. Full Stop
+	ajR          arabicJoining = 'R' // Right-joining, e.g. Arabic Letter Dal
+	ajAlaph      arabicJoining = 'a' // Alaph group (included in kind R)
+	ajDalathRish arabicJoining = 'd' // Dalat Rish group (included in kind R)
+	ajD          arabicJoining = 'D' // Dual-joining, e.g. Arabic Letter Ain
+	ajC          arabicJoining = 'C' // Join-Causing, e.g. Tatweel, ZWJ
+	ajL          arabicJoining = 'L' // Left-joining, i.e. fictional
+	ajT          arabicJoining = 'T' // Transparent, e.g. Arabic Fatha
+	ajG          arabicJoining = 'G' // Ignored, e.g. LRE, RLE, ZWNBSP
+)
+
 // index into arabicStateTable
 const (
 	joiningTypeU = iota
@@ -58,23 +73,23 @@ const (
 )
 
 func getJoiningType(u rune, genCat generalCategory) uint8 {
-	if jType, ok := ucd.ArabicJoinings[u]; ok {
+	if jType, ok := arabicJoinings[u]; ok {
 		switch jType {
-		case ucd.U:
+		case ajU:
 			return joiningTypeU
-		case ucd.L:
+		case ajL:
 			return joiningTypeL
-		case ucd.R:
+		case ajR:
 			return joiningTypeR
-		case ucd.D:
+		case ajD:
 			return joiningTypeD
-		case ucd.Alaph:
+		case ajAlaph:
 			return joiningGroupAlaph
-		case ucd.DalathRish:
+		case ajDalathRish:
 			return joiningGroupDalathRish
-		case ucd.T:
+		case ajT:
 			return joiningTypeT
-		case ucd.C:
+		case ajC:
 			return joiningTypeC
 		}
 	}
@@ -98,7 +113,6 @@ var arabicFeatures = [...]loader.Tag{
 	loader.NewTag('m', 'e', 'd', 'i'),
 	loader.NewTag('m', 'e', 'd', '2'),
 	loader.NewTag('i', 'n', 'i', 't'),
-	0,
 }
 
 /* Same order as the feature array */
@@ -181,16 +195,13 @@ func (cs *complexShaperArabic) collectFeatures(plan *otShapePlanner) {
 	* work.  However, testing shows that rlig and calt are applied
 	* together for Mongolian in Uniscribe.  As such, we only add a
 	* pause for Arabic, not other scripts.
-	*
-	* A pause after calt is required to make KFGQPC Uthmanic Script HAFS
-	* work correctly.  See https://github.com/harfbuzz/harfbuzz/issues/505
 	 */
 
 	map_.enableFeature(loader.NewTag('s', 't', 'c', 'h'))
 	map_.addGSUBPause(recordStch)
 
-	map_.enableFeature(loader.NewTag('c', 'c', 'm', 'p'))
-	map_.enableFeature(loader.NewTag('l', 'o', 'c', 'l'))
+	map_.enableFeatureExt(loader.NewTag('c', 'c', 'm', 'p'), ffManualZWJ, 1)
+	map_.enableFeatureExt(loader.NewTag('l', 'o', 'c', 'l'), ffManualZWJ, 1)
 
 	map_.addGSUBPause(nil)
 
@@ -200,7 +211,7 @@ func (cs *complexShaperArabic) collectFeatures(plan *otShapePlanner) {
 		if hasFallback {
 			fl = ffHasFallback
 		}
-		map_.addFeatureExt(arabFeat, fl, 1)
+		map_.addFeatureExt(arabFeat, ffManualZWJ|fl, 1)
 		map_.addGSUBPause(nil)
 	}
 
@@ -213,10 +224,15 @@ func (cs *complexShaperArabic) collectFeatures(plan *otShapePlanner) {
 	if plan.props.Script == language.Arabic {
 		map_.addGSUBPause(arabicFallbackShape)
 	}
-	/* No pause after rclt.  See 98460779bae19e4d64d29461ff154b3527bf8420. */
-	map_.enableFeatureExt(loader.NewTag('r', 'c', 'l', 't'), ffManualZWJ, 1)
 	map_.enableFeatureExt(loader.NewTag('c', 'a', 'l', 't'), ffManualZWJ, 1)
-	map_.addGSUBPause(nil)
+	/* https://github.com/harfbuzz/harfbuzz/issues/1573 */
+	if !map_.hasFeature(loader.NewTag('r', 'c', 'l', 't')) {
+		map_.addGSUBPause(nil)
+		map_.enableFeatureExt(loader.NewTag('r', 'c', 'l', 't'), ffManualZWJ, 1)
+	}
+
+	map_.enableFeatureExt(loader.NewTag('l', 'i', 'g', 'a'), ffManualZWJ, 1)
+	map_.enableFeatureExt(loader.NewTag('c', 'l', 'i', 'g'), ffManualZWJ, 1)
 
 	/* The spec includes 'cswh'.  Earlier versions of Windows
 	* used to enable this by default, but testing suggests
@@ -227,7 +243,7 @@ func (cs *complexShaperArabic) collectFeatures(plan *otShapePlanner) {
 	* to fixup broken glyph sequences.  Oh well...
 	* Test case: U+0643,U+0640,U+0631. */
 	//map_.enable_feature (newTag('c','s','w','h'));
-	map_.enableFeature(loader.NewTag('m', 's', 'e', 't'))
+	map_.enableFeatureExt(loader.NewTag('m', 's', 'e', 't'), ffManualZWJ, 1)
 }
 
 type arabicShapePlan struct {
@@ -258,7 +274,7 @@ func (cs *complexShaperArabic) dataCreate(plan *otShapePlan) {
 	cs.plan = newArabicPlan(plan)
 }
 
-func arabicJoining(buffer *Buffer) {
+func applyArabicJoining(buffer *Buffer) {
 	info := buffer.Info
 	prev, state := -1, uint16(0)
 
@@ -287,7 +303,18 @@ func arabicJoining(buffer *Buffer) {
 
 		if entry.prevAction != arabNone && prev != -1 {
 			info[prev].complexAux = entry.prevAction
-			buffer.unsafeToBreak(prev, i+1)
+			buffer.safeToInsertTatweel(prev, i+1)
+		} else {
+			if prev == -1 {
+				if thisType >= joiningTypeR {
+					buffer.unsafeToConcatFromOutbuffer(0, i+1)
+				}
+			} else {
+				if thisType >= joiningTypeR ||
+					(2 <= state && state <= 5) /* States that have a possible prevAction. */ {
+					buffer.unsafeToConcat(prev, i+1)
+				}
+			}
 		}
 
 		info[i].complexAux = entry.currAction
@@ -306,6 +333,9 @@ func arabicJoining(buffer *Buffer) {
 		entry := &arabicStateTable[state][thisType]
 		if entry.prevAction != arabNone && prev != -1 {
 			info[prev].complexAux = entry.prevAction
+			buffer.safeToInsertTatweel(prev, len(buffer.Info))
+		} else if 2 <= state && state <= 5 /* States that have a possible prevAction. */ {
+			buffer.unsafeToConcat(prev, len(buffer.Info))
 		}
 		break
 	}
@@ -322,7 +352,7 @@ func mongolianVariationSelectors(buffer *Buffer) {
 }
 
 func (arabicPlan arabicShapePlan) setupMasks(buffer *Buffer, script language.Script) {
-	arabicJoining(buffer)
+	applyArabicJoining(buffer)
 	if script == language.Mongolian {
 		mongolianVariationSelectors(buffer)
 	}
@@ -337,11 +367,11 @@ func (cs *complexShaperArabic) setupMasks(plan *otShapePlan, buffer *Buffer, _ *
 	cs.plan.setupMasks(buffer, plan.props.Script)
 }
 
-func arabicFallbackShape(plan *otShapePlan, font *Font, buffer *Buffer) {
+func arabicFallbackShape(plan *otShapePlan, font *Font, buffer *Buffer) bool {
 	arabicPlan := plan.shaper.(*complexShaperArabic).plan
 
 	if !arabicPlan.doFallback {
-		return
+		return false
 	}
 
 	fallbackPlan := arabicPlan.fallbackPlan
@@ -351,20 +381,21 @@ func arabicFallbackShape(plan *otShapePlan, font *Font, buffer *Buffer) {
 	}
 
 	fallbackPlan.shape(font, buffer)
+	return true
 }
 
-//  /*
-//   * Stretch feature: "stch".
-//   * See example here:
-//   * https://docs.microsoft.com/en-us/typography/script-development/syriac
-//   * We implement this in a generic way, such that the Arabic subtending
-//   * marks can use it as well.
-//   */
+//
+//  Stretch feature: "stch".
+//  See example here:
+//  https://docs.microsoft.com/en-us/typography/script-development/syriac
+//  We implement this in a generic way, such that the Arabic subtending
+//  marks can use it as well.
+//
 
-func recordStch(plan *otShapePlan, _ *Font, buffer *Buffer) {
+func recordStch(plan *otShapePlan, _ *Font, buffer *Buffer) bool {
 	arabicPlan := plan.shaper.(*complexShaperArabic).plan
 	if !arabicPlan.hasStch {
-		return
+		return false
 	}
 
 	/* 'stch' feature was just applied.  Look for anything that multiplied,
@@ -384,6 +415,8 @@ func recordStch(plan *otShapePlan, _ *Font, buffer *Buffer) {
 			buffer.scratchFlags |= flagArabicHasStch
 		}
 	}
+
+	return false
 }
 
 func inRange(sa uint8) bool {
@@ -459,7 +492,7 @@ func (cs *complexShaperArabic) postprocessGlyphs(plan *otShapePlan, buffer *Buff
 			}
 			i++ // Don't touch i again.
 
-			if debugMode >= 1 {
+			if debugMode {
 				fmt.Printf("ARABIC - step %d: stretch at (%d,%d,%d)\n", step+1, context, start, end)
 				fmt.Printf("ARABIC - rest of word:    count=%d width %d\n", start-context, wTotal)
 				fmt.Printf("ARABIC - fixed tiles:     count=%d width=%d\n", nFixed, wFixed)
@@ -487,7 +520,7 @@ func (cs *complexShaperArabic) postprocessGlyphs(plan *otShapePlan, buffer *Buff
 
 			if step == MEASURE {
 				extraGlyphsNeeded += nCopies * nRepeating
-				if debugMode >= 1 {
+				if debugMode {
 					fmt.Printf("ARABIC - will add extra %d copies of repeating tiles\n", nCopies)
 				}
 			} else {
@@ -501,7 +534,7 @@ func (cs *complexShaperArabic) postprocessGlyphs(plan *otShapePlan, buffer *Buff
 						repeat += nCopies
 					}
 
-					if debugMode >= 1 {
+					if debugMode {
 						fmt.Printf("ARABIC - appending %d copies of glyph %d; j=%d\n", repeat, info[k-1].codepoint, j)
 					}
 					for n := 0; n < repeat; n++ {
@@ -535,6 +568,11 @@ var modifierCombiningMarks = [...]rune{
 	0x06E3, /* ARABIC SMALL LOW SEEN */
 	0x06E7, /* ARABIC SMALL HIGH YEH */
 	0x06E8, /* ARABIC SMALL HIGH NOON */
+	0x08CA, /* ARABIC SMALL HIGH FARSI YEH */
+	0x08CB, /* ARABIC SMALL HIGH YEH BARREE WITH TWO DOTS BELOW */
+	0x08CD, /* ARABIC SMALL HIGH ZAH */
+	0x08CE, /* ARABIC LARGE ROUND DOT ABOVE */
+	0x08CF, /* ARABIC LARGE ROUND DOT BELOW */
 	0x08D3, /* ARABIC SMALL LOW WAW */
 	0x08F3, /* ARABIC SMALL HIGH WAW */
 }
@@ -552,19 +590,19 @@ func infoIsMcm(info *GlyphInfo) bool {
 func (cs *complexShaperArabic) reorderMarks(_ *otShapePlan, buffer *Buffer, start, end int) {
 	info := buffer.Info
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Printf("ARABIC - Reordering marks from %d to %d\n", start, end)
 	}
 
 	i := start
 	for cc := uint8(220); cc <= 230; cc += 10 {
-		if debugMode >= 1 {
-			fmt.Printf("ARABIC - Looking for %d's starting at %d\n", cc, i)
+		if debugMode {
+			fmt.Printf("ARABIC - Looking for combining class %d's starting at %d\n", cc, i)
 		}
 		for i < end && info[i].getModifiedCombiningClass() < cc {
 			i++
 		}
-		if debugMode >= 1 {
+		if debugMode {
 			fmt.Printf("ARABIC - Looking for %d's stopped at %d\n", cc, i)
 		}
 
@@ -585,7 +623,7 @@ func (cs *complexShaperArabic) reorderMarks(_ *otShapePlan, buffer *Buffer, star
 			continue
 		}
 
-		if debugMode >= 1 {
+		if debugMode {
 			fmt.Printf("ARABIC - Found %d's from %d to %d", cc, i, j)
 			// shift it!
 			fmt.Printf("ARABIC - Shifting %d's: %d %d", cc, i, j)
@@ -623,13 +661,17 @@ func (cs *complexShaperArabic) reorderMarks(_ *otShapePlan, buffer *Buffer, star
 	}
 }
 
-/* Features ordered the same as the entries in ucd.ArabicShaping rows,
- * followed by rlig.  Don't change. */
+// Features ordered the same as the entries in [arabicShaping] rows,
+// followed by rlig.  Don't change.
+// We currently support one subtable per lookup, and one lookup
+// per feature.  But we allow duplicate features, so we use that!
 var arabicFallbackFeatures = [...]loader.Tag{
-	loader.NewTag('i', 's', 'o', 'l'),
-	loader.NewTag('f', 'i', 'n', 'a'),
 	loader.NewTag('i', 'n', 'i', 't'),
 	loader.NewTag('m', 'e', 'd', 'i'),
+	loader.NewTag('f', 'i', 'n', 'a'),
+	loader.NewTag('i', 's', 'o', 'l'),
+	loader.NewTag('r', 'l', 'i', 'g'),
+	loader.NewTag('r', 'l', 'i', 'g'),
 	loader.NewTag('r', 'l', 'i', 'g'),
 }
 
@@ -649,8 +691,8 @@ func arabicFallbackSynthesizeLookupSingle(ft *Font, featureIndex int) *lookupGSU
 	var glyphs, substitutes []gID
 
 	// populate arrays
-	for u := rune(ucd.FirstArabicShape); u <= ucd.LastArabicShape; u++ {
-		s := rune(ucd.ArabicShaping[u-ucd.FirstArabicShape][featureIndex])
+	for u := rune(firstArabicShape); u <= lastArabicShape; u++ {
+		s := rune(arabicShaping[u-firstArabicShape][featureIndex])
 		uGlyph, hasU := ft.face.NominalGlyph(u)
 		sGlyph, hasS := ft.face.NominalGlyph(s)
 
@@ -692,16 +734,16 @@ func (a glyphsIndirections) Swap(i, j int) {
 }
 func (a glyphsIndirections) Less(i, j int) bool { return a.glyphs[i] < a.glyphs[j] }
 
-func arabicFallbackSynthesizeLookupLigature(ft *Font) *lookupGSUB {
+func arabicFallbackSynthesizeLookupLigature(ft *Font, ligatureTable []arabicTableEntry, lookupFlags uint16) *lookupGSUB {
 	var (
 		firstGlyphs            []gID
 		firstGlyphsIndirection []int // original index into ArabicLigatures
 	)
 
-	/* Populate arrays */
+	// Populate arrays
 
 	// sort out the first-glyphs
-	for firstGlyphIdx, lig := range ucd.ArabicLigatures {
+	for firstGlyphIdx, lig := range ligatureTable {
 		firstGlyph, ok := ft.face.NominalGlyph(lig.First)
 		if !ok {
 			continue
@@ -721,25 +763,39 @@ func arabicFallbackSynthesizeLookupLigature(ft *Font) *lookupGSUB {
 
 	// now that the first-glyphs are sorted, walk again, populate ligatures.
 	for _, firstGlyphIdx := range firstGlyphsIndirection {
-		ligs := ucd.ArabicLigatures[firstGlyphIdx].Ligatures
+		ligs := ligatureTable[firstGlyphIdx].Ligatures
 		var ligatureSet tables.LigatureSet
 		for _, v := range ligs {
-			secondU, ligatureU := v[0], v[1]
-			secondGlyph, hasSecond := ft.face.NominalGlyph(secondU)
+			ligatureU := v.ligature
 			ligatureGlyph, hasLigature := ft.face.NominalGlyph(ligatureU)
-			if secondU == 0 || !hasSecond || !hasLigature {
+			if !hasLigature {
 				continue
 			}
+
+			components := v.components
+			var componentGIDs []gID
+			for _, componentU := range components {
+				componentGlyph, hasComponent := ft.face.NominalGlyph(componentU)
+				if !hasComponent {
+					break
+				}
+				componentGIDs = append(componentGIDs, gID(componentGlyph))
+			}
+
+			if len(components) != len(componentGIDs) {
+				continue
+			}
+
 			ligatureSet.Ligatures = append(ligatureSet.Ligatures, tables.Ligature{
 				LigatureGlyph:     gID(ligatureGlyph),
-				ComponentGlyphIDs: []uint16{uint16(secondGlyph)}, // ligatures are 2-component
+				ComponentGlyphIDs: componentGIDs, // ligatures are 2-component
 			})
 		}
 		out.LigatureSets = append(out.LigatureSets, ligatureSet)
 	}
 
 	return &lookupGSUB{
-		LookupOptions: font.LookupOptions{Flag: otIgnoreMarks},
+		LookupOptions: font.LookupOptions{Flag: lookupFlags},
 		Subtables: []tables.GSUBLookup{
 			out,
 		},
@@ -747,13 +803,21 @@ func arabicFallbackSynthesizeLookupLigature(ft *Font) *lookupGSUB {
 }
 
 func arabicFallbackSynthesizeLookup(font *Font, featureIndex int) *lookupGSUB {
-	if featureIndex < 4 {
+	switch featureIndex {
+	case 0, 1, 2, 3:
 		return arabicFallbackSynthesizeLookupSingle(font, featureIndex)
+	case 4:
+		return arabicFallbackSynthesizeLookupLigature(font, arabicLigature3Table[:], otIgnoreMarks)
+	case 5:
+		return arabicFallbackSynthesizeLookupLigature(font, arabicLigatureTable[:], otIgnoreMarks)
+	case 6:
+		return arabicFallbackSynthesizeLookupLigature(font, arabicLigatureMarkTable[:], 0)
+	default:
+		panic("unexpected arabic fallback feature index")
 	}
-	return arabicFallbackSynthesizeLookupLigature(font)
 }
 
-const arabicFallbackMaxLookups = 5
+const arabicFallbackMaxLookups = len(arabicFallbackFeatures)
 
 type arabicFallbackPlan struct {
 	accelArray [arabicFallbackMaxLookups]otLayoutLookupAccelerator

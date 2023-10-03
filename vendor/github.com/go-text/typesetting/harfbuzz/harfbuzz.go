@@ -22,15 +22,11 @@ import (
 	"github.com/go-text/typesetting/opentype/tables"
 )
 
-// based on upstream commit 449c4296a11a8b3d3882d4a4d6705281f5ff52e5
-// pending the change for Unicode 14 that are not merged yet, starting at
-// 195c05df9925c7c4a4982a286ef9c416b2cde3af
+// based on upstream commit 5d543d64222c6ce45332d0c188790f90691ef112
 
-// debugMode is only used in test:
-//   - 0 : nothing
-//   - 1 : only the main steps are printed
-//   - 2 : details informations are printed
-const debugMode = 0
+// debugMode is only used in test: if true, it prints detailed information
+// about shaping
+const debugMode = false
 
 type (
 	GID = api.GID
@@ -67,7 +63,7 @@ func getHorizontalDirection(script language.Script) Direction {
 		return RightToLeft
 
 	/* https://github.com/harfbuzz/harfbuzz/issues/1000 */
-	case language.Old_Hungarian, language.Old_Italic, language.Runic:
+	case language.Old_Hungarian, language.Old_Italic, language.Runic, language.Tifinagh:
 		return 0
 	}
 
@@ -153,6 +149,16 @@ const (
 	// not be inserted in the rendering of incorrect
 	// character sequences (such at <0905 093E>).
 	DoNotinsertDottedCircle
+
+	// Flag indicating that the [GlyphUnsafeToConcat]
+	// glyph-flag should be produced by the shaper. By default
+	// it will not be produced since it incurs a cost.
+	ProduceUnsafeToConcat
+
+	// Flag indicating that the [GlyphSafeToInsertTatweel]
+	// glyph-flag should be produced by the shaper. By default
+	// it will not be produced.
+	ProduceSafeToInsertTatweel
 )
 
 // ClusterLevel allows selecting more fine-grained Cluster handling.

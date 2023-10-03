@@ -3,7 +3,6 @@ package harfbuzz
 import (
 	"strings"
 
-	"github.com/go-text/typesetting/language"
 	"github.com/go-text/typesetting/opentype/tables"
 )
 
@@ -50,11 +49,15 @@ func bfindLanguage(lang string) int {
 	return -1
 }
 
-func subtagMatches(langStr string, limit int, subtag string) bool {
+func subtagMatches(langStr string, subtag string) bool {
 	LS := len(subtag)
+	if len(langStr) < LS {
+		return false
+	}
+
 	for {
 		s := strings.Index(langStr, subtag)
-		if s == -1 || s >= limit {
+		if s == -1 {
 			return false
 		}
 		if s+LS >= len(langStr) || !isAlnum(langStr[s+LS]) {
@@ -68,5 +71,3 @@ func langMatches(langStr, spec string) bool {
 	l := len(spec)
 	return strings.HasPrefix(langStr, spec) && (len(langStr) == l || langStr[l] == '-')
 }
-
-func languageToString(l language.Language) string { return string(l) }

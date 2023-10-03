@@ -621,6 +621,7 @@ func StrokePathCommands(style StrokeStyle, scene []byte) StrokeQuads {
 // decodeToStrokeQuads decodes scene commands to quads ready to stroke.
 func decodeToStrokeQuads(pathData []byte) StrokeQuads {
 	quads := make(StrokeQuads, 0, 2*len(pathData)/(scene.CommandSize+4))
+	scratch := make([]QuadSegment, 0, 10)
 	for len(pathData) >= scene.CommandSize+4 {
 		contour := binary.LittleEndian.Uint32(pathData)
 		cmd := ops.DecodeCommand(pathData[4:])
@@ -645,7 +646,9 @@ func decodeToStrokeQuads(pathData []byte) StrokeQuads {
 			}
 			quads = append(quads, quad)
 		case scene.OpCubic:
-			for _, q := range SplitCubic(scene.DecodeCubic(cmd)) {
+			from, ctrl0, ctrl1, to := scene.DecodeCubic(cmd)
+			scratch = SplitCubic(from, ctrl0, ctrl1, to, scratch[:0])
+			for _, q := range scratch {
 				quad := StrokeQuad{
 					Contour: contour,
 					Quad:    q,
@@ -660,8 +663,7 @@ func decodeToStrokeQuads(pathData []byte) StrokeQuads {
 	return quads
 }
 
-func SplitCubic(from, ctrl0, ctrl1, to f32.Point) []QuadSegment {
-	quads := make([]QuadSegment, 0, 10)
+func SplitCubic(from, ctrl0, ctrl1, to f32.Point, quads []QuadSegment) []QuadSegment {
 	// Set the maximum distance proportionally to the longest side
 	// of the bounding rectangle.
 	hull := f32.Rectangle{
@@ -675,13 +677,14 @@ func SplitCubic(from, ctrl0, ctrl1, to f32.Point) []QuadSegment {
 	if h := hull.Dy(); h > l {
 		l = h
 	}
-	approxCubeTo(&quads, 0, l*0.001, from, ctrl0, ctrl1, to)
+	maxDist := l * 0.001
+	approxCubeTo(&quads, 0, maxDist*maxDist, from, ctrl0, ctrl1, to)
 	return quads
 }
 
 // approxCubeTo approximates a cubic Bézier by a series of quadratic
 // curves.
-func approxCubeTo(quads *[]QuadSegment, splits int, maxDist float32, from, ctrl0, ctrl1, to f32.Point) int {
+func approxCubeTo(quads *[]QuadSegment, splits int, maxDistSq float32, from, ctrl0, ctrl1, to f32.Point) int {
 	// The idea is from
 	// https://caffeineowl.com/graphics/2d/vectorial/cubic2quad01.html
 	// where a quadratic approximates a cubic by eliminating its t³ term
@@ -706,7 +709,11 @@ func approxCubeTo(quads *[]QuadSegment, splits int, maxDist float32, from, ctrl0
 	// and use the midpoint between the two curves Q1 and Q2 as control point:
 	//
 	// C = (3ctrl0 - pen + 3ctrl1 - to)/4
-	c := ctrl0.Mul(3).Sub(from).Add(ctrl1.Mul(3)).Sub(to).Mul(1.0 / 4.0)
+	// using, q0 := 3ctrl0 - pen, q1 := 3ctrl1 - to
+	// C = (q0 + q1)/4
+	q0 := ctrl0.Mul(3).Sub(from)
+	q1 := ctrl1.Mul(3).Sub(to)
+	c := q0.Add(q1).Mul(1.0 / 4.0)
 	const maxSplits = 32
 	if splits >= maxSplits {
 		*quads = append(*quads, QuadSegment{From: from, Ctrl: c, To: to})
@@ -715,12 +722,14 @@ func approxCubeTo(quads *[]QuadSegment, splits int, maxDist float32, from, ctrl0
 	// The maximum distance between the cubic P and its approximation Q given t
 	// can be shown to be
 	//
-	// d = sqrt(3)/36*|to - 3ctrl1 + 3ctrl0 - pen|
+	// d = sqrt(3)/36 * |to - 3ctrl1 + 3ctrl0 - pen|
+	// reusing, q0 := 3ctrl0 - pen, q1 := 3ctrl1 - to
+	// d = sqrt(3)/36 * |-q1 + q0|
 	//
 	// To save a square root, compare d² with the squared tolerance.
-	v := to.Sub(ctrl1.Mul(3)).Add(ctrl0.Mul(3)).Sub(from)
+	v := q0.Sub(q1)
 	d2 := (v.X*v.X + v.Y*v.Y) * 3 / (36 * 36)
-	if d2 <= maxDist*maxDist {
+	if d2 <= maxDistSq {
 		*quads = append(*quads, QuadSegment{From: from, Ctrl: c, To: to})
 		return splits
 	}
@@ -733,7 +742,7 @@ func approxCubeTo(quads *[]QuadSegment, splits int, maxDist float32, from, ctrl0
 	c12 := c1.Add(c2.Sub(c1).Mul(t))
 	c0112 := c01.Add(c12.Sub(c01).Mul(t))
 	splits++
-	splits = approxCubeTo(quads, splits, maxDist, from, c0, c01, c0112)
-	splits = approxCubeTo(quads, splits, maxDist, c0112, c12, c2, to)
+	splits = approxCubeTo(quads, splits, maxDistSq, from, c0, c01, c0112)
+	splits = approxCubeTo(quads, splits, maxDistSq, c0112, c12, c2, to)
 	return splits
 }

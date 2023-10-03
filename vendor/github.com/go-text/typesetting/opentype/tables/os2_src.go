@@ -34,3 +34,25 @@ type Os2 struct {
 	usWinDescent        uint16
 	HigherVersionData   []byte `arrayCount:"ToEnd"`
 }
+
+func (os *Os2) FontPage() FontPage {
+	if os.Version == 0 {
+		return FontPage(os.FsSelection & 0xFF00)
+	}
+	return FPNone
+}
+
+// See https://docs.microsoft.com/en-us/typography/legacy/legacy_arabic_fonts
+// https://github.com/Microsoft/Font-Validator/blob/520aaae/OTFontFileVal/val_OS2.cs#L644-L681
+type FontPage uint16
+
+const (
+	FPNone       FontPage = 0
+	FPHebrew     FontPage = 0xB100 /* Hebrew Windows 3.1 font page */
+	FPSimpArabic FontPage = 0xB200 /* Simplified Arabic Windows 3.1 font page */
+	FPTradArabic FontPage = 0xB300 /* Traditional Arabic Windows 3.1 font page */
+	FPOemArabic  FontPage = 0xB400 /* OEM Arabic Windows 3.1 font page */
+	FPSimpFarsi  FontPage = 0xBA00 /* Simplified Farsi Windows 3.1 font page */
+	FPTradFarsi  FontPage = 0xBB00 /* Traditional Farsi Windows 3.1 font page */
+	FPThai       FontPage = 0xDE00 /* Thai Windows 3.1 font page */
+)

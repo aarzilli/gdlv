@@ -16,6 +16,30 @@ type complexShaperMyanmar struct {
 
 var _ otComplexShaper = complexShaperMyanmar{}
 
+func setMyanmarProperties(info *GlyphInfo) {
+	u := info.codepoint
+	type_ := indicGetCategories(u)
+	cat := uint8(type_ & 0xFF)
+	// pos := uint8(type_ >> 8)
+
+	info.complexCategory = cat
+	// info.complexAux = pos
+}
+
+/* Note:
+ *
+ * We treat Vowels and placeholders as if they were consonants.  This is safe because Vowels
+ * cannot happen in a consonant syllable.  The plus side however is, we can call the
+ * consonant syllable logic from the vowel syllable function and get it all right!
+ *
+ * Keep in sync with consonant_categories in the generator. */
+const consonantFlagsMyanmar = (1 << myaSM_ex_C) | 1<<myaSM_ex_CS | myaSM_ex_Ra |
+	1<<myaSM_ex_IV | 1<<myaSM_ex_GB | 1<<myaSM_ex_DOTTEDCIRCLE
+
+func isConsonantMyanmar(info *GlyphInfo) bool {
+	return isOneOf(info, consonantFlagsMyanmar)
+}
+
 /*
  * Basic features.
  * These features are applied in order, one at a time, after reordering.
@@ -52,11 +76,11 @@ func (complexShaperMyanmar) collectFeatures(plan *otShapePlanner) {
 	map_.addGSUBPause(reorderMyanmar)
 
 	for _, feat := range myanmarBasicFeatures {
-		map_.enableFeatureExt(feat, ffManualZWJ, 1)
+		map_.enableFeatureExt(feat, ffManualZWJ|ffPerSyllable, 1)
 		map_.addGSUBPause(nil)
 	}
 
-	map_.addGSUBPause(clearSyllables)
+	map_.addGSUBPause(nil)
 
 	for _, feat := range myanmarOtherFeatures {
 		map_.enableFeatureExt(feat, ffManualZWJ, 1)
@@ -64,8 +88,7 @@ func (complexShaperMyanmar) collectFeatures(plan *otShapePlanner) {
 }
 
 func (complexShaperMyanmar) setupMasks(_ *otShapePlan, buffer *Buffer, _ *Font) {
-	/* We cannot setup masks here.  We save information about characters
-	* and setup masks later on in a pause-callback. */
+	// No masks, we just save information about characters.
 
 	info := buffer.Info
 	for i := range info {
@@ -83,12 +106,13 @@ func foundSyllableMyanmar(syllableType uint8, ts, te int, info []GlyphInfo, syll
 	}
 }
 
-func setupSyllablesMyanmar(_ *otShapePlan, _ *Font, buffer *Buffer) {
+func setupSyllablesMyanmar(_ *otShapePlan, _ *Font, buffer *Buffer) bool {
 	findSyllablesMyanmar(buffer)
 	iter, count := buffer.syllableIterator()
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		buffer.unsafeToBreak(start, end)
 	}
+	return false
 }
 
 /* Rules from:
@@ -101,9 +125,9 @@ func initialReorderingConsonantSyllableMyanmar(buffer *Buffer, start, end int) {
 
 	limit := start
 	if start+3 <= end &&
-		info[start].complexCategory == otRa &&
-		info[start+1].complexCategory == otAs &&
-		info[start+2].complexCategory == otH {
+		info[start].complexCategory == myaSM_ex_Ra &&
+		info[start+1].complexCategory == myaSM_ex_As &&
+		info[start+2].complexCategory == myaSM_ex_H {
 		limit += 3
 		base = start
 		hasReph = true
@@ -114,7 +138,7 @@ func initialReorderingConsonantSyllableMyanmar(buffer *Buffer, start, end int) {
 	}
 
 	for i := limit; i < end; i++ {
-		if isConsonant(&info[i]) {
+		if isConsonantMyanmar(&info[i]) {
 			base = i
 			break
 		}
@@ -140,33 +164,34 @@ func initialReorderingConsonantSyllableMyanmar(buffer *Buffer, start, end int) {
 	/* The following loop may be ugly, but it implements all of
 	 * Myanmar reordering! */
 	for ; i < end; i++ {
-		if info[i].complexCategory == otMR /* Pre-base reordering */ {
+		if info[i].complexCategory == myaSM_ex_MR /* Pre-base reordering */ {
 			info[i].complexAux = posPreC
 			continue
 		}
-		if info[i].complexAux < posBaseC /* Left matra */ {
+		if info[i].complexCategory == myaSM_ex_VPre /* Left matra */ {
+			info[i].complexAux = posPreM
 			continue
 		}
-		if info[i].complexCategory == otVS {
+		if info[i].complexCategory == myaSM_ex_VS {
 			info[i].complexAux = info[i-1].complexAux
 			continue
 		}
 
-		if pos == posAfterMain && info[i].complexCategory == otVBlw {
+		if pos == posAfterMain && info[i].complexCategory == myaSM_ex_VBlw {
 			pos = posBelowC
 			info[i].complexAux = pos
 			continue
 		}
 
-		if pos == posBelowC && info[i].complexCategory == otA {
+		if pos == posBelowC && info[i].complexCategory == myaSM_ex_A {
 			info[i].complexAux = posBeforeSub
 			continue
 		}
-		if pos == posBelowC && info[i].complexCategory == otVBlw {
+		if pos == posBelowC && info[i].complexCategory == myaSM_ex_VBlw {
 			info[i].complexAux = pos
 			continue
 		}
-		if pos == posBelowC && info[i].complexCategory != otA {
+		if pos == posBelowC && info[i].complexCategory != myaSM_ex_A {
 			pos = posAfterSub
 			info[i].complexAux = pos
 			continue
@@ -176,6 +201,31 @@ func initialReorderingConsonantSyllableMyanmar(buffer *Buffer, start, end int) {
 
 	/* Sit tight, rock 'n roll! */
 	buffer.sort(start, end, func(a, b *GlyphInfo) int { return int(a.complexAux) - int(b.complexAux) })
+
+	/* Flip left-matra sequence. */
+	firstLeftMatra := end
+	lastLeftMatra := end
+	for i := start; i < end; i++ {
+		if info[i].complexAux == posPreM {
+			if firstLeftMatra == end {
+				firstLeftMatra = i
+			}
+			lastLeftMatra = i
+		}
+	}
+	/* https://github.com/harfbuzz/harfbuzz/issues/3863 */
+	if firstLeftMatra < lastLeftMatra {
+		// No need to merge clusters, done already?
+		buffer.reverseRange(firstLeftMatra, lastLeftMatra+1)
+		// Reverse back VS, etc.
+		i := firstLeftMatra
+		for j := i; j <= lastLeftMatra; j++ {
+			if info[j].complexCategory == myaSM_ex_VPre {
+				buffer.reverseRange(i, j+1)
+				i = j + 1
+			}
+		}
+	}
 }
 
 func reorderSyllableMyanmar(buffer *Buffer, start, end int) {
@@ -187,119 +237,23 @@ func reorderSyllableMyanmar(buffer *Buffer, start, end int) {
 	}
 }
 
-func reorderMyanmar(_ *otShapePlan, font *Font, buffer *Buffer) {
-	if debugMode >= 1 {
-		fmt.Println("MYANMAR - start reordering myanmar")
+func reorderMyanmar(_ *otShapePlan, font *Font, buffer *Buffer) bool {
+	if debugMode {
+		fmt.Println("MYANMAR - start reordering myanmar", buffer.Info)
 	}
 
-	syllabicInsertDottedCircles(font, buffer, myanmarBrokenCluster, otGB, -1, -1)
+	ret := syllabicInsertDottedCircles(font, buffer, myanmarBrokenCluster, myaSM_ex_DOTTEDCIRCLE, -1, -1)
 
 	iter, count := buffer.syllableIterator()
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		reorderSyllableMyanmar(buffer, start, end)
 	}
 
-	if debugMode >= 1 {
-		fmt.Println("MYANMAR - end reordering myanmar")
-	}
-}
-
-/* Note: This enum is duplicated in the -machine.rl source file.
- * Not sure how to avoid duplication. */
-const (
-	otAs = 18  /* Asat */
-	otD0 = 20  /* Digit zero */
-	otDB = otN /* Dot below */
-	otGB = otPLACEHOLDER
-	otMH = 21 /* Various consonant medial types */
-	otMR = 22 /* Various consonant medial types */
-	otMW = 23 /* Various consonant medial types */
-	otMY = 24 /* Various consonant medial types */
-	otPT = 25 /* Pwo and other tones */
-	// otVAbv = 26
-	// otVBlw = 27
-	// otVPre = 28
-	// otVPst = 29
-	otVS = 30 /* Variation selectors */
-	otP  = 31 /* Punctuation */
-	otD  = 32 /* Digits except zero */
-	otML = 33 /* Various consonant medial types */
-)
-
-func computeMyanmarProperties(u rune) (cat, pos uint8) {
-	type_ := indicGetCategories(u)
-	cat = uint8(type_ & 0xFF)
-	pos = uint8(type_ >> 8)
-
-	/* Myanmar
-	* https://docs.microsoft.com/en-us/typography/script-development/myanmar#analyze */
-	if 0xFE00 <= u && u <= 0xFE0F {
-		cat = otVS
+	if debugMode {
+		fmt.Println("MYANMAR - end reordering myanmar", buffer.Info)
 	}
 
-	switch u {
-	case 0x104E:
-		cat = otC /* The spec says C, IndicSyllableCategory doesn't have. */
-	case 0x002D, 0x00A0, 0x00D7, 0x2012, 0x2013, 0x2014, 0x2015, 0x2022,
-		0x25CC, 0x25FB, 0x25FC, 0x25FD, 0x25FE:
-		cat = otGB
-	case 0x1004, 0x101B, 0x105A:
-		cat = otRa
-	case 0x1032, 0x1036:
-		cat = otA
-	case 0x1039:
-		cat = otH
-	case 0x103A:
-		cat = otAs
-	case 0x1041, 0x1042, 0x1043, 0x1044, 0x1045, 0x1046, 0x1047, 0x1048,
-		0x1049, 0x1090, 0x1091, 0x1092, 0x1093, 0x1094, 0x1095, 0x1096, 0x1097, 0x1098, 0x1099:
-		cat = otD
-	case 0x1040:
-		cat = otD /* The spec says D0, but Uniscribe doesn't seem to do. */
-	case 0x103E:
-		cat = otMH
-	case 0x1060:
-		cat = otML
-	case 0x103C:
-		cat = otMR
-	case 0x103D, 0x1082:
-		cat = otMW
-	case 0x103B, 0x105E, 0x105F:
-		cat = otMY
-	case 0x1063, 0x1064, 0x1069, 0x106A, 0x106B, 0x106C, 0x106D, 0xAA7B:
-		cat = otPT
-	case 0x1038, 0x1087, 0x1088, 0x1089, 0x108A, 0x108B, 0x108C, 0x108D,
-		0x108F, 0x109A, 0x109B, 0x109C:
-		cat = otSM
-	case 0x104A, 0x104B:
-		cat = otP
-	case 0xAA74, 0xAA75, 0xAA76:
-		/* https://github.com/harfbuzz/harfbuzz/issues/218 */
-		cat = otC
-	}
-
-	if cat == otM {
-		switch pos {
-		case posPreC:
-			cat = otVPre
-			pos = posPreM
-		case posAboveC:
-			cat = otVAbv
-		case posBelowC:
-			cat = otVBlw
-		case posPostC:
-			cat = otVPst
-		}
-	}
-
-	return cat, pos
-}
-
-func setMyanmarProperties(info *GlyphInfo) {
-	u := info.codepoint
-	cat, pos := computeMyanmarProperties(u)
-	info.complexCategory = cat
-	info.complexAux = pos
+	return ret
 }
 
 func (complexShaperMyanmar) marksBehavior() (zeroWidthMarks, bool) {

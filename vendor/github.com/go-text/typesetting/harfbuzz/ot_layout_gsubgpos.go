@@ -83,7 +83,7 @@ type getSubtablesContext []applicable
 // one for GSUB, one for GPOS (known at compile time)
 type otProxyMeta struct {
 	recurseFunc recurseFunc
-	tableIndex  int
+	tableIndex  uint8 // 0 for GSUB, 1 for GPOS
 	inplace     bool
 }
 
@@ -126,7 +126,7 @@ func matchCoverage(covs []tables.Coverage) matcherFunc {
 }
 
 const (
-	no = iota
+	no uint8 = iota
 	yes
 	maybe
 )
@@ -137,7 +137,16 @@ type otApplyContextMatcher struct {
 	mask        GlyphMask
 	ignoreZWNJ  bool
 	ignoreZWJ   bool
+	perSyllable bool
 	syllable    uint8
+}
+
+func (m *otApplyContextMatcher) setSyllable(syllable uint8) {
+	if m.perSyllable {
+		m.syllable = syllable
+	} else {
+		m.syllable = 0
+	}
 }
 
 func (m otApplyContextMatcher) mayMatch(info *GlyphInfo, glyphData []uint16) uint8 {
@@ -194,12 +203,10 @@ func (it *skippingIterator) init(c *otApplyContext, contextMatch bool) {
 	} else {
 		it.matcher.mask = c.lookupMask
 	}
+	// Per syllable matching is only for GSUB.
+	it.matcher.perSyllable = c.tableIndex == 0 && c.perSyllable
+	it.matcher.setSyllable(0)
 }
-
-// 	 void set_lookup_props (uint lookupProps)
-// 	 {
-// 	   matcher.set_lookup_props (lookupProps);
-// 	 }
 
 func (it *skippingIterator) setMatchFunc(matchFunc matcherFunc, glyphData []uint16) {
 	it.matcher.matchFunc = matchFunc
@@ -212,51 +219,77 @@ func (it *skippingIterator) reset(startIndex, numItems int) {
 	it.numItems = numItems
 	it.end = len(it.c.buffer.Info)
 	if startIndex == it.c.buffer.idx {
-		it.matcher.syllable = it.c.buffer.cur(0).syllable
+		it.matcher.setSyllable(it.c.buffer.cur(0).syllable)
 	} else {
-		it.matcher.syllable = 0
-	}
-}
-
-func (it *skippingIterator) reject() {
-	it.numItems++
-	if len(it.matchGlyphDataArray) != 0 {
-		it.matchGlyphDataStart--
+		it.matcher.setSyllable(0)
 	}
 }
 
 func (it *skippingIterator) maySkip(info *GlyphInfo) uint8 { return it.matcher.maySkip(it.c, info) }
 
-func (it *skippingIterator) next() bool {
-	for it.idx+it.numItems < it.end {
+type matchRes uint8
+
+const (
+	match matchRes = iota
+	notMatch
+	skip
+)
+
+func (it *skippingIterator) match(info *GlyphInfo) matchRes {
+	skipR := it.matcher.maySkip(it.c, info)
+	if skipR == yes {
+		return skip
+	}
+
+	matchR := it.matcher.mayMatch(info, it.matchGlyphDataArray[it.matchGlyphDataStart:])
+	if matchR == yes || (matchR == maybe && skipR == no) {
+		return match
+	}
+
+	if skipR == no {
+		return notMatch
+	}
+
+	return skip
+}
+
+func (it *skippingIterator) next() (_ bool, unsafeTo int) {
+	// The alternate condition below is faster at string boundaries,
+	// but produces subpar "unsafe-to-concat" values.
+	stop := it.end - it.numItems
+	if (it.c.buffer.Flags & ProduceUnsafeToConcat) != 0 {
+		stop = it.end - 1
+	}
+
+	for it.idx < stop {
 		it.idx++
 		info := &it.c.buffer.Info[it.idx]
-
-		skip := it.matcher.maySkip(it.c, info)
-		if skip == yes {
-			continue
-		}
-
-		match := it.matcher.mayMatch(info, it.matchGlyphDataArray[it.matchGlyphDataStart:])
-		if match == yes || (match == maybe && skip == no) {
+		switch it.match(info) {
+		case match:
 			it.numItems--
 			if len(it.matchGlyphDataArray) != 0 {
 				it.matchGlyphDataStart++
 			}
-			return true
-		}
-
-		if skip == no {
-			return false
+			return true, 0
+		case notMatch:
+			return false, it.idx + 1
+		case skip:
+			continue
 		}
 	}
-	return false
+	return false, it.end
 }
 
-func (it *skippingIterator) prev() bool {
+func (it *skippingIterator) prev() (_ bool, unsafeFrom int) {
+	// The alternate condition below is faster at string boundaries,
+	// but produces subpar "unsafe-to-concat" values.
+	stop := it.numItems - 1
+	if (it.c.buffer.Flags & ProduceUnsafeToConcat) != 0 {
+		stop = 0
+	}
+
 	L := len(it.c.buffer.outInfo)
-	//    assert (num_items > 0);
-	for it.idx > it.numItems-1 {
+	for it.idx > stop {
 		it.idx--
 		var info *GlyphInfo
 		if it.idx < L {
@@ -267,25 +300,20 @@ func (it *skippingIterator) prev() bool {
 			info = &it.c.buffer.Info[it.idx]
 		}
 
-		skip := it.matcher.maySkip(it.c, info)
-		if skip == yes {
-			continue
-		}
-
-		match := it.matcher.mayMatch(info, it.matchGlyphDataArray[it.matchGlyphDataStart:])
-		if match == yes || (match == maybe && skip == no) {
+		switch it.match(info) {
+		case match:
 			it.numItems--
 			if len(it.matchGlyphDataArray) != 0 {
 				it.matchGlyphDataStart++
 			}
-			return true
-		}
-
-		if skip == no {
-			return false
+			return true, 0
+		case notMatch:
+			return false, max(1, it.idx) - 1
+		case skip:
+			continue
 		}
 	}
-	return false
+	return false, 0
 }
 
 type recurseFunc = func(c *otApplyContext, lookupIndex uint16) bool
@@ -299,11 +327,13 @@ type otApplyContext struct {
 	varStore    tables.ItemVarStore
 	indices     []uint16 // see get1N()
 
+	digest setDigest
+
 	iterContext skippingIterator
 	iterInput   skippingIterator
 
 	nestingLevelLeft int
-	tableIndex       int
+	tableIndex       uint8 // 0 for GSUB, 1 for GPOS
 	lookupMask       GlyphMask
 	lookupProps      uint32
 	randomState      uint32
@@ -313,15 +343,21 @@ type otApplyContext struct {
 	hasGlyphClasses bool
 	autoZWNJ        bool
 	autoZWJ         bool
+	perSyllable     bool
+	newSyllables    uint8 // 0xFF for undefined
 	random          bool
+
+	lastBase      int // GPOS uses
+	lastBaseUntil int // GPOS uses
 }
 
-func newOtApplyContext(tableIndex int, font *Font, buffer *Buffer) otApplyContext {
+func newOtApplyContext(tableIndex uint8, font *Font, buffer *Buffer) otApplyContext {
 	var out otApplyContext
 	out.font = font
 	out.buffer = buffer
 	out.gdef = font.face.GDEF
 	out.varStore = out.gdef.ItemVarStore
+	out.digest = buffer.digest()
 	out.direction = buffer.Props.Direction
 	out.lookupMask = 1
 	out.tableIndex = tableIndex
@@ -331,7 +367,8 @@ func newOtApplyContext(tableIndex int, font *Font, buffer *Buffer) otApplyContex
 	out.autoZWNJ = true
 	out.autoZWJ = true
 	out.randomState = 1
-
+	out.newSyllables = 0xFF
+	out.lastBase = -1
 	out.initIters()
 	return out
 }
@@ -343,16 +380,6 @@ func (c *otApplyContext) initIters() {
 
 func (c *otApplyContext) setLookupMask(mask GlyphMask) {
 	c.lookupMask = mask
-	c.initIters()
-}
-
-func (c *otApplyContext) setAutoZWNJ(autoZwnj bool) {
-	c.autoZWNJ = autoZwnj
-	c.initIters()
-}
-
-func (c *otApplyContext) setAutoZWJ(autoZwj bool) {
-	c.autoZWJ = autoZwj
 	c.initIters()
 }
 
@@ -413,35 +440,45 @@ func (c *otApplyContext) matchPropertiesMark(glyph GID, glyphProps uint16, match
 	return true
 }
 
-func (c *otApplyContext) setGlyphProps(glyphIndex GID) {
-	c.setGlyphPropsExt(glyphIndex, 0, false, false)
+func (c *otApplyContext) setGlyphClass(glyphIndex GID) {
+	c.setGlyphClassExt(glyphIndex, 0, false, false)
 }
 
-func (c *otApplyContext) setGlyphPropsExt(glyphIndex GID, classGuess uint16, ligature, component bool) {
-	addIn := c.buffer.cur(0).glyphProps & preserve
-	addIn |= substituted
+func (c *otApplyContext) setGlyphClassExt(glyphIndex_ GID, classGuess uint16, ligature, component bool) {
+	glyphIndex := gID(glyphIndex_)
+
+	c.digest.add(glyphIndex)
+
+	if c.newSyllables != 0xFF {
+		c.buffer.cur(0).syllable = c.newSyllables
+	}
+
+	props := c.buffer.cur(0).glyphProps | substituted
 	if ligature {
-		addIn |= ligated
-		/* In the only place that the MULTIPLIED bit is used, Uniscribe
-		* seems to only care about the "last" transformation between
-		* Ligature and Multiple substitutions.  Ie. if you ligate, expand,
-		* and ligate again, it forgives the multiplication and acts as
-		* if only ligation happened.  As such, clear MULTIPLIED bit.
-		 */
-		addIn &= ^multiplied
+		props |= ligated
+		// In the only place that the MULTIPLIED bit is used, Uniscribe
+		// seems to only care about the "last" transformation between
+		// Ligature and Multiple substitutions.  Ie. if you ligate, expand,
+		// and ligate again, it forgives the multiplication and acts as
+		// if only ligation happened.  As such, clear MULTIPLIED bit.
+		props &= ^multiplied
 	}
 	if component {
-		addIn |= multiplied
+		props |= multiplied
 	}
 	if c.hasGlyphClasses {
-		c.buffer.cur(0).glyphProps = addIn | c.gdef.GlyphProps(gID(glyphIndex))
+		props &= preserve
+		c.buffer.cur(0).glyphProps = props | c.gdef.GlyphProps(glyphIndex)
 	} else if classGuess != 0 {
-		c.buffer.cur(0).glyphProps = addIn | classGuess
+		props &= preserve
+		c.buffer.cur(0).glyphProps = props | classGuess
+	} else {
+		c.buffer.cur(0).glyphProps = props
 	}
 }
 
 func (c *otApplyContext) replaceGlyph(glyphIndex GID) {
-	c.setGlyphProps(glyphIndex)
+	c.setGlyphClass(glyphIndex)
 	c.buffer.replaceGlyphIndex(glyphIndex)
 }
 
@@ -465,7 +502,7 @@ func (c *otApplyContext) applyRuleSet(ruleSet tables.SequenceRuleSet, match matc
 func (c *otApplyContext) applyChainRuleSet(ruleSet tables.ChainedClassSequenceRuleSet, match [3]matcherFunc) bool {
 	for i, rule := range ruleSet.ChainedSeqRules {
 
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Println("APPLY - chain rule number", i)
 		}
 
@@ -479,15 +516,17 @@ func (c *otApplyContext) applyChainRuleSet(ruleSet tables.ChainedClassSequenceRu
 
 // `input` starts with second glyph (`inputCount` = len(input)+1)
 func (c *otApplyContext) contextApplyLookup(input []uint16, lookupRecord []tables.SequenceLookupRecord, lookupContext matcherFunc) bool {
-	matchLength := 0
+	matchEnd := 0
 	var matchPositions [maxContextLength]int
-	hasMatch, matchLength, _ := c.matchInput(input, lookupContext, &matchPositions)
-	if !hasMatch {
+	hasMatch, matchEnd, _ := c.matchInput(input, lookupContext, &matchPositions)
+	if hasMatch {
+		c.buffer.unsafeToBreak(c.buffer.idx, matchEnd)
+		c.applyLookup(len(input)+1, &matchPositions, lookupRecord, matchEnd)
+		return true
+	} else {
+		c.buffer.unsafeToConcat(c.buffer.idx, matchEnd)
 		return false
 	}
-	c.buffer.unsafeToBreak(c.buffer.idx, c.buffer.idx+matchLength)
-	c.applyLookup(len(input)+1, &matchPositions, lookupRecord, matchLength)
-	return true
 }
 
 //	`input` starts with second glyph (`inputCount` = len(input)+1)
@@ -498,23 +537,27 @@ func (c *otApplyContext) chainContextApplyLookup(backtrack, input, lookahead []u
 ) bool {
 	var matchPositions [maxContextLength]int
 
-	hasMatch, matchLength, _ := c.matchInput(input, lookupContexts[1], &matchPositions)
+	hasMatch, matchEnd, _ := c.matchInput(input, lookupContexts[1], &matchPositions)
+	endIndex := matchEnd
+	if !(hasMatch && endIndex != 0) {
+		c.buffer.unsafeToConcat(c.buffer.idx, endIndex)
+		return false
+	}
+
+	hasMatch, endIndex = c.matchLookahead(lookahead, lookupContexts[2], matchEnd)
 	if !hasMatch {
+		c.buffer.unsafeToConcat(c.buffer.idx, endIndex)
 		return false
 	}
 
 	hasMatch, startIndex := c.matchBacktrack(backtrack, lookupContexts[0])
 	if !hasMatch {
-		return false
-	}
-
-	hasMatch, endIndex := c.matchLookahead(lookahead, lookupContexts[2], matchLength)
-	if !hasMatch {
+		c.buffer.unsafeToConcatFromOutbuffer(startIndex, endIndex)
 		return false
 	}
 
 	c.buffer.unsafeToBreakFromOutbuffer(startIndex, endIndex)
-	c.applyLookup(len(input)+1, &matchPositions, lookupRecord, matchLength)
+	c.applyLookup(len(input)+1, &matchPositions, lookupRecord, matchEnd)
 	return true
 }
 
@@ -603,7 +646,7 @@ func (c *wouldApplyContext) wouldMatchInput(input []uint16, matchFunc matcherFun
 // `input` starts with second glyph (`inputCount` = len(input)+1)
 func (c *otApplyContext) matchInput(input []uint16, matchFunc matcherFunc,
 	matchPositions *[maxContextLength]int,
-) (bool, int, uint8) {
+) (_ bool, endPosition int, totalComponentCount uint8) {
 	count := len(input) + 1
 	if count > maxContextLength {
 		return false, 0, 0
@@ -637,8 +680,6 @@ func (c *otApplyContext) matchInput(input []uint16, matchFunc matcherFunc,
 	*     https://github.com/harfbuzz/harfbuzz/issues/545
 	 */
 
-	totalComponentCount := buffer.cur(0).getLigNumComps()
-
 	firstLigID := buffer.cur(0).getLigID()
 	firstLigComp := buffer.cur(0).getLigComp()
 
@@ -648,10 +689,9 @@ func (c *otApplyContext) matchInput(input []uint16, matchFunc matcherFunc,
 		ligbaseMaySkip
 	)
 	ligbase := ligbaseNotChecked
-	matchPositions[0] = buffer.idx
 	for i := 1; i < count; i++ {
-		if !skippyIter.next() {
-			return false, 0, 0
+		if ok, unsafeTo := skippyIter.next(); !ok {
+			return false, unsafeTo, 0
 		}
 
 		matchPositions[i] = skippyIter.idx
@@ -701,18 +741,20 @@ func (c *otApplyContext) matchInput(input []uint16, matchFunc matcherFunc,
 		totalComponentCount += buffer.Info[skippyIter.idx].getLigNumComps()
 	}
 
-	endOffset := skippyIter.idx - buffer.idx + 1
+	endPosition = skippyIter.idx + 1
+	totalComponentCount += buffer.cur(0).getLigNumComps()
+	matchPositions[0] = buffer.idx
 
-	return true, endOffset, totalComponentCount
+	return true, endPosition, totalComponentCount
 }
 
 // `count` and `matchPositions` include the first glyph
 func (c *otApplyContext) ligateInput(count int, matchPositions [maxContextLength]int,
-	matchLength int, ligGlyph gID, totalComponentCount uint8,
+	matchEnd int, ligGlyph gID, totalComponentCount uint8,
 ) {
 	buffer := c.buffer
 
-	buffer.mergeClusters(buffer.idx, buffer.idx+matchLength)
+	buffer.mergeClusters(buffer.idx, matchEnd)
 
 	/* - If a base and one or more marks ligate, consider that as a base, NOT
 	*   ligature, such that all following marks can still attach to it.
@@ -774,7 +816,7 @@ func (c *otApplyContext) ligateInput(count int, matchPositions [maxContextLength
 	}
 
 	// ReplaceGlyph_with_ligature
-	c.setGlyphPropsExt(GID(ligGlyph), klass, true, false)
+	c.setGlyphClassExt(GID(ligGlyph), klass, true, false)
 	buffer.replaceGlyphIndex(GID(ligGlyph))
 
 	for i := 1; i < count; i++ {
@@ -845,7 +887,7 @@ func (c *otApplyContext) applyLookup(count int, matchPositions *[maxContextLengt
 	* Adjust. */
 	{
 		bl := buffer.backtrackLen()
-		end = bl + matchLength
+		end = bl + matchLength - buffer.idx
 
 		delta := bl - buffer.idx
 		/* Convert positions to new indexing. */
@@ -860,9 +902,10 @@ func (c *otApplyContext) applyLookup(count int, matchPositions *[maxContextLengt
 			continue
 		}
 
-		/* Don't recurse to ourself at same position.
-		 * Note that this test is too naive, it doesn't catch longer loops. */
-		if idx == 0 && lk.LookupListIndex == c.lookupIndex {
+		origLen := buffer.backtrackLen() + buffer.lookaheadLen()
+
+		// This can happen if earlier recursed lookups deleted many entries.
+		if matchPositions[idx] >= origLen {
 			continue
 		}
 
@@ -872,9 +915,7 @@ func (c *otApplyContext) applyLookup(count int, matchPositions *[maxContextLengt
 			break
 		}
 
-		origLen := buffer.backtrackLen() + buffer.lookaheadLen()
-
-		if debugMode >= 2 {
+		if debugMode {
 			fmt.Printf("\t\tAPPLY nested lookup %d\n", lk.LookupListIndex)
 		}
 
@@ -889,42 +930,44 @@ func (c *otApplyContext) applyLookup(count int, matchPositions *[maxContextLengt
 			continue
 		}
 
-		/* Recursed lookup changed buffer len. Adjust.
-		 *
-		 * TODO:
-		 *
-		 * Right now, if buffer length increased by n, we assume n new glyphs
-		 * were added right after the current position, and if buffer length
-		 * was decreased by n, we assume n match positions after the current
-		 * one where removed.  The former (buffer length increased) case is
-		 * fine, but the decrease case can be improved in at least two ways,
-		 * both of which are significant:
-		 *
-		 *   - If recursed-to lookup is MultipleSubst and buffer length
-		 *     decreased, then it's current match position that was deleted,
-		 *     NOT the one after it.
-		 *
-		 *   - If buffer length was decreased by n, it does not necessarily
-		 *     mean that n match positions where removed, as there might
-		 *     have been marks and default-ignorables in the sequence.  We
-		 *     should instead drop match positions between current-position
-		 *     and current-position + n instead.
-		 *
-		 * It should be possible to construct tests for both of these cases.
-		 */
-
+		// Recursed lookup changed buffer len. Adjust.
+		//
+		// TODO:
+		//
+		// Right now, if buffer length increased by n, we assume n new glyphs
+		// were added right after the current position, and if buffer length
+		// was decreased by n, we assume n match positions after the current
+		// one where removed.  The former (buffer length increased) case is
+		// fine, but the decrease case can be improved in at least two ways,
+		// both of which are significant:
+		//
+		//   - If recursed-to lookup is MultipleSubst and buffer length
+		//     decreased, then it's current match position that was deleted,
+		//     NOT the one after it.
+		//
+		//   - If buffer length was decreased by n, it does not necessarily
+		//     mean that n match positions where removed, as there recursed-to
+		//     lookup might had a different LookupFlag.  Here's a constructed
+		//     case of that:
+		//     https://github.com/harfbuzz/harfbuzz/discussions/3538
+		//
+		// It should be possible to construct tests for both of these cases.
+		//
 		end += delta
-		if end <= int(matchPositions[idx]) {
-			/* End might end up being smaller than matchPositions[idx] if the recursed
-			* lookup ended up removing many items, more than we have had matched.
-			* Just never rewind end back and get out of here.
-			* https://bugs.chromium.org/p/chromium/issues/detail?id=659496 */
+		if end < int(matchPositions[idx]) {
+			// End might end up being smaller than match_positions[idx] if the recursed
+			// lookup ended up removing many items.
+			// Just never rewind end beyond start of current position, since that is
+			// not possible in the recursed lookup.  Also adjust delta as such.
+			//
+			// https://bugs.chromium.org/p/chromium/issues/detail?id=659496
+			// https://github.com/harfbuzz/harfbuzz/issues/1611
+			//
+			delta += matchPositions[idx] - end
 			end = matchPositions[idx]
-			/* There can't be any further changes. */
-			break
 		}
 
-		next := idx + 1 /* next now is the position after the recursed lookup. */
+		next := idx + 1 // next now is the position after the recursed lookup.
 
 		if delta > 0 {
 			if delta+count > maxContextLength {
@@ -956,28 +999,28 @@ func (c *otApplyContext) applyLookup(count int, matchPositions *[maxContextLengt
 	buffer.moveTo(end)
 }
 
-func (c *otApplyContext) matchBacktrack(backtrack []uint16, matchFunc matcherFunc) (bool, int) {
+func (c *otApplyContext) matchBacktrack(backtrack []uint16, matchFunc matcherFunc) (_ bool, matchStart int) {
 	skippyIter := &c.iterContext
 	skippyIter.reset(c.buffer.backtrackLen(), len(backtrack))
 	skippyIter.setMatchFunc(matchFunc, backtrack)
 
 	for i := 0; i < len(backtrack); i++ {
-		if !skippyIter.prev() {
-			return false, 0
+		if ok, unsafeFrom := skippyIter.prev(); !ok {
+			return false, unsafeFrom
 		}
 	}
 
 	return true, skippyIter.idx
 }
 
-func (c *otApplyContext) matchLookahead(lookahead []uint16, matchFunc matcherFunc, offset int) (bool, int) {
+func (c *otApplyContext) matchLookahead(lookahead []uint16, matchFunc matcherFunc, startIndex int) (_ bool, endIndex int) {
 	skippyIter := &c.iterContext
-	skippyIter.reset(c.buffer.idx+offset-1, len(lookahead))
+	skippyIter.reset(startIndex-1, len(lookahead))
 	skippyIter.setMatchFunc(matchFunc, lookahead)
 
 	for i := 0; i < len(lookahead); i++ {
-		if !skippyIter.next() {
-			return false, 0
+		if ok, unsafeTo := skippyIter.next(); !ok {
+			return false, unsafeTo
 		}
 	}
 

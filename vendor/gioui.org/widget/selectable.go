@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 
+	"gioui.org/font"
 	"gioui.org/gesture"
 	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
@@ -56,9 +57,17 @@ type Selectable struct {
 	MaxLines int
 	// Truncator is the symbol to use at the end of the final line of text
 	// if text was cut off. Defaults to "…" if left empty.
-	Truncator   string
-	initialized bool
-	source      stringSource
+	Truncator string
+	// WrapPolicy configures how displayed text will be broken into lines.
+	WrapPolicy text.WrapPolicy
+	// LineHeight controls the distance between the baselines of lines of text.
+	// If zero, a sensible default will be used.
+	LineHeight unit.Sp
+	// LineHeightScale applies a scaling factor to the LineHeight. If zero, a
+	// sensible default will be used.
+	LineHeightScale float32
+	initialized     bool
+	source          stringSource
 	// scratch is a buffer reused to efficiently read text out of the
 	// textView.
 	scratch      []byte
@@ -176,11 +185,14 @@ func (l *Selectable) Truncated() bool {
 // Layout clips to the dimensions of the selectable, updates the shaped text, configures input handling, and paints
 // the text and selection rectangles. The provided textMaterial and selectionMaterial ops are used to set the
 // paint material for the text and selection rectangles, respectively.
-func (l *Selectable) Layout(gtx layout.Context, lt *text.Shaper, font text.Font, size unit.Sp, textMaterial, selectionMaterial op.CallOp) layout.Dimensions {
+func (l *Selectable) Layout(gtx layout.Context, lt *text.Shaper, font font.Font, size unit.Sp, textMaterial, selectionMaterial op.CallOp) layout.Dimensions {
 	l.initialize()
+	l.text.LineHeight = l.LineHeight
+	l.text.LineHeightScale = l.LineHeightScale
 	l.text.Alignment = l.Alignment
 	l.text.MaxLines = l.MaxLines
 	l.text.Truncator = l.Truncator
+	l.text.WrapPolicy = l.WrapPolicy
 	l.text.Update(gtx, lt, font, size, l.handleEvents)
 	dims := l.text.Dimensions()
 	defer clip.Rect(image.Rectangle{Max: dims.Size}).Push(gtx.Ops).Pop()

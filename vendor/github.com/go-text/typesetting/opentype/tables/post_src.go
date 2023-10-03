@@ -14,7 +14,7 @@ type Post struct {
 	UnderlineThickness int16
 	// IsFixedPitch indicates that the font is not proportionally spaced
 	// (i.e. monospaced).
-	isFixedPitch uint32
+	IsFixedPitch uint32
 	memoryUsage  [4]uint32
 	Names        PostNames `unionField:"version"`
 }

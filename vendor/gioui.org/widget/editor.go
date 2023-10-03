@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"gioui.org/f32"
+	"gioui.org/font"
 	"gioui.org/gesture"
 	"gioui.org/io/clipboard"
 	"gioui.org/io/event"
@@ -34,6 +35,12 @@ type Editor struct {
 	text textView
 	// Alignment controls the alignment of text within the editor.
 	Alignment text.Alignment
+	// LineHeight determines the gap between baselines of text. If zero, a sensible
+	// default will be used.
+	LineHeight unit.Sp
+	// LineHeightScale is multiplied by LineHeight to determine the final gap
+	// between baselines. If zero, a sensible default will be used.
+	LineHeightScale float32
 	// SingleLine force the text to stay on a single line.
 	// SingleLine also sets the scrolling direction to
 	// horizontal.
@@ -56,6 +63,8 @@ type Editor struct {
 	// Filter is the list of characters allowed in the Editor. If Filter is empty,
 	// all characters are allowed.
 	Filter string
+	// WrapPolicy configures how displayed text will be broken into lines.
+	WrapPolicy text.WrapPolicy
 
 	buffer *editBuffer
 	// scratch is a byte buffer that is reused to efficiently read portions of text
@@ -501,14 +510,17 @@ func (e *Editor) initBuffer() {
 		e.text.SetSource(e.buffer)
 	}
 	e.text.Alignment = e.Alignment
+	e.text.LineHeight = e.LineHeight
+	e.text.LineHeightScale = e.LineHeightScale
 	e.text.SingleLine = e.SingleLine
 	e.text.Mask = e.Mask
+	e.text.WrapPolicy = e.WrapPolicy
 }
 
 // Layout lays out the editor using the provided textMaterial as the paint material
 // for the text glyphs+caret and the selectMaterial as the paint material for the
 // selection rectangle.
-func (e *Editor) Layout(gtx layout.Context, lt *text.Shaper, font text.Font, size unit.Sp, textMaterial, selectMaterial op.CallOp) layout.Dimensions {
+func (e *Editor) Layout(gtx layout.Context, lt *text.Shaper, font font.Font, size unit.Sp, textMaterial, selectMaterial op.CallOp) layout.Dimensions {
 	e.initBuffer()
 	e.text.Update(gtx, lt, font, size, e.processEvents)
 
@@ -738,10 +750,11 @@ func (e *Editor) CaretCoords() f32.Point {
 	return e.text.CaretCoords()
 }
 
-// Delete runes from the caret position. The sign of runes specifies the
+// Delete runes from the caret position. The sign of the argument specifies the
 // direction to delete: positive is forward, negative is backward.
 //
-// If there is a selection, it is deleted and counts as a single rune.
+// If there is a selection, it is deleted and counts as a single grapheme
+// cluster.
 func (e *Editor) Delete(graphemeClusters int) {
 	e.initBuffer()
 	if graphemeClusters == 0 {

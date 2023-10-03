@@ -157,7 +157,7 @@ func (mw *masterWindow) main() {
 						atomic.StoreInt32(&mw.ctx.changed, 2)
 					}
 					// apparently gio only produces a release event for the tab key? bug?
-					if e.State == key.Press || (e.Name == key.NameTab) {
+					if e.State == key.Press {
 						mw.uilock.Lock()
 						switch e.Name {
 						case key.NameEnter, key.NameReturn:
@@ -421,6 +421,7 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool, perfString st
 	// Register for all pointer inputs on the current clip area.
 	pointer.InputOp{ctx, false, pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Scroll, image.Rect(-4096, -4096, 4096, 4096)}.Add(ops)
 	key.InputOp{ctx, key.HintAny, ""}.Add(ops)
+	key.InputOp{ctx, key.HintAny, "Tab"}.Add(ops)
 	key.FocusOp{ctx}.Add(ops)
 	areaStack.Pop()
 

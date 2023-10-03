@@ -80,7 +80,7 @@ func (planner *otShapePlanner) categorizeComplex() otComplexShaper {
 	case language.Hebrew:
 		return complexShaperHebrew{}
 	case language.Bengali, language.Devanagari, language.Gujarati, language.Gurmukhi, language.Kannada,
-		language.Malayalam, language.Oriya, language.Tamil, language.Telugu, language.Sinhala:
+		language.Malayalam, language.Oriya, language.Tamil, language.Telugu:
 		/* If the designer designed the font for the 'DFLT' script,
 		 * (or we ended up arbitrarily pick 'latn'), use the default shaper.
 		 * Otherwise, use the specific shaper.
@@ -116,7 +116,7 @@ func (planner *otShapePlanner) categorizeComplex() otComplexShaper {
 		 * https://github.com/harfbuzz/harfbuzz/issues/1162 */
 		return complexShaperDefault{dumb: true, disableNorm: true}
 	case language.Tibetan,
-		language.Mongolian,
+		language.Mongolian, language.Sinhala,
 		language.Buhid, language.Hanunoo, language.Tagalog, language.Tagbanwa,
 		language.Limbu, language.Tai_Le,
 		language.Buginese, language.Kharoshthi, language.Syloti_Nagri, language.Tifinagh,
@@ -196,26 +196,18 @@ func (cs complexShaperDefault) normalizationPreference() normalizationMode {
 
 func syllabicInsertDottedCircles(font *Font, buffer *Buffer, brokenSyllableType,
 	dottedcircleCategory uint8, rephaCategory, dottedCirclePosition int,
-) {
+) bool {
 	if (buffer.Flags & DoNotinsertDottedCircle) != 0 {
-		return
+		return false
 	}
 
-	hasBrokenSyllables := false
-	info := buffer.Info
-	for _, inf := range info {
-		if (inf.syllable & 0x0F) == brokenSyllableType {
-			hasBrokenSyllables = true
-			break
-		}
-	}
-	if !hasBrokenSyllables {
-		return
+	if (buffer.scratchFlags & bsfHasBrokenSyllable) == 0 {
+		return false
 	}
 
 	dottedcircleGlyph, ok := font.face.NominalGlyph(0x25CC)
 	if !ok {
-		return
+		return false
 	}
 
 	dottedcircle := GlyphInfo{
@@ -255,4 +247,5 @@ func syllabicInsertDottedCircles(font *Font, buffer *Buffer, brokenSyllableType,
 		}
 	}
 	buffer.swapBuffers()
+	return true
 }

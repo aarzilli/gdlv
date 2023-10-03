@@ -221,12 +221,6 @@ func (q *Router) queueKeyEvent(e key.Event) {
 		n := &pq.hitTree[idx]
 		if focused {
 			idx = n.next
-			if idx == -1 {
-				// No handler found in focus ancestor tree.
-				// Try all handlers.
-				idx = len(pq.hitTree) - 1
-				focused = false
-			}
 		} else {
 			idx--
 		}
@@ -538,11 +532,11 @@ func (q *Router) collect() {
 
 		// Semantic ops.
 		case ops.TypeSemanticLabel:
-			lbl := encOp.Refs[0].(*string)
-			pc.semanticLabel(*lbl)
+			lbl := encOp.Refs[0].(string)
+			pc.semanticLabel(lbl)
 		case ops.TypeSemanticDesc:
-			desc := encOp.Refs[0].(*string)
-			pc.semanticDesc(*desc)
+			desc := encOp.Refs[0].(string)
+			pc.semanticDesc(desc)
 		case ops.TypeSemanticClass:
 			class := semantic.ClassOp(encOp.Data[1])
 			pc.semanticClass(class)

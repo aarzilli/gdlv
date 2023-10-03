@@ -244,11 +244,12 @@ func doThaiPuaShaping(buffer *Buffer, font *Font) {
 func isSaraAm(x rune) bool           { return x & ^0x0080 == 0x0E33 }
 func nikhahitFromSaraAm(x rune) rune { return x - 0x0E33 + 0x0E4D }
 func saraAaFromSaraAm(x rune) rune   { return x - 1 }
-func isToneMark(x rune) bool {
+func isAboveBaseMark(x rune) bool {
 	u := x & ^0x0080
 	return 0x0E34 <= u && u <= 0x0E37 ||
 		0x0E47 <= u && u <= 0x0E4E ||
-		0x0E31 <= u && u <= 0x0E31
+		u == 0x0E31 ||
+		u == 0x0E3B
 }
 
 /* This function implements the shaping logic documented here:
@@ -260,43 +261,43 @@ func isToneMark(x rune) bool {
  * We implement that only if there exist no Thai GSUB in the font.
  */
 func (complexShaperThai) preprocessText(plan *otShapePlan, buffer *Buffer, font *Font) {
-	/* The following is NOT specified in the MS OT Thai spec, however, it seems
-	* to be what Uniscribe and other engines implement.  According to Eric Muller:
-	*
-	* When you have a SARA AM, decompose it in NIKHAHIT + SARA AA, *and* move the
-	* NIKHAHIT backwards over any tone mark (0E48-0E4B).
-	*
-	* <0E14, 0E4B, 0E33> . <0E14, 0E4D, 0E4B, 0E32>
-	*
-	* This reordering is legit only when the NIKHAHIT comes from a SARA AM, not
-	* when it's there to start with. The string <0E14, 0E4B, 0E4D> is probably
-	* not what a user wanted, but the rendering is nevertheless nikhahit above
-	* chattawa.
-	*
-	* Same for Lao.
-	*
-	* Note:
-	*
-	* Uniscribe also does some below-marks reordering.  Namely, it positions U+0E3A
-	* after U+0E38 and U+0E39.  We do that by modifying the ccc for U+0E3A.
-	* See unicode.modified_combining_class ().  Lao does NOT have a U+0E3A
-	* equivalent.
-	 */
+	// The following is NOT specified in the MS OT Thai spec, however, it seems
+	// to be what Uniscribe and other engines implement.  According to Eric Muller:
+	//
+	// When you have a SARA AM, decompose it in NIKHAHIT + SARA AA, *and* move the
+	// NIKHAHIT backwards over any above-base marks.
+	//
+	// <0E14, 0E4B, 0E33> . <0E14, 0E4D, 0E4B, 0E32>
+	//
+	// This reordering is legit only when the NIKHAHIT comes from a SARA AM, not
+	// when it's there to start with. The string <0E14, 0E4B, 0E4D> is probably
+	// not what a user wanted, but the rendering is nevertheless nikhahit above
+	// chattawa.
+	//
+	// Same for Lao.
+	//
+	// Note:
+	//
+	// Uniscribe also does some below-marks reordering.  Namely, it positions U+0E3A
+	// after U+0E38 and U+0E39.  We do that by modifying the ccc for U+0E3A.
+	// See unicode.modified_combining_class ().  Lao does NOT have a U+0E3A
+	// equivalent.
+	//
 
-	/*
-	* Here are the characters of significance:
-	*
-	*			Thai	Lao
-	* SARA AM:		U+0E33	U+0EB3
-	* SARA AA:		U+0E32	U+0EB2
-	* Nikhahit:		U+0E4D	U+0ECD
-	*
-	* Testing shows that Uniscribe reorder the following marks:
-	* Thai:	<0E31,0E34..0E37,0E47..0E4E>
-	* Lao:	<0EB1,0EB4..0EB7,0EC7..0ECE>
-	*
-	* Note how the Lao versions are the same as Thai + 0x80.
-	 */
+	//
+	// Here are the characters of significance:
+	//
+	//			Thai	Lao
+	// SARA AM:		U+0E33	U+0EB3
+	// SARA AA:		U+0E32	U+0EB2
+	// Nikhahit:		U+0E4D	U+0ECD
+	//
+	// Testing shows that Uniscribe reorder the following marks:
+	// Thai:	<0E31,0E34..0E37,     0E47..0E4E>
+	// Lao:	<0EB1,0EB4..0EB7,0EBB,0EC8..0ECD>
+	//
+	// Note how the Lao versions are the same as Thai + 0x80.
+	//
 
 	buffer.clearOutput()
 	count := len(buffer.Info)
@@ -318,7 +319,7 @@ func (complexShaperThai) preprocessText(plan *otShapePlan, buffer *Buffer, font 
 
 		/* Ok, let's see... */
 		start := end - 2
-		for start > 0 && isToneMark(buffer.outInfo[start-1].codepoint) {
+		for start > 0 && isAboveBaseMark(buffer.outInfo[start-1].codepoint) {
 			start--
 		}
 

@@ -5,7 +5,6 @@ import (
 
 	"github.com/go-text/typesetting/opentype/loader"
 	"github.com/go-text/typesetting/opentype/tables"
-	ucd "github.com/go-text/typesetting/unicodedata"
 )
 
 // ported from harfbuzz/src/hb-ot-shape-complex-use.cc Copyright © 2015  Mozilla Foundation. Google, Inc. Jonathan Kew, Behdad Esfahbod
@@ -78,26 +77,26 @@ func (cs *complexShaperUSE) collectFeatures(plan *otShapePlanner) {
 	map_.addGSUBPause(cs.setupSyllablesUse)
 
 	/* "Default glyph pre-processing group" */
-	map_.enableFeature(loader.NewTag('l', 'o', 'c', 'l'))
-	map_.enableFeature(loader.NewTag('c', 'c', 'm', 'p'))
-	map_.enableFeature(loader.NewTag('n', 'u', 'k', 't'))
-	map_.enableFeatureExt(loader.NewTag('a', 'k', 'h', 'n'), ffManualZWJ, 1)
+	map_.enableFeatureExt(loader.NewTag('l', 'o', 'c', 'l'), ffPerSyllable, 1)
+	map_.enableFeatureExt(loader.NewTag('c', 'c', 'm', 'p'), ffPerSyllable, 1)
+	map_.enableFeatureExt(loader.NewTag('n', 'u', 'k', 't'), ffPerSyllable, 1)
+	map_.enableFeatureExt(loader.NewTag('a', 'k', 'h', 'n'), ffManualZWJ|ffPerSyllable, 1)
 
 	/* "Reordering group" */
 	map_.addGSUBPause(clearSubstitutionFlags)
-	map_.addFeatureExt(loader.NewTag('r', 'p', 'h', 'f'), ffManualZWJ, 1)
+	map_.addFeatureExt(loader.NewTag('r', 'p', 'h', 'f'), ffManualZWJ|ffPerSyllable, 1)
 	map_.addGSUBPause(cs.recordRphfUse)
 	map_.addGSUBPause(clearSubstitutionFlags)
-	map_.enableFeatureExt(loader.NewTag('p', 'r', 'e', 'f'), ffManualZWJ, 1)
+	map_.enableFeatureExt(loader.NewTag('p', 'r', 'e', 'f'), ffManualZWJ|ffPerSyllable, 1)
 	map_.addGSUBPause(recordPrefUse)
 
 	/* "Orthographic unit shaping group" */
 	for _, basicFeat := range useBasicFeatures {
-		map_.enableFeatureExt(basicFeat, ffManualZWJ, 1)
+		map_.enableFeatureExt(basicFeat, ffManualZWJ|ffPerSyllable, 1)
 	}
 
 	map_.addGSUBPause(reorderUse)
-	map_.addGSUBPause(clearSyllables)
+	map_.addGSUBPause(nil)
 
 	/* "Topographical features" */
 	for _, topoFeat := range useTopographicalFeatures {
@@ -116,7 +115,7 @@ func (cs *complexShaperUSE) dataCreate(plan *otShapePlan) {
 
 	usePlan.rphfMask = plan.map_.getMask1(loader.NewTag('r', 'p', 'h', 'f'))
 
-	if ucd.HasArabicJoining(plan.props.Script) {
+	if hasArabicJoining(plan.props.Script) {
 		pl := newArabicPlan(plan)
 		usePlan.arabicPlan = &pl
 	}
@@ -152,7 +151,7 @@ func (cs *complexShaperUSE) setupRphfMask(buffer *Buffer) {
 	iter, count := buffer.syllableIterator()
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		limit := 1
-		if info[start].complexCategory != useSyllableMachine_ex_R {
+		if info[start].complexCategory != useSM_ex_R {
 			limit = min(3, end-start)
 		}
 		for i := start; i < start+limit; i++ {
@@ -188,11 +187,12 @@ func (cs *complexShaperUSE) setupTopographicalMasks(plan *otShapePlan, buffer *B
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		syllableType := info[start].syllable & 0x0F
 		switch syllableType {
-		case useSymbolCluster, useHieroglyphCluster, useNonCluster:
+		case useHieroglyphCluster, useNonCluster:
 			// these don't join.  Nothing to do.
 			lastForm = joiningFormNone
 
-		case useViramaTerminatedCluster, useSakotTerminatedCluster, useStandardCluster, useNumberJoinerTerminatedCluster, useNumeralCluster, useBrokenCluster:
+		case useViramaTerminatedCluster, useSakotTerminatedCluster, useStandardCluster, useNumberJoinerTerminatedCluster,
+			useNumeralCluster, useSymbolCluster, useBrokenCluster:
 			join := lastForm == joiningFormFina || lastForm == joiningFormIsol
 			if join {
 				// fixup previous syllable's form.
@@ -220,7 +220,7 @@ func (cs *complexShaperUSE) setupTopographicalMasks(plan *otShapePlan, buffer *B
 	}
 }
 
-func (cs *complexShaperUSE) setupSyllablesUse(plan *otShapePlan, _ *Font, buffer *Buffer) {
+func (cs *complexShaperUSE) setupSyllablesUse(plan *otShapePlan, _ *Font, buffer *Buffer) bool {
 	findSyllablesUse(buffer)
 	iter, count := buffer.syllableIterator()
 	for start, end := iter.next(); start < count; start, end = iter.next() {
@@ -228,14 +228,15 @@ func (cs *complexShaperUSE) setupSyllablesUse(plan *otShapePlan, _ *Font, buffer
 	}
 	cs.setupRphfMask(buffer)
 	cs.setupTopographicalMasks(plan, buffer)
+	return false
 }
 
-func (cs *complexShaperUSE) recordRphfUse(plan *otShapePlan, _ *Font, buffer *Buffer) {
+func (cs *complexShaperUSE) recordRphfUse(plan *otShapePlan, _ *Font, buffer *Buffer) bool {
 	usePlan := cs.plan
 
 	mask := usePlan.rphfMask
 	if mask == 0 {
-		return
+		return false
 	}
 	info := buffer.Info
 
@@ -244,14 +245,15 @@ func (cs *complexShaperUSE) recordRphfUse(plan *otShapePlan, _ *Font, buffer *Bu
 		// mark a substituted repha as USE(R).
 		for i := start; i < end && (info[i].Mask&mask) != 0; i++ {
 			if glyphInfoSubstituted(&info[i]) {
-				info[i].complexCategory = useSyllableMachine_ex_R
+				info[i].complexCategory = useSM_ex_R
 				break
 			}
 		}
 	}
+	return false
 }
 
-func recordPrefUse(_ *otShapePlan, _ *Font, buffer *Buffer) {
+func recordPrefUse(_ *otShapePlan, _ *Font, buffer *Buffer) bool {
 	info := buffer.Info
 
 	iter, count := buffer.syllableIterator()
@@ -259,15 +261,16 @@ func recordPrefUse(_ *otShapePlan, _ *Font, buffer *Buffer) {
 		// mark a substituted pref as VPre, as they behave the same way.
 		for i := start; i < end; i++ {
 			if glyphInfoSubstituted(&info[i]) {
-				info[i].complexCategory = useSyllableMachine_ex_VPre
+				info[i].complexCategory = useSM_ex_VPre
 				break
 			}
 		}
 	}
+	return false
 }
 
 func isHalantUse(info *GlyphInfo) bool {
-	return (info.complexCategory == useSyllableMachine_ex_H || info.complexCategory == useSyllableMachine_ex_HVM) &&
+	return (info.complexCategory == useSM_ex_H || info.complexCategory == useSM_ex_HVM || info.complexCategory == useSM_ex_IS) &&
 		!info.ligated()
 }
 
@@ -277,6 +280,7 @@ func reorderSyllableUse(buffer *Buffer, start, end int) {
 	const mask = 1<<useViramaTerminatedCluster |
 		1<<useSakotTerminatedCluster |
 		1<<useStandardCluster |
+		1<<useSymbolCluster |
 		1<<useBrokenCluster
 	if 1<<syllableType&mask == 0 {
 		return
@@ -284,24 +288,24 @@ func reorderSyllableUse(buffer *Buffer, start, end int) {
 
 	info := buffer.Info
 
-	const postBaseFlags64 int64 = (1<<useSyllableMachine_ex_FAbv |
-		1<<useSyllableMachine_ex_FBlw |
-		1<<useSyllableMachine_ex_FPst |
-		1<<useSyllableMachine_ex_MAbv |
-		1<<useSyllableMachine_ex_MBlw |
-		1<<useSyllableMachine_ex_MPst |
-		1<<useSyllableMachine_ex_MPre |
-		1<<useSyllableMachine_ex_VAbv |
-		1<<useSyllableMachine_ex_VBlw |
-		1<<useSyllableMachine_ex_VPst |
-		1<<useSyllableMachine_ex_VPre |
-		1<<useSyllableMachine_ex_VMAbv |
-		1<<useSyllableMachine_ex_VMBlw |
-		1<<useSyllableMachine_ex_VMPst |
-		1<<useSyllableMachine_ex_VMPre)
+	const postBaseFlags64 int64 = (1<<useSM_ex_FAbv |
+		1<<useSM_ex_FBlw |
+		1<<useSM_ex_FPst |
+		1<<useSM_ex_MAbv |
+		1<<useSM_ex_MBlw |
+		1<<useSM_ex_MPst |
+		1<<useSM_ex_MPre |
+		1<<useSM_ex_VAbv |
+		1<<useSM_ex_VBlw |
+		1<<useSM_ex_VPst |
+		1<<useSM_ex_VPre |
+		1<<useSM_ex_VMAbv |
+		1<<useSM_ex_VMBlw |
+		1<<useSM_ex_VMPst |
+		1<<useSM_ex_VMPre)
 
 	/* Move things forward. */
-	if info[start].complexCategory == useSyllableMachine_ex_R && end-start > 1 {
+	if info[start].complexCategory == useSM_ex_R && end-start > 1 {
 		/* Got a repha.  Reorder it towards the end, but before the first post-base
 		 * glyph. */
 		for i := start + 1; i < end; i++ {
@@ -333,7 +337,7 @@ func reorderSyllableUse(buffer *Buffer, start, end int) {
 			/* If we hit a halant, move after it; otherwise move to the beginning, and
 			* shift things in between forward. */
 			j = i + 1
-		} else if flag&(1<<useSyllableMachine_ex_VPre|1<<useSyllableMachine_ex_VMPre) != 0 &&
+		} else if flag&(1<<useSM_ex_VPre|1<<useSM_ex_VMPre) != 0 &&
 			/* Only move the first component of a MultipleSubst. */
 			info[i].getLigComp() == 0 && j < i {
 			buffer.mergeClusters(j, i+1)
@@ -344,20 +348,22 @@ func reorderSyllableUse(buffer *Buffer, start, end int) {
 	}
 }
 
-func reorderUse(_ *otShapePlan, font *Font, buffer *Buffer) {
-	if debugMode >= 1 {
+func reorderUse(_ *otShapePlan, font *Font, buffer *Buffer) bool {
+	if debugMode {
 		fmt.Println("USE - start reordering USE")
 	}
-	syllabicInsertDottedCircles(font, buffer, useBrokenCluster,
-		useSyllableMachine_ex_B, useSyllableMachine_ex_R, -1)
+	ret := syllabicInsertDottedCircles(font, buffer, useBrokenCluster,
+		useSM_ex_B, useSM_ex_R, -1)
 
 	iter, count := buffer.syllableIterator()
 	for start, end := iter.next(); start < count; start, end = iter.next() {
 		reorderSyllableUse(buffer, start, end)
 	}
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("USE - end reordering USE")
 	}
+
+	return ret
 }
 
 func (cs *complexShaperUSE) preprocessText(_ *otShapePlan, buffer *Buffer, _ *Font) {

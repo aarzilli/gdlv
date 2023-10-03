@@ -29,14 +29,6 @@ func (b *Buffer) Shape(font *Font, features []Feature) {
 	shapePlan.execute(font, b, features)
 }
 
-type shaperKind uint8
-
-const (
-	skFallback shaperKind = iota
-	skOpentype
-	skGraphite
-)
-
 // Shape plans are an internal mechanism. Each plan contains state
 // describing how HarfBuzz will shape a particular text segment, based on
 // the combination of segment properties and the capabilities in the
@@ -92,8 +84,7 @@ func (plan shapePlan) userFeaturesMatch(other shapePlan) bool {
 }
 
 func (plan shapePlan) equal(other shapePlan) bool {
-	return plan.props == other.props &&
-		plan.userFeaturesMatch(other) && plan.shaper.kind() == other.shaper.kind()
+	return plan.props == other.props && plan.userFeaturesMatch(other)
 }
 
 // Constructs a shaping plan for a combination of @face, @userFeatures, @props,
@@ -102,7 +93,7 @@ func (plan shapePlan) equal(other shapePlan) bool {
 func newShapePlan(font *Font, props SegmentProperties,
 	userFeatures []Feature, coords []float32,
 ) *shapePlan {
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Printf("NEW SHAPE PLAN: face:%p features:%v coords:%v\n", &font.face, userFeatures, coords)
 	}
 
@@ -110,7 +101,7 @@ func newShapePlan(font *Font, props SegmentProperties,
 
 	sp.init(true, font, props, userFeatures, coords)
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Println("NEW SHAPE PLAN - compiling shaper plan")
 	}
 	sp.shaper.compile(props, userFeatures)
@@ -121,8 +112,8 @@ func newShapePlan(font *Font, props SegmentProperties,
 // Executes the given shaping plan on the specified `buffer`, using
 // the given `font` and `features`.
 func (sp *shapePlan) execute(font *Font, buffer *Buffer, features []Feature) {
-	if debugMode >= 1 {
-		fmt.Printf("EXECUTE shape plan %p features:%v shaper:%T\n", sp, features, sp.shaper)
+	if debugMode {
+		fmt.Printf("EXECUTE shape plan %p features:%v shaper:%T\n", sp, features, sp.shaper.plan.shaper)
 	}
 
 	sp.shaper.shape(font, buffer, features)
@@ -144,7 +135,7 @@ func (b *Buffer) newShapePlanCached(font *Font, props SegmentProperties,
 
 	for _, plan := range plans {
 		if plan.equal(key) {
-			if debugMode >= 1 {
+			if debugMode {
 				fmt.Printf("\tPLAN %p fulfilled from cache\n", plan)
 			}
 			return plan
@@ -155,7 +146,7 @@ func (b *Buffer) newShapePlanCached(font *Font, props SegmentProperties,
 	plans = append(plans, plan)
 	b.planCache[font.face] = plans
 
-	if debugMode >= 1 {
+	if debugMode {
 		fmt.Printf("\tPLAN %p inserted into cache\n", plan)
 	}
 
