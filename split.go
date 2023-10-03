@@ -360,7 +360,7 @@ func commandToolbar(sw *nucular.Window) {
 }
 
 func openWindow(m string) {
-	if findWindow(m) == nil {
+	if findWindow(m) != nil {
 		return
 	}
 	bounds, ok := conf.SavedBounds[m]
