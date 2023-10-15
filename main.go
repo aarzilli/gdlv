@@ -70,7 +70,7 @@ func setupStyle() {
 	case whiteTheme:
 		wnd.SetStyle(nstyle.FromTheme(nstyle.WhiteTheme, conf.Scaling))
 	case redTheme:
-		wnd.SetStyle(nstyle.FromTable(redThemeTable, conf.Scaling))
+		wnd.SetStyle(nstyle.FromTheme(nstyle.RedTheme, conf.Scaling))
 	case boringTheme:
 		style := makeBoringStyle()
 		style.Scale(conf.Scaling)
