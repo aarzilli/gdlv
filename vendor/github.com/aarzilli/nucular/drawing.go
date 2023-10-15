@@ -175,6 +175,7 @@ func (d *drawableScalerAndBorders) Draw(z *nstyle.Style, out *command.Buffer) {
 		} else {
 			out.FillTriangle(image.Point{d.ScalerRect.X + d.ScalerRect.W, d.ScalerRect.Y}, d.ScalerRect.Max(), image.Point{d.ScalerRect.X, d.ScalerRect.Y + d.ScalerRect.H}, style.Scaler.Data.Color)
 		}
+		out.Cursor(d.ScalerRect, font.ResizeCursor)
 	}
 
 	if d.DrawHeaderBorder {

@@ -598,11 +598,14 @@ func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool, perfString st
 }
 
 var font2pointerCursor = map[font.Cursor]pointer.Cursor{
-	font.DefaultCursor:  pointer.CursorDefault,
-	font.NoCursor:       pointer.CursorNone,
-	font.TextCursor:     pointer.CursorText,
-	font.PointerCursor:  pointer.CursorPointer,
-	font.ProgressCursor: pointer.CursorProgress,
+	font.DefaultCursor:          pointer.CursorDefault,
+	font.NoCursor:               pointer.CursorNone,
+	font.TextCursor:             pointer.CursorText,
+	font.PointerCursor:          pointer.CursorPointer,
+	font.ProgressCursor:         pointer.CursorProgress,
+	font.VerticalResizeCursor:   pointer.CursorColResize,
+	font.HorizontalResizeCursor: pointer.CursorRowResize,
+	font.ResizeCursor:           pointer.CursorSouthEastResize,
 }
 
 func drawText(ops *op.Ops, charAtlas map[charAtlasKey]map[rune]renderedGlyph, fontFace font.Face, foreground color.RGBA, rect rect.Rect, str string) {

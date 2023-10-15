@@ -8,4 +8,7 @@ const (
 	TextCursor
 	PointerCursor
 	ProgressCursor
+	VerticalResizeCursor
+	HorizontalResizeCursor
+	ResizeCursor
 )
