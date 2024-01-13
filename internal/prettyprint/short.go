@@ -100,3 +100,44 @@ func containsAnonymousType(typ string) bool {
 	}
 	return false
 }
+
+func ShortenFunctionName(fnname string) string {
+	pkgname := packageName(fnname)
+	lastSlash := strings.LastIndex(pkgname, "/")
+	if lastSlash >= 0 {
+		return fnname[lastSlash+1:]
+	}
+	return fnname
+}
+
+func instRange(fnname string) [2]int {
+	d := len(fnname)
+	inst := [2]int{d, d}
+	if strings.HasPrefix(fnname, "type..") {
+		return inst
+	}
+	inst[0] = strings.Index(fnname, "[")
+	if inst[0] < 0 {
+		inst[0] = d
+		return inst
+	}
+	inst[1] = strings.LastIndex(fnname, "]")
+	if inst[1] < 0 {
+		inst[0] = d
+		inst[1] = d
+		return inst
+	}
+	return inst
+}
+
+func packageName(name string) string {
+	pathend := strings.LastIndex(name, "/")
+	if pathend < 0 {
+		pathend = 0
+	}
+
+	if i := strings.Index(name[pathend:], "."); i != -1 {
+		return name[:pathend+i]
+	}
+	return ""
+}

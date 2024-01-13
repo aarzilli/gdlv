@@ -141,16 +141,29 @@ var goroutinesPanel = struct {
 
 var stackPanel = struct {
 	asyncLoad    asyncLoad
-	stack        []api.Stackframe
+	stack        []Stackframe
 	isnew        []bool
-	ancestors    []api.Ancestor
+	ancestors    []Ancestor
 	depth        int
 	showDeferPos bool
 	id           int
 	deferID      int
 	mode         int
+	full         bool
 }{
 	depth: 50,
+}
+
+type Stackframe struct {
+	api.Stackframe
+	shortName string
+}
+
+type Ancestor struct {
+	ID    int64
+	Stack []Stackframe
+
+	Unreadable string
 }
 
 var threadsPanel = struct {
@@ -599,8 +612,7 @@ func loadStacktrace(p *asyncLoad) {
 
 	oldStack := stackPanel.stack
 
-	var err error
-	stackPanel.stack, err = client.Stacktrace(curGid, stackPanel.depth, stacktraceOptions()|api.StacktraceReadDefers, nil)
+	stack, err := client.Stacktrace(curGid, stackPanel.depth, stacktraceOptions()|api.StacktraceReadDefers, nil)
 	if LogOutputNice != nil {
 		logf("Stack (%d %d):\n", curGid, curThread)
 		for i := range stackPanel.stack {
@@ -608,6 +620,7 @@ func loadStacktrace(p *asyncLoad) {
 			fmt.Fprintf(LogOutputNice, "\t%#x %#x %s in %s:%d\n", frame.PC, frame.FrameOffset, frame.Function.Name(), frame.File, frame.Line)
 		}
 	}
+	stackPanel.stack = decorateStacktrace(stack)
 
 	stackPanel.ancestors = stackPanel.ancestors[:0]
 
@@ -635,8 +648,26 @@ func loadStacktrace(p *asyncLoad) {
 		stackPanel.isnew[0] = true
 	}
 
-	stackPanel.ancestors, _ = client.Ancestors(curGid, NumAncestors, stackPanel.depth)
+	ancestors, _ := client.Ancestors(curGid, NumAncestors, stackPanel.depth)
+	stackPanel.ancestors = make([]Ancestor, len(ancestors))
+	for i := range ancestors {
+		stackPanel.ancestors[i].ID = ancestors[i].ID
+		stackPanel.ancestors[i].Unreadable = ancestors[i].Unreadable
+		stackPanel.ancestors[i].Stack = decorateStacktrace(ancestors[i].Stack)
+	}
 	p.done(nil)
+}
+
+func decorateStacktrace(stack []api.Stackframe) []Stackframe {
+	r := make([]Stackframe, len(stack))
+	for i := range stack {
+		r[i].Stackframe = stack[i]
+		if stack[i].Function != nil {
+			r[i].shortName = prettyprint.ShortenFunctionName(stack[i].Function.Name())
+		}
+
+	}
+	return r
 }
 
 func updateStacktrace(container *nucular.Window) {
@@ -649,9 +680,12 @@ func updateStacktrace(container *nucular.Window) {
 	}
 
 	w.MenubarBegin()
-	w.Row(20).Static(120, 70, 200)
+	w.Row(20).Static(120, 120, 70, 200)
 	configChanged := false
 	if w.PropertyInt("depth:", 1, &stackPanel.depth, 200, 1, 5) {
+		configChanged = true
+	}
+	if w.CheckboxText("Full names", &stackPanel.full) {
 		configChanged = true
 	}
 	w.Label("Mode:", "LC")
@@ -680,14 +714,19 @@ func updateStacktrace(container *nucular.Window) {
 	didx := digits(len(stack))
 	d := prettyprint.Hexdigits(maxpc)
 
-	showFrame := func(frame api.Stackframe, i int, isnew bool, sl func(string) bool) bool {
+	showFrame := func(frame Stackframe, i int, isnew bool, sl func(string) bool) bool {
 		w.Row(posRowHeight).Static()
 		w.LayoutFitWidth(stackPanel.id, 1)
 		sl(fmt.Sprintf("%*d", didx, i))
 		w.LayoutFitWidth(stackPanel.id, 1)
 		sl(fmt.Sprintf("%#0*x\n%+d", d, frame.PC, frame.FrameOffset))
 		w.LayoutFitWidth(stackPanel.id, 100)
-		r := sl(formatLocation2(frame.Location))
+		var r bool
+		if stackPanel.full {
+			r = sl(formatLocation2(frame.Location))
+		} else {
+			r = sl(fmt.Sprintf("%s\nat %s:%d", frame.shortName, ShortenFilePath(frame.Location.File), frame.Location.Line))
+		}
 		if isnew {
 			rowbounds := w.WidgetBounds()
 			rowbounds.X = w.Bounds.X
