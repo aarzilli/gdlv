@@ -959,7 +959,7 @@ var whiteThemeTable = ColorTable{
 
 var redThemeTable = ColorTable{
 	ColorText:                  color.RGBA{190, 190, 190, 255},
-	ColorWindow:                color.RGBA{30, 33, 40, 215},
+	ColorWindow:                color.RGBA{35, 39, 47, 255},
 	ColorHeader:                color.RGBA{181, 45, 69, 220},
 	ColorHeaderFocused:         color.RGBA{0xb5, 0x0c, 0x2c, 0xdc},
 	ColorBorder:                color.RGBA{51, 55, 67, 255},
