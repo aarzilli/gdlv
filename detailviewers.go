@@ -542,6 +542,7 @@ func (c *CustomFormatter) Format(v *Variable) {
 		return
 	}
 	v.reformatted = true
+	v.customFormat = true
 	switch sv := sv.(type) {
 	case starlark.String:
 		v.Value = string(sv)

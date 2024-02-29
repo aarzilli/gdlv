@@ -36,8 +36,9 @@ const (
 
 var changedVariableOpacity uint8
 
-const maxChangedVariableOpacity = 0xd0
-const minChangedVariableOpacity = 0x10
+const maxChangedVariableOpacity = 0xa0
+const minChangedVariableOpacity = 0x08
+const opacityFadeoutMilliseconds = 500
 
 var drawStartTime time.Time
 
@@ -55,6 +56,7 @@ type Variable struct {
 
 	changed        bool // value of the underlying variable changed from previous stop
 	reformatted    bool // formatting of variable value changed from last frame
+	customFormat   bool // custom value
 	requestedLines int  // number of lines needed to display the value of the variable
 
 	Children []*Variable
@@ -442,7 +444,7 @@ func updateLocals(container *nucular.Window) {
 	}
 
 	if changedVariableOpacity > minChangedVariableOpacity {
-		opacityReductionPerMillisecond := float64(maxChangedVariableOpacity-minChangedVariableOpacity) / 1500
+		opacityReductionPerMillisecond := float64(maxChangedVariableOpacity-minChangedVariableOpacity) / opacityFadeoutMilliseconds
 		elapsed := time.Since(drawStartTime)
 		elapsedms := elapsed.Nanoseconds() / 1e6
 		changedVariableOpacity = maxChangedVariableOpacity - byte(float64(elapsedms)*opacityReductionPerMillisecond)
@@ -718,7 +720,7 @@ func variableHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v 
 		} else {
 			c.Text(getDisplayType(v, fullTypes))
 			c.Text(" = ")
-			if v.Value != "" && v.Kind != reflect.Ptr {
+			if v.Value != "" && (v.Kind != reflect.Ptr || v.customFormat) {
 				c.Text(v.Value)
 			} else {
 				c.Text(v.SinglelineString(false, fullTypes))
