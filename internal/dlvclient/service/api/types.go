@@ -177,7 +177,7 @@ type Thread struct {
 
 	// Breakpoint this thread is stopped at
 	Breakpoint *Breakpoint `json:"breakPoint,omitempty"`
-	// Informations requested by the current breakpoint
+	// Information requested by the current breakpoint
 	BreakpointInfo *BreakpointInfo `json:"breakPointInfo,omitempty"`
 
 	// ReturnValues contains the return values of the function we just stepped out of
@@ -420,7 +420,7 @@ type DebuggerCommand struct {
 	UnsafeCall bool `json:"unsafeCall,omitempty"`
 }
 
-// BreakpointInfo contains informations about the current breakpoint
+// BreakpointInfo contains information about the current breakpoint
 type BreakpointInfo struct {
 	Stacktrace []Stackframe `json:"stacktrace,omitempty"`
 	Goroutine  *Goroutine   `json:"goroutine,omitempty"`
@@ -454,8 +454,12 @@ const (
 	ReverseStepOut = "reverseStepOut"
 	// StepInstruction continues for exactly 1 cpu instruction.
 	StepInstruction = "stepInstruction"
+	// NextInstruction continues for 1 cpu instruction, skipping over CALL instructions.
+	NextInstruction = "nextInstruction"
 	// ReverseStepInstruction reverses execution for exactly 1 cpu instruction.
 	ReverseStepInstruction = "reverseStepInstruction"
+	// ReverseNextInstruction reverses execution for 1 cpu instruction, skipping over CALL instructions.
+	ReverseNextInstruction = "reverseNextInstruction"
 	// Next continues to the next source line, not entering function calls.
 	Next = "next"
 	// ReverseNext continues backward to the previous line of source code, not entering function calls.

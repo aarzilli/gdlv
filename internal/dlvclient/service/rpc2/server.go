@@ -375,12 +375,13 @@ type ListDynamicLibrariesOut struct {
 	List []api.Image
 }
 
-// ListPackagesBuildInfoIn holds the arguments of ListPackages.
+// ListPackagesBuildInfoIn holds the arguments of ListPackagesBuildInfo.
 type ListPackagesBuildInfoIn struct {
 	IncludeFiles bool
+	Filter       string // if not empty, returns only packages matching the regexp.
 }
 
-// ListPackagesBuildInfoOut holds the return values of ListPackages.
+// ListPackagesBuildInfoOut holds the return values of ListPackagesBuildInfo.
 type ListPackagesBuildInfoOut struct {
 	List []api.PackageBuildInfo
 }

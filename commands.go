@@ -171,6 +171,8 @@ Specify a name to step into one specific function call. Use the -list option for
 
 Option -first will step into the first function call of the line, -last will step into the last call of the line. When called without arguments step will use -first as default, but this can be changed using config.`},
 		{aliases: []string{"step-instruction", "si"}, group: runCmds, cmdFn: stepInstruction, helpMsg: "Single step a single cpu instruction."},
+		{aliases: []string{"next-instruction", "ni"}, group: runCmds,
+			cmdFn: nextInstruction, helpMsg: "Like step-instruction but does not step into CALL instructions."},
 		{aliases: []string{"next", "n"}, group: runCmds, cmdFn: next, helpMsg: "Step over to next source line."},
 		{aliases: []string{"stepout", "o"}, group: runCmds, cmdFn: stepout, helpMsg: "Step out of the current function."},
 		{aliases: []string{"cancelnext"}, group: runCmds, cmdFn: cancelnext, helpMsg: "Cancels the next operation currently in progress."},
@@ -1186,7 +1188,7 @@ func stepInto(out io.Writer, sic stepIntoCall) error {
 }
 
 func stepInstruction(out io.Writer, args string) error {
-	args, stepfn, _ := processRevArg(args, client.StepInstruction, client.ReverseStepInstruction)
+	args, stepfn, _ := processRevArg(args, func() (*api.DebuggerState, error) { return client.StepInstruction(false) }, func() (*api.DebuggerState, error) { return client.ReverseStepInstruction(false) })
 	state, err := stepfn()
 	if err != nil {
 		return err
@@ -1204,6 +1206,17 @@ func next(out io.Writer, args string) error {
 	}
 	printcontext(out, state)
 	return continueUntilCompleteNext(out, state, "next", nil)
+}
+
+func nextInstruction(out io.Writer, args string) error {
+	args, stepfn, _ := processRevArg(args, func() (*api.DebuggerState, error) { return client.StepInstruction(true) }, func() (*api.DebuggerState, error) { return client.ReverseStepInstruction(true) })
+	state, err := stepfn()
+	if err != nil {
+		return err
+	}
+	printcontext(out, state)
+	refreshState(refreshToFrameZero, clearStop, state)
+	return nil
 }
 
 func stepout(out io.Writer, args string) error {

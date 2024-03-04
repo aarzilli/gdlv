@@ -149,15 +149,23 @@ func (c *RPCClient) Call(goroutineID int64, expr string, unsafe bool) (*api.Debu
 	return c.exitedToError(&out, err)
 }
 
-func (c *RPCClient) StepInstruction() (*api.DebuggerState, error) {
+func (c *RPCClient) StepInstruction(skipCalls bool) (*api.DebuggerState, error) {
 	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.StepInstruction}, &out)
+	name := api.StepInstruction
+	if skipCalls {
+		name = api.NextInstruction
+	}
+	err := c.call("Command", api.DebuggerCommand{Name: name}, &out)
 	return c.exitedToError(&out, err)
 }
 
-func (c *RPCClient) ReverseStepInstruction() (*api.DebuggerState, error) {
+func (c *RPCClient) ReverseStepInstruction(skipCalls bool) (*api.DebuggerState, error) {
 	var out CommandOut
-	err := c.call("Command", api.DebuggerCommand{Name: api.ReverseStepInstruction}, &out)
+	name := api.ReverseStepInstruction
+	if skipCalls {
+		name = api.ReverseNextInstruction
+	}
+	err := c.call("Command", api.DebuggerCommand{Name: name}, &out)
 	return c.exitedToError(&out, err)
 }
 
@@ -321,6 +329,12 @@ func (c *RPCClient) ListPackageVariables(filter string, cfg api.LoadConfig) ([]a
 	var out ListPackageVarsOut
 	err := c.call("ListPackageVars", ListPackageVarsIn{filter, cfg}, &out)
 	return out.Variables, err
+}
+
+func (c *RPCClient) ListPackagesBuildInfo(filter string, includeFiles bool) ([]api.PackageBuildInfo, error) {
+	var out ListPackagesBuildInfoOut
+	err := c.call("ListPackagesBuildInfo", ListPackagesBuildInfoIn{Filter: filter, IncludeFiles: includeFiles}, &out)
+	return out.List, err
 }
 
 func (c *RPCClient) ListLocalVariables(scope api.EvalScope, cfg api.LoadConfig) ([]api.Variable, error) {
