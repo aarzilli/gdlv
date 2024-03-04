@@ -38,6 +38,12 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2024-03-04 / Version 1.12
+* Function names in the stacktrace window is shortened by default
+* Add next-instruction command
+* Make the text in the variables window selectable
+* Miscellaneous bug fixes
+
 ## 2023-09-24 / Version 1.11
 * Better display of suspended breakpoints
 * Add libraries command
