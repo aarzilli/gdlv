@@ -1021,7 +1021,19 @@ func showVariable(w *nucular.Window, depth int, flags showVariableFlags, exprMen
 		if v.Value == "" {
 			cblbl("nil")
 		} else {
-			cblbl(v.Value)
+			if v.Len > 0 {
+				if hdr() {
+					if int(v.Len) != len(v.Children) && len(v.Children) == 0 {
+						loadMoreStruct(v)
+						dynlbl("Loading...")
+					} else {
+						showStructContents(w, depth, flags, v)
+					}
+					w.TreePop()
+				}
+			} else {
+				cblbl(v.Value)
+			}
 		}
 	case reflect.Complex64, reflect.Complex128:
 		cblblfmt("(%s + %si)", v.Children[0].Value, v.Children[1].Value)
