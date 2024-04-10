@@ -25,4 +25,4 @@ require (
 	golang.org/x/text v0.8.0 // indirect
 )
 
-go 1.17
+go 1.18
