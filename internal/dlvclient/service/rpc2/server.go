@@ -243,7 +243,8 @@ type ListSourcesOut struct {
 }
 
 type ListFunctionsIn struct {
-	Filter string
+	Filter      string
+	FollowCalls int
 }
 
 type ListFunctionsOut struct {
