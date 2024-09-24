@@ -227,7 +227,9 @@ func replacegdlv(debug, ccstr string) string {
 		os.Setenv(key, value)
 		cmd, rest, _ = strings.Cut(rest, " ")
 	}
-	goroot, cmd, _ := strings.Cut(cmd, "/pkg/")
+	idx := strings.LastIndex(cmd, "/pkg/")
+	goroot := cmd[:idx]
+	cmd = cmd[idx:]
 	var path string
 	switch {
 	case strings.Contains(cmd, "/compile"):
