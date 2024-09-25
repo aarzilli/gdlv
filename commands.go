@@ -565,7 +565,7 @@ func setBreakpoint(out io.Writer, tracepoint bool, argstr string) error {
 }
 
 func shouldAskToSuspendBreakpoint() bool {
-	fns, _ := client.ListFunctions(`^plugin\.Open$`)
+	fns, _ := client.ListFunctions(`^plugin\.Open$`, 0)
 	_, err := client.GetState()
 	return len(fns) > 0 || isErrProcessExited(err) || client.FollowExecEnabled()
 }
