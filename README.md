@@ -1,3 +1,5 @@
+![Go Build](https://github.com/aarzilli/gdlv/actions/workflows/build.yml/badge.svg)
+
 Gdlv is a graphical frontend to [Delve](https://github.com/go-delve/delve) for Linux, Windows and macOS.
 
 [Demo video here](https://aarzilli.github.io/gdlv/doc/screencast.webm).
