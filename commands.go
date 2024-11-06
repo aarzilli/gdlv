@@ -1540,7 +1540,7 @@ func (cw *configWindow) Update(w *nucular.Window) {
 
 	w.Row(30).Static(0)
 	if w.TreePush(nucular.TreeTab, "Path substitutions:", false) {
-		w.Row(240).Static(0, 100)
+		w.Row(240).Static(0, 200)
 		if w := w.GroupBegin("path-substitution-list", nucular.WindowNoHScrollbar); w != nil {
 			w.Row(30).Static(0)
 			if len(conf.SubstitutePath) == 0 {
@@ -1561,6 +1561,19 @@ func (cw *configWindow) Update(w *nucular.Window) {
 				copy(conf.SubstitutePath[cw.selectedSubstitutionRule:], conf.SubstitutePath[cw.selectedSubstitutionRule+1:])
 				conf.SubstitutePath = conf.SubstitutePath[:len(conf.SubstitutePath)-1]
 				cw.selectedSubstitutionRule = -1
+				saveConfiguration()
+			}
+			if w.ButtonText("Guess configuration") {
+				rules, err := client.GuessSubstitutePath()
+				if err != nil {
+					fmt.Fprintf(&editorWriter{true}, "Could not guess configuration: %v\n", err)
+				} else {
+					conf.SubstitutePath = conf.SubstitutePath[:0]
+					for _, rule := range rules {
+						conf.SubstitutePath = append(conf.SubstitutePath, SubstitutePathRule{From: rule[0], To: rule[1]})
+					}
+					saveConfiguration()
+				}
 			}
 			w.GroupEnd()
 		}
@@ -1575,6 +1588,7 @@ func (cw *configWindow) Update(w *nucular.Window) {
 			conf.SubstitutePath = append(conf.SubstitutePath, SubstitutePathRule{From: string(cw.from.Buffer), To: string(cw.to.Buffer)})
 			cw.from.Buffer = cw.from.Buffer[:0]
 			cw.to.Buffer = cw.to.Buffer[:0]
+			saveConfiguration()
 		}
 
 		w.TreePop()

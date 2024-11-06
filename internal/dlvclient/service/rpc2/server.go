@@ -399,6 +399,8 @@ type ExaminedMemoryOut struct {
 	IsLittleEndian bool
 }
 
+const ExamineMemoryLengthLimit = 1 << 16
+
 type StopRecordingIn struct {
 }
 
@@ -473,4 +475,12 @@ type DebugInfoDirectoriesIn struct {
 
 type DebugInfoDirectoriesOut struct {
 	List []string
+}
+
+type GuessSubstitutePathIn struct {
+	Args api.GuessSubstitutePathIn
+}
+
+type GuessSubstitutePathOut struct {
+	List [][2]string
 }
