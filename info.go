@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 
+	"golang.org/x/mobile/event/key"
+
 	"github.com/aarzilli/nucular"
 	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/label"
@@ -1093,10 +1095,10 @@ func openBreakpointEditor(mw nucular.MasterWindow, bp *api.Breakpoint) {
 		ed.printEditor.Buffer = append(ed.printEditor.Buffer, []rune(fmt.Sprintf("%s\n", bp.Variables[i]))...)
 	}
 
-	ed.condEditor.Flags = nucular.EditClipboard | nucular.EditSelectable
+	ed.condEditor.Flags = nucular.EditClipboard | nucular.EditSelectable | nucular.EditSigEnter
 	ed.condEditor.Buffer = []rune(ed.bp.Cond)
 
-	ed.hitCondEditor.Flags = nucular.EditClipboard | nucular.EditSelectable
+	ed.hitCondEditor.Flags = nucular.EditClipboard | nucular.EditSelectable | nucular.EditSigEnter
 	ed.hitCondEditor.Buffer = []rune(ed.bp.HitCond)
 
 	mw.PopupOpen(fmt.Sprintf("Editing breakpoint %d", breakpointsPanel.selected), dynamicPopupFlags, rect.Rect{100, 100, 400, 700}, true, ed.update)
@@ -1159,21 +1161,34 @@ func (bped *breakpointEditor) update(w *nucular.Window) {
 	w.Row(100).Dynamic(1)
 	bped.printEditor.Edit(w)
 
-	w.Row(30).Static(100, 0)
-	w.Label("Condition:", "LC")
-	bped.condEditor.Edit(w)
+	committed := false
 
 	w.Row(30).Static(100, 0)
+	w.Label("Condition:", "LC")
+	ev := bped.condEditor.Edit(w)
+	committed = committed || (ev&nucular.EditCommitted != 0)
+
+	w.Row(30).Static(125, 0)
 	w.Label("Hit Condition:", "LC")
-	bped.hitCondEditor.Edit(w)
+	ev = bped.hitCondEditor.Edit(w)
+	committed = committed || (ev&nucular.EditCommitted != 0)
+
+	cancelled := false
+
+	for _, e := range w.Input().Keyboard.Keys {
+		switch {
+		case e.Code == key.CodeEscape:
+			cancelled = true
+		}
+	}
 
 	w.Row(20).Static(0, 80, 80)
 	w.Spacing(1)
-	if w.ButtonText("Cancel") {
+	if w.ButtonText("Cancel") || cancelled {
 		go refreshState(refreshToSameFrame, clearBreakpoint, nil)
 		w.Close()
 	}
-	if w.ButtonText("OK") {
+	if w.ButtonText("OK") || committed {
 		bped.bp.Cond = string(bped.condEditor.Buffer)
 		bped.bp.HitCond = string(bped.hitCondEditor.Buffer)
 		bped.bp.Variables = bped.bp.Variables[:0]
@@ -1193,6 +1208,14 @@ func (bped *breakpointEditor) amendBreakpoint() {
 	if err != nil {
 		scrollbackOut := editorWriter{true}
 		fmt.Fprintf(&scrollbackOut, "Could not amend breakpoint: %v\n", err)
+	} else {
+		for i := range FrozenBreakpoints {
+			if FrozenBreakpoints[i].Bp.ID == bped.bp.ID {
+				FrozenBreakpoints[i].Bp = *bped.bp
+				saveConfiguration()
+				break
+			}
+		}
 	}
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	autoCheckpointsReloadVars()
@@ -1624,7 +1647,7 @@ func updateListingPanel(container *nucular.Window) {
 		}
 
 		// Breakpoint Info
-		if line.bp != nil && (line.bp.Cond != "" || len(line.bp.Variables) > 0) {
+		if line.bp != nil && (line.bp.Cond != "" || line.bp.HitCond != "" || len(line.bp.Variables) > 0) {
 			listp.Row(lineheight).Static(0)
 			bpcolor := style.Text.Color
 			darken(&bpcolor)
@@ -1632,6 +1655,11 @@ func updateListingPanel(container *nucular.Window) {
 			fmt.Fprintf(&bpinfo, "// ")
 			if line.bp.Cond != "" {
 				fmt.Fprintf(&bpinfo, "when %s ", line.bp.Cond)
+				if line.bp.HitCond != "" {
+					fmt.Fprintf(&bpinfo, " AND hitcount %s ", line.bp.HitCond)
+				}
+			} else if line.bp.HitCond != "" {
+				fmt.Fprintf(&bpinfo, "when hitcount %s ", line.bp.HitCond)
 			}
 			if len(line.bp.Variables) > 0 {
 				fmt.Fprintf(&bpinfo, "print %s", strings.Join(line.bp.Variables, "; "))
