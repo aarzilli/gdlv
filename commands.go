@@ -449,7 +449,7 @@ and GDLV_BOLD_FONT to the path of two ttf files.
 	{
 		w := new(tabwriter.Writer)
 		w.Init(out, 0, 8, 0, ' ', 0)
-		fmt.Fprintln(w, "    Ctrl +/- \t Zoom in/out")
+		fmt.Fprintf(w, "    %s +/-/0 \t Zoom in/out/reset\n", zoomMetaKeyStr)
 		fmt.Fprintln(w, "    Escape \t Focus command line")
 		fmt.Fprintln(w, "    Shift-F5, Ctrl-delete \t Request manual stop")
 		fmt.Fprintln(w, "    F5, Alt-enter \t Continue")

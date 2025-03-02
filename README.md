@@ -26,7 +26,7 @@ If you are on Go 1.16 or later you can also use the new global install command, 
 $ go install github.com/aarzilli/gdlv@latest
 ```
 
-Use Ctrl+plus and Ctrl+minus, or `config zoom 1.5` to change font size. See `help` for a list of available commands.
+Use Ctrl+plus and Ctrl+minus (On macOS Cmd+plus and Cmd+minus), or `config zoom 1.5` to change font size. You can reset font size with Ctrl+0 (on macOS Cmd+0). See `help` for a list of available commands.
 
 ## Other backends
 
@@ -195,4 +195,3 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 * Implemented selective step into. Right click on a function call on the current line to step into that function call (note: not that function, that *function call*). Also accessible through the `step` command with `step -list`:
 
 ![Step Into](https://raw.githubusercontent.com/aarzilli/gdlv/master/doc/stepinto.png)
-

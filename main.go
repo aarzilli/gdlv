@@ -209,6 +209,17 @@ var commandLineEditor nucular.TextEditor
 var delayFrame bool
 var frameCount int
 
+var zoomMetaKey, zoomMetaKeyStr = getZoomMetaKey()
+
+func getZoomMetaKey() (key.Modifiers, string) {
+	if runtime.GOOS == "darwin" {
+		// TODO(riad): should we keep the previous behaviour?
+		// We can use key.ModMeta | key.ModControl
+		return key.ModMeta, "Cmd"
+	}
+	return key.ModControl, "Ctrl"
+}
+
 func guiUpdate(w *nucular.Window) {
 	defer richTextCleanup()
 	df := delayFrame
@@ -222,18 +233,22 @@ func guiUpdate(w *nucular.Window) {
 
 	for _, e := range wnd.Input().Keyboard.Keys {
 		switch {
-		case (e.Modifiers&key.ModControl != 0) && e.Code == key.CodeEqualSign:
+		case (e.Modifiers&zoomMetaKey != 0) && e.Code == key.CodeEqualSign:
 			// mitigation for shiny bug on macOS (see https://github.com/aarzilli/gdlv/issues/39)
 			fallthrough
-		case (e.Modifiers&key.ModControl != 0) && e.Rune == '+':
+		case (e.Modifiers&zoomMetaKey != 0) && e.Rune == '+':
 			conf.Scaling += 0.1
 			setupStyle()
 
-		case (e.Modifiers&key.ModControl != 0) && e.Code == key.CodeHyphenMinus:
+		case (e.Modifiers&zoomMetaKey != 0) && e.Code == key.CodeHyphenMinus:
 			// mitigation for shiny bug on macOS (see https://github.com/aarzilli/gdlv/issues/39)
 			fallthrough
-		case (e.Modifiers&key.ModControl != 0) && e.Rune == '-':
+		case (e.Modifiers&zoomMetaKey != 0) && e.Rune == '-':
 			conf.Scaling -= 0.1
+			setupStyle()
+
+		case (e.Modifiers&zoomMetaKey != 0) && e.Rune == '0':
+			conf.Scaling = 1.0
 			setupStyle()
 
 		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeF):
