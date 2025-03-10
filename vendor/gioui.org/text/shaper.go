@@ -76,6 +76,11 @@ type Parameters struct {
 	// text with a MaxLines. It is unexported because this behavior only makes sense for the
 	// shaper to control when it iterates paragraphs of text.
 	forceTruncate bool
+
+	// DisableSpaceTrim prevents the width of the final whitespace glyph on a line from being zeroed.
+	// This is desirable for text editors (so that the whitespace can be selected), but is undesirable
+	// for ordinary display text.
+	DisableSpaceTrim bool
 }
 
 type FontFace = giofont.FontFace
@@ -121,7 +126,7 @@ type Glyph struct {
 	// belongs to. If Flags does not contain FlagClusterBreak, this value will
 	// always be zero. The final glyph in the cluster contains the runes count
 	// for the entire cluster.
-	Runes int
+	Runes uint16
 	// Flags encode special properties of this glyph.
 	Flags Flags
 }
@@ -199,7 +204,15 @@ func (f Flags) String() string {
 
 type GlyphID uint64
 
-// Shaper converts strings of text into glyphs that can be displayed.
+// Shaper converts strings of text into glyphs that can be displayed. The same
+// Shaper should not be used in different goroutines.
+//
+// The Shaper controls text layout and has a cache, implemented as a map, and
+// so laying out text in two different goroutines can easily result in
+// concurrent access to said map, resulting in a panic.
+//
+// Practically speaking, this means you should use different Shapers for
+// different top-level windows.
 type Shaper struct {
 	config struct {
 		disableSystemFonts bool
@@ -469,7 +482,7 @@ func (l *Shaper) NextGlyph() (_ Glyph, ok bool) {
 			Ascent:  line.ascent,
 			Descent: line.descent,
 			Advance: g.xAdvance,
-			Runes:   g.runeCount,
+			Runes:   uint16(g.runeCount),
 			Offset: fixed.Point26_6{
 				X: g.xOffset,
 				Y: g.yOffset,
@@ -505,7 +518,7 @@ func (l *Shaper) NextGlyph() (_ Glyph, ok bool) {
 		if endOfCluster {
 			glyph.Flags |= FlagClusterBreak
 			if run.truncator {
-				glyph.Runes += l.txt.unreadRuneCount
+				glyph.Runes += uint16(l.txt.unreadRuneCount)
 			}
 		} else {
 			glyph.Runes = 0

@@ -1,41 +1,12 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
-/*
-Package event contains the types for event handling.
-
-The Queue interface is the protocol for receiving external events.
-
-For example:
-
-	var queue event.Queue = ...
-
-	for _, e := range queue.Events(h) {
-		switch e.(type) {
-			...
-		}
-	}
-
-In general, handlers must be declared before events become
-available. Other packages such as pointer and key provide
-the means for declaring handlers for specific event types.
-
-The following example declares a handler ready for key input:
-
-	import gioui.org/io/key
-
-	ops := new(op.Ops)
-	var h *Handler = ...
-	key.InputOp{Tag: h, Filter: ...}.Add(ops)
-*/
+// Package event contains types for event handling.
 package event
 
-// Queue maps an event handler key to the events
-// available to the handler.
-type Queue interface {
-	// Events returns the available events for an
-	// event handler tag.
-	Events(t Tag) []Event
-}
+import (
+	"gioui.org/internal/ops"
+	"gioui.org/op"
+)
 
 // Tag is the stable identifier for an event handler.
 // For a handler h, the tag is typically &h.
@@ -44,4 +15,19 @@ type Tag interface{}
 // Event is the marker interface for events.
 type Event interface {
 	ImplementsEvent()
+}
+
+// Filter represents a filter for [Event] types.
+type Filter interface {
+	ImplementsFilter()
+}
+
+// Op declares a tag for input routing at the current transformation
+// and clip area hierarchy. It panics if tag is nil.
+func Op(o *op.Ops, tag Tag) {
+	if tag == nil {
+		panic("Tag must be non-nil")
+	}
+	data := ops.Write1(&o.Internal, ops.TypeInputLen, tag)
+	data[0] = byte(ops.TypeInput)
 }

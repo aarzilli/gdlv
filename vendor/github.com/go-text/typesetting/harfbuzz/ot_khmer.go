@@ -3,8 +3,8 @@ package harfbuzz
 import (
 	"fmt"
 
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from harfbuzz/src/hb-ot-shape-complex-khmer.cc Copyright © 2011,2012  Google, Inc. Behdad Esfahbod
@@ -21,19 +21,19 @@ var khmerFeatures = [...]otMapFeature{
 	* Basic features.
 	* These features are applied in order, one at a time, after reordering.
 	 */
-	{loader.NewTag('p', 'r', 'e', 'f'), ffManualJoiners | ffPerSyllable},
-	{loader.NewTag('b', 'l', 'w', 'f'), ffManualJoiners | ffPerSyllable},
-	{loader.NewTag('a', 'b', 'v', 'f'), ffManualJoiners | ffPerSyllable},
-	{loader.NewTag('p', 's', 't', 'f'), ffManualJoiners | ffPerSyllable},
-	{loader.NewTag('c', 'f', 'a', 'r'), ffManualJoiners | ffPerSyllable},
+	{ot.NewTag('p', 'r', 'e', 'f'), ffManualJoiners | ffPerSyllable},
+	{ot.NewTag('b', 'l', 'w', 'f'), ffManualJoiners | ffPerSyllable},
+	{ot.NewTag('a', 'b', 'v', 'f'), ffManualJoiners | ffPerSyllable},
+	{ot.NewTag('p', 's', 't', 'f'), ffManualJoiners | ffPerSyllable},
+	{ot.NewTag('c', 'f', 'a', 'r'), ffManualJoiners | ffPerSyllable},
 	/*
 	* Other features.
 	* These features are applied all at once after clearing syllables.
 	 */
-	{loader.NewTag('p', 'r', 'e', 's'), ffGlobalManualJoiners},
-	{loader.NewTag('a', 'b', 'v', 's'), ffGlobalManualJoiners},
-	{loader.NewTag('b', 'l', 'w', 's'), ffGlobalManualJoiners},
-	{loader.NewTag('p', 's', 't', 's'), ffGlobalManualJoiners},
+	{ot.NewTag('p', 'r', 'e', 's'), ffGlobalManualJoiners},
+	{ot.NewTag('a', 'b', 'v', 's'), ffGlobalManualJoiners},
+	{ot.NewTag('b', 'l', 'w', 's'), ffGlobalManualJoiners},
+	{ot.NewTag('p', 's', 't', 's'), ffGlobalManualJoiners},
 }
 
 // Must be in the same order as the khmerFeatures array.
@@ -70,8 +70,8 @@ func (cs *complexShaperKhmer) collectFeatures(plan *otShapePlanner) {
 	*
 	* https://github.com/harfbuzz/harfbuzz/issues/974
 	 */
-	map_.enableFeatureExt(loader.NewTag('l', 'o', 'c', 'l'), ffPerSyllable, 1)
-	map_.enableFeatureExt(loader.NewTag('c', 'c', 'm', 'p'), ffPerSyllable, 1)
+	map_.enableFeatureExt(ot.NewTag('l', 'o', 'c', 'l'), ffPerSyllable, 1)
+	map_.enableFeatureExt(ot.NewTag('c', 'c', 'm', 'p'), ffPerSyllable, 1)
 
 	i := 0
 	for ; i < khmerBasicFeatures; i++ {
@@ -92,14 +92,14 @@ func (complexShaperKhmer) overrideFeatures(plan *otShapePlanner) {
 	/* Khmer spec has 'clig' as part of required shaping features:
 	* "Apply feature 'clig' to form ligatures that are desired for
 	* typographical correctness.", hence in overrides... */
-	map_.enableFeature(loader.NewTag('c', 'l', 'i', 'g'))
+	map_.enableFeature(ot.NewTag('c', 'l', 'i', 'g'))
 
 	/* Uniscribe does not apply 'kern' in Khmer. */
 	if UniscribeBugCompatible {
-		map_.disableFeature(loader.NewTag('k', 'e', 'r', 'n'))
+		map_.disableFeature(ot.NewTag('k', 'e', 'r', 'n'))
 	}
 
-	map_.disableFeature(loader.NewTag('l', 'i', 'g', 'a'))
+	map_.disableFeature(ot.NewTag('l', 'i', 'g', 'a'))
 }
 
 type khmerShapePlan struct {

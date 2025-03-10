@@ -1,9 +1,8 @@
 package harfbuzz
 
 import (
-	"github.com/go-text/typesetting/opentype/api"
-	"github.com/go-text/typesetting/opentype/api/font"
-	"github.com/go-text/typesetting/opentype/tables"
+	"github.com/go-text/typesetting/font"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from src/hb-font.hh, src/hb-font.cc  Copyright © 2009  Red Hat, Inc., 2012  Google, Inc.  Behdad Esfahbod
@@ -91,7 +90,7 @@ func NewFont(face Face) *Font {
 // SetVarCoordsDesign applies a list of variation coordinates, in design-space units,
 // to the font.
 func (f *Font) SetVarCoordsDesign(coords []float32) {
-	f.face.Coords = f.face.NormalizeVariations(coords)
+	f.face.SetCoords(f.face.NormalizeVariations(coords))
 }
 
 // Face returns the underlying face.
@@ -208,11 +207,12 @@ func (f *Font) getGlyphHOriginWithFallback(glyph GID) (Position, Position) {
 	if !ok {
 		x, y, ok = f.face.GlyphVOrigin(glyph)
 		if ok {
+			x, y := f.emScalefX(float32(x)), f.emScalefY(float32(y))
 			dx, dy := f.guessVOriginMinusHOrigin(glyph)
 			return x - dx, y - dy
 		}
 	}
-	return x, y
+	return f.emScalefX(float32(x)), f.emScalefY(float32(y))
 }
 
 func (f *Font) getGlyphVOriginWithFallback(glyph GID) (Position, Position) {
@@ -220,11 +220,12 @@ func (f *Font) getGlyphVOriginWithFallback(glyph GID) (Position, Position) {
 	if !ok {
 		x, y, ok = f.face.GlyphHOrigin(glyph)
 		if ok {
+			x, y := f.emScalefX(float32(x)), f.emScalefY(float32(y))
 			dx, dy := f.guessVOriginMinusHOrigin(glyph)
 			return x + dx, y + dy
 		}
 	}
-	return x, y
+	return f.emScalefX(float32(x)), f.emScalefY(float32(y))
 }
 
 func (f *Font) guessVOriginMinusHOrigin(glyph GID) (x, y Position) {
@@ -270,7 +271,7 @@ func (f *Font) getGlyphContourPointForOrigin(glyph GID, pointIndex uint16, direc
 	return x, y, ok
 }
 
-func (f *Font) fontHExtentsWithFallback() api.FontExtents {
+func (f *Font) fontHExtentsWithFallback() font.FontExtents {
 	extents, ok := f.face.FontHExtents()
 	extents.Ascender = float32(f.emScalefY(extents.Ascender))
 	extents.Descender = float32(f.emScalefY(extents.Descender))
@@ -288,9 +289,9 @@ func (f *Font) fontHExtentsWithFallback() api.FontExtents {
 //
 // Calls the appropriate direction-specific variant (horizontal
 // or vertical) depending on the value of `direction`.
-func (f *Font) ExtentsForDirection(direction Direction) api.FontExtents {
+func (f *Font) ExtentsForDirection(direction Direction) font.FontExtents {
 	var (
-		extents api.FontExtents
+		extents font.FontExtents
 		ok      bool
 	)
 	if direction.isHorizontal() {
@@ -309,12 +310,13 @@ func (f *Font) ExtentsForDirection(direction Direction) api.FontExtents {
 	return extents
 }
 
-func (font *Font) varCoords() []float32 { return font.face.Coords }
+func (font *Font) varCoords() []tables.Coord { return font.face.Coords() }
 
 func (font *Font) getXDelta(varStore tables.ItemVarStore, device tables.DeviceTable) Position {
 	switch device := device.(type) {
 	case tables.DeviceHinting:
-		return device.GetDelta(font.face.XPpem, font.XScale)
+		xPpem, _ := font.face.Ppem()
+		return device.GetDelta(xPpem, font.XScale)
 	case tables.DeviceVariation:
 		return font.emScalefX(varStore.GetDelta(tables.VariationStoreIndex(device), font.varCoords()))
 	default:
@@ -325,7 +327,8 @@ func (font *Font) getXDelta(varStore tables.ItemVarStore, device tables.DeviceTa
 func (font *Font) getYDelta(varStore tables.ItemVarStore, device tables.DeviceTable) Position {
 	switch device := device.(type) {
 	case tables.DeviceHinting:
-		return device.GetDelta(font.face.YPpem, font.YScale)
+		_, yPpem := font.face.Ppem()
+		return device.GetDelta(yPpem, font.YScale)
 	case tables.DeviceVariation:
 		return font.emScalefY(varStore.GetDelta(tables.VariationStoreIndex(device), font.varCoords()))
 	default:

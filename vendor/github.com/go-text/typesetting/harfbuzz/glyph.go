@@ -3,7 +3,7 @@ package harfbuzz
 import (
 	"fmt"
 
-	"github.com/go-text/typesetting/opentype/tables"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // Position stores a position, scaled according to the `Font`

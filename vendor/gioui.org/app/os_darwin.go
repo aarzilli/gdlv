@@ -75,9 +75,13 @@ var displayLinks sync.Map
 
 var mainFuncs = make(chan func(), 1)
 
+func isMainThread() bool {
+	return bool(C.isMainThread())
+}
+
 // runOnMain runs the function on the main thread.
 func runOnMain(f func()) {
-	if C.isMainThread() {
+	if isMainThread() {
 		f()
 		return
 	}
@@ -124,7 +128,7 @@ func stringToNSString(str string) C.CFTypeRef {
 	return C.newNSString(chars, C.NSUInteger(len(u16)))
 }
 
-func NewDisplayLink(callback func()) (*displayLink, error) {
+func newDisplayLink(callback func()) (*displayLink, error) {
 	d := &displayLink{
 		callback: callback,
 		done:     make(chan struct{}),
@@ -260,8 +264,9 @@ func windowSetCursor(from, to pointer.Cursor) pointer.Cursor {
 	return to
 }
 
-func (w *window) Wakeup() {
+func (w *window) wakeup() {
 	runOnMain(func() {
-		w.w.Event(wakeupEvent{})
+		w.loop.Wakeup()
+		w.loop.FlushEvents()
 	})
 }

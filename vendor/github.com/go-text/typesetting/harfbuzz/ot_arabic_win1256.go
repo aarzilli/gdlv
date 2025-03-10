@@ -1,9 +1,9 @@
 package harfbuzz
 
 import (
-	"github.com/go-text/typesetting/opentype/api/font"
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
+	"github.com/go-text/typesetting/font"
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from harfbuzz/src/hb-ot-shape-complex-arabic-win1256.hh Copyright © 2014  Google, Inc. Behdad Esfahbod
@@ -14,11 +14,11 @@ type manifest struct {
 }
 
 var arabicWin1256GsubLookups = [...]manifest{
-	{&rligLookup, loader.NewTag('r', 'l', 'i', 'g')},
-	{&initLookup, loader.NewTag('i', 'n', 'i', 't')},
-	{&mediLookup, loader.NewTag('m', 'e', 'd', 'i')},
-	{&finaLookup, loader.NewTag('f', 'i', 'n', 'a')},
-	{&rligMarksLookup, loader.NewTag('r', 'l', 'i', 'g')},
+	{&rligLookup, ot.NewTag('r', 'l', 'i', 'g')},
+	{&initLookup, ot.NewTag('i', 'n', 'i', 't')},
+	{&mediLookup, ot.NewTag('m', 'e', 'd', 'i')},
+	{&finaLookup, ot.NewTag('f', 'i', 'n', 'a')},
+	{&rligMarksLookup, ot.NewTag('r', 'l', 'i', 'g')},
 }
 
 // Lookups

@@ -15,11 +15,10 @@ import (
 	"math/bits"
 	"strconv"
 
+	"github.com/go-text/typesetting/font"
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 	"github.com/go-text/typesetting/language"
-	"github.com/go-text/typesetting/opentype/api"
-	"github.com/go-text/typesetting/opentype/api/font"
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
 )
 
 // based on upstream commit 5d543d64222c6ce45332d0c188790f90691ef112
@@ -29,7 +28,7 @@ import (
 const debugMode = false
 
 type (
-	GID = api.GID
+	GID = ot.GID
 	gID = tables.GlyphID
 )
 
@@ -193,7 +192,7 @@ func (cl ClusterLevel) String() string {
 // Setting start to `FeatureGlobalStart` and end to `FeatureGlobalEnd`
 // specifies that the feature always applies to the entire buffer.
 type Feature struct {
-	Tag loader.Tag
+	Tag ot.Tag
 	// Value of the feature: 0 disables the feature, non-zero (usually
 	// 1) enables the feature. For features implemented as lookup type 3 (like
 	// 'salt') `Value` is a one-based index into the alternates.
@@ -275,7 +274,7 @@ func (p *parser) parseBool() (uint32, bool) {
 	}
 }
 
-func (p *parser) parseTag() (loader.Tag, error) {
+func (p *parser) parseTag() (ot.Tag, error) {
 	p.skipSpaces()
 
 	var quote byte
@@ -297,7 +296,7 @@ func (p *parser) parseTag() (loader.Tag, error) {
 	// padd with space if necessary, since MustNewTag requires 4 bytes
 	tagBytes := [4]byte{' ', ' ', ' ', ' '}
 	copy(tagBytes[:], p.data[start:p.pos])
-	tag := loader.MustNewTag(string(tagBytes[:]))
+	tag := ot.MustNewTag(string(tagBytes[:]))
 
 	if quote != 0 {
 		/* CSS expects exactly four bytes.  And we only allow quotations for

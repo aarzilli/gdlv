@@ -1,7 +1,7 @@
 package harfbuzz
 
 import (
-	"github.com/go-text/typesetting/opentype/tables"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from src/hb-set-digest.hh Copyright © 2012  Google, Inc. Behdad Esfahbod

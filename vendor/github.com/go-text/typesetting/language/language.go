@@ -39,7 +39,9 @@ func NewLanguage(language string) Language {
 	return Language(out)
 }
 
-func (l Language) primary() Language {
+// Primary returns the root language of l, that is
+// the part before the first '-' separator
+func (l Language) Primary() Language {
 	if index := strings.IndexByte(string(l), '-'); index != -1 {
 		l = l[:index]
 	}
@@ -61,7 +63,7 @@ func (l Language) SimpleInheritance() []Language {
 
 // IsDerivedFrom returns `true` if `l` has
 // the `root` as primary language.
-func (l Language) IsDerivedFrom(root Language) bool { return l.primary() == root }
+func (l Language) IsDerivedFrom(root Language) bool { return l.Primary() == root }
 
 // IsUndetermined returns `true` if its primary language is "und".
 // It is a shortcut for IsDerivedFrom("und").
@@ -115,7 +117,7 @@ func (l Language) Compare(other Language) LanguageComparison {
 		return LanguagesExactMatch
 	}
 
-	primary1, primary2 := l.primary(), other.primary()
+	primary1, primary2 := l.Primary(), other.Primary()
 	if primary1 != primary2 {
 		return LanguagesDiffer
 	}

@@ -846,6 +846,7 @@ const lastArabicShape = 0x06d3
 //   - 1: medial
 //   - 2: final
 //   - 3: isolated
+//
 // See also the bounds given by [firstArabicShape] and [lastArabicShape].
 var arabicShaping = [...][4]uint16{ // required memory: 2 KB
 	{0x0000, 0x0000, 0x0000, 0xfe80},
@@ -1149,8 +1150,8 @@ var arabicLigatureMarkTable = [...]arabicTableEntry{
 var arabicLigature3Table = [...]arabicTableEntry{
 	{0xfedf, []arabicLig{
 		{[]rune{0xfee0, 0xfeea}, 0xf201},
-		{[]rune{0xfee4, 0xfea4}, 0xfd88},
 		{[]rune{0xfee4, 0xfea0}, 0xf211},
+		{[]rune{0xfee4, 0xfea4}, 0xfd88},
 	}},
 }
 

@@ -199,6 +199,18 @@ func (w *Window) Master() MasterWindow {
 	return w.ctx.mw
 }
 
+func (win *Window) Title() string {
+	return win.title
+}
+
+// SetTitle cannot be used to change the title of the Root window, only sub-windows and the gio backend.
+func (win *Window) SetTitle(s string) {
+	if win.idx == 0 && win.title != s {
+		win.ctx.mw.setTitle(s)
+	}
+	win.title = s
+}
+
 func (win *Window) style() *nstyle.Window {
 	switch {
 	case win.flags&windowCombo != 0:
@@ -2707,6 +2719,7 @@ func (ctx *context) popupOpen(title string, flags WindowFlags, rect rect.Rect, s
 	}
 	ctx.Windows = append(ctx.Windows, popup)
 	ctx.dockedWindowFocus = 0
+	ctx.rootWindowFocus = false
 
 	if scale {
 		rect.X = ctx.scale(rect.X)
@@ -2752,6 +2765,9 @@ func (ctx *context) autoPosition() (int, int) {
 func (win *Window) Close() {
 	if win.idx != 0 {
 		win.close = true
+	} else {
+		// win.idx == 0: Should be in Master window's context.
+		win.Master().Close()
 	}
 }
 

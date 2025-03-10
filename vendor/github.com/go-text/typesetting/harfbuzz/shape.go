@@ -2,6 +2,8 @@ package harfbuzz
 
 import (
 	"fmt"
+
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from harfbuzz/src/hb-shape.cc, harfbuzz/src/hb-shape-plan.cc Copyright © 2009, 2012 Behdad Esfahbod
@@ -41,13 +43,13 @@ func (b *Buffer) Shape(font *Font, features []Feature) {
 //
 // Most client programs will not need to deal with shape plans directly.
 type shapePlan struct {
-	shaper       *shaperOpentype
+	shaper       shaperOpentype
 	props        SegmentProperties
 	userFeatures []Feature
 }
 
 func (plan *shapePlan) init(copy bool, font *Font, props SegmentProperties,
-	userFeatures []Feature, coords []float32,
+	userFeatures []Feature, coords []tables.Coord,
 ) {
 	plan.props = props
 	if !copy {
@@ -66,7 +68,7 @@ func (plan *shapePlan) init(copy bool, font *Font, props SegmentProperties,
 	}
 
 	// init shaper
-	plan.shaper = newShaperOpentype(font.face.Font, coords)
+	plan.shaper.init(font.face.Font, coords)
 }
 
 func (plan shapePlan) userFeaturesMatch(other shapePlan) bool {
@@ -91,7 +93,7 @@ func (plan shapePlan) equal(other shapePlan) bool {
 // plus the variation-space coordinates @coords.
 // See newShapePlanCached for caching support.
 func newShapePlan(font *Font, props SegmentProperties,
-	userFeatures []Feature, coords []float32,
+	userFeatures []Feature, coords []tables.Coord,
 ) *shapePlan {
 	if debugMode {
 		fmt.Printf("NEW SHAPE PLAN: face:%p features:%v coords:%v\n", &font.face, userFeatures, coords)
@@ -126,7 +128,7 @@ func (sp *shapePlan) execute(font *Font, buffer *Buffer, features []Feature) {
 // creates (or returns) a cached shaping plan suitable for reuse, for a combination
 // of `face`, `userFeatures`, `props`, plus the variation-space coordinates `coords`.
 func (b *Buffer) newShapePlanCached(font *Font, props SegmentProperties,
-	userFeatures []Feature, coords []float32,
+	userFeatures []Feature, coords []tables.Coord,
 ) *shapePlan {
 	var key shapePlan
 	key.init(false, font, props, userFeatures, coords)

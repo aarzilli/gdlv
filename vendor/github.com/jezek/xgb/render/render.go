@@ -639,52 +639,6 @@ func init() {
 	xgb.NewExtErrorFuncs["RENDER"][0] = PictFormatErrorNew
 }
 
-// BadPictOp is the error number for a BadPictOp.
-const BadPictOp = 2
-
-type PictOpError struct {
-	Sequence uint16
-	NiceName string
-}
-
-// PictOpErrorNew constructs a PictOpError value that implements xgb.Error from a byte slice.
-func PictOpErrorNew(buf []byte) xgb.Error {
-	v := PictOpError{}
-	v.NiceName = "PictOp"
-
-	b := 1 // skip error determinant
-	b += 1 // don't read error number
-
-	v.Sequence = xgb.Get16(buf[b:])
-	b += 2
-
-	return v
-}
-
-// SequenceId returns the sequence id attached to the BadPictOp error.
-// This is mostly used internally.
-func (err PictOpError) SequenceId() uint16 {
-	return err.Sequence
-}
-
-// BadId returns the 'BadValue' number if one exists for the BadPictOp error. If no bad value exists, 0 is returned.
-func (err PictOpError) BadId() uint32 {
-	return 0
-}
-
-// Error returns a rudimentary string representation of the BadPictOp error.
-
-func (err PictOpError) Error() string {
-	fieldVals := make([]string, 0, 0)
-	fieldVals = append(fieldVals, "NiceName: "+err.NiceName)
-	fieldVals = append(fieldVals, xgb.Sprintf("Sequence: %d", err.Sequence))
-	return "BadPictOp {" + xgb.StringsJoin(fieldVals, ", ") + "}"
-}
-
-func init() {
-	xgb.NewExtErrorFuncs["RENDER"][2] = PictOpErrorNew
-}
-
 const (
 	PictOpClear               = 0
 	PictOpSrc                 = 1
@@ -740,6 +694,52 @@ const (
 	PictOpHSLColor            = 61
 	PictOpHSLLuminosity       = 62
 )
+
+// BadPictOp is the error number for a BadPictOp.
+const BadPictOp = 2
+
+type PictOpError struct {
+	Sequence uint16
+	NiceName string
+}
+
+// PictOpErrorNew constructs a PictOpError value that implements xgb.Error from a byte slice.
+func PictOpErrorNew(buf []byte) xgb.Error {
+	v := PictOpError{}
+	v.NiceName = "PictOp"
+
+	b := 1 // skip error determinant
+	b += 1 // don't read error number
+
+	v.Sequence = xgb.Get16(buf[b:])
+	b += 2
+
+	return v
+}
+
+// SequenceId returns the sequence id attached to the BadPictOp error.
+// This is mostly used internally.
+func (err PictOpError) SequenceId() uint16 {
+	return err.Sequence
+}
+
+// BadId returns the 'BadValue' number if one exists for the BadPictOp error. If no bad value exists, 0 is returned.
+func (err PictOpError) BadId() uint32 {
+	return 0
+}
+
+// Error returns a rudimentary string representation of the BadPictOp error.
+
+func (err PictOpError) Error() string {
+	fieldVals := make([]string, 0, 0)
+	fieldVals = append(fieldVals, "NiceName: "+err.NiceName)
+	fieldVals = append(fieldVals, xgb.Sprintf("Sequence: %d", err.Sequence))
+	return "BadPictOp {" + xgb.StringsJoin(fieldVals, ", ") + "}"
+}
+
+func init() {
+	xgb.NewExtErrorFuncs["RENDER"][2] = PictOpErrorNew
+}
 
 const (
 	PictTypeIndexed = 0
@@ -1613,7 +1613,7 @@ func (cook AddGlyphsCookie) Check() error {
 // Write request to wire for AddGlyphs
 // addGlyphsRequest writes a AddGlyphs request to a byte slice.
 func addGlyphsRequest(c *xgb.Conn, Glyphset Glyphset, GlyphsLen uint32, Glyphids []uint32, Glyphs []Glyphinfo, Data []byte) []byte {
-	size := xgb.Pad(((((12 + xgb.Pad((int(GlyphsLen) * 4))) + 4) + xgb.Pad((int(GlyphsLen) * 12))) + xgb.Pad((len(Data) * 1))))
+	size := xgb.Pad((((12 + xgb.Pad((int(GlyphsLen) * 4))) + xgb.Pad((int(GlyphsLen) * 12))) + xgb.Pad((len(Data) * 1))))
 	b := 0
 	buf := make([]byte, size)
 
@@ -1625,7 +1625,7 @@ func addGlyphsRequest(c *xgb.Conn, Glyphset Glyphset, GlyphsLen uint32, Glyphids
 	buf[b] = 20 // request opcode
 	b += 1
 
-	blen := b
+	xgb.Put16(buf[b:], uint16(size/4)) // write request size in 4-byte units
 	b += 2
 
 	xgb.Put32(buf[b:], uint32(Glyphset))
@@ -1639,16 +1639,12 @@ func addGlyphsRequest(c *xgb.Conn, Glyphset Glyphset, GlyphsLen uint32, Glyphids
 		b += 4
 	}
 
-	b = (b + 3) & ^3 // alignment gap
-
 	b += GlyphinfoListBytes(buf[b:], Glyphs)
 
 	copy(buf[b:], Data[:len(Data)])
 	b += int(len(Data))
 
-	b = xgb.Pad(b)
-	xgb.Put16(buf[blen:], uint16(b/4)) // write request size in 4-byte units
-	return buf[:b]
+	return buf
 }
 
 // AddTrapsCookie is a cookie used only for AddTraps requests.
@@ -1760,7 +1756,7 @@ func (cook ChangePictureCookie) Check() error {
 // Write request to wire for ChangePicture
 // changePictureRequest writes a ChangePicture request to a byte slice.
 func changePictureRequest(c *xgb.Conn, Picture Picture, ValueMask uint32, ValueList []uint32) []byte {
-	size := xgb.Pad((8 + (4 + xgb.Pad((4 * xgb.PopCount(int(ValueMask)))))))
+	size := xgb.Pad((12 + xgb.Pad((4 * xgb.PopCount(int(ValueMask))))))
 	b := 0
 	buf := make([]byte, size)
 
@@ -1780,6 +1776,7 @@ func changePictureRequest(c *xgb.Conn, Picture Picture, ValueMask uint32, ValueL
 
 	xgb.Put32(buf[b:], ValueMask)
 	b += 4
+
 	for i := 0; i < xgb.PopCount(int(ValueMask)); i++ {
 		xgb.Put32(buf[b:], ValueList[i])
 		b += 4
@@ -2240,7 +2237,7 @@ func (cook CreateConicalGradientCookie) Check() error {
 // Write request to wire for CreateConicalGradient
 // createConicalGradientRequest writes a CreateConicalGradient request to a byte slice.
 func createConicalGradientRequest(c *xgb.Conn, Picture Picture, Center Pointfix, Angle Fixed, NumStops uint32, Stops []Fixed, Colors []Color) []byte {
-	size := xgb.Pad((((24 + xgb.Pad((int(NumStops) * 4))) + 4) + xgb.Pad((int(NumStops) * 8))))
+	size := xgb.Pad(((24 + xgb.Pad((int(NumStops) * 4))) + xgb.Pad((int(NumStops) * 8))))
 	b := 0
 	buf := make([]byte, size)
 
@@ -2252,7 +2249,7 @@ func createConicalGradientRequest(c *xgb.Conn, Picture Picture, Center Pointfix,
 	buf[b] = 36 // request opcode
 	b += 1
 
-	blen := b
+	xgb.Put16(buf[b:], uint16(size/4)) // write request size in 4-byte units
 	b += 2
 
 	xgb.Put32(buf[b:], uint32(Picture))
@@ -2275,13 +2272,9 @@ func createConicalGradientRequest(c *xgb.Conn, Picture Picture, Center Pointfix,
 		b += 4
 	}
 
-	b = (b + 3) & ^3 // alignment gap
-
 	b += ColorListBytes(buf[b:], Colors)
 
-	b = xgb.Pad(b)
-	xgb.Put16(buf[blen:], uint16(b/4)) // write request size in 4-byte units
-	return buf[:b]
+	return buf
 }
 
 // CreateCursorCookie is a cookie used only for CreateCursor requests.
@@ -2458,7 +2451,7 @@ func (cook CreateLinearGradientCookie) Check() error {
 // Write request to wire for CreateLinearGradient
 // createLinearGradientRequest writes a CreateLinearGradient request to a byte slice.
 func createLinearGradientRequest(c *xgb.Conn, Picture Picture, P1 Pointfix, P2 Pointfix, NumStops uint32, Stops []Fixed, Colors []Color) []byte {
-	size := xgb.Pad((((28 + xgb.Pad((int(NumStops) * 4))) + 4) + xgb.Pad((int(NumStops) * 8))))
+	size := xgb.Pad(((28 + xgb.Pad((int(NumStops) * 4))) + xgb.Pad((int(NumStops) * 8))))
 	b := 0
 	buf := make([]byte, size)
 
@@ -2470,7 +2463,7 @@ func createLinearGradientRequest(c *xgb.Conn, Picture Picture, P1 Pointfix, P2 P
 	buf[b] = 34 // request opcode
 	b += 1
 
-	blen := b
+	xgb.Put16(buf[b:], uint16(size/4)) // write request size in 4-byte units
 	b += 2
 
 	xgb.Put32(buf[b:], uint32(Picture))
@@ -2496,13 +2489,9 @@ func createLinearGradientRequest(c *xgb.Conn, Picture Picture, P1 Pointfix, P2 P
 		b += 4
 	}
 
-	b = (b + 3) & ^3 // alignment gap
-
 	b += ColorListBytes(buf[b:], Colors)
 
-	b = xgb.Pad(b)
-	xgb.Put16(buf[blen:], uint16(b/4)) // write request size in 4-byte units
-	return buf[:b]
+	return buf
 }
 
 // CreatePictureCookie is a cookie used only for CreatePicture requests.
@@ -2545,7 +2534,7 @@ func (cook CreatePictureCookie) Check() error {
 // Write request to wire for CreatePicture
 // createPictureRequest writes a CreatePicture request to a byte slice.
 func createPictureRequest(c *xgb.Conn, Pid Picture, Drawable xproto.Drawable, Format Pictformat, ValueMask uint32, ValueList []uint32) []byte {
-	size := xgb.Pad((16 + (4 + xgb.Pad((4 * xgb.PopCount(int(ValueMask)))))))
+	size := xgb.Pad((20 + xgb.Pad((4 * xgb.PopCount(int(ValueMask))))))
 	b := 0
 	buf := make([]byte, size)
 
@@ -2571,6 +2560,7 @@ func createPictureRequest(c *xgb.Conn, Pid Picture, Drawable xproto.Drawable, Fo
 
 	xgb.Put32(buf[b:], ValueMask)
 	b += 4
+
 	for i := 0; i < xgb.PopCount(int(ValueMask)); i++ {
 		xgb.Put32(buf[b:], ValueList[i])
 		b += 4
@@ -2620,7 +2610,7 @@ func (cook CreateRadialGradientCookie) Check() error {
 // Write request to wire for CreateRadialGradient
 // createRadialGradientRequest writes a CreateRadialGradient request to a byte slice.
 func createRadialGradientRequest(c *xgb.Conn, Picture Picture, Inner Pointfix, Outer Pointfix, InnerRadius Fixed, OuterRadius Fixed, NumStops uint32, Stops []Fixed, Colors []Color) []byte {
-	size := xgb.Pad((((36 + xgb.Pad((int(NumStops) * 4))) + 4) + xgb.Pad((int(NumStops) * 8))))
+	size := xgb.Pad(((36 + xgb.Pad((int(NumStops) * 4))) + xgb.Pad((int(NumStops) * 8))))
 	b := 0
 	buf := make([]byte, size)
 
@@ -2632,7 +2622,7 @@ func createRadialGradientRequest(c *xgb.Conn, Picture Picture, Inner Pointfix, O
 	buf[b] = 35 // request opcode
 	b += 1
 
-	blen := b
+	xgb.Put16(buf[b:], uint16(size/4)) // write request size in 4-byte units
 	b += 2
 
 	xgb.Put32(buf[b:], uint32(Picture))
@@ -2664,13 +2654,9 @@ func createRadialGradientRequest(c *xgb.Conn, Picture Picture, Inner Pointfix, O
 		b += 4
 	}
 
-	b = (b + 3) & ^3 // alignment gap
-
 	b += ColorListBytes(buf[b:], Colors)
 
-	b = xgb.Pad(b)
-	xgb.Put16(buf[blen:], uint16(b/4)) // write request size in 4-byte units
-	return buf[:b]
+	return buf
 }
 
 // CreateSolidFillCookie is a cookie used only for CreateSolidFill requests.
@@ -3156,11 +3142,9 @@ type QueryPictFormatsReply struct {
 	NumVisuals  uint32
 	NumSubpixel uint32
 	// padding: 4 bytes
-	Formats []Pictforminfo // size: xgb.Pad((int(NumFormats) * 28))
-	// alignment gap to multiple of 4
-	Screens []Pictscreen // size: PictscreenListSize(Screens)
-	// alignment gap to multiple of 4
-	Subpixels []uint32 // size: xgb.Pad((int(NumSubpixel) * 4))
+	Formats   []Pictforminfo // size: xgb.Pad((int(NumFormats) * 28))
+	Screens   []Pictscreen   // size: PictscreenListSize(Screens)
+	Subpixels []uint32       // size: xgb.Pad((int(NumSubpixel) * 4))
 }
 
 // Reply blocks and returns the reply data for a QueryPictFormats request.
@@ -3208,12 +3192,8 @@ func queryPictFormatsReply(buf []byte) *QueryPictFormatsReply {
 	v.Formats = make([]Pictforminfo, v.NumFormats)
 	b += PictforminfoReadList(buf[b:], v.Formats)
 
-	b = (b + 3) & ^3 // alignment gap
-
 	v.Screens = make([]Pictscreen, v.NumScreens)
 	b += PictscreenReadList(buf[b:], v.Screens)
-
-	b = (b + 3) & ^3 // alignment gap
 
 	v.Subpixels = make([]uint32, v.NumSubpixel)
 	for i := 0; i < int(v.NumSubpixel); i++ {

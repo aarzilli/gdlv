@@ -6,8 +6,8 @@ import (
 	"math/bits"
 	"sort"
 
+	"github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/language"
-	"github.com/go-text/typesetting/opentype/api"
 )
 
 // Rune coverage implementation, inspired by the fontconfig FcCharset type.
@@ -22,6 +22,17 @@ import (
 // and the position in the resulting uint32 is given by the 5 lower bits (from 0 to 31)
 type pageSet [8]uint32
 
+func (a pageSet) includes(b pageSet) bool {
+	for j, aPage := range b {
+		bPage := a[j]
+		// Does b have any bits not in a?
+		if aPage & ^bPage != 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // pageRef stores the second and third bytes of a rune (uint16(r >> 8)),
 // shared by all the runes in a page.
 type pageRef = uint16
@@ -31,23 +42,23 @@ type runePage struct {
 	set pageSet
 }
 
-// runeSet is an efficient implementation of a rune set (that is a map[rune]bool),
+// RuneSet is an efficient implementation of a rune set (that is a map[rune]bool),
 // used to store the Unicode points supported by a font, and optimized to deal with consecutive
 // runes.
-type runeSet []runePage
+type RuneSet []runePage
 
 // newCoveragesFromCmap iterates through the given `cmap`
 // to build the corresponding rune set.
 // buffer may be provided to reduce allocations, and is returned
-func newCoveragesFromCmap(cmap api.Cmap, buffer [][2]rune) (runeSet, scriptSet, [][2]rune) {
-	if ranger, ok := cmap.(api.CmapRuneRanger); ok { // use the fast range implementation
+func newCoveragesFromCmap(cmap font.Cmap, buffer [][2]rune) (RuneSet, ScriptSet, [][2]rune) {
+	if ranger, ok := cmap.(font.CmapRuneRanger); ok { // use the fast range implementation
 		return newCoveragesFromCmapRange(ranger, buffer)
 	}
 
 	// use the slower rune by rune API
 	var (
-		rs runeSet
-		ss scriptSet
+		rs RuneSet
+		ss ScriptSet
 	)
 	iter := cmap.Iter()
 	for iter.Next() {
@@ -93,12 +104,12 @@ func addRangeToPage(page *pageSet, start, end byte) {
 
 // newCoveragesFromCmapRange iterates through the given `cmap`
 // to build the corresponding rune set.
-func newCoveragesFromCmapRange(cmap api.CmapRuneRanger, buffer [][2]rune) (runeSet, scriptSet, [][2]rune) {
+func newCoveragesFromCmapRange(cmap font.CmapRuneRanger, buffer [][2]rune) (RuneSet, ScriptSet, [][2]rune) {
 	buffer = cmap.RuneRanges(buffer)
 
 	ss := scriptsFromRanges(buffer)
 
-	var rs runeSet
+	var rs RuneSet
 	lastPage := &runePage{ref: 0xFFFF} // start with an invalid sentinel value
 	for _, ra := range buffer {
 		start, end := ra[0], ra[1]
@@ -145,7 +156,7 @@ func newCoveragesFromCmapRange(cmap api.CmapRuneRanger, buffer [][2]rune) (runeS
 
 // findPageFrom is the same as findPagePos, but
 // start the binary search with the given `low` index
-func (rs runeSet) findPageFrom(low int, ref pageRef) int {
+func (rs RuneSet) findPageFrom(low int, ref pageRef) int {
 	high := len(rs) - 1
 	for low <= high {
 		mid := (low + high) >> 1
@@ -168,11 +179,11 @@ func (rs runeSet) findPageFrom(low int, ref pageRef) int {
 // findPagePos searches for the leaf containing the specified number.
 // It returns its index if it exists, otherwise it returns the negative of
 // the (`position` + 1) where `position` is the index where it should be inserted
-func (rs runeSet) findPagePos(page pageRef) int { return rs.findPageFrom(0, page) }
+func (rs RuneSet) findPagePos(page pageRef) int { return rs.findPageFrom(0, page) }
 
 // findPage returns the page containing the specified char, or nil
 // if it doesn't exists
-func (rs runeSet) findPage(ref pageRef) *pageSet {
+func (rs RuneSet) findPage(ref pageRef) *pageSet {
 	pos := rs.findPagePos(ref)
 	if pos >= 0 {
 		return &rs[pos].set
@@ -182,7 +193,7 @@ func (rs runeSet) findPage(ref pageRef) *pageSet {
 
 // findOrCreatePage locates the page containing the specified char, creating it if needed,
 // and returns a pointer to it
-func (rs *runeSet) findOrCreatePage(ref pageRef) *pageSet {
+func (rs *RuneSet) findOrCreatePage(ref pageRef) *pageSet {
 	pos := rs.findPagePos(ref)
 	if pos < 0 { // the page doest not exists, create it
 		pos = -pos - 1
@@ -193,7 +204,7 @@ func (rs *runeSet) findOrCreatePage(ref pageRef) *pageSet {
 }
 
 // insertPage inserts the given `page` at `pos`, meaning the resulting page can be accessed via &rs[pos]
-func (rs *runeSet) insertPage(page runePage, pos int) {
+func (rs *RuneSet) insertPage(page runePage, pos int) {
 	// insert in slice
 	*rs = append(*rs, runePage{})
 	copy((*rs)[pos+1:], (*rs)[pos:])
@@ -201,14 +212,14 @@ func (rs *runeSet) insertPage(page runePage, pos int) {
 }
 
 // Add adds `r` to the rune set.
-func (rs *runeSet) Add(r rune) {
+func (rs *RuneSet) Add(r rune) {
 	leaf := rs.findOrCreatePage(uint16(r >> 8))
 	b := &leaf[(r&0xff)>>5] // (r&0xff)>>5 is the index in the page
 	*b |= (1 << (r & 0x1f)) // r & 0x1f is the bit in the uint32
 }
 
 // Delete removes the rune from the rune set.
-func (rs runeSet) Delete(r rune) {
+func (rs RuneSet) Delete(r rune) {
 	leaf := rs.findPage(uint16(r >> 8))
 	if leaf == nil {
 		return
@@ -219,7 +230,7 @@ func (rs runeSet) Delete(r rune) {
 }
 
 // Contains returns `true` if `r` is in the set.
-func (rs *runeSet) Contains(r rune) bool {
+func (rs RuneSet) Contains(r rune) bool {
 	leaf := rs.findPage(uint16(r >> 8))
 	if leaf == nil {
 		return false
@@ -227,8 +238,35 @@ func (rs *runeSet) Contains(r rune) bool {
 	return leaf[(r&0xff)>>5]&(1<<(r&0x1f)) != 0
 }
 
+// return true iff a includes b, that is if b is a subset of a, that is if all runes
+// of b are in a
+func (a RuneSet) includes(b RuneSet) bool {
+	bi, ai := 0, 0 // index in b and a
+	for bi < len(b) && ai < len(a) {
+		bEntry, aEntry := b[bi], a[ai]
+		// Check matching pages
+		if bEntry.ref == aEntry.ref {
+			if ok := aEntry.set.includes(bEntry.set); !ok {
+				return false
+			}
+			bi++
+			ai++
+		} else if bEntry.ref < aEntry.ref { // Does b have any pages not in a?
+			return false
+		} else {
+			// increment ai to match the page of b
+			ai = a.findPageFrom(ai+1, bEntry.ref)
+			if ai < 0 { // the page is not even in a
+				return false
+			}
+		}
+	}
+	//  did we look at every page?
+	return bi >= len(b)
+}
+
 // Len returns the number of runes in the set.
-func (a runeSet) Len() int {
+func (a RuneSet) Len() int {
 	count := 0
 	for _, page := range a {
 		for _, am := range page.set {
@@ -240,8 +278,8 @@ func (a runeSet) Len() int {
 
 const runePageSize = 2 + 8*4 // uint16 + 8 * uint32
 
-// serialize serialize the Coverage in binary format
-func (rs runeSet) serialize() []byte {
+// serialize serializes the rune coverage in binary format
+func (rs RuneSet) serialize() []byte {
 	buffer := make([]byte, 2+runePageSize*len(rs))
 	binary.BigEndian.PutUint16(buffer, uint16(len(rs)))
 	for i, page := range rs {
@@ -254,17 +292,17 @@ func (rs runeSet) serialize() []byte {
 	return buffer
 }
 
-// deserializeFrom reads the binary format produced by serializeTo
+// deserializeFrom reads the binary format produced by serialize.
 // it returns the number of bytes read from `data`
-func (rs *runeSet) deserializeFrom(data []byte) (int, error) {
+func (rs *RuneSet) deserializeFrom(data []byte) (int, error) {
 	if len(data) < 2 {
-		return 0, errors.New("invalid Coverage (EOF)")
+		return 0, errors.New("invalid rune set (EOF)")
 	}
 	L := int(binary.BigEndian.Uint16(data))
 	if len(data) < 2+runePageSize*L {
-		return 0, errors.New("invalid Coverage size (EOF)")
+		return 0, errors.New("invalid rune set size (EOF)")
 	}
-	v := make(runeSet, L)
+	v := make(RuneSet, L)
 	for i := range v {
 		v[i].ref = binary.BigEndian.Uint16(data[2+runePageSize*i:])
 		slice := data[2+runePageSize*i+2:]
@@ -278,10 +316,12 @@ func (rs *runeSet) deserializeFrom(data []byte) (int, error) {
 	return 2 + runePageSize*L, nil
 }
 
-type scriptSet []language.Script
+// ScriptSet is a set of scripts, implemented as
+// a sorted slice of unique, increasing scripts
+type ScriptSet []language.Script
 
 // insert adds the given script to the set if it is not already present.
-func (s *scriptSet) insert(newScript language.Script) {
+func (s *ScriptSet) insert(newScript language.Script) {
 	scriptIdx := sort.Search(len([]language.Script(*s)), func(i int) bool {
 		return (*s)[i] >= newScript
 	})
@@ -299,8 +339,8 @@ func (s *scriptSet) insert(newScript language.Script) {
 
 const scriptSize = 4
 
-// serialize serialize the script set in binary format
-func (ss scriptSet) serialize() []byte {
+// serialize serializes the script set in binary format
+func (ss ScriptSet) serialize() []byte {
 	buffer := make([]byte, 1+scriptSize*len(ss))
 	buffer[0] = byte(len(ss)) // there are about 190 scripts, a byte is enough
 	for i, script := range ss {
@@ -311,7 +351,7 @@ func (ss scriptSet) serialize() []byte {
 
 // deserializeFrom reads the binary format produced by serialize
 // it returns the number of bytes read from `data`
-func (ss *scriptSet) deserializeFrom(data []byte) (int, error) {
+func (ss *ScriptSet) deserializeFrom(data []byte) (int, error) {
 	if len(data) < 1 {
 		return 0, errors.New("invalid Script set (EOF)")
 	}
@@ -319,7 +359,7 @@ func (ss *scriptSet) deserializeFrom(data []byte) (int, error) {
 	if len(data) < 1+scriptSize*L {
 		return 0, errors.New("invalid Script set size (EOF)")
 	}
-	v := make(scriptSet, L)
+	v := make(ScriptSet, L)
 	for i := range v {
 		v[i] = language.Script(binary.BigEndian.Uint32(data[1+scriptSize*i:]))
 	}
@@ -331,9 +371,9 @@ func (ss *scriptSet) deserializeFrom(data []byte) (int, error) {
 
 // scriptsFromRanges returns the set of scripts used in [ranges],
 // which must be sorted (in ascending order), and have inclusive bounds.
-func scriptsFromRanges(ranges [][2]rune) scriptSet {
+func scriptsFromRanges(ranges [][2]rune) ScriptSet {
 	const LR = uint(len(language.ScriptRanges))
-	out := make(scriptSet, 0, 2)
+	out := make(ScriptSet, 0, 2)
 
 	var hasUnknown bool
 	// we leverage the fact that both ranges and scriptRanges are sorted

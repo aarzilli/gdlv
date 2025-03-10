@@ -3,9 +3,6 @@
 package pointer
 
 import (
-	"encoding/binary"
-	"fmt"
-	"image"
 	"strings"
 	"time"
 
@@ -18,7 +15,7 @@ import (
 
 // Event is a pointer event.
 type Event struct {
-	Type   Type
+	Kind   Kind
 	Source Source
 	// PointerID is the id for the pointer and can be used
 	// to track a particular pointer from Press to
@@ -32,8 +29,10 @@ type Event struct {
 	Time time.Duration
 	// Buttons are the set of pressed mouse buttons for this event.
 	Buttons Buttons
-	// Position is the position of the event, relative to
-	// the current transformation, as set by op.TransformOp.
+	// Position is the coordinates of the event in the local coordinate
+	// system of the receiving tag. The transformation from global window
+	// coordinates to local coordinates is performed by the inverse of
+	// the effective transformation of the tag.
 	Position f32.Point
 	// Scroll is the scroll amount, if any.
 	Scroll f32.Point
@@ -51,30 +50,41 @@ type PassOp struct {
 type PassStack struct {
 	ops     *ops.Ops
 	id      ops.StackID
-	macroID int
+	macroID uint32
 }
 
-// InputOp declares an input handler ready for pointer
-// events.
-type InputOp struct {
-	Tag event.Tag
-	// Grab, if set, request that the handler get
-	// Grabbed priority.
-	Grab bool
-	// Types is a bitwise-or of event types to receive.
-	Types Type
-	// ScrollBounds describe the maximum scrollable distances in both
-	// axes. Specifically, any Event e delivered to Tag will satisfy
+// Filter matches every [Event] that target the Tag and whose kind is
+// included in Kinds. Note that only tags specified in [event.Op] can
+// be targeted by pointer events.
+type Filter struct {
+	Target event.Tag
+	// Kinds is a bitwise-or of event types to match.
+	Kinds Kind
+	// ScrollX and ScrollY constrain the range of scrolling events delivered
+	// to Target. Specifically, any Event e delivered to Tag will satisfy
 	//
-	// ScrollBounds.Min.X <= e.Scroll.X <= ScrollBounds.Max.X (horizontal axis)
-	// ScrollBounds.Min.Y <= e.Scroll.Y <= ScrollBounds.Max.Y (vertical axis)
-	ScrollBounds image.Rectangle
+	// ScrollX.Min <= e.Scroll.X <= ScrollX.Max (horizontal axis)
+	// ScrollY.Min <= e.Scroll.Y <= ScrollY.Max (vertical axis)
+	ScrollX ScrollRange
+	ScrollY ScrollRange
+}
+
+// ScrollRange describes the range of scrolling distances in an
+// axis.
+type ScrollRange struct {
+	Min, Max int
+}
+
+// GrabCmd requests a pointer grab on the pointer identified by ID.
+type GrabCmd struct {
+	Tag event.Tag
+	ID  ID
 }
 
 type ID uint16
 
-// Type of an Event.
-type Type uint
+// Kind of an Event.
+type Kind uint
 
 // Priority of an Event.
 type Priority uint8
@@ -169,7 +179,7 @@ const (
 const (
 	// A Cancel event is generated when the current gesture is
 	// interrupted by other handlers or the system.
-	Cancel Type = (1 << iota) >> 1
+	Cancel Kind = 1 << iota
 	// Press of a pointer.
 	Press
 	// Release of a pointer.
@@ -215,6 +225,13 @@ const (
 	ButtonTertiary
 )
 
+func (s ScrollRange) Union(s2 ScrollRange) ScrollRange {
+	return ScrollRange{
+		Min: min(s.Min, s2.Min),
+		Max: max(s.Max, s2.Max),
+	}
+}
+
 // Push the current pass mode to the pass stack and set the pass mode.
 func (p PassOp) Push(o *op.Ops) PassStack {
 	id, mid := ops.PushOp(&o.Internal, ops.PassStack)
@@ -235,36 +252,12 @@ func (op Cursor) Add(o *op.Ops) {
 	data[1] = byte(op)
 }
 
-// Add panics if the scroll range does not contain zero.
-func (op InputOp) Add(o *op.Ops) {
-	if op.Tag == nil {
-		panic("Tag must be non-nil")
-	}
-	if b := op.ScrollBounds; b.Min.X > 0 || b.Max.X < 0 || b.Min.Y > 0 || b.Max.Y < 0 {
-		panic(fmt.Errorf("invalid scroll range value %v", b))
-	}
-	if op.Types>>16 > 0 {
-		panic(fmt.Errorf("value in Types overflows uint16"))
-	}
-	data := ops.Write1(&o.Internal, ops.TypePointerInputLen, op.Tag)
-	data[0] = byte(ops.TypePointerInput)
-	if op.Grab {
-		data[1] = 1
-	}
-	bo := binary.LittleEndian
-	bo.PutUint16(data[2:], uint16(op.Types))
-	bo.PutUint32(data[4:], uint32(op.ScrollBounds.Min.X))
-	bo.PutUint32(data[8:], uint32(op.ScrollBounds.Min.Y))
-	bo.PutUint32(data[12:], uint32(op.ScrollBounds.Max.X))
-	bo.PutUint32(data[16:], uint32(op.ScrollBounds.Max.Y))
-}
-
-func (t Type) String() string {
+func (t Kind) String() string {
 	if t == Cancel {
 		return "Cancel"
 	}
 	var buf strings.Builder
-	for tt := Type(1); tt > 0; tt <<= 1 {
+	for tt := Kind(1); tt > 0; tt <<= 1 {
 		if t&tt > 0 {
 			if buf.Len() > 0 {
 				buf.WriteByte('|')
@@ -275,7 +268,7 @@ func (t Type) String() string {
 	return buf.String()
 }
 
-func (t Type) string() string {
+func (t Kind) string() string {
 	switch t {
 	case Press:
 		return "Press"
@@ -402,3 +395,7 @@ func (c Cursor) String() string {
 }
 
 func (Event) ImplementsEvent() {}
+
+func (GrabCmd) ImplementsCommand() {}
+
+func (Filter) ImplementsFilter() {}

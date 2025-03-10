@@ -4,6 +4,8 @@ package unicodedata
 
 import (
 	"unicode"
+
+	"github.com/go-text/typesetting/language"
 )
 
 var categories []*unicode.RangeTable
@@ -66,6 +68,22 @@ func LookupGraphemeBreakClass(ch rune) *unicode.RangeTable {
 		return nil
 	}
 	for _, class := range graphemeBreaks {
+		if unicode.Is(class, ch) {
+			return class
+		}
+	}
+	return nil
+}
+
+// LookupordBreakClass returns the word break property for the rune (see the constants ordBreakXXX),
+// or nil
+func LookupWordBreakClass(ch rune) *unicode.RangeTable {
+	// a lot of runes do not have a word break property :
+	// avoid testing all the wordBreaks classes for them
+	if !unicode.Is(wordBreakAll, ch) {
+		return nil
+	}
+	for _, class := range wordBreaks {
 		if unicode.Is(class, ch) {
 			return class
 		}
@@ -174,3 +192,27 @@ const (
 	T          ArabicJoining = 'T' // Transparent, e.g. Arabic Fatha
 	G          ArabicJoining = 'G' // Ignored, e.g. LRE, RLE, ZWNBSP
 )
+
+// LookupVerticalOrientation returns the prefered orientation
+// for the given script.
+func LookupVerticalOrientation(s language.Script) ScriptVerticalOrientation {
+	for _, script := range uprightOrMixedScripts {
+		if script.script == s {
+			return script
+		}
+	}
+
+	// all other scripts have full R (sideways)
+	return ScriptVerticalOrientation{exceptions: nil, script: s, isMainSideways: true}
+}
+
+// Orientation returns the prefered orientation
+// for the given rune.
+// If the rune does not belong to this script, the default orientation of this script
+// is returned (regardless of the actual script of the given rune).
+func (sv ScriptVerticalOrientation) Orientation(r rune) (isSideways bool) {
+	if sv.exceptions == nil || !unicode.Is(sv.exceptions, r) {
+		return sv.isMainSideways
+	}
+	return !sv.isMainSideways
+}

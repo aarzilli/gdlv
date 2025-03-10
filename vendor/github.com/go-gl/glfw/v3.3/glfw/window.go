@@ -16,7 +16,6 @@ import "C"
 
 import (
 	"image"
-	"image/draw"
 	"sync"
 	"unsafe"
 )
@@ -171,7 +170,7 @@ type Window struct {
 	fSizeHolder            func(w *Window, width int, height int)
 	fFramebufferSizeHolder func(w *Window, width int, height int)
 	fCloseHolder           func(w *Window)
-	fMaximizeHolder        func(w *Window, iconified bool)
+	fMaximizeHolder        func(w *Window, maximized bool)
 	fContentScaleHolder    func(w *Window, x float32, y float32)
 	fRefreshHolder         func(w *Window)
 	fFocusHolder           func(w *Window, focused bool)
@@ -226,9 +225,9 @@ func goWindowCloseCB(window unsafe.Pointer) {
 }
 
 //export goWindowMaximizeCB
-func goWindowMaximizeCB(window unsafe.Pointer, iconified C.int) {
+func goWindowMaximizeCB(window unsafe.Pointer, maximized C.int) {
 	w := windows.get((*C.GLFWwindow)(window))
-	w.fMaximizeHolder(w, glfwbool(iconified))
+	w.fMaximizeHolder(w, glfwbool(maximized))
 }
 
 //export goWindowRefreshCB
@@ -309,7 +308,7 @@ func WindowHintString(hint Hint, value string) {
 // as not all parameters and hints are hard constraints. This includes the size
 // of the window, especially for full screen windows. To retrieve the actual
 // attributes of the created window and context, use queries like
-// GetWindowAttrib and GetWindowSize.
+// Window.GetAttrib and Window.GetSize.
 //
 // To create the window at a specific position, make it initially invisible using
 // the Visible window hint, set its position and then show it.
@@ -412,24 +411,7 @@ func (w *Window) SetIcon(images []image.Image) {
 	freePixels := make([]func(), count)
 
 	for i, img := range images {
-		var pixels []uint8
-		b := img.Bounds()
-
-		switch img := img.(type) {
-		case *image.NRGBA:
-			pixels = img.Pix
-		default:
-			m := image.NewNRGBA(image.Rect(0, 0, b.Dx(), b.Dy()))
-			draw.Draw(m, m.Bounds(), img, b.Min, draw.Src)
-			pixels = m.Pix
-		}
-
-		pix, free := bytes(pixels)
-		freePixels[i] = free
-
-		cimages[i].width = C.int(b.Dx())
-		cimages[i].height = C.int(b.Dy())
-		cimages[i].pixels = (*C.uchar)(pix)
+		cimages[i], freePixels[i] = imageToGLFW(img)
 	}
 
 	var p *C.GLFWimage
@@ -809,7 +791,7 @@ func (w *Window) SetCloseCallback(cbfun CloseCallback) (previous CloseCallback) 
 
 // MaximizeCallback is the function signature for window maximize callback
 // functions.
-type MaximizeCallback func(w *Window, iconified bool)
+type MaximizeCallback func(w *Window, maximized bool)
 
 // SetMaximizeCallback sets the maximization callback of the specified window,
 // which is called when the window is maximized or restored.
@@ -930,6 +912,7 @@ func (w *Window) SetClipboardString(str string) {
 func (w *Window) GetClipboardString() string {
 	cs := C.glfwGetClipboardString(w.data)
 	if cs == nil {
+		acceptError(FormatUnavailable)
 		return ""
 	}
 	return C.GoString(cs)

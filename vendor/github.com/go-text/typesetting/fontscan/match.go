@@ -3,7 +3,7 @@ package fontscan
 import (
 	"sort"
 
-	meta "github.com/go-text/typesetting/opentype/api/metadata"
+	"github.com/go-text/typesetting/font"
 )
 
 // Query exposes the intention of an author about the
@@ -16,14 +16,14 @@ type Query struct {
 
 	// Aspect selects which particular face to use among
 	// the font matching the family criteria.
-	Aspect meta.Aspect
+	Aspect font.Aspect
 }
 
 // fontSet stores the list of fonts available for text shaping.
 // It is usually build from a system font index or by manually appending
 // fonts.
 // footprint family names are normalized
-type fontSet []footprint
+type fontSet []Footprint
 
 // stores the possible matches with their score:
 // lower is better
@@ -40,7 +40,11 @@ func (fc familyCrible) reset() {
 // and applies all the substitutions coded in the package
 // to add substitutes values
 func (fc familyCrible) fillWithSubstitutions(family string) {
-	fl := newFamilyList([]string{family})
+	fc.fillWithSubstitutionsList([]string{family})
+}
+
+func (fc familyCrible) fillWithSubstitutionsList(families []string) {
+	fl := newFamilyList(families)
 	for _, subs := range familySubstitution {
 		fl.execute(subs)
 	}
@@ -104,41 +108,59 @@ func isGenericFamily(family string) bool {
 	}
 }
 
-// selectByFamily returns all the fonts in the fontmap matching
+// selectByFamilyExact returns all the fonts in the fontmap matching
 // the given `family`, with the best matches coming first.
-// `substitute` controls whether or not system substitutions are applied.
-// The generic families are always expanded to concrete families.
+//
+// The match is performed without substituting family names,
+// expect for the generic families, which are always expanded to concrete families.
 //
 // If two fonts have the same family, user provided are returned first.
 //
 // The returned slice may be empty if no font matches the given `family`.
-// buffer is used to reduce allocations
-func (fm fontSet) selectByFamily(family string, substitute bool,
+//
+// The two buffers are used to reduce allocations.
+func (fm fontSet) selectByFamilyExact(family string,
 	footprintBuffer *scoredFootprints, cribleBuffer familyCrible,
 ) []int {
 	// build the crible, handling substitutions
-	family = meta.NormalizeFamily(family)
-
-	footprintBuffer.reset(fm)
 	cribleBuffer.reset()
 
 	// always substitute generic families
-	if substitute || isGenericFamily(family) {
+	if isGenericFamily(family) {
 		cribleBuffer.fillWithSubstitutions(family)
 	} else {
-		cribleBuffer = familyCrible{family: 0}
+		cribleBuffer = familyCrible{font.NormalizeFamily(family): 0}
 	}
 
-	// select the matching fonts:
+	return fm.selectByFamilies(cribleBuffer, footprintBuffer)
+}
+
+// selectByFamilyExact returns all the fonts in the fontmap matching
+// the given query, with the best matches coming first.
+//
+// `query` is expanded with family substitutions
+func (fm fontSet) selectByFamilyWithSubs(query []string,
+	footprintBuffer *scoredFootprints, cribleBuffer familyCrible,
+) []int {
+	cribleBuffer.reset()
+	cribleBuffer.fillWithSubstitutionsList(query)
+	return fm.selectByFamilies(cribleBuffer, footprintBuffer)
+}
+
+// select the fonts in the fontSet matching [crible], returning their indices.
+// footprintBuffer is used to reduce allocations.
+func (fm fontSet) selectByFamilies(crible familyCrible, footprintBuffer *scoredFootprints) []int {
+	footprintBuffer.reset(fm)
+
 	// loop through `footprints` and stores the matching fonts into `dst`
 	for index, footprint := range fm {
-		if score, has := cribleBuffer[footprint.Family]; has {
+		if score, has := crible[footprint.Family]; has {
 			footprintBuffer.footprints = append(footprintBuffer.footprints, index)
 			footprintBuffer.scores = append(footprintBuffer.scores, score)
 		}
 	}
 
-	// sort the matched font by score (lower is better)
+	// sort the matched fonts by score (lower is better)
 	sort.Stable(*footprintBuffer)
 
 	return footprintBuffer.footprints
@@ -147,9 +169,9 @@ func (fm fontSet) selectByFamily(family string, substitute bool,
 // matchStretch look for the given stretch in the font set,
 // or, if not found, the closest stretch
 // if always return a valid value (contained in `candidates`) if `candidates` is not empty
-func (fs fontSet) matchStretch(candidates []int, query meta.Stretch) meta.Stretch {
+func (fs fontSet) matchStretch(candidates []int, query font.Stretch) font.Stretch {
 	// narrower and wider than the query
-	var narrower, wider meta.Stretch
+	var narrower, wider font.Stretch
 
 	for _, index := range candidates {
 		stretch := fs[index].Aspect.Stretch
@@ -169,7 +191,7 @@ func (fs fontSet) matchStretch(candidates []int, query meta.Stretch) meta.Stretc
 	}
 
 	// default to closest
-	if query <= meta.StretchNormal { // narrow first
+	if query <= font.StretchNormal { // narrow first
 		if narrower != 0 {
 			return narrower
 		}
@@ -183,34 +205,34 @@ func (fs fontSet) matchStretch(candidates []int, query meta.Stretch) meta.Stretc
 }
 
 // in practice, italic and oblique are synonymous
-const styleOblique = meta.StyleItalic
+const styleOblique = font.StyleItalic
 
 // matchStyle look for the given style in the font set,
 // or, if not found, the closest style
 // if always return a valid value (contained in `fs`) if `fs` is not empty
-func (fs fontSet) matchStyle(candidates []int, query meta.Style) meta.Style {
-	var crible [meta.StyleItalic + 1]bool
+func (fs fontSet) matchStyle(candidates []int, query font.Style) font.Style {
+	var crible [font.StyleItalic + 1]bool
 
 	for _, index := range candidates {
 		crible[fs[index].Aspect.Style] = true
 	}
 
 	switch query {
-	case meta.StyleNormal: // StyleNormal, StyleOblique, StyleItalic
-		if crible[meta.StyleNormal] {
-			return meta.StyleNormal
+	case font.StyleNormal: // StyleNormal, StyleOblique, StyleItalic
+		if crible[font.StyleNormal] {
+			return font.StyleNormal
 		} else if crible[styleOblique] {
 			return styleOblique
 		} else {
-			return meta.StyleItalic
+			return font.StyleItalic
 		}
-	case meta.StyleItalic: // StyleItalic, StyleOblique, StyleNormal
-		if crible[meta.StyleItalic] {
-			return meta.StyleItalic
+	case font.StyleItalic: // StyleItalic, StyleOblique, StyleNormal
+		if crible[font.StyleItalic] {
+			return font.StyleItalic
 		} else if crible[styleOblique] {
 			return styleOblique
 		} else {
-			return meta.StyleNormal
+			return font.StyleNormal
 		}
 	}
 
@@ -221,8 +243,8 @@ func (fs fontSet) matchStyle(candidates []int, query meta.Style) meta.Style {
 // or, if not found, the closest weight
 // if always return a valid value (contained in `fs`) if `fs` is not empty
 // we follow https://drafts.csswg.org/css-fonts/#font-style-matching
-func (fs fontSet) matchWeight(candidates []int, query meta.Weight) meta.Weight {
-	var fatter, thinner meta.Weight // approximate match
+func (fs fontSet) matchWeight(candidates []int, query font.Weight) font.Weight {
+	var fatter, thinner font.Weight // approximate match
 	for _, index := range candidates {
 		weight := fs[index].Aspect.Weight
 		if weight > query { // fatter candidate
@@ -261,7 +283,7 @@ func (fs fontSet) matchWeight(candidates []int, query meta.Weight) meta.Weight {
 }
 
 // filter `candidates` in place and returns the updated slice
-func (fs fontSet) filterByStretch(candidates []int, stretch meta.Stretch) []int {
+func (fs fontSet) filterByStretch(candidates []int, stretch font.Stretch) []int {
 	n := 0
 	for _, index := range candidates {
 		if fs[index].Aspect.Stretch == stretch {
@@ -274,7 +296,7 @@ func (fs fontSet) filterByStretch(candidates []int, stretch meta.Stretch) []int 
 }
 
 // filter `candidates` in place and returns the updated slice
-func (fs fontSet) filterByStyle(candidates []int, style meta.Style) []int {
+func (fs fontSet) filterByStyle(candidates []int, style font.Style) []int {
 	n := 0
 	for _, index := range candidates {
 		if fs[index].Aspect.Style == style {
@@ -287,7 +309,7 @@ func (fs fontSet) filterByStyle(candidates []int, style meta.Style) []int {
 }
 
 // filter `candidates` in place and returns the updated slice
-func (fs fontSet) filterByWeight(candidates []int, weight meta.Weight) []int {
+func (fs fontSet) filterByWeight(candidates []int, weight font.Weight) []int {
 	n := 0
 	for _, index := range candidates {
 		if fs[index].Aspect.Weight == weight {
@@ -302,7 +324,7 @@ func (fs fontSet) filterByWeight(candidates []int, weight meta.Weight) []int {
 // retainsBestMatches narrows `candidates` to the closest footprints to `query`, according to the CSS font rules
 // `candidates` is a slice of indexed into `fs`, which is mutated and returned
 // if `candidates` is not empty, the returned slice is guaranteed not to be empty
-func (fs fontSet) retainsBestMatches(candidates []int, query meta.Aspect) []int {
+func (fs fontSet) retainsBestMatches(candidates []int, query font.Aspect) []int {
 	// this follows CSS Fonts Level 3 § 5.2 [1].
 	// https://drafts.csswg.org/css-fonts-3/#font-style-matching
 

@@ -4,19 +4,19 @@ import (
 	"encoding/hex"
 	"strings"
 
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 	"github.com/go-text/typesetting/language"
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
 )
 
 // ported from harfbuzz/src/hb-ot-tag.cc Copyright © 2009  Red Hat, Inc. 2011  Google, Inc. Behdad Esfahbod, Roozbeh Pournader
 
 var (
 	// OpenType script tag, `DFLT`, for features that are not script-specific.
-	tagDefaultScript = loader.NewTag('D', 'F', 'L', 'T')
+	tagDefaultScript = ot.NewTag('D', 'F', 'L', 'T')
 	// OpenType language tag, `dflt`. Not a valid language tag, but some fonts
 	// mistakenly use it.
-	tagDefaultLanguage = loader.NewTag('d', 'f', 'l', 't')
+	tagDefaultLanguage = ot.NewTag('d', 'f', 'l', 't')
 )
 
 func oldTagFromScript(script language.Script) tables.Tag {
@@ -26,23 +26,23 @@ func oldTagFromScript(script language.Script) tables.Tag {
 	case 0:
 		return tagDefaultScript
 	case language.Mathematical_notation:
-		return loader.NewTag('m', 'a', 't', 'h')
+		return ot.NewTag('m', 'a', 't', 'h')
 
 	/* KATAKANA and HIRAGANA both map to 'kana' */
 	case language.Hiragana:
-		return loader.NewTag('k', 'a', 'n', 'a')
+		return ot.NewTag('k', 'a', 'n', 'a')
 
 	/* Spaces at the end are preserved, unlike ISO 15924 */
 	case language.Lao:
-		return loader.NewTag('l', 'a', 'o', ' ')
+		return ot.NewTag('l', 'a', 'o', ' ')
 	case language.Yi:
-		return loader.NewTag('y', 'i', ' ', ' ')
+		return ot.NewTag('y', 'i', ' ', ' ')
 	/* Unicode-5.0 additions */
 	case language.Nko:
-		return loader.NewTag('n', 'k', 'o', ' ')
+		return ot.NewTag('n', 'k', 'o', ' ')
 	/* Unicode-5.1 additions */
 	case language.Vai:
-		return loader.NewTag('v', 'a', 'i', ' ')
+		return ot.NewTag('v', 'a', 'i', ' ')
 	}
 
 	/* Else, just change first char to lowercase and return */
@@ -52,25 +52,25 @@ func oldTagFromScript(script language.Script) tables.Tag {
 func newTagFromScript(script language.Script) tables.Tag {
 	switch script {
 	case language.Bengali:
-		return loader.NewTag('b', 'n', 'g', '2')
+		return ot.NewTag('b', 'n', 'g', '2')
 	case language.Devanagari:
-		return loader.NewTag('d', 'e', 'v', '2')
+		return ot.NewTag('d', 'e', 'v', '2')
 	case language.Gujarati:
-		return loader.NewTag('g', 'j', 'r', '2')
+		return ot.NewTag('g', 'j', 'r', '2')
 	case language.Gurmukhi:
-		return loader.NewTag('g', 'u', 'r', '2')
+		return ot.NewTag('g', 'u', 'r', '2')
 	case language.Kannada:
-		return loader.NewTag('k', 'n', 'd', '2')
+		return ot.NewTag('k', 'n', 'd', '2')
 	case language.Malayalam:
-		return loader.NewTag('m', 'l', 'm', '2')
+		return ot.NewTag('m', 'l', 'm', '2')
 	case language.Oriya:
-		return loader.NewTag('o', 'r', 'y', '2')
+		return ot.NewTag('o', 'r', 'y', '2')
 	case language.Tamil:
-		return loader.NewTag('t', 'm', 'l', '2')
+		return ot.NewTag('t', 'm', 'l', '2')
 	case language.Telugu:
-		return loader.NewTag('t', 'e', 'l', '2')
+		return ot.NewTag('t', 'e', 'l', '2')
 	case language.Myanmar:
-		return loader.NewTag('m', 'y', 'm', '2')
+		return ot.NewTag('m', 'y', 'm', '2')
 	}
 
 	return tagDefaultScript
@@ -87,7 +87,7 @@ func allTagsFromScript(script language.Script) []tables.Tag {
 	tag := newTagFromScript(script)
 	if tag != tagDefaultScript {
 		// HB_SCRIPT_MYANMAR maps to 'mym2', but there is no 'mym3'.
-		if tag != loader.NewTag('m', 'y', 'm', '2') {
+		if tag != ot.NewTag('m', 'y', 'm', '2') {
 			tags = append(tags, tag|'3')
 		}
 		tags = append(tags, tag)
@@ -138,7 +138,7 @@ func otTagsFromLanguage(langStr string) []tables.Tag {
 	}
 	if s == 3 {
 		// assume it's ISO-639-3 and upper-case and use it.
-		return []tables.Tag{loader.NewTag(langStr[0], langStr[1], langStr[2], ' ') & ^tables.Tag(0x20202000)}
+		return []tables.Tag{ot.NewTag(langStr[0], langStr[1], langStr[2], ' ') & ^tables.Tag(0x20202000)}
 	}
 
 	return nil
@@ -176,7 +176,7 @@ func parsePrivateUseSubtag(privateUseSubtag string, prefix string, normalize fun
 			tag[i] = ' '
 		}
 	}
-	out := loader.NewTag(tag[0], tag[1], tag[2], tag[3])
+	out := ot.NewTag(tag[0], tag[1], tag[2], tag[3])
 	if (out & 0xDFDFDFDF) == tagDefaultScript {
 		out ^= ^tables.Tag(0xDFDFDFDF)
 	}

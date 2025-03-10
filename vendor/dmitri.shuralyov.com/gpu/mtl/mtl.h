@@ -76,6 +76,7 @@ struct Region {
 struct Device CreateSystemDefaultDevice();
 struct Devices CopyAllDevices();
 
+bool                       Device_SupportsFamily(void * device, uint16_t gpuFamily);
 bool                       Device_SupportsFeatureSet(void * device, uint16_t featureSet);
 void *                     Device_MakeCommandQueue(void * device);
 struct Library             Device_MakeLibrary(void * device, const char * source, size_t sourceLength);

@@ -1,8 +1,8 @@
 package harfbuzz
 
 import (
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 	ucd "github.com/go-text/typesetting/unicodedata"
 )
 
@@ -31,9 +31,9 @@ const (
 
 var hangulFeatures = [hangulFeatureCount]tables.Tag{
 	0,
-	loader.NewTag('l', 'j', 'm', 'o'),
-	loader.NewTag('v', 'j', 'm', 'o'),
-	loader.NewTag('t', 'j', 'm', 'o'),
+	ot.NewTag('l', 'j', 'm', 'o'),
+	ot.NewTag('v', 'j', 'm', 'o'),
+	ot.NewTag('t', 'j', 'm', 'o'),
 }
 
 func (complexShaperHangul) collectFeatures(plan *otShapePlanner) {
@@ -48,7 +48,7 @@ func (complexShaperHangul) overrideFeatures(plan *otShapePlanner) {
 	/* Uniscribe does not apply 'calt' for Hangul, and certain fonts
 	* (Noto Sans CJK, Source Sans Han, etc) apply all of jamo lookups
 	* in calt, which is not desirable. */
-	plan.map_.disableFeature(loader.NewTag('c', 'a', 'l', 't'))
+	plan.map_.disableFeature(ot.NewTag('c', 'a', 'l', 't'))
 }
 
 type hangulShapePlan struct {

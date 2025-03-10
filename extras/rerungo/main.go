@@ -156,6 +156,9 @@ func loadlog() {
 func getcompile(substr string) string {
 	v := []string{}
 	for _, cc := range CompileCalls {
+		if cc.pkg == substr {
+			return cc.cmd
+		}
 		if strings.Contains(cc.pkg, substr) {
 			v = append(v, cc.cmd)
 		}

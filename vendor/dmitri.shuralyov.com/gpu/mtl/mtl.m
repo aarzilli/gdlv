@@ -39,9 +39,21 @@ struct Devices CopyAllDevices() {
 	return d;
 }
 
+bool Device_SupportsFamily(void * device, uint16_t gpuFamily) {
+#ifdef MAC_OS_X_VERSION_10_15
+	if (@available(macOS 10.15, *)) {
+		return [(id<MTLDevice>)device supportsFamily:gpuFamily];
+	}
+#endif // MAC_OS_X_VERSION_10_15
+	@throw @"API not available";
+}
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 bool Device_SupportsFeatureSet(void * device, uint16_t featureSet) {
 	return [(id<MTLDevice>)device supportsFeatureSet:featureSet];
 }
+#pragma clang diagnostic pop
 
 void * Device_MakeCommandQueue(void * device) {
 	return [(id<MTLDevice>)device newCommandQueue];

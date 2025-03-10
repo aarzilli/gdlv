@@ -1,8 +1,8 @@
 package harfbuzz
 
 import (
+	"github.com/go-text/typesetting/font/opentype/tables"
 	"github.com/go-text/typesetting/language"
-	"github.com/go-text/typesetting/opentype/tables"
 )
 
 /* ported from harfbuzz/src/hb-buffer.hh and hb-buffer.h

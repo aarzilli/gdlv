@@ -29,7 +29,7 @@ type Op struct {
 type Stack struct {
 	ops     *ops.Ops
 	id      ops.StackID
-	macroID int
+	macroID uint32
 }
 
 var pathSeed maphash.Seed
@@ -138,6 +138,9 @@ type Path struct {
 func (p *Path) Pos() f32.Point { return p.pen }
 
 // Begin the path, storing the path data and final Op into ops.
+//
+// Caller must also call End to finish the drawing.
+// Forgetting to call it will result in a "panic: cannot mix multi ops with single ones".
 func (p *Path) Begin(o *op.Ops) {
 	*p = Path{
 		ops:     &o.Internal,
@@ -204,6 +207,9 @@ func (p *Path) Line(delta f32.Point) {
 
 // LineTo moves the pen to the absolute point specified, recording a line.
 func (p *Path) LineTo(to f32.Point) {
+	if to == p.pen {
+		return
+	}
 	data := ops.WriteMulti(p.ops, scene.CommandSize+4)
 	bo := binary.LittleEndian
 	bo.PutUint32(data[0:], uint32(p.contour))
@@ -250,6 +256,9 @@ func (p *Path) Quad(ctrl, to f32.Point) {
 // QuadTo records a quadratic Bézier from the pen to end
 // with the control point ctrl, with absolute coordinates.
 func (p *Path) QuadTo(ctrl, to f32.Point) {
+	if ctrl == p.pen && to == p.pen {
+		return
+	}
 	data := ops.WriteMulti(p.ops, scene.CommandSize+4)
 	bo := binary.LittleEndian
 	bo.PutUint32(data[0:], uint32(p.contour))

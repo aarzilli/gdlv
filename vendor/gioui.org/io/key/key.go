@@ -1,18 +1,9 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
-/*
-Package key implements key and text events and operations.
-
-The InputOp operations is used for declaring key input handlers. Use
-an implementation of the Queue interface from package ui to receive
-events.
-*/
+// Package key implements key and text events and operations.
 package key
 
 import (
-	"encoding/binary"
-	"fmt"
-	"math"
 	"strings"
 
 	"gioui.org/f32"
@@ -21,59 +12,40 @@ import (
 	"gioui.org/op"
 )
 
-// InputOp declares a handler ready for key events.
-// Key events are in general only delivered to the
-// focused key handler.
-type InputOp struct {
-	Tag event.Tag
-	// Hint describes the type of text expected by Tag.
-	Hint InputHint
-	// Keys is the set of keys Tag can handle. That is, Tag will only
-	// receive an Event if its key and modifiers are accepted by Keys.Contains.
-	// As a special case, the topmost (first added) InputOp handler receives all
-	// unhandled events.
-	Keys Set
+// Filter matches any [Event] that matches the parameters.
+type Filter struct {
+	// Focus is the tag that must be focused for the filter to match. It has no effect
+	// if it is nil.
+	Focus event.Tag
+	// Required is the set of modifiers that must be included in events matched.
+	Required Modifiers
+	// Optional is the set of modifiers that may be included in events matched.
+	Optional Modifiers
+	// Name of the key to be matched. As a special case, the empty
+	// Name matches every key not matched by any other filter.
+	Name Name
 }
 
-// Set is an expression that describes a set of key combinations, in the form
-// "<modifiers>-<keyset>|...".  Modifiers are separated by dashes, optional
-// modifiers are enclosed by parentheses.  A key set is either a literal key
-// name or a list of key names separated by commas and enclosed in brackets.
-//
-// The "Short" modifier matches the shortcut modifier (ModShortcut) and
-// "ShortAlt" matches the alternative modifier (ModShortcutAlt).
-//
-// Examples:
-//
-//   - A|B matches the A and B keys
-//   - [A,B] also matches the A and B keys
-//   - Shift-A matches A key if shift is pressed, and no other modifier.
-//   - Shift-(Ctrl)-A matches A if shift is pressed, and optionally ctrl.
-type Set string
+// InputHintOp describes the type of text expected by a tag.
+type InputHintOp struct {
+	Tag  event.Tag
+	Hint InputHint
+}
 
-// SoftKeyboardOp shows or hide the on-screen keyboard, if available.
-// It replaces any previous SoftKeyboardOp.
-type SoftKeyboardOp struct {
+// SoftKeyboardCmd shows or hides the on-screen keyboard, if available.
+type SoftKeyboardCmd struct {
 	Show bool
 }
 
-// FocusOp sets or clears the keyboard focus. It replaces any previous
-// FocusOp in the same frame.
-type FocusOp struct {
-	// Tag is the new focus. The focus is cleared if Tag is nil, or if Tag
-	// has no InputOp in the same frame.
-	Tag event.Tag
-}
-
-// SelectionOp updates the selection for an input handler.
-type SelectionOp struct {
+// SelectionCmd updates the selection for an input handler.
+type SelectionCmd struct {
 	Tag event.Tag
 	Range
 	Caret
 }
 
-// SnippetOp updates the content snippet for an input handler.
-type SnippetOp struct {
+// SnippetCmd updates the content snippet for an input handler.
+type SnippetCmd struct {
 	Tag event.Tag
 	Snippet
 }
@@ -118,11 +90,8 @@ type FocusEvent struct {
 // An Event is generated when a key is pressed. For text input
 // use EditEvent.
 type Event struct {
-	// Name of the key. For letters, the upper case form is used, via
-	// unicode.ToUpper. The shift modifier is taken into account, all other
-	// modifiers are ignored. For example, the "shift-1" and "ctrl-shift-1"
-	// combinations both give the Name "!" with the US keyboard layout.
-	Name string
+	// Name of the key.
+	Name Name
 	// Modifiers is the set of active modifiers when the key was pressed.
 	Modifiers Modifiers
 	// State is the state of the key when the event was fired.
@@ -134,6 +103,13 @@ type EditEvent struct {
 	// Range specifies the range to replace with Text.
 	Range Range
 	Text  string
+}
+
+// FocusFilter matches any [FocusEvent], [EditEvent], [SnippetEvent],
+// or [SelectionEvent] with the specified target.
+type FocusFilter struct {
+	// Target is a tag specified in a previous event.Op.
+	Target event.Tag
 }
 
 // InputHint changes the on-screen-keyboard type. That hints the
@@ -189,41 +165,60 @@ const (
 	ModSuper
 )
 
+// Name is the identifier for a keyboard key.
+//
+// For letters, the upper case form is used, via unicode.ToUpper.
+// The shift modifier is taken into account, all other
+// modifiers are ignored. For example, the "shift-1" and "ctrl-shift-1"
+// combinations both give the Name "!" with the US keyboard layout.
+type Name string
+
 const (
 	// Names for special keys.
-	NameLeftArrow      = "←"
-	NameRightArrow     = "→"
-	NameUpArrow        = "↑"
-	NameDownArrow      = "↓"
-	NameReturn         = "⏎"
-	NameEnter          = "⌤"
-	NameEscape         = "⎋"
-	NameHome           = "⇱"
-	NameEnd            = "⇲"
-	NameDeleteBackward = "⌫"
-	NameDeleteForward  = "⌦"
-	NamePageUp         = "⇞"
-	NamePageDown       = "⇟"
-	NameTab            = "Tab"
-	NameSpace          = "Space"
-	NameCtrl           = "Ctrl"
-	NameShift          = "Shift"
-	NameAlt            = "Alt"
-	NameSuper          = "Super"
-	NameCommand        = "⌘"
-	NameF1             = "F1"
-	NameF2             = "F2"
-	NameF3             = "F3"
-	NameF4             = "F4"
-	NameF5             = "F5"
-	NameF6             = "F6"
-	NameF7             = "F7"
-	NameF8             = "F8"
-	NameF9             = "F9"
-	NameF10            = "F10"
-	NameF11            = "F11"
-	NameF12            = "F12"
-	NameBack           = "Back"
+	NameLeftArrow      Name = "←"
+	NameRightArrow     Name = "→"
+	NameUpArrow        Name = "↑"
+	NameDownArrow      Name = "↓"
+	NameReturn         Name = "⏎"
+	NameEnter          Name = "⌤"
+	NameEscape         Name = "⎋"
+	NameHome           Name = "⇱"
+	NameEnd            Name = "⇲"
+	NameDeleteBackward Name = "⌫"
+	NameDeleteForward  Name = "⌦"
+	NamePageUp         Name = "⇞"
+	NamePageDown       Name = "⇟"
+	NameTab            Name = "Tab"
+	NameSpace          Name = "Space"
+	NameCtrl           Name = "Ctrl"
+	NameShift          Name = "Shift"
+	NameAlt            Name = "Alt"
+	NameSuper          Name = "Super"
+	NameCommand        Name = "⌘"
+	NameF1             Name = "F1"
+	NameF2             Name = "F2"
+	NameF3             Name = "F3"
+	NameF4             Name = "F4"
+	NameF5             Name = "F5"
+	NameF6             Name = "F6"
+	NameF7             Name = "F7"
+	NameF8             Name = "F8"
+	NameF9             Name = "F9"
+	NameF10            Name = "F10"
+	NameF11            Name = "F11"
+	NameF12            Name = "F12"
+	NameBack           Name = "Back"
+)
+
+type FocusDirection int
+
+const (
+	FocusRight FocusDirection = iota
+	FocusLeft
+	FocusUp
+	FocusDown
+	FocusForward
+	FocusBackward
 )
 
 // Contain reports whether m contains all modifiers
@@ -232,134 +227,20 @@ func (m Modifiers) Contain(m2 Modifiers) bool {
 	return m&m2 == m2
 }
 
-func (k Set) Contains(name string, mods Modifiers) bool {
-	ks := string(k)
-	for len(ks) > 0 {
-		// Cut next key expression.
-		chord, rest, _ := cut(ks, "|")
-		ks = rest
-		// Separate key set and modifier set.
-		var modSet, keySet string
-		sep := strings.LastIndex(chord, "-")
-		if sep != -1 {
-			modSet, keySet = chord[:sep], chord[sep+1:]
-		} else {
-			modSet, keySet = "", chord
-		}
-		if !keySetContains(keySet, name) {
-			continue
-		}
-		if modSetContains(modSet, mods) {
-			return true
-		}
-	}
-	return false
+// FocusCmd requests to set or clear the keyboard focus.
+type FocusCmd struct {
+	// Tag is the new focus. The focus is cleared if Tag is nil, or if Tag
+	// has no [event.Op] references.
+	Tag event.Tag
 }
 
-func keySetContains(keySet, name string) bool {
-	// Check for single key match.
-	if keySet == name {
-		return true
-	}
-	// Check for set match.
-	if len(keySet) < 2 || keySet[0] != '[' || keySet[len(keySet)-1] != ']' {
-		return false
-	}
-	keySet = keySet[1 : len(keySet)-1]
-	for len(keySet) > 0 {
-		key, rest, _ := cut(keySet, ",")
-		keySet = rest
-		if key == name {
-			return true
-		}
-	}
-	return false
-}
-
-func modSetContains(modSet string, mods Modifiers) bool {
-	var smods Modifiers
-	for len(modSet) > 0 {
-		mod, rest, _ := cut(modSet, "-")
-		modSet = rest
-		if len(mod) >= 2 && mod[0] == '(' && mod[len(mod)-1] == ')' {
-			mods &^= modFor(mod[1 : len(mod)-1])
-		} else {
-			smods |= modFor(mod)
-		}
-	}
-	return mods == smods
-}
-
-// cut is a copy of the standard library strings.Cut.
-// TODO: remove when Go 1.18 is our minimum.
-func cut(s, sep string) (before, after string, found bool) {
-	if i := strings.Index(s, sep); i >= 0 {
-		return s[:i], s[i+len(sep):], true
-	}
-	return s, "", false
-}
-
-func modFor(name string) Modifiers {
-	switch name {
-	case NameCtrl:
-		return ModCtrl
-	case NameShift:
-		return ModShift
-	case NameAlt:
-		return ModAlt
-	case NameSuper:
-		return ModSuper
-	case NameCommand:
-		return ModCommand
-	case "Short":
-		return ModShortcut
-	case "ShortAlt":
-		return ModShortcutAlt
-	}
-	return 0
-}
-
-func (h InputOp) Add(o *op.Ops) {
+func (h InputHintOp) Add(o *op.Ops) {
 	if h.Tag == nil {
 		panic("Tag must be non-nil")
 	}
-	filter := h.Keys
-	data := ops.Write2(&o.Internal, ops.TypeKeyInputLen, h.Tag, &filter)
-	data[0] = byte(ops.TypeKeyInput)
+	data := ops.Write1(&o.Internal, ops.TypeKeyInputHintLen, h.Tag)
+	data[0] = byte(ops.TypeKeyInputHint)
 	data[1] = byte(h.Hint)
-}
-
-func (h SoftKeyboardOp) Add(o *op.Ops) {
-	data := ops.Write(&o.Internal, ops.TypeKeySoftKeyboardLen)
-	data[0] = byte(ops.TypeKeySoftKeyboard)
-	if h.Show {
-		data[1] = 1
-	}
-}
-
-func (h FocusOp) Add(o *op.Ops) {
-	data := ops.Write1(&o.Internal, ops.TypeKeyFocusLen, h.Tag)
-	data[0] = byte(ops.TypeKeyFocus)
-}
-
-func (s SnippetOp) Add(o *op.Ops) {
-	data := ops.Write2(&o.Internal, ops.TypeSnippetLen, s.Tag, &s.Text)
-	data[0] = byte(ops.TypeSnippet)
-	bo := binary.LittleEndian
-	bo.PutUint32(data[1:], uint32(s.Range.Start))
-	bo.PutUint32(data[5:], uint32(s.Range.End))
-}
-
-func (s SelectionOp) Add(o *op.Ops) {
-	data := ops.Write1(&o.Internal, ops.TypeSelectionLen, s.Tag)
-	data[0] = byte(ops.TypeSelection)
-	bo := binary.LittleEndian
-	bo.PutUint32(data[1:], uint32(s.Start))
-	bo.PutUint32(data[5:], uint32(s.End))
-	bo.PutUint32(data[9:], math.Float32bits(s.Pos.X))
-	bo.PutUint32(data[13:], math.Float32bits(s.Pos.Y))
-	bo.PutUint32(data[17:], math.Float32bits(s.Ascent))
-	bo.PutUint32(data[21:], math.Float32bits(s.Descent))
 }
 
 func (EditEvent) ImplementsEvent()      {}
@@ -368,26 +249,30 @@ func (FocusEvent) ImplementsEvent()     {}
 func (SnippetEvent) ImplementsEvent()   {}
 func (SelectionEvent) ImplementsEvent() {}
 
-func (e Event) String() string {
-	return fmt.Sprintf("%v %v %v}", e.Name, e.Modifiers, e.State)
-}
+func (FocusCmd) ImplementsCommand()        {}
+func (SoftKeyboardCmd) ImplementsCommand() {}
+func (SelectionCmd) ImplementsCommand()    {}
+func (SnippetCmd) ImplementsCommand()      {}
+
+func (Filter) ImplementsFilter()      {}
+func (FocusFilter) ImplementsFilter() {}
 
 func (m Modifiers) String() string {
 	var strs []string
 	if m.Contain(ModCtrl) {
-		strs = append(strs, NameCtrl)
+		strs = append(strs, string(NameCtrl))
 	}
 	if m.Contain(ModCommand) {
-		strs = append(strs, NameCommand)
+		strs = append(strs, string(NameCommand))
 	}
 	if m.Contain(ModShift) {
-		strs = append(strs, NameShift)
+		strs = append(strs, string(NameShift))
 	}
 	if m.Contain(ModAlt) {
-		strs = append(strs, NameAlt)
+		strs = append(strs, string(NameAlt))
 	}
 	if m.Contain(ModSuper) {
-		strs = append(strs, NameSuper)
+		strs = append(strs, string(NameSuper))
 	}
 	return strings.Join(strs, "-")
 }

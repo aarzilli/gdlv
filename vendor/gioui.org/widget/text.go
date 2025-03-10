@@ -61,6 +61,9 @@ type textView struct {
 	Truncator string
 	// WrapPolicy configures how displayed text will be broken into lines.
 	WrapPolicy text.WrapPolicy
+	// DisableSpaceTrim configures whether trailing whitespace on a line will have its
+	// width zeroed. Set to true for editors, but false for non-editable text.
+	DisableSpaceTrim bool
 	// Mask replaces the visual display of each rune in the contents with the given rune.
 	// Newline characters are not masked. When non-zero, the unmasked contents
 	// are accessed by Len, Text, and SetText.
@@ -228,10 +231,8 @@ func (e *textView) calculateViewSize(gtx layout.Context) image.Point {
 	return gtx.Constraints.Constrain(base)
 }
 
-// Update the text, reshaping it as necessary. If not nil, eventHandling will be invoked after reshaping the text to
-// allow parent widgets to adapt to any changes in text content or positioning. If eventHandling modifies the contents
-// of the textView, it is guaranteed to be reshaped (and ready for painting) before Update returns.
-func (e *textView) Update(gtx layout.Context, lt *text.Shaper, font font.Font, size unit.Sp, eventHandling func(gtx layout.Context)) {
+// Layout the text, reshaping it as necessary.
+func (e *textView) Layout(gtx layout.Context, lt *text.Shaper, font font.Font, size unit.Sp) {
 	if e.params.Locale != gtx.Locale {
 		e.params.Locale = gtx.Locale
 		e.invalidate()
@@ -287,12 +288,12 @@ func (e *textView) Update(gtx layout.Context, lt *text.Shaper, font font.Font, s
 		e.params.LineHeightScale = e.LineHeightScale
 		e.invalidate()
 	}
+	if e.DisableSpaceTrim != e.params.DisableSpaceTrim {
+		e.params.DisableSpaceTrim = e.DisableSpaceTrim
+		e.invalidate()
+	}
 
 	e.makeValid()
-	if eventHandling != nil {
-		eventHandling(gtx)
-		e.makeValid()
-	}
 
 	if viewSize := e.calculateViewSize(gtx); viewSize != e.viewSize {
 		e.viewSize = viewSize
@@ -492,14 +493,19 @@ func (e *textView) layoutText(lt *text.Shaper) {
 	it := textIterator{viewport: image.Rectangle{Max: image.Point{X: math.MaxInt, Y: math.MaxInt}}}
 	if lt != nil {
 		lt.Layout(e.params, r)
-		for glyph, ok := it.processGlyph(lt.NextGlyph()); ok; glyph, ok = it.processGlyph(lt.NextGlyph()) {
-			e.index.Glyph(glyph)
+		for {
+			g, ok := lt.NextGlyph()
+			if !it.processGlyph(g, ok) {
+				break
+			}
+			e.index.Glyph(g)
 		}
 	} else {
 		// Make a fake glyph for every rune in the reader.
 		b := bufio.NewReader(r)
 		for _, _, err := b.ReadRune(); err != io.EOF; _, _, err = b.ReadRune() {
-			g, _ := it.processGlyph(text.Glyph{Runes: 1, Flags: text.FlagClusterBreak}, true)
+			g := text.Glyph{Runes: 1, Flags: text.FlagClusterBreak}
+			_ = it.processGlyph(g, true)
 			e.index.Glyph(g)
 		}
 	}
@@ -640,9 +646,28 @@ func (e *textView) MoveCaret(startDelta, endDelta int) {
 	e.caret.end = e.moveByGraphemes(e.caret.end, endDelta)
 }
 
-// MoveStart moves the caret to the start of the current line, ensuring that the resulting
+// MoveTextStart moves the caret to the start of the text.
+func (e *textView) MoveTextStart(selAct selectionAction) {
+	caret := e.closestToRune(e.caret.end)
+	e.caret.start = 0
+	e.caret.end = caret.runes
+	e.caret.xoff = -caret.x
+	e.updateSelection(selAct)
+	e.clampCursorToGraphemes()
+}
+
+// MoveTextEnd moves the caret to the end of the text.
+func (e *textView) MoveTextEnd(selAct selectionAction) {
+	caret := e.closestToRune(math.MaxInt)
+	e.caret.start = caret.runes
+	e.caret.xoff = fixed.I(e.params.MaxWidth) - caret.x
+	e.updateSelection(selAct)
+	e.clampCursorToGraphemes()
+}
+
+// MoveLineStart moves the caret to the start of the current line, ensuring that the resulting
 // cursor position is on a grapheme cluster boundary.
-func (e *textView) MoveStart(selAct selectionAction) {
+func (e *textView) MoveLineStart(selAct selectionAction) {
 	caret := e.closestToRune(e.caret.start)
 	caret = e.closestToLineCol(caret.lineCol.line, 0)
 	e.caret.start = caret.runes
@@ -651,9 +676,9 @@ func (e *textView) MoveStart(selAct selectionAction) {
 	e.clampCursorToGraphemes()
 }
 
-// MoveEnd moves the caret to the end of the current line, ensuring that the resulting
+// MoveLineEnd moves the caret to the end of the current line, ensuring that the resulting
 // cursor position is on a grapheme cluster boundary.
-func (e *textView) MoveEnd(selAct selectionAction) {
+func (e *textView) MoveLineEnd(selAct selectionAction) {
 	caret := e.closestToRune(e.caret.start)
 	caret = e.closestToLineCol(caret.lineCol.line, math.MaxInt)
 	e.caret.start = caret.runes

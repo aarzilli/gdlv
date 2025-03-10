@@ -3,8 +3,8 @@ package harfbuzz
 import (
 	"sort"
 
-	"github.com/go-text/typesetting/opentype/api/font"
-	"github.com/go-text/typesetting/opentype/loader"
+	"github.com/go-text/typesetting/font"
+	ot "github.com/go-text/typesetting/font/opentype"
 )
 
 // ported from harfbuzz/src/hb-aat-map.cc, hb-att-map.hh Copyright © 2018  Google, Inc. Behdad Esfahbod
@@ -162,7 +162,7 @@ func (mb *aatMapBuilder) addFeature(feature Feature) {
 		return
 	}
 
-	if feature.Tag == loader.NewTag('a', 'a', 'l', 't') {
+	if feature.Tag == ot.NewTag('a', 'a', 'l', 't') {
 		if fn := feat.GetFeature(aatLayoutFeatureTypeCharacterAlternatives); fn == nil || len(fn.SettingTable) == 0 {
 			return
 		}

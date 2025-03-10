@@ -11,13 +11,17 @@ import (
 // Note that the default value is usually the Unknown script, not the 0 value (which is invalid)
 type Script uint32
 
-// ParseScript simply converts a 4 bytes string into its binary encoding.
+// ParseScript converts a 4 bytes string into its binary encoding,
+// enforcing the conventional capitalized case.
 // If [script] is longer, only its 4 first bytes are used.
 func ParseScript(script string) (Script, error) {
 	if len(script) < 4 {
 		return 0, fmt.Errorf("invalid script string: %s", script)
 	}
-	return Script(binary.BigEndian.Uint32([]byte(script))), nil
+	s := binary.BigEndian.Uint32([]byte(script))
+	// ensure capitalized case : make first letter upper, others lower
+	const mask uint32 = 0x20000000
+	return Script(s & ^mask | 0x00202020), nil
 }
 
 // LookupScript looks up the script for a particular character (as defined by

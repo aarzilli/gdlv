@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"gioui.org/gesture"
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
@@ -17,18 +18,11 @@ import (
 
 // Clickable represents a clickable area.
 type Clickable struct {
-	click  gesture.Click
-	clicks []Click
-	// prevClicks is the index into clicks that marks the clicks
-	// from the most recent Layout call. prevClicks is used to keep
-	// clicks bounded.
-	prevClicks int
-	history    []Press
+	click   gesture.Click
+	history []Press
 
-	keyTag       struct{}
-	requestFocus bool
-	focused      bool
-	pressedKey   string
+	requestClicks int
+	pressedKey    key.Name
 }
 
 // Click represents a click.
@@ -50,26 +44,19 @@ type Press struct {
 	Cancelled bool
 }
 
-// Click executes a simple programmatic click
+// Click executes a simple programmatic click.
 func (b *Clickable) Click() {
-	b.clicks = append(b.clicks, Click{
-		Modifiers: 0,
-		NumClicks: 1,
-	})
+	b.requestClicks++
 }
 
-// Clicked reports whether there are pending clicks as would be
-// reported by Clicks. If so, Clicked removes the earliest click.
-func (b *Clickable) Clicked() bool {
-	if len(b.clicks) == 0 {
-		return false
-	}
-	n := copy(b.clicks, b.clicks[1:])
-	b.clicks = b.clicks[:n]
-	if b.prevClicks > 0 {
-		b.prevClicks--
-	}
-	return true
+// Clicked calls Update and reports whether a click was registered.
+func (b *Clickable) Clicked(gtx layout.Context) bool {
+	return b.clicked(b, gtx)
+}
+
+func (b *Clickable) clicked(t event.Tag, gtx layout.Context) bool {
+	_, clicked := b.update(t, gtx)
+	return clicked
 }
 
 // Hovered reports whether a pointer is over the element.
@@ -82,54 +69,42 @@ func (b *Clickable) Pressed() bool {
 	return b.click.Pressed()
 }
 
-// Focus requests the input focus for the element.
-func (b *Clickable) Focus() {
-	b.requestFocus = true
-}
-
-// Focused reports whether b has focus.
-func (b *Clickable) Focused() bool {
-	return b.focused
-}
-
-// Clicks returns and clear the clicks since the last call to Clicks.
-func (b *Clickable) Clicks() []Click {
-	clicks := b.clicks
-	b.clicks = nil
-	b.prevClicks = 0
-	return clicks
-}
-
 // History is the past pointer presses useful for drawing markers.
 // History is retained for a short duration (about a second).
 func (b *Clickable) History() []Press {
 	return b.history
 }
 
-// Layout and update the button state
+// Layout and update the button state.
 func (b *Clickable) Layout(gtx layout.Context, w layout.Widget) layout.Dimensions {
-	b.update(gtx)
+	return b.layout(b, gtx, w)
+}
+
+func (b *Clickable) layout(t event.Tag, gtx layout.Context, w layout.Widget) layout.Dimensions {
+	for {
+		_, ok := b.update(t, gtx)
+		if !ok {
+			break
+		}
+	}
 	m := op.Record(gtx.Ops)
 	dims := w(gtx)
 	c := m.Stop()
 	defer clip.Rect(image.Rectangle{Max: dims.Size}).Push(gtx.Ops).Pop()
-	disabled := gtx.Queue == nil
-	semantic.DisabledOp(disabled).Add(gtx.Ops)
+	semantic.EnabledOp(gtx.Enabled()).Add(gtx.Ops)
 	b.click.Add(gtx.Ops)
-	if !disabled {
-		keys := key.Set("⏎|Space")
-		if !b.focused {
-			keys = ""
-		}
-		key.InputOp{Tag: &b.keyTag, Keys: keys}.Add(gtx.Ops)
-		if b.requestFocus {
-			key.FocusOp{Tag: &b.keyTag}.Add(gtx.Ops)
-			b.requestFocus = false
-		}
-	} else {
-		b.focused = false
-	}
+	event.Op(gtx.Ops, t)
 	c.Add(gtx.Ops)
+	return dims
+}
+
+// Update the button state by processing events, and return the next
+// click, if any.
+func (b *Clickable) Update(gtx layout.Context) (Click, bool) {
+	return b.update(b, gtx)
+}
+
+func (b *Clickable) update(t event.Tag, gtx layout.Context) (Click, bool) {
 	for len(b.history) > 0 {
 		c := b.history[0]
 		if c.End.IsZero() || gtx.Now.Sub(c.End) < 1*time.Second {
@@ -138,36 +113,36 @@ func (b *Clickable) Layout(gtx layout.Context, w layout.Widget) layout.Dimension
 		n := copy(b.history, b.history[1:])
 		b.history = b.history[:n]
 	}
-	return dims
-}
-
-// update the button state by processing events.
-func (b *Clickable) update(gtx layout.Context) {
-	// Flush clicks from before the last update.
-	n := copy(b.clicks, b.clicks[b.prevClicks:])
-	b.clicks = b.clicks[:n]
-	b.prevClicks = n
-
-	for _, e := range b.click.Events(gtx) {
-		switch e.Type {
-		case gesture.TypeClick:
-			b.clicks = append(b.clicks, Click{
-				Modifiers: e.Modifiers,
-				NumClicks: e.NumClicks,
-			})
+	if c := b.requestClicks; c > 0 {
+		b.requestClicks = 0
+		return Click{
+			NumClicks: c,
+		}, true
+	}
+	for {
+		e, ok := b.click.Update(gtx.Source)
+		if !ok {
+			break
+		}
+		switch e.Kind {
+		case gesture.KindClick:
 			if l := len(b.history); l > 0 {
 				b.history[l-1].End = gtx.Now
 			}
-		case gesture.TypeCancel:
+			return Click{
+				Modifiers: e.Modifiers,
+				NumClicks: e.NumClicks,
+			}, true
+		case gesture.KindCancel:
 			for i := range b.history {
 				b.history[i].Cancelled = true
 				if b.history[i].End.IsZero() {
 					b.history[i].End = gtx.Now
 				}
 			}
-		case gesture.TypePress:
+		case gesture.KindPress:
 			if e.Source == pointer.Mouse {
-				key.FocusOp{Tag: &b.keyTag}.Add(gtx.Ops)
+				gtx.Execute(key.FocusCmd{Tag: t})
 			}
 			b.history = append(b.history, Press{
 				Position: e.Position,
@@ -175,15 +150,22 @@ func (b *Clickable) update(gtx layout.Context) {
 			})
 		}
 	}
-	for _, e := range gtx.Events(&b.keyTag) {
+	for {
+		e, ok := gtx.Event(
+			key.FocusFilter{Target: t},
+			key.Filter{Focus: t, Name: key.NameReturn},
+			key.Filter{Focus: t, Name: key.NameSpace},
+		)
+		if !ok {
+			break
+		}
 		switch e := e.(type) {
 		case key.FocusEvent:
-			b.focused = e.Focus
-			if !b.focused {
+			if e.Focus {
 				b.pressedKey = ""
 			}
 		case key.Event:
-			if !b.focused {
+			if !gtx.Focused(t) {
 				break
 			}
 			if e.Name != key.NameReturn && e.Name != key.NameSpace {
@@ -198,11 +180,12 @@ func (b *Clickable) update(gtx layout.Context) {
 				}
 				// only register a key as a click if the key was pressed and released while this button was focused
 				b.pressedKey = ""
-				b.clicks = append(b.clicks, Click{
+				return Click{
 					Modifiers: e.Modifiers,
 					NumClicks: 1,
-				})
+				}, true
 			}
 		}
 	}
+	return Click{}, false
 }

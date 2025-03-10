@@ -93,22 +93,18 @@ func IconButton(th *Theme, button *widget.Clickable, icon *widget.Icon, descript
 func Clickable(gtx layout.Context, button *widget.Clickable, w layout.Widget) layout.Dimensions {
 	return button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		semantic.Button.Add(gtx.Ops)
-		constraints := gtx.Constraints
-		return layout.Stack{}.Layout(gtx,
-			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
 				defer clip.Rect{Max: gtx.Constraints.Min}.Push(gtx.Ops).Pop()
-				if button.Hovered() || button.Focused() {
+				if button.Hovered() || gtx.Focused(button) {
 					paint.Fill(gtx.Ops, f32color.Hovered(color.NRGBA{}))
 				}
 				for _, c := range button.History() {
 					drawInk(gtx, c)
 				}
 				return layout.Dimensions{Size: gtx.Constraints.Min}
-			}),
-			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
-				gtx.Constraints = constraints
-				return w(gtx)
-			}),
+			},
+			w,
 		)
 	})
 }
@@ -131,15 +127,15 @@ func (b ButtonLayoutStyle) Layout(gtx layout.Context, w layout.Widget) layout.Di
 	min := gtx.Constraints.Min
 	return b.Button.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 		semantic.Button.Add(gtx.Ops)
-		return layout.Stack{Alignment: layout.Center}.Layout(gtx,
-			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
 				rr := gtx.Dp(b.CornerRadius)
 				defer clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, rr).Push(gtx.Ops).Pop()
 				background := b.Background
 				switch {
-				case gtx.Queue == nil:
+				case !gtx.Enabled():
 					background = f32color.Disabled(b.Background)
-				case b.Button.Hovered() || b.Button.Focused():
+				case b.Button.Hovered() || gtx.Focused(b.Button):
 					background = f32color.Hovered(b.Background)
 				}
 				paint.Fill(gtx.Ops, background)
@@ -147,11 +143,11 @@ func (b ButtonLayoutStyle) Layout(gtx layout.Context, w layout.Widget) layout.Di
 					drawInk(gtx, c)
 				}
 				return layout.Dimensions{Size: gtx.Constraints.Min}
-			}),
-			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			},
+			func(gtx layout.Context) layout.Dimensions {
 				gtx.Constraints.Min = min
 				return layout.Center.Layout(gtx, w)
-			}),
+			},
 		)
 	})
 }
@@ -163,15 +159,15 @@ func (b IconButtonStyle) Layout(gtx layout.Context) layout.Dimensions {
 		if d := b.Description; d != "" {
 			semantic.DescriptionOp(b.Description).Add(gtx.Ops)
 		}
-		return layout.Stack{Alignment: layout.Center}.Layout(gtx,
-			layout.Expanded(func(gtx layout.Context) layout.Dimensions {
+		return layout.Background{}.Layout(gtx,
+			func(gtx layout.Context) layout.Dimensions {
 				rr := (gtx.Constraints.Min.X + gtx.Constraints.Min.Y) / 4
 				defer clip.UniformRRect(image.Rectangle{Max: gtx.Constraints.Min}, rr).Push(gtx.Ops).Pop()
 				background := b.Background
 				switch {
-				case gtx.Queue == nil:
+				case !gtx.Enabled():
 					background = f32color.Disabled(b.Background)
-				case b.Button.Hovered() || b.Button.Focused():
+				case b.Button.Hovered() || gtx.Focused(b.Button):
 					background = f32color.Hovered(b.Background)
 				}
 				paint.Fill(gtx.Ops, background)
@@ -179,8 +175,8 @@ func (b IconButtonStyle) Layout(gtx layout.Context) layout.Dimensions {
 					drawInk(gtx, c)
 				}
 				return layout.Dimensions{Size: gtx.Constraints.Min}
-			}),
-			layout.Stacked(func(gtx layout.Context) layout.Dimensions {
+			},
+			func(gtx layout.Context) layout.Dimensions {
 				return b.Inset.Layout(gtx, func(gtx layout.Context) layout.Dimensions {
 					size := gtx.Dp(b.Size)
 					if b.Icon != nil {
@@ -191,7 +187,7 @@ func (b IconButtonStyle) Layout(gtx layout.Context) layout.Dimensions {
 						Size: image.Point{X: size, Y: size},
 					}
 				})
-			}),
+			},
 		)
 	})
 	c := m.Stop()
@@ -262,7 +258,7 @@ func drawInk(gtx layout.Context, c widget.Press) {
 
 	// Animate only ended presses, and presses that are fading in.
 	if !c.End.IsZero() || sizet <= 1.0 {
-		op.InvalidateOp{}.Add(gtx.Ops)
+		gtx.Execute(op.InvalidateCmd{})
 	}
 
 	if sizet > 1.0 {

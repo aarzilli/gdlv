@@ -1,9 +1,9 @@
 package harfbuzz
 
 import (
-	"github.com/go-text/typesetting/opentype/api/font"
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
+	"github.com/go-text/typesetting/font"
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from src/hb-ot-layout.cc, hb-ot-layout.hh
@@ -144,7 +144,7 @@ func (sp *otShapePlan) otLayoutKern(font *Font, buffer *Buffer) {
 	c.applyKernx(kern)
 }
 
-var otTagLatinScript = loader.NewTag('l', 'a', 't', 'n')
+var otTagLatinScript = ot.NewTag('l', 'a', 't', 'n')
 
 // selectScript selects an OpenType script from the `scriptTags` array,
 // returning its index in the Scripts slice and the script tag.

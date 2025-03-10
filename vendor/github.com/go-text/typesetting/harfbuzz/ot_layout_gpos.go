@@ -3,8 +3,8 @@ package harfbuzz
 import (
 	"fmt"
 
-	"github.com/go-text/typesetting/opentype/api/font"
-	"github.com/go-text/typesetting/opentype/tables"
+	"github.com/go-text/typesetting/font"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from harfbuzz/src/hb-ot-layout-gpos-table.hh Copyright © 2007,2008,2009,2010  Red Hat, Inc.; 2010,2012,2013  Google, Inc.  Behdad Esfahbod
@@ -227,8 +227,9 @@ func (c *otApplyContext) applyGPOSValueRecord(format tables.ValueFormat, v table
 		return ret
 	}
 
-	useXDevice := font.face.XPpem != 0 || len(font.varCoords()) != 0
-	useYDevice := font.face.YPpem != 0 || len(font.varCoords()) != 0
+	xp, yp := font.face.Ppem()
+	useXDevice := xp != 0 || len(font.varCoords()) != 0
+	useYDevice := yp != 0 || len(font.varCoords()) != 0
 
 	if !useXDevice && !useYDevice {
 		return ret
@@ -285,8 +286,8 @@ func (c *otApplyContext) applyGPOSPair1(inner tables.PairPosData1, index int) bo
 	skippyIter := &c.iterInput
 	pos := skippyIter.idx
 	set := inner.PairSets[index]
-	record := set.FindGlyph(gID(buffer.Info[skippyIter.idx].Glyph))
-	if record == nil {
+	record, ok := set.FindGlyph(gID(buffer.Info[skippyIter.idx].Glyph))
+	if !ok {
 		buffer.unsafeToConcat(buffer.idx, pos+1)
 		return false
 	}
@@ -463,7 +464,7 @@ func (c *otApplyContext) getAnchor(anchor tables.Anchor, glyph GID) (x, y float3
 	case tables.AnchorFormat1:
 		return font.emFscaleX(anchor.XCoordinate), font.emFscaleY(anchor.YCoordinate)
 	case tables.AnchorFormat2:
-		xPpem, yPpem := font.face.XPpem, font.face.YPpem
+		xPpem, yPpem := font.face.Ppem()
 		var cx, cy Position
 		ret := xPpem != 0 || yPpem != 0
 		if ret {
@@ -481,11 +482,12 @@ func (c *otApplyContext) getAnchor(anchor tables.Anchor, glyph GID) (x, y float3
 		}
 		return x, y
 	case tables.AnchorFormat3:
+		xPpem, yPpem := font.face.Ppem()
 		x, y = font.emFscaleX(anchor.XCoordinate), font.emFscaleY(anchor.YCoordinate)
-		if font.face.XPpem != 0 || len(font.varCoords()) != 0 {
+		if xPpem != 0 || len(font.varCoords()) != 0 {
 			x += float32(font.getXDelta(c.varStore, anchor.XDevice))
 		}
-		if font.face.YPpem != 0 || len(font.varCoords()) != 0 {
+		if yPpem != 0 || len(font.varCoords()) != 0 {
 			y += float32(font.getYDelta(c.varStore, anchor.YDevice))
 		}
 		return x, y

@@ -3,11 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build !darwin && (!linux || android) && !windows && !dragonfly && !openbsd
-// +build !darwin
-// +build !linux android
-// +build !windows
-// +build !dragonfly
-// +build !openbsd
 
 package driver
 

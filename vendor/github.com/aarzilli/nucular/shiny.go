@@ -862,3 +862,7 @@ func widgetText(o *command.Buffer, b rect.Rect, str string, t *textWidget, a lab
 
 	o.DrawText(lblrect, str, f, t.Text)
 }
+
+func (mw *masterWindow) setTitle(title string) {
+	// not implemented
+}

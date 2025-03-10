@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"io"
 	"strings"
 	"syscall/js"
 	"time"
@@ -13,16 +14,18 @@ import (
 	"unicode/utf8"
 
 	"gioui.org/internal/f32color"
+	"gioui.org/op"
 
 	"gioui.org/f32"
-	"gioui.org/io/clipboard"
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
+	"gioui.org/io/transfer"
 	"gioui.org/unit"
 )
 
-type ViewEvent struct {
+type JSViewEvent struct {
 	Element js.Value
 }
 
@@ -53,9 +56,6 @@ type window struct {
 	composing             bool
 	requestFocus          bool
 
-	chanAnimation chan struct{}
-	chanRedraw    chan struct{}
-
 	config    Config
 	inset     f32.Point
 	scale     float32
@@ -68,7 +68,7 @@ type window struct {
 	contextStatus contextStatus
 }
 
-func newWindow(win *callbacks, options []Option) error {
+func newWindow(win *callbacks, options []Option) {
 	doc := js.Global().Get("document")
 	cont := getContainer(doc)
 	cnv := createCanvas(doc)
@@ -83,7 +83,9 @@ func newWindow(win *callbacks, options []Option) error {
 		head:      doc.Get("head"),
 		clipboard: js.Global().Get("navigator").Get("clipboard"),
 		wakeups:   make(chan struct{}, 1),
+		w:         win,
 	}
+	w.w.SetDriver(w)
 	w.requestAnimationFrame = w.window.Get("requestAnimationFrame")
 	w.browserHistory = w.window.Get("history")
 	w.visualViewport = w.window.Get("visualViewport")
@@ -93,42 +95,28 @@ func newWindow(win *callbacks, options []Option) error {
 	if screen := w.window.Get("screen"); screen.Truthy() {
 		w.screenOrientation = screen.Get("orientation")
 	}
-	w.chanAnimation = make(chan struct{}, 1)
-	w.chanRedraw = make(chan struct{}, 1)
 	w.redraw = w.funcOf(func(this js.Value, args []js.Value) interface{} {
-		w.chanAnimation <- struct{}{}
+		w.draw(false)
 		return nil
 	})
 	w.clipboardCallback = w.funcOf(func(this js.Value, args []js.Value) interface{} {
 		content := args[0].String()
-		go win.Event(clipboard.Event{Text: content})
+		w.processEvent(transfer.DataEvent{
+			Type: "application/text",
+			Open: func() io.ReadCloser {
+				return io.NopCloser(strings.NewReader(content))
+			},
+		})
 		return nil
 	})
 	w.addEventListeners()
 	w.addHistory()
-	w.w = win
 
-	go func() {
-		defer w.cleanup()
-		w.w.SetDriver(w)
-		w.Configure(options)
-		w.blur()
-		w.w.Event(ViewEvent{Element: cont})
-		w.w.Event(system.StageEvent{Stage: system.StageRunning})
-		w.resize()
-		w.draw(true)
-		for {
-			select {
-			case <-w.wakeups:
-				w.w.Event(wakeupEvent{})
-			case <-w.chanAnimation:
-				w.animCallback()
-			case <-w.chanRedraw:
-				w.draw(true)
-			}
-		}
-	}()
-	return nil
+	w.Configure(options)
+	w.blur()
+	w.processEvent(JSViewEvent{Element: cont})
+	w.resize()
+	w.draw(true)
 }
 
 func getContainer(doc js.Value) js.Value {
@@ -188,12 +176,12 @@ func (w *window) addEventListeners() {
 		w.cnv.Set("width", 0)
 		w.cnv.Set("height", 0)
 		w.resize()
-		w.requestRedraw()
+		w.draw(true)
 		return nil
 	})
 	w.addEventListener(w.visualViewport, "resize", func(this js.Value, args []js.Value) interface{} {
 		w.resize()
-		w.requestRedraw()
+		w.draw(true)
 		return nil
 	})
 	w.addEventListener(w.window, "contextmenu", func(this js.Value, args []js.Value) interface{} {
@@ -201,21 +189,10 @@ func (w *window) addEventListeners() {
 		return nil
 	})
 	w.addEventListener(w.window, "popstate", func(this js.Value, args []js.Value) interface{} {
-		if w.w.Event(key.Event{Name: key.NameBack}) {
+		if w.processEvent(key.Event{Name: key.NameBack}) {
 			return w.browserHistory.Call("forward")
 		}
 		return w.browserHistory.Call("back")
-	})
-	w.addEventListener(w.document, "visibilitychange", func(this js.Value, args []js.Value) interface{} {
-		ev := system.StageEvent{}
-		switch w.document.Get("visibilityState").String() {
-		case "hidden", "prerender", "unloaded":
-			ev.Stage = system.StagePaused
-		default:
-			ev.Stage = system.StageRunning
-		}
-		w.w.Event(ev)
-		return nil
 	})
 	w.addEventListener(w.cnv, "mousemove", func(this js.Value, args []js.Value) interface{} {
 		w.pointerEvent(pointer.Move, 0, 0, args[0])
@@ -274,18 +251,20 @@ func (w *window) addEventListeners() {
 			w.touches[i] = js.Null()
 		}
 		w.touches = w.touches[:0]
-		w.w.Event(pointer.Event{
-			Type:   pointer.Cancel,
+		w.processEvent(pointer.Event{
+			Kind:   pointer.Cancel,
 			Source: pointer.Touch,
 		})
 		return nil
 	})
 	w.addEventListener(w.tarea, "focus", func(this js.Value, args []js.Value) interface{} {
-		w.w.Event(key.FocusEvent{Focus: true})
+		w.config.Focused = true
+		w.processEvent(ConfigEvent{Config: w.config})
 		return nil
 	})
 	w.addEventListener(w.tarea, "blur", func(this js.Value, args []js.Value) interface{} {
-		w.w.Event(key.FocusEvent{Focus: false})
+		w.config.Focused = false
+		w.processEvent(ConfigEvent{Config: w.config})
 		w.blur()
 		return nil
 	})
@@ -374,8 +353,48 @@ func (w *window) keyEvent(e js.Value, ks key.State) {
 			Modifiers: modifiersFor(e),
 			State:     ks,
 		}
-		w.w.Event(cmd)
+		w.processEvent(cmd)
 	}
+}
+
+func (w *window) ProcessEvent(e event.Event) {
+	w.processEvent(e)
+}
+
+func (w *window) processEvent(e event.Event) bool {
+	if !w.w.ProcessEvent(e) {
+		return false
+	}
+	select {
+	case w.wakeups <- struct{}{}:
+	default:
+	}
+	return true
+}
+
+func (w *window) Event() event.Event {
+	for {
+		evt, ok := w.w.nextEvent()
+		if ok {
+			if _, destroy := evt.(DestroyEvent); destroy {
+				w.cleanup()
+			}
+			return evt
+		}
+		<-w.wakeups
+	}
+}
+
+func (w *window) Invalidate() {
+	w.w.Invalidate()
+}
+
+func (w *window) Run(f func()) {
+	f()
+}
+
+func (w *window) Frame(frame *op.Ops) {
+	w.w.ProcessFrame(frame, nil)
 }
 
 // modifiersFor returns the modifier set for a DOM MouseEvent or
@@ -398,7 +417,7 @@ func modifiersFor(e js.Value) key.Modifiers {
 	return mods
 }
 
-func (w *window) touchEvent(typ pointer.Type, e js.Value) {
+func (w *window) touchEvent(kind pointer.Kind, e js.Value) {
 	e.Call("preventDefault")
 	t := time.Duration(e.Get("timeStamp").Int()) * time.Millisecond
 	changedTouches := e.Get("changedTouches")
@@ -425,8 +444,8 @@ func (w *window) touchEvent(typ pointer.Type, e js.Value) {
 			X: float32(x) * scale,
 			Y: float32(y) * scale,
 		}
-		w.w.Event(pointer.Event{
-			Type:      typ,
+		w.processEvent(pointer.Event{
+			Kind:      kind,
 			Source:    pointer.Touch,
 			Position:  pos,
 			PointerID: pid,
@@ -448,7 +467,7 @@ func (w *window) touchIDFor(touch js.Value) pointer.ID {
 	return pid
 }
 
-func (w *window) pointerEvent(typ pointer.Type, dx, dy float32, e js.Value) {
+func (w *window) pointerEvent(kind pointer.Kind, dx, dy float32, e js.Value) {
 	e.Call("preventDefault")
 	x, y := e.Get("clientX").Float(), e.Get("clientY").Float()
 	rect := w.cnv.Call("getBoundingClientRect")
@@ -475,8 +494,8 @@ func (w *window) pointerEvent(typ pointer.Type, dx, dy float32, e js.Value) {
 	if jbtns&4 != 0 {
 		btns |= pointer.ButtonTertiary
 	}
-	w.w.Event(pointer.Event{
-		Type:      typ,
+	w.processEvent(pointer.Event{
+		Kind:      kind,
 		Source:    pointer.Mouse,
 		Buttons:   btns,
 		Position:  pos,
@@ -502,17 +521,6 @@ func (w *window) funcOf(f func(this js.Value, args []js.Value) interface{}) js.F
 	return jsf
 }
 
-func (w *window) animCallback() {
-	anim := w.animating
-	w.animRequested = anim
-	if anim {
-		w.requestAnimationFrame.Invoke(w.redraw)
-	}
-	if anim {
-		w.draw(false)
-	}
-}
-
 func (w *window) EditorStateChanged(old, new editorState) {}
 
 func (w *window) SetAnimating(anim bool) {
@@ -533,14 +541,14 @@ func (w *window) ReadClipboard() {
 	w.clipboard.Call("readText", w.clipboard).Call("then", w.clipboardCallback)
 }
 
-func (w *window) WriteClipboard(s string) {
+func (w *window) WriteClipboard(mime string, s []byte) {
 	if w.clipboard.IsUndefined() {
 		return
 	}
 	if w.clipboard.Get("writeText").IsUndefined() {
 		return
 	}
-	w.clipboard.Call("writeText", s)
+	w.clipboard.Call("writeText", string(s))
 }
 
 func (w *window) Configure(options []Option) {
@@ -568,7 +576,7 @@ func (w *window) Configure(options []Option) {
 	if cnf.Decorated != prev.Decorated {
 		w.config.Decorated = cnf.Decorated
 	}
-	w.w.Event(ConfigEvent{Config: w.config})
+	w.processEvent(ConfigEvent{Config: w.config})
 }
 
 func (w *window) Perform(system.Action) {}
@@ -607,23 +615,14 @@ func (w *window) SetCursor(cursor pointer.Cursor) {
 	style.Set("cursor", webCursor[cursor])
 }
 
-func (w *window) Wakeup() {
-	select {
-	case w.wakeups <- struct{}{}:
-	default:
-	}
-}
-
 func (w *window) ShowTextInput(show bool) {
 	// Run in a goroutine to avoid a deadlock if the
 	// focus change result in an event.
-	go func() {
-		if show {
-			w.focus()
-		} else {
-			w.blur()
-		}
-	}()
+	if show {
+		w.focus()
+	} else {
+		w.blur()
+	}
 }
 
 func (w *window) SetInputHint(mode key.InputHint) {
@@ -640,7 +639,7 @@ func (w *window) resize() {
 	}
 	if size != w.config.Size {
 		w.config.Size = size
-		w.w.Event(ConfigEvent{Config: w.config})
+		w.processEvent(ConfigEvent{Config: w.config})
 	}
 
 	if vx, vy := w.visualViewport.Get("width"), w.visualViewport.Get("height"); !vx.IsUndefined() && !vy.IsUndefined() {
@@ -660,13 +659,20 @@ func (w *window) draw(sync bool) {
 	if w.contextStatus == contextStatusLost {
 		return
 	}
+	anim := w.animating
+	w.animRequested = anim
+	if anim {
+		w.requestAnimationFrame.Invoke(w.redraw)
+	} else if !sync {
+		return
+	}
 	size, insets, metric := w.getConfig()
 	if metric == (unit.Metric{}) || size.X == 0 || size.Y == 0 {
 		return
 	}
 
-	w.w.Event(frameEvent{
-		FrameEvent: system.FrameEvent{
+	w.processEvent(frameEvent{
+		FrameEvent: FrameEvent{
 			Now:    time.Now(),
 			Size:   size,
 			Insets: insets,
@@ -676,10 +682,10 @@ func (w *window) draw(sync bool) {
 	})
 }
 
-func (w *window) getConfig() (image.Point, system.Insets, unit.Metric) {
+func (w *window) getConfig() (image.Point, Insets, unit.Metric) {
 	invscale := unit.Dp(1. / w.scale)
 	return image.Pt(w.config.Size.X, w.config.Size.Y),
-		system.Insets{
+		Insets{
 			Bottom: unit.Dp(w.inset.Y) * invscale,
 			Right:  unit.Dp(w.inset.X) * invscale,
 		}, unit.Metric{
@@ -735,19 +741,12 @@ func (w *window) navigationColor(c color.NRGBA) {
 	theme.Set("content", fmt.Sprintf("#%06X", []uint8{rgba.R, rgba.G, rgba.B}))
 }
 
-func (w *window) requestRedraw() {
-	select {
-	case w.chanRedraw <- struct{}{}:
-	default:
-	}
-}
-
 func osMain() {
 	select {}
 }
 
-func translateKey(k string) (string, bool) {
-	var n string
+func translateKey(k string) (key.Name, bool) {
+	var n key.Name
 
 	switch k {
 	case "ArrowUp":
@@ -814,11 +813,15 @@ func translateKey(k string) (string, bool) {
 		r, s := utf8.DecodeRuneInString(k)
 		// If there is exactly one printable character, return that.
 		if s == len(k) && unicode.IsPrint(r) {
-			return strings.ToUpper(k), true
+			return key.Name(strings.ToUpper(k)), true
 		}
 		return "", false
 	}
 	return n, true
 }
 
-func (_ ViewEvent) ImplementsEvent() {}
+func (JSViewEvent) implementsViewEvent() {}
+func (JSViewEvent) ImplementsEvent()     {}
+func (j JSViewEvent) Valid() bool {
+	return !(j.Element.IsNull() || j.Element.IsUndefined())
+}

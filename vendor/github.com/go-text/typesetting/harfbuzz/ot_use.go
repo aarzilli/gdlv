@@ -3,8 +3,8 @@ package harfbuzz
 import (
 	"fmt"
 
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from harfbuzz/src/hb-ot-shape-complex-use.cc Copyright © 2015  Mozilla Foundation. Google, Inc. Jonathan Kew, Behdad Esfahbod
@@ -21,20 +21,20 @@ var _ otComplexShaper = (*complexShaperUSE)(nil)
  * These features are applied all at once, before reordering.
  */
 var useBasicFeatures = [...]tables.Tag{
-	loader.NewTag('r', 'k', 'r', 'f'),
-	loader.NewTag('a', 'b', 'v', 'f'),
-	loader.NewTag('b', 'l', 'w', 'f'),
-	loader.NewTag('h', 'a', 'l', 'f'),
-	loader.NewTag('p', 's', 't', 'f'),
-	loader.NewTag('v', 'a', 't', 'u'),
-	loader.NewTag('c', 'j', 'c', 't'),
+	ot.NewTag('r', 'k', 'r', 'f'),
+	ot.NewTag('a', 'b', 'v', 'f'),
+	ot.NewTag('b', 'l', 'w', 'f'),
+	ot.NewTag('h', 'a', 'l', 'f'),
+	ot.NewTag('p', 's', 't', 'f'),
+	ot.NewTag('v', 'a', 't', 'u'),
+	ot.NewTag('c', 'j', 'c', 't'),
 }
 
 var useTopographicalFeatures = [...]tables.Tag{
-	loader.NewTag('i', 's', 'o', 'l'),
-	loader.NewTag('i', 'n', 'i', 't'),
-	loader.NewTag('m', 'e', 'd', 'i'),
-	loader.NewTag('f', 'i', 'n', 'a'),
+	ot.NewTag('i', 's', 'o', 'l'),
+	ot.NewTag('i', 'n', 'i', 't'),
+	ot.NewTag('m', 'e', 'd', 'i'),
+	ot.NewTag('f', 'i', 'n', 'a'),
 }
 
 /* Same order as useTopographicalFeatures. */
@@ -52,11 +52,11 @@ const (
  * clearing syllables.
  */
 var useOtherFeatures = [...]tables.Tag{
-	loader.NewTag('a', 'b', 'v', 's'),
-	loader.NewTag('b', 'l', 'w', 's'),
-	loader.NewTag('h', 'a', 'l', 'n'),
-	loader.NewTag('p', 'r', 'e', 's'),
-	loader.NewTag('p', 's', 't', 's'),
+	ot.NewTag('a', 'b', 'v', 's'),
+	ot.NewTag('b', 'l', 'w', 's'),
+	ot.NewTag('h', 'a', 'l', 'n'),
+	ot.NewTag('p', 'r', 'e', 's'),
+	ot.NewTag('p', 's', 't', 's'),
 }
 
 type useShapePlan struct {
@@ -77,17 +77,17 @@ func (cs *complexShaperUSE) collectFeatures(plan *otShapePlanner) {
 	map_.addGSUBPause(cs.setupSyllablesUse)
 
 	/* "Default glyph pre-processing group" */
-	map_.enableFeatureExt(loader.NewTag('l', 'o', 'c', 'l'), ffPerSyllable, 1)
-	map_.enableFeatureExt(loader.NewTag('c', 'c', 'm', 'p'), ffPerSyllable, 1)
-	map_.enableFeatureExt(loader.NewTag('n', 'u', 'k', 't'), ffPerSyllable, 1)
-	map_.enableFeatureExt(loader.NewTag('a', 'k', 'h', 'n'), ffManualZWJ|ffPerSyllable, 1)
+	map_.enableFeatureExt(ot.NewTag('l', 'o', 'c', 'l'), ffPerSyllable, 1)
+	map_.enableFeatureExt(ot.NewTag('c', 'c', 'm', 'p'), ffPerSyllable, 1)
+	map_.enableFeatureExt(ot.NewTag('n', 'u', 'k', 't'), ffPerSyllable, 1)
+	map_.enableFeatureExt(ot.NewTag('a', 'k', 'h', 'n'), ffManualZWJ|ffPerSyllable, 1)
 
 	/* "Reordering group" */
 	map_.addGSUBPause(clearSubstitutionFlags)
-	map_.addFeatureExt(loader.NewTag('r', 'p', 'h', 'f'), ffManualZWJ|ffPerSyllable, 1)
+	map_.addFeatureExt(ot.NewTag('r', 'p', 'h', 'f'), ffManualZWJ|ffPerSyllable, 1)
 	map_.addGSUBPause(cs.recordRphfUse)
 	map_.addGSUBPause(clearSubstitutionFlags)
-	map_.enableFeatureExt(loader.NewTag('p', 'r', 'e', 'f'), ffManualZWJ|ffPerSyllable, 1)
+	map_.enableFeatureExt(ot.NewTag('p', 'r', 'e', 'f'), ffManualZWJ|ffPerSyllable, 1)
 	map_.addGSUBPause(recordPrefUse)
 
 	/* "Orthographic unit shaping group" */
@@ -113,7 +113,7 @@ func (cs *complexShaperUSE) collectFeatures(plan *otShapePlanner) {
 func (cs *complexShaperUSE) dataCreate(plan *otShapePlan) {
 	var usePlan useShapePlan
 
-	usePlan.rphfMask = plan.map_.getMask1(loader.NewTag('r', 'p', 'h', 'f'))
+	usePlan.rphfMask = plan.map_.getMask1(ot.NewTag('r', 'p', 'h', 'f'))
 
 	if hasArabicJoining(plan.props.Script) {
 		pl := newArabicPlan(plan)

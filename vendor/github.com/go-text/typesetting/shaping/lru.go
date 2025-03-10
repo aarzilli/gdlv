@@ -1,8 +1,8 @@
 package shaping
 
 import (
+	"github.com/go-text/typesetting/font"
 	"github.com/go-text/typesetting/harfbuzz"
-	"github.com/go-text/typesetting/opentype/api/font"
 )
 
 // fontEntry holds a single key-value pair for an LRU cache.

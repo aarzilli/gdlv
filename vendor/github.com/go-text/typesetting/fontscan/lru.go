@@ -3,8 +3,7 @@ package fontscan
 import (
 	"hash/maphash"
 
-	"github.com/go-text/typesetting/opentype/api/font"
-	"github.com/go-text/typesetting/opentype/api/metadata"
+	"github.com/go-text/typesetting/font"
 )
 
 // runeLRUEntry holds a single key-value pair for an LRU cache.
@@ -17,7 +16,7 @@ type runeLRUEntry struct {
 
 type runeLRUKey struct {
 	familiesHash uint64
-	aspect       metadata.Aspect
+	aspect       font.Aspect
 	r            rune
 }
 

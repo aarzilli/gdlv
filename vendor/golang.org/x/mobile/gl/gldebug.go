@@ -5,8 +5,7 @@
 // Code generated from gl.go using go generate. DO NOT EDIT.
 // See doc.go for details.
 
-// +build darwin linux openbsd windows
-// +build gldebug
+//go:build (darwin || linux || openbsd || windows) && gldebug
 
 package gl
 

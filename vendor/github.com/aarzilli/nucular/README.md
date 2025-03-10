@@ -1,3 +1,5 @@
+![Go Build](https://github.com/aarzilli/nucular/actions/workflows/build.yml/badge.svg)
+
 Mostly-immediate-mode GUI library for Go.
 Source port to go of an early version of [nuklear](https://github.com/vurtun/nuklear).
 

@@ -3,7 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build darwin
-// +build darwin
 
 // Package appkit provides access to Apple's AppKit API
 // (https://developer.apple.com/documentation/appkit).

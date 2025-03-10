@@ -12,6 +12,9 @@ package app
 #include <UIKit/UIKit.h>
 #include <stdint.h>
 
+__attribute__ ((visibility ("hidden"))) int gio_applicationMain(int argc, char *argv[]);
+__attribute__ ((visibility ("hidden"))) void gio_viewSetHandle(CFTypeRef viewRef, uintptr_t handle);
+
 struct drawParams {
 	CGFloat dpi, sdpi;
 	CGFloat width, height;
@@ -19,6 +22,7 @@ struct drawParams {
 };
 
 static void writeClipboard(unichar *chars, NSUInteger length) {
+#if !TARGET_OS_TV
 	@autoreleasepool {
 		NSString *s = [NSString string];
 		if (length > 0) {
@@ -27,13 +31,18 @@ static void writeClipboard(unichar *chars, NSUInteger length) {
 		UIPasteboard *p = UIPasteboard.generalPasteboard;
 		p.string = s;
 	}
+#endif
 }
 
 static CFTypeRef readClipboard(void) {
+#if !TARGET_OS_TV
 	@autoreleasepool {
 		UIPasteboard *p = UIPasteboard.generalPasteboard;
 		return (__bridge_retained CFTypeRef)p.string;
 	}
+#else
+	return nil;
+#endif
 }
 
 static void showTextInput(CFTypeRef viewRef) {
@@ -72,21 +81,27 @@ import "C"
 
 import (
 	"image"
+	"io"
+	"os"
 	"runtime"
+	"runtime/cgo"
 	"runtime/debug"
+	"strings"
 	"time"
 	"unicode/utf16"
 	"unsafe"
 
 	"gioui.org/f32"
-	"gioui.org/io/clipboard"
+	"gioui.org/io/event"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
+	"gioui.org/io/transfer"
+	"gioui.org/op"
 	"gioui.org/unit"
 )
 
-type ViewEvent struct {
+type UIKitViewEvent struct {
 	// ViewController is a CFTypeRef for the UIViewController backing a Window.
 	ViewController uintptr
 }
@@ -95,17 +110,16 @@ type window struct {
 	view        C.CFTypeRef
 	w           *callbacks
 	displayLink *displayLink
+	loop        *eventLoop
 
-	visible bool
-	cursor  pointer.Cursor
-	config  Config
+	hidden bool
+	cursor pointer.Cursor
+	config Config
 
 	pointerMap []C.CFTypeRef
 }
 
 var mainWindow = newWindowRendezvous()
-
-var views = make(map[C.CFTypeRef]*window)
 
 func init() {
 	// Darwin requires UI operations happen on the main thread only.
@@ -114,40 +128,44 @@ func init() {
 
 //export onCreate
 func onCreate(view, controller C.CFTypeRef) {
+	wopts := <-mainWindow.out
 	w := &window{
 		view: view,
+		w:    wopts.window,
 	}
-	dl, err := NewDisplayLink(func() {
+	w.loop = newEventLoop(w.w, w.wakeup)
+	w.w.SetDriver(w)
+	mainWindow.windows <- struct{}{}
+	dl, err := newDisplayLink(func() {
 		w.draw(false)
 	})
 	if err != nil {
-		panic(err)
+		w.w.ProcessEvent(DestroyEvent{Err: err})
+		return
 	}
 	w.displayLink = dl
-	wopts := <-mainWindow.out
-	w.w = wopts.window
-	w.w.SetDriver(w)
-	views[view] = w
+	C.gio_viewSetHandle(view, C.uintptr_t(cgo.NewHandle(w)))
 	w.Configure(wopts.options)
-	w.w.Event(system.StageEvent{Stage: system.StagePaused})
-	w.w.Event(ViewEvent{ViewController: uintptr(controller)})
+	w.ProcessEvent(UIKitViewEvent{ViewController: uintptr(controller)})
+}
+
+func viewFor(h C.uintptr_t) *window {
+	return cgo.Handle(h).Value().(*window)
 }
 
 //export gio_onDraw
-func gio_onDraw(view C.CFTypeRef) {
-	w := views[view]
+func gio_onDraw(h C.uintptr_t) {
+	w := viewFor(h)
 	w.draw(true)
 }
 
 func (w *window) draw(sync bool) {
+	if w.hidden {
+		return
+	}
 	params := C.viewDrawParams(w.view)
 	if params.width == 0 || params.height == 0 {
 		return
-	}
-	wasVisible := w.visible
-	w.visible = true
-	if !wasVisible {
-		w.w.Event(system.StageEvent{Stage: system.StageRunning})
 	}
 	const inchPrDp = 1.0 / 163
 	m := unit.Metric{
@@ -155,14 +173,14 @@ func (w *window) draw(sync bool) {
 		PxPerSp: float32(params.sdpi) * inchPrDp,
 	}
 	dppp := unit.Dp(1. / m.PxPerDp)
-	w.w.Event(frameEvent{
-		FrameEvent: system.FrameEvent{
+	w.ProcessEvent(frameEvent{
+		FrameEvent: FrameEvent{
 			Now: time.Now(),
 			Size: image.Point{
 				X: int(params.width + .5),
 				Y: int(params.height + .5),
 			},
-			Insets: system.Insets{
+			Insets: Insets{
 				Top:    unit.Dp(params.top) * dppp,
 				Bottom: unit.Dp(params.bottom) * dppp,
 				Left:   unit.Dp(params.left) * dppp,
@@ -175,26 +193,34 @@ func (w *window) draw(sync bool) {
 }
 
 //export onStop
-func onStop(view C.CFTypeRef) {
-	w := views[view]
-	w.visible = false
-	w.w.Event(system.StageEvent{Stage: system.StagePaused})
+func onStop(h C.uintptr_t) {
+	w := viewFor(h)
+	w.hidden = true
+}
+
+//export onStart
+func onStart(h C.uintptr_t) {
+	w := viewFor(h)
+	w.hidden = false
+	w.draw(true)
 }
 
 //export onDestroy
-func onDestroy(view C.CFTypeRef) {
-	w := views[view]
-	delete(views, view)
-	w.w.Event(ViewEvent{})
-	w.w.Event(system.DestroyEvent{})
+func onDestroy(h C.uintptr_t) {
+	w := viewFor(h)
+	w.ProcessEvent(UIKitViewEvent{})
+	w.ProcessEvent(DestroyEvent{})
 	w.displayLink.Close()
+	w.displayLink = nil
+	cgo.Handle(h).Delete()
 	w.view = 0
 }
 
 //export onFocus
-func onFocus(view C.CFTypeRef, focus int) {
-	w := views[view]
-	w.w.Event(key.FocusEvent{Focus: focus != 0})
+func onFocus(h C.uintptr_t, focus int) {
+	w := viewFor(h)
+	w.config.Focused = focus != 0
+	w.ProcessEvent(ConfigEvent{Config: w.config})
 }
 
 //export onLowMemory
@@ -204,56 +230,56 @@ func onLowMemory() {
 }
 
 //export onUpArrow
-func onUpArrow(view C.CFTypeRef) {
-	views[view].onKeyCommand(key.NameUpArrow)
+func onUpArrow(h C.uintptr_t) {
+	viewFor(h).onKeyCommand(key.NameUpArrow)
 }
 
 //export onDownArrow
-func onDownArrow(view C.CFTypeRef) {
-	views[view].onKeyCommand(key.NameDownArrow)
+func onDownArrow(h C.uintptr_t) {
+	viewFor(h).onKeyCommand(key.NameDownArrow)
 }
 
 //export onLeftArrow
-func onLeftArrow(view C.CFTypeRef) {
-	views[view].onKeyCommand(key.NameLeftArrow)
+func onLeftArrow(h C.uintptr_t) {
+	viewFor(h).onKeyCommand(key.NameLeftArrow)
 }
 
 //export onRightArrow
-func onRightArrow(view C.CFTypeRef) {
-	views[view].onKeyCommand(key.NameRightArrow)
+func onRightArrow(h C.uintptr_t) {
+	viewFor(h).onKeyCommand(key.NameRightArrow)
 }
 
 //export onDeleteBackward
-func onDeleteBackward(view C.CFTypeRef) {
-	views[view].onKeyCommand(key.NameDeleteBackward)
+func onDeleteBackward(h C.uintptr_t) {
+	viewFor(h).onKeyCommand(key.NameDeleteBackward)
 }
 
 //export onText
-func onText(view, str C.CFTypeRef) {
-	w := views[view]
+func onText(h C.uintptr_t, str C.CFTypeRef) {
+	w := viewFor(h)
 	w.w.EditorInsert(nsstringToString(str))
 }
 
 //export onTouch
-func onTouch(last C.int, view, touchRef C.CFTypeRef, phase C.NSInteger, x, y C.CGFloat, ti C.double) {
-	var typ pointer.Type
+func onTouch(h C.uintptr_t, last C.int, touchRef C.CFTypeRef, phase C.NSInteger, x, y C.CGFloat, ti C.double) {
+	var kind pointer.Kind
 	switch phase {
 	case C.UITouchPhaseBegan:
-		typ = pointer.Press
+		kind = pointer.Press
 	case C.UITouchPhaseMoved:
-		typ = pointer.Move
+		kind = pointer.Move
 	case C.UITouchPhaseEnded:
-		typ = pointer.Release
+		kind = pointer.Release
 	case C.UITouchPhaseCancelled:
-		typ = pointer.Cancel
+		kind = pointer.Cancel
 	default:
 		return
 	}
-	w := views[view]
+	w := viewFor(h)
 	t := time.Duration(float64(ti) * float64(time.Second))
 	p := f32.Point{X: float32(x), Y: float32(y)}
-	w.w.Event(pointer.Event{
-		Type:      typ,
+	w.ProcessEvent(pointer.Event{
+		Kind:      kind,
 		Source:    pointer.Touch,
 		PointerID: w.lookupTouch(last != 0, touchRef),
 		Position:  p,
@@ -265,11 +291,16 @@ func (w *window) ReadClipboard() {
 	cstr := C.readClipboard()
 	defer C.CFRelease(cstr)
 	content := nsstringToString(cstr)
-	w.w.Event(clipboard.Event{Text: content})
+	w.ProcessEvent(transfer.DataEvent{
+		Type: "application/text",
+		Open: func() io.ReadCloser {
+			return io.NopCloser(strings.NewReader(content))
+		},
+	})
 }
 
-func (w *window) WriteClipboard(s string) {
-	u16 := utf16.Encode([]rune(s))
+func (w *window) WriteClipboard(mime string, s []byte) {
+	u16 := utf16.Encode([]rune(string(s)))
 	var chars *C.unichar
 	if len(u16) > 0 {
 		chars = (*C.unichar)(unsafe.Pointer(&u16[0]))
@@ -280,7 +311,7 @@ func (w *window) WriteClipboard(s string) {
 func (w *window) Configure([]Option) {
 	// Decorations are never disabled.
 	w.config.Decorated = true
-	w.w.Event(ConfigEvent{Config: w.config})
+	w.ProcessEvent(ConfigEvent{Config: w.config})
 }
 
 func (w *window) EditorStateChanged(old, new editorState) {}
@@ -288,10 +319,6 @@ func (w *window) EditorStateChanged(old, new editorState) {}
 func (w *window) Perform(system.Action) {}
 
 func (w *window) SetAnimating(anim bool) {
-	v := w.view
-	if v == 0 {
-		return
-	}
 	if anim {
 		w.displayLink.Start()
 	} else {
@@ -303,8 +330,8 @@ func (w *window) SetCursor(cursor pointer.Cursor) {
 	w.cursor = windowSetCursor(w.cursor, cursor)
 }
 
-func (w *window) onKeyCommand(name string) {
-	w.w.Event(key.Event{
+func (w *window) onKeyCommand(name key.Name) {
+	w.ProcessEvent(key.Event{
 		Name: name,
 	})
 }
@@ -343,17 +370,77 @@ func (w *window) ShowTextInput(show bool) {
 
 func (w *window) SetInputHint(_ key.InputHint) {}
 
-func newWindow(win *callbacks, options []Option) error {
-	mainWindow.in <- windowAndConfig{win, options}
-	return <-mainWindow.errs
+func (w *window) ProcessEvent(e event.Event) {
+	w.w.ProcessEvent(e)
+	w.loop.FlushEvents()
 }
 
+func (w *window) Event() event.Event {
+	return w.loop.Event()
+}
+
+func (w *window) Invalidate() {
+	w.loop.Invalidate()
+}
+
+func (w *window) Run(f func()) {
+	w.loop.Run(f)
+}
+
+func (w *window) Frame(frame *op.Ops) {
+	w.loop.Frame(frame)
+}
+
+func newWindow(win *callbacks, options []Option) {
+	mainWindow.in <- windowAndConfig{win, options}
+	<-mainWindow.windows
+}
+
+var mainMode = mainModeUndefined
+
+const (
+	mainModeUndefined = iota
+	mainModeExe
+	mainModeLibrary
+)
+
 func osMain() {
+	if !isMainThread() {
+		panic("app.Main must be run on the main goroutine")
+	}
+	switch mainMode {
+	case mainModeUndefined:
+		mainMode = mainModeExe
+		var argv []*C.char
+		for _, arg := range os.Args {
+			a := C.CString(arg)
+			defer C.free(unsafe.Pointer(a))
+			argv = append(argv, a)
+		}
+		C.gio_applicationMain(C.int(len(argv)), unsafe.SliceData(argv))
+	case mainModeExe:
+		panic("app.Main may be called only once")
+	case mainModeLibrary:
+		// Do nothing, we're embedded as a library.
+	}
 }
 
 //export gio_runMain
 func gio_runMain() {
-	runMain()
+	if !isMainThread() {
+		panic("app.Main must be run on the main goroutine")
+	}
+	switch mainMode {
+	case mainModeUndefined:
+		mainMode = mainModeLibrary
+		runMain()
+	case mainModeExe:
+		// Do nothing, main has already been called.
+	}
 }
 
-func (_ ViewEvent) ImplementsEvent() {}
+func (UIKitViewEvent) implementsViewEvent() {}
+func (UIKitViewEvent) ImplementsEvent()     {}
+func (u UIKitViewEvent) Valid() bool {
+	return u != (UIKitViewEvent{})
+}

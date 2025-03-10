@@ -3,8 +3,8 @@ package harfbuzz
 import (
 	"fmt"
 
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from harfbuzz/src/hb-ot-shape-complex-myanmar.cc, .hh Copyright © 2011,2012,2013  Google, Inc.  Behdad Esfahbod
@@ -45,10 +45,10 @@ func isConsonantMyanmar(info *GlyphInfo) bool {
  * These features are applied in order, one at a time, after reordering.
  */
 var myanmarBasicFeatures = [...]tables.Tag{
-	loader.NewTag('r', 'p', 'h', 'f'),
-	loader.NewTag('p', 'r', 'e', 'f'),
-	loader.NewTag('b', 'l', 'w', 'f'),
-	loader.NewTag('p', 's', 't', 'f'),
+	ot.NewTag('r', 'p', 'h', 'f'),
+	ot.NewTag('p', 'r', 'e', 'f'),
+	ot.NewTag('b', 'l', 'w', 'f'),
+	ot.NewTag('p', 's', 't', 'f'),
 }
 
 /*
@@ -56,10 +56,10 @@ var myanmarBasicFeatures = [...]tables.Tag{
 * These features are applied all at once, after clearing syllables.
  */
 var myanmarOtherFeatures = [...]tables.Tag{
-	loader.NewTag('p', 'r', 'e', 's'),
-	loader.NewTag('a', 'b', 'v', 's'),
-	loader.NewTag('b', 'l', 'w', 's'),
-	loader.NewTag('p', 's', 't', 's'),
+	ot.NewTag('p', 'r', 'e', 's'),
+	ot.NewTag('a', 'b', 'v', 's'),
+	ot.NewTag('b', 'l', 'w', 's'),
+	ot.NewTag('p', 's', 't', 's'),
 }
 
 func (complexShaperMyanmar) collectFeatures(plan *otShapePlanner) {
@@ -68,10 +68,10 @@ func (complexShaperMyanmar) collectFeatures(plan *otShapePlanner) {
 	/* Do this before any lookups have been applied. */
 	map_.addGSUBPause(setupSyllablesMyanmar)
 
-	map_.enableFeature(loader.NewTag('l', 'o', 'c', 'l'))
+	map_.enableFeature(ot.NewTag('l', 'o', 'c', 'l'))
 	/* The Indic specs do not require ccmp, but we apply it here since if
 	* there is a use of it, it's typically at the beginning. */
-	map_.enableFeature(loader.NewTag('c', 'c', 'm', 'p'))
+	map_.enableFeature(ot.NewTag('c', 'c', 'm', 'p'))
 
 	map_.addGSUBPause(reorderMyanmar)
 

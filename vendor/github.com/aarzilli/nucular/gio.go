@@ -18,9 +18,10 @@ import (
 
 	"gioui.org/app"
 	"gioui.org/f32"
+	"gioui.org/io/event"
+	"gioui.org/io/input"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
-	"gioui.org/io/profile"
 	"gioui.org/io/system"
 	"gioui.org/op"
 	gioclip "gioui.org/op/clip"
@@ -81,7 +82,8 @@ func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, update
 
 func (mw *masterWindow) Main() {
 	go func() {
-		mw.w = app.NewWindow(app.Title(mw.Title), func(u unit.Metric, cfg *app.Config) {
+		mw.w = new(app.Window)
+		mw.w.Option(app.Title(mw.Title), func(u unit.Metric, cfg *app.Config) {
 			cfg.Size = image.Point{
 				X: mw.ctx.scale(mw.initialSize.X),
 				Y: mw.ctx.scale(mw.initialSize.Y),
@@ -122,9 +124,9 @@ func (mw *masterWindow) OnClose(onClose func()) {
 
 func (mw *masterWindow) main() {
 	perfString := ""
-	for e := range mw.w.Events() {
-		switch e := e.(type) {
-		case system.DestroyEvent:
+	for {
+		switch e := mw.w.Event().(type) {
+		case app.DestroyEvent:
 			mw.uilock.Lock()
 			mw.closed = true
 			mw.uilock.Unlock()
@@ -133,10 +135,33 @@ func (mw *masterWindow) main() {
 			}
 			return
 
-		case system.FrameEvent:
+		case app.FrameEvent:
 			mw.size = e.Size
 
-			for _, e := range e.Queue.Events(mw.ctx) {
+			for {
+				e, ok := e.Source.Event(
+					pointer.Filter{
+						Target: eventTag,
+						Kinds:  pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Enter | pointer.Leave | pointer.Scroll,
+					},
+					key.Filter{
+						Focus:    eventTag,
+						Name:     "",
+						Optional: key.ModCtrl | key.ModCommand | key.ModShift | key.ModAlt | key.ModSuper,
+					},
+					key.Filter{
+						Focus:    eventTag,
+						Name:     "Tab",
+						Optional: key.ModCtrl | key.ModCommand | key.ModShift | key.ModAlt | key.ModSuper,
+					},
+					key.FocusFilter{
+						Target: eventTag,
+					},
+				)
+
+				if !ok {
+					break
+				}
 				switch e := e.(type) {
 				case pointer.Event:
 					mw.uilock.Lock()
@@ -166,14 +191,12 @@ func (mw *masterWindow) main() {
 						mw.ctx.Input.Keyboard.Keys = append(mw.ctx.Input.Keyboard.Keys, gio2mobileKey(e))
 						mw.uilock.Unlock()
 					}
-				case profile.Event:
-					perfString = e.Timings
 				}
 			}
 
 			mw.uilock.Lock()
 			mw.prevCmds = mw.prevCmds[:0]
-			mw.updateLocked(perfString)
+			mw.updateLocked(perfString, e.Source)
 			mw.uilock.Unlock()
 
 			e.Frame(&mw.ops)
@@ -187,7 +210,7 @@ func (mw *masterWindow) processPointerEvent(e pointer.Event) {
 	if changed < 2 {
 		atomic.StoreInt32(&mw.ctx.changed, 2)
 	}
-	switch e.Type {
+	switch e.Kind {
 	case pointer.Release, pointer.Cancel:
 		for i := range mw.ctx.Input.Mouse.Buttons {
 			btn := &mw.ctx.Input.Mouse.Buttons[i]
@@ -213,7 +236,7 @@ func (mw *masterWindow) processPointerEvent(e pointer.Event) {
 			button = mouse.ButtonLeft
 		}
 
-		down := e.Type == pointer.Press
+		down := e.Kind == pointer.Press
 		btn := &mw.ctx.Input.Mouse.Buttons[button]
 		if btn.Down == down {
 			break
@@ -258,20 +281,20 @@ func init() {
 	runeToCode["."] = mkey.CodeFullStop
 	runeToCode["/"] = mkey.CodeSlash
 
-	runeToCode[key.NameLeftArrow] = mkey.CodeLeftArrow
-	runeToCode[key.NameRightArrow] = mkey.CodeRightArrow
-	runeToCode[key.NameUpArrow] = mkey.CodeUpArrow
-	runeToCode[key.NameDownArrow] = mkey.CodeDownArrow
-	runeToCode[key.NameReturn] = mkey.CodeReturnEnter
-	runeToCode[key.NameEnter] = mkey.CodeReturnEnter
-	runeToCode[key.NameEscape] = mkey.CodeEscape
-	runeToCode[key.NameHome] = mkey.CodeHome
-	runeToCode[key.NameEnd] = mkey.CodeEnd
-	runeToCode[key.NameDeleteBackward] = mkey.CodeDeleteBackspace
-	runeToCode[key.NameDeleteForward] = mkey.CodeDeleteForward
-	runeToCode[key.NamePageUp] = mkey.CodePageUp
-	runeToCode[key.NamePageDown] = mkey.CodePageDown
-	runeToCode[key.NameTab] = mkey.CodeTab
+	runeToCode[string(key.NameLeftArrow)] = mkey.CodeLeftArrow
+	runeToCode[string(key.NameRightArrow)] = mkey.CodeRightArrow
+	runeToCode[string(key.NameUpArrow)] = mkey.CodeUpArrow
+	runeToCode[string(key.NameDownArrow)] = mkey.CodeDownArrow
+	runeToCode[string(key.NameReturn)] = mkey.CodeReturnEnter
+	runeToCode[string(key.NameEnter)] = mkey.CodeReturnEnter
+	runeToCode[string(key.NameEscape)] = mkey.CodeEscape
+	runeToCode[string(key.NameHome)] = mkey.CodeHome
+	runeToCode[string(key.NameEnd)] = mkey.CodeEnd
+	runeToCode[string(key.NameDeleteBackward)] = mkey.CodeDeleteBackspace
+	runeToCode[string(key.NameDeleteForward)] = mkey.CodeDeleteForward
+	runeToCode[string(key.NamePageUp)] = mkey.CodePageUp
+	runeToCode[string(key.NamePageDown)] = mkey.CodePageDown
+	runeToCode[string(key.NameTab)] = mkey.CodeTab
 
 	runeToCode["F1"] = mkey.CodeF1
 	runeToCode["F2"] = mkey.CodeF2
@@ -315,7 +338,7 @@ func gio2mobileKey(e key.Event) mkey.Event {
 
 	return mkey.Event{
 		Rune:      name,
-		Code:      runeToCode[e.Name],
+		Code:      runeToCode[string(e.Name)],
 		Modifiers: mod,
 		Direction: mkey.DirRelease,
 	}
@@ -344,7 +367,7 @@ func (w *masterWindow) updater() {
 	}
 }
 
-func (mw *masterWindow) updateLocked(perfString string) {
+func (mw *masterWindow) updateLocked(perfString string, source input.Source) {
 	mw.ctx.Windows[0].Bounds = rect.Rect{X: 0, Y: 0, W: mw.size.X, H: mw.size.Y}
 	in := &mw.ctx.Input
 	in.Mouse.clip = nk_null_rect
@@ -365,7 +388,7 @@ func (mw *masterWindow) updateLocked(perfString string) {
 	if perfUpdate || mw.Perf {
 		t1 = time.Now()
 	}
-	nprimitives := mw.draw(perfString)
+	nprimitives := mw.draw(perfString, source)
 	if perfUpdate && nprimitives > 0 {
 		te = time.Now()
 
@@ -400,29 +423,24 @@ func (mw *masterWindow) updateLocked(perfString string) {
 	}
 }
 
-func (w *masterWindow) draw(perfString string) int {
+func (w *masterWindow) draw(perfString string, source input.Source) int {
 	if !w.drawChanged() {
 		return 0
 	}
 
 	w.prevCmds = append(w.prevCmds[:0], w.ctx.cmds...)
 
-	return w.ctx.Draw(&w.ops, w.size, w.Perf, perfString)
+	return w.ctx.Draw(&w.ops, source, w.size, w.Perf, perfString)
 }
 
-func (ctx *context) Draw(ops *op.Ops, size image.Point, perf bool, perfString string) int {
+const eventTag = "eventag"
+
+func (ctx *context) Draw(ops *op.Ops, source input.Source, size image.Point, perf bool, perfString string) int {
 	ops.Reset()
 
-	if perf {
-		profile.Op{ctx}.Add(ops)
-	}
-
 	areaStack := gioclip.Rect(image.Rectangle{Max: size}).Push(ops)
-	// Register for all pointer inputs on the current clip area.
-	pointer.InputOp{ctx, false, pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Scroll, image.Rect(-4096, -4096, 4096, 4096)}.Add(ops)
-	key.InputOp{ctx, key.HintAny, ""}.Add(ops)
-	key.InputOp{ctx, key.HintAny, "Tab"}.Add(ops)
-	key.FocusOp{ctx}.Add(ops)
+	source.Execute(key.FocusCmd{Tag: eventTag})
+	event.Op(ops, eventTag)
 	areaStack.Pop()
 
 	var scissorStack gioclip.Stack
@@ -914,4 +932,8 @@ func updateCharAtlas(cmds []command.Command, allm *map[charAtlasKey]map[rune]ren
 			delete(*allm, k)
 		}
 	}
+}
+
+func (mw *masterWindow) setTitle(title string) {
+	mw.w.Option(app.Title(title))
 }

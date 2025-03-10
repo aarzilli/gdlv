@@ -24,6 +24,7 @@ type MasterWindow interface {
 	Close()
 	Closed() bool
 	OnClose(func())
+	ActivateWindow(*Window)
 	ActivateEditor(*Window, interface{})
 
 	Style() *nstyle.Style
@@ -41,6 +42,8 @@ type MasterWindow interface {
 
 	Lock()
 	Unlock()
+
+	setTitle(string)
 }
 
 func NewMasterWindow(flags WindowFlags, title string, updatefn UpdateFn) MasterWindow {
@@ -92,14 +95,20 @@ func (mw *masterWindowCommon) Input() *Input {
 	return &mw.ctx.Input
 }
 
+// ActivateWindow raises the specified window.
+func (mw *masterWindowCommon) ActivateWindow(win *Window) {
+	mw.ActivateEditor(win, nil)
+}
+
+// ActivateEditor raises the specified window and moves the focus to the specified editor.
 func (mw *masterWindowCommon) ActivateEditor(win *Window, ed interface{}) {
 	mw.ctx.Input.activateEditor = ed
-	mw.ctx.Input.activateEditorWindow = win
+	mw.ctx.Input.activateWindow = win
 	mw.Changed()
 }
 
 func (mw *masterWindowCommon) ActivatingEditor() interface{} {
-	if mw.ctx.Input.activateEditorWindow == nil {
+	if mw.ctx.Input.activateWindow == nil {
 		return mw.ctx.Input.activateEditor
 	}
 	return nil

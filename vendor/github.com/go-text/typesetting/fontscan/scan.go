@@ -11,12 +11,12 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/go-text/typesetting/opentype/loader"
+	ot "github.com/go-text/typesetting/font/opentype"
 )
 
 // DefaultFontDirectories return the OS-dependent usual directories for
 // fonts, or an error if no one exists.
-// These are the directories used by `FindFont` and `FontMap.UseSystemFonts` to locate fonts.
+// These are the directories used by `FontMap.UseSystemFonts` to locate fonts.
 func DefaultFontDirectories(logger Logger) ([]string, error) {
 	var dirs []string
 	switch runtime.GOOS {
@@ -197,7 +197,7 @@ func (sfi systemFontsIndex) assertValid() error {
 type fileFootprints struct {
 	path string // file path
 
-	footprints []footprint // font content for the path
+	footprints []Footprint // font content for the path
 
 	// modification time for the file
 	modTime timeStamp
@@ -251,10 +251,10 @@ func (fa *footprintScanner) consume(path string, info os.FileInfo) error {
 
 	// fetch the loaders for the given font file, or nil if is not
 	// an Opentype font.
-	loaders, _ := loader.NewLoaders(file)
+	loaders, _ := ot.NewLoaders(file)
 
 	for i, ld := range loaders {
-		var fp footprint
+		var fp Footprint
 		fp, fa.scanBuffer, err = newFootprintFromLoader(ld, false, fa.scanBuffer)
 		// the font won't be usable, just ignore it
 		if err != nil {

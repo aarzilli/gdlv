@@ -2,7 +2,13 @@
 
 package segmenter
 
-import ucd "github.com/go-text/typesetting/unicodedata"
+import (
+	ucd "github.com/go-text/typesetting/unicodedata"
+)
+
+// -----------------------------------------------------------------------
+// ------------------------- Grapheme boundaries -------------------------
+// -----------------------------------------------------------------------
 
 // Apply the Grapheme_Cluster_Boundary_Rules and returns a true if we are
 // at a grapheme break.
@@ -39,7 +45,7 @@ func (cr *cursor) applyGraphemeBoundaryRules() bool {
 	return true // Rule GB999
 }
 
-// update `isPrevGrRIOdd` used for the rules GB12 and GB13
+// update `isPrevGraphemeRIOdd` used for the rules GB12 and GB13
 // and returns `true` if one of them triggered
 func (cr *cursor) updateGraphemeRIOdd() (trigger bool) {
 	if cr.grapheme == ucd.GraphemeBreakRegional_Indicator {
@@ -94,4 +100,95 @@ func (cr *cursor) updatePictoSequence() bool {
 	default:
 		panic("exhaustive switch")
 	}
+}
+
+// -----------------------------------------------------------------------
+// ------------------------- Word boundaries -----------------------------
+// -----------------------------------------------------------------------
+
+// update `isPrevWordRIOdd` used for the rules WB15 and WB16
+// and returns `true` if one of them triggered
+func (cr *cursor) updateWordRIOdd() (trigger bool) {
+	if cr.word == ucd.WordBreakExtendFormat {
+		return false // skip
+	}
+
+	if cr.word == ucd.WordBreakRegional_Indicator {
+		trigger = cr.isPrevWordRIOdd
+		cr.isPrevWordRIOdd = !cr.isPrevWordRIOdd // switch the parity
+	} else {
+		cr.isPrevWordRIOdd = false
+	}
+	return trigger
+}
+
+// Apply the Word_Boundary_Rules and returns true if we are at a
+// word boundary.
+// removePrevNoExtend is true if the index [prevWordNoExtend]
+// should be marked as NOT being a word boundary
+// See https://unicode.org/reports/tr29/#Word_Boundary_Rules
+func (cr *cursor) applyWordBoundaryRules(i int) (isWordBoundary, removePrevNoExtend bool) {
+	triggerWB15_16 := cr.updateWordRIOdd()
+
+	prevPrev, prev, current := cr.prevPrevWord, cr.prevWord, cr.word
+
+	// we apply Rules WB1 and WB2 at the end of the main loop
+
+	isAfterNoExtend := cr.prevWordNoExtend == i-1
+
+	if cr.prev == '\u000D' && cr.r == '\u000A' { // Rule WB3
+		isWordBoundary = false
+	} else if prev == ucd.WordBreakNewlineCRLF && isAfterNoExtend {
+		// The extra check for prevWordNoExtend is to correctly handle sequences like
+		// Newline ÷ Extend × Extend
+		// since we have not skipped ExtendFormat yet.
+		isWordBoundary = true // Rule WB3a
+	} else if current == ucd.WordBreakNewlineCRLF {
+		isWordBoundary = true // Rule WB3b
+	} else if cr.prev == 0x200D && cr.isExtentedPic {
+		isWordBoundary = false // Rule WB3c
+	} else if prev == ucd.WordBreakWSegSpace &&
+		current == ucd.WordBreakWSegSpace && isAfterNoExtend {
+		isWordBoundary = false // Rule WB3d
+	} else if current == ucd.WordBreakExtendFormat {
+		isWordBoundary = false // Rules WB4
+	} else if (prev == ucd.WordBreakALetter || prev == ucd.WordBreakHebrew_Letter || prev == ucd.WordBreakNumeric) &&
+		(current == ucd.WordBreakALetter || current == ucd.WordBreakHebrew_Letter || current == ucd.WordBreakNumeric) {
+		isWordBoundary = false // Rules WB5, WB8, WB9, WB10
+	} else if prev == ucd.WordBreakKatakana && current == ucd.WordBreakKatakana {
+		isWordBoundary = false // Rule WB13
+	} else if (prev == ucd.WordBreakALetter ||
+		prev == ucd.WordBreakHebrew_Letter ||
+		prev == ucd.WordBreakNumeric ||
+		prev == ucd.WordBreakKatakana ||
+		prev == ucd.WordBreakExtendNumLet) &&
+		current == ucd.WordBreakExtendNumLet {
+		isWordBoundary = false // Rule WB13a
+	} else if prev == ucd.WordBreakExtendNumLet &&
+		(current == ucd.WordBreakALetter || current == ucd.WordBreakHebrew_Letter || current == ucd.WordBreakNumeric ||
+			current == ucd.WordBreakKatakana) {
+		isWordBoundary = false // Rule WB13b
+	} else if (prevPrev == ucd.WordBreakALetter || prevPrev == ucd.WordBreakHebrew_Letter) &&
+		(prev == ucd.WordBreakMidLetter || prev == ucd.WordBreakMidNumLet || prev == ucd.WordBreakSingle_Quote) &&
+		(current == ucd.WordBreakALetter || current == ucd.WordBreakHebrew_Letter) {
+		removePrevNoExtend = true // Rule WB6
+		isWordBoundary = false    // Rule WB7
+	} else if prev == ucd.WordBreakHebrew_Letter && current == ucd.WordBreakSingle_Quote {
+		isWordBoundary = false // Rule WB7a
+	} else if prevPrev == ucd.WordBreakHebrew_Letter && cr.prev == 0x0022 &&
+		current == ucd.WordBreakHebrew_Letter {
+		removePrevNoExtend = true // Rule WB7b
+		isWordBoundary = false    // Rule WB7c
+	} else if (prevPrev == ucd.WordBreakNumeric && current == ucd.WordBreakNumeric) &&
+		(prev == ucd.WordBreakMidNum || prev == ucd.WordBreakMidNumLet ||
+			prev == ucd.WordBreakSingle_Quote) {
+		isWordBoundary = false    // Rule WB11
+		removePrevNoExtend = true // Rule WB12
+	} else if triggerWB15_16 {
+		isWordBoundary = false // Rule WB15 and WB16
+	} else {
+		isWordBoundary = true // Rule WB999
+	}
+
+	return isWordBoundary, removePrevNoExtend
 }

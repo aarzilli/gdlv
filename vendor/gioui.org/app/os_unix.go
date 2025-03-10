@@ -12,13 +12,6 @@ import (
 	"gioui.org/io/pointer"
 )
 
-// ViewEvent provides handles to the underlying window objects for the
-// current display protocol.
-type ViewEvent interface {
-	implementsViewEvent()
-	ImplementsEvent()
-}
-
 type X11ViewEvent struct {
 	// Display is a pointer to the X11 Display created by XOpenDisplay.
 	Display unsafe.Pointer
@@ -28,6 +21,9 @@ type X11ViewEvent struct {
 
 func (X11ViewEvent) implementsViewEvent() {}
 func (X11ViewEvent) ImplementsEvent()     {}
+func (x X11ViewEvent) Valid() bool {
+	return x != (X11ViewEvent{})
+}
 
 type WaylandViewEvent struct {
 	// Display is the *wl_display returned by wl_display_connect.
@@ -38,6 +34,9 @@ type WaylandViewEvent struct {
 
 func (WaylandViewEvent) implementsViewEvent() {}
 func (WaylandViewEvent) ImplementsEvent()     {}
+func (w WaylandViewEvent) Valid() bool {
+	return w != (WaylandViewEvent{})
+}
 
 func osMain() {
 	select {}
@@ -49,7 +48,7 @@ type windowDriver func(*callbacks, []Option) error
 // let each driver initialize these variables with their own version of createWindow.
 var wlDriver, x11Driver windowDriver
 
-func newWindow(window *callbacks, options []Option) error {
+func newWindow(window *callbacks, options []Option) {
 	var errFirst error
 	for _, d := range []windowDriver{wlDriver, x11Driver} {
 		if d == nil {
@@ -57,16 +56,16 @@ func newWindow(window *callbacks, options []Option) error {
 		}
 		err := d(window, options)
 		if err == nil {
-			return nil
+			return
 		}
 		if errFirst == nil {
 			errFirst = err
 		}
 	}
-	if errFirst != nil {
-		return errFirst
+	if errFirst == nil {
+		errFirst = errors.New("app: no window driver available")
 	}
-	return errors.New("app: no window driver available")
+	window.ProcessEvent(DestroyEvent{Err: errFirst})
 }
 
 // xCursor contains mapping from pointer.Cursor to XCursor.

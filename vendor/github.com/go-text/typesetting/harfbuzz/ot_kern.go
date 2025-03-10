@@ -1,6 +1,6 @@
 package harfbuzz
 
-import fontP "github.com/go-text/typesetting/opentype/api/font"
+import fontP "github.com/go-text/typesetting/font"
 
 func simpleKern(kernTable fontP.Kernx) fontP.SimpleKerns {
 	for _, subtable := range kernTable {
@@ -13,7 +13,10 @@ func simpleKern(kernTable fontP.Kernx) fontP.SimpleKerns {
 
 func kern(driver fontP.SimpleKerns, crossStream bool, font *Font, buffer *Buffer, kernMask GlyphMask, scale bool) {
 	buffer.unsafeToConcat(0, maxInt)
-	c := newOtApplyContext(1, font, buffer)
+
+	var c otApplyContext
+
+	c.reset(1, font, buffer)
 	c.setLookupMask(kernMask)
 	c.setLookupProps(uint32(otIgnoreMarks))
 	skippyIter := &c.iterInput

@@ -3,8 +3,6 @@
 // license that can be found in the LICENSE file.
 
 //go:build (linux || dragonfly) && (amd64 || arm || arm64 || mips64 || mips64le)
-// +build linux dragonfly
-// +build amd64 arm arm64 mips64 mips64le
 
 package x11driver
 

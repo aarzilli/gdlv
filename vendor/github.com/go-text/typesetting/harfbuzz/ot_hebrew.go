@@ -1,8 +1,8 @@
 package harfbuzz
 
 import (
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
 // ported from harfbuzz/src/hb-ot-shape-complex-hebrew.cc Copyright © 2010,2012  Google, Inc.  Behdad Esfahbod
@@ -118,7 +118,7 @@ func (complexShaperHebrew) normalizationPreference() normalizationMode {
 
 func (complexShaperHebrew) gposTag() tables.Tag {
 	// https://github.com/harfbuzz/harfbuzz/issues/347#issuecomment-267838368
-	return loader.NewTag('h', 'e', 'b', 'r')
+	return ot.NewTag('h', 'e', 'b', 'r')
 }
 
 func (complexShaperHebrew) reorderMarks(_ *otShapePlan, buffer *Buffer, start, end int) {

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/go-text/typesetting/font"
+	ot "github.com/go-text/typesetting/font/opentype"
+	"github.com/go-text/typesetting/font/opentype/tables"
 	"github.com/go-text/typesetting/language"
-	"github.com/go-text/typesetting/opentype/api/font"
-	"github.com/go-text/typesetting/opentype/loader"
-	"github.com/go-text/typesetting/opentype/tables"
 )
 
 // ported from harfbuzz/src/hb-ot-shape-complex-arabic.cc, hb-ot-shape-complex-arabic-fallback.hh Copyright © 2010,2012  Google, Inc. Behdad Esfahbod
@@ -101,18 +101,18 @@ func getJoiningType(u rune, genCat generalCategory) uint8 {
 	return joiningTypeU
 }
 
-func featureIsSyriac(tag loader.Tag) bool {
+func featureIsSyriac(tag ot.Tag) bool {
 	return '2' <= byte(tag) && byte(tag) <= '3'
 }
 
-var arabicFeatures = [...]loader.Tag{
-	loader.NewTag('i', 's', 'o', 'l'),
-	loader.NewTag('f', 'i', 'n', 'a'),
-	loader.NewTag('f', 'i', 'n', '2'),
-	loader.NewTag('f', 'i', 'n', '3'),
-	loader.NewTag('m', 'e', 'd', 'i'),
-	loader.NewTag('m', 'e', 'd', '2'),
-	loader.NewTag('i', 'n', 'i', 't'),
+var arabicFeatures = [...]ot.Tag{
+	ot.NewTag('i', 's', 'o', 'l'),
+	ot.NewTag('f', 'i', 'n', 'a'),
+	ot.NewTag('f', 'i', 'n', '2'),
+	ot.NewTag('f', 'i', 'n', '3'),
+	ot.NewTag('m', 'e', 'd', 'i'),
+	ot.NewTag('m', 'e', 'd', '2'),
+	ot.NewTag('i', 'n', 'i', 't'),
 }
 
 /* Same order as the feature array */
@@ -197,11 +197,11 @@ func (cs *complexShaperArabic) collectFeatures(plan *otShapePlanner) {
 	* pause for Arabic, not other scripts.
 	 */
 
-	map_.enableFeature(loader.NewTag('s', 't', 'c', 'h'))
+	map_.enableFeature(ot.NewTag('s', 't', 'c', 'h'))
 	map_.addGSUBPause(recordStch)
 
-	map_.enableFeatureExt(loader.NewTag('c', 'c', 'm', 'p'), ffManualZWJ, 1)
-	map_.enableFeatureExt(loader.NewTag('l', 'o', 'c', 'l'), ffManualZWJ, 1)
+	map_.enableFeatureExt(ot.NewTag('c', 'c', 'm', 'p'), ffManualZWJ, 1)
+	map_.enableFeatureExt(ot.NewTag('l', 'o', 'c', 'l'), ffManualZWJ, 1)
 
 	map_.addGSUBPause(nil)
 
@@ -219,20 +219,20 @@ func (cs *complexShaperArabic) collectFeatures(plan *otShapePlanner) {
 	* however, it says a ZWJ should also mean "don't ligate". So we run
 	* the main ligating features as MANUAL_ZWJ. */
 
-	map_.enableFeatureExt(loader.NewTag('r', 'l', 'i', 'g'), ffManualZWJ|ffHasFallback, 1)
+	map_.enableFeatureExt(ot.NewTag('r', 'l', 'i', 'g'), ffManualZWJ|ffHasFallback, 1)
 
 	if plan.props.Script == language.Arabic {
 		map_.addGSUBPause(arabicFallbackShape)
 	}
-	map_.enableFeatureExt(loader.NewTag('c', 'a', 'l', 't'), ffManualZWJ, 1)
+	map_.enableFeatureExt(ot.NewTag('c', 'a', 'l', 't'), ffManualZWJ, 1)
 	/* https://github.com/harfbuzz/harfbuzz/issues/1573 */
-	if !map_.hasFeature(loader.NewTag('r', 'c', 'l', 't')) {
+	if !map_.hasFeature(ot.NewTag('r', 'c', 'l', 't')) {
 		map_.addGSUBPause(nil)
-		map_.enableFeatureExt(loader.NewTag('r', 'c', 'l', 't'), ffManualZWJ, 1)
+		map_.enableFeatureExt(ot.NewTag('r', 'c', 'l', 't'), ffManualZWJ, 1)
 	}
 
-	map_.enableFeatureExt(loader.NewTag('l', 'i', 'g', 'a'), ffManualZWJ, 1)
-	map_.enableFeatureExt(loader.NewTag('c', 'l', 'i', 'g'), ffManualZWJ, 1)
+	map_.enableFeatureExt(ot.NewTag('l', 'i', 'g', 'a'), ffManualZWJ, 1)
+	map_.enableFeatureExt(ot.NewTag('c', 'l', 'i', 'g'), ffManualZWJ, 1)
 
 	/* The spec includes 'cswh'.  Earlier versions of Windows
 	* used to enable this by default, but testing suggests
@@ -243,7 +243,7 @@ func (cs *complexShaperArabic) collectFeatures(plan *otShapePlanner) {
 	* to fixup broken glyph sequences.  Oh well...
 	* Test case: U+0643,U+0640,U+0631. */
 	//map_.enable_feature (newTag('c','s','w','h'));
-	map_.enableFeatureExt(loader.NewTag('m', 's', 'e', 't'), ffManualZWJ, 1)
+	map_.enableFeatureExt(ot.NewTag('m', 's', 'e', 't'), ffManualZWJ, 1)
 }
 
 type arabicShapePlan struct {
@@ -261,7 +261,7 @@ func newArabicPlan(plan *otShapePlan) arabicShapePlan {
 	var arabicPlan arabicShapePlan
 
 	arabicPlan.doFallback = plan.props.Script == language.Arabic
-	arabicPlan.hasStch = plan.map_.getMask1(loader.NewTag('s', 't', 'c', 'h')) != 0
+	arabicPlan.hasStch = plan.map_.getMask1(ot.NewTag('s', 't', 'c', 'h')) != 0
 	for i, arabFeat := range arabicFeatures {
 		arabicPlan.maskArray[i] = plan.map_.getMask1(arabFeat)
 		arabicPlan.doFallback = arabicPlan.doFallback &&
@@ -665,14 +665,14 @@ func (cs *complexShaperArabic) reorderMarks(_ *otShapePlan, buffer *Buffer, star
 // followed by rlig.  Don't change.
 // We currently support one subtable per lookup, and one lookup
 // per feature.  But we allow duplicate features, so we use that!
-var arabicFallbackFeatures = [...]loader.Tag{
-	loader.NewTag('i', 'n', 'i', 't'),
-	loader.NewTag('m', 'e', 'd', 'i'),
-	loader.NewTag('f', 'i', 'n', 'a'),
-	loader.NewTag('i', 's', 'o', 'l'),
-	loader.NewTag('r', 'l', 'i', 'g'),
-	loader.NewTag('r', 'l', 'i', 'g'),
-	loader.NewTag('r', 'l', 'i', 'g'),
+var arabicFallbackFeatures = [...]ot.Tag{
+	ot.NewTag('i', 'n', 'i', 't'),
+	ot.NewTag('m', 'e', 'd', 'i'),
+	ot.NewTag('f', 'i', 'n', 'a'),
+	ot.NewTag('i', 's', 'o', 'l'),
+	ot.NewTag('r', 'l', 'i', 'g'),
+	ot.NewTag('r', 'l', 'i', 'g'),
+	ot.NewTag('r', 'l', 'i', 'g'),
 }
 
 // used to sort both array at the same time
@@ -889,7 +889,8 @@ func newArabicFallbackPlan(plan *otShapePlan, font *Font) *arabicFallbackPlan {
 }
 
 func (fbPlan *arabicFallbackPlan) shape(font *Font, buffer *Buffer) {
-	c := newOtApplyContext(0, font, buffer)
+	var c otApplyContext
+	c.reset(0, font, buffer)
 	for i := 0; i < fbPlan.numLookups; i++ {
 		if fbPlan.accelArray[i].lookup != nil {
 			c.setLookupMask(fbPlan.maskArray[i])

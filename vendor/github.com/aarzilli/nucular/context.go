@@ -36,6 +36,7 @@ type context struct {
 
 	dockedWindowFocus int
 	floatWindowFocus  int
+	rootWindowFocus   bool
 	scrollwheelFocus  int
 	dockedCnt         int
 
@@ -220,8 +221,8 @@ func (ctx *context) Reset() {
 
 func (ctx *context) Restack() {
 	defer func() {
-		if ctx.Input.activateEditorWindow != nil {
-			ctx.Input.activateEditorWindow = nil
+		if ctx.Input.activateWindow != nil {
+			ctx.Input.activateWindow = nil
 		} else {
 			ctx.Input.activateEditor = nil
 		}
@@ -233,10 +234,11 @@ func (ctx *context) Restack() {
 			break
 		}
 	}
-	if !clicked && ctx.Input.activateEditorWindow == nil {
+	if !clicked && ctx.Input.activateWindow == nil {
 		return
 	}
 	ctx.dockedWindowFocus = 0
+	ctx.rootWindowFocus = false
 	nonmodalToplevel := false
 	var toplevelIdx int
 	for i := len(ctx.Windows) - 1; i >= 0; i-- {
@@ -257,7 +259,7 @@ func (ctx *context) Restack() {
 		if ctx.Windows[i].flags&windowTooltip != 0 {
 			continue
 		}
-		if ctx.restackClick(ctx.Windows[i]) || ctx.Input.activateEditorWindow == ctx.Windows[i] {
+		if ctx.restackClick(ctx.Windows[i]) || ctx.Input.activateWindow == ctx.Windows[i] {
 			found = true
 			if toplevelIdx != i {
 				newToplevel := ctx.Windows[i]
@@ -280,19 +282,24 @@ func (ctx *context) Restack() {
 		if ctx.restackClick(w) && (w.flags&windowDocked != 0) {
 			ctx.dockedWindowFocus = w.idx
 		}
-		if ctx.Input.activateEditorWindow == w {
+		if ctx.Input.activateWindow == w {
 			ctx.dockedWindowFocus = w.idx
 		}
 		return w
 	})
+	if ctx.dockedWindowFocus == 0 {
+		ctx.rootWindowFocus = true
+	}
 }
 
 func (ctx *context) FindFocus() {
 	ctx.floatWindowFocus = 0
-	for i := len(ctx.Windows) - 1; i >= 0; i-- {
-		if ctx.Windows[i].flags&windowTooltip == 0 {
-			ctx.floatWindowFocus = i
-			break
+	if !ctx.rootWindowFocus {
+		for i := len(ctx.Windows) - 1; i >= 0; i-- {
+			if ctx.Windows[i].flags&windowTooltip == 0 {
+				ctx.floatWindowFocus = i
+				break
+			}
 		}
 	}
 	ctx.scrollwheelFocus = 0
@@ -337,6 +344,9 @@ func (ctx *context) Walk(fn WindowWalkFn) {
 
 func (ctx *context) restackClick(w *Window) bool {
 	if !ctx.Input.Mouse.valid {
+		return false
+	}
+	if ctx.Input.activateWindow != nil {
 		return false
 	}
 	for _, b := range []mouse.Button{mouse.ButtonLeft, mouse.ButtonRight, mouse.ButtonMiddle} {

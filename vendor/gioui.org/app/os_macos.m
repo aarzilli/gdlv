@@ -6,7 +6,7 @@
 
 #include "_cgo_export.h"
 
-__attribute__ ((visibility ("hidden"))) CALayer *gio_layerFactory(void);
+__attribute__ ((visibility ("hidden"))) CALayer *gio_layerFactory(BOOL presentWithTrans);
 
 @interface GioAppDelegate : NSObject<NSApplicationDelegate>
 @end
@@ -14,40 +14,55 @@ __attribute__ ((visibility ("hidden"))) CALayer *gio_layerFactory(void);
 @interface GioWindowDelegate : NSObject<NSWindowDelegate>
 @end
 
+@interface GioView : NSView <CALayerDelegate,NSTextInputClient>
+@property uintptr_t handle;
+@property BOOL presentWithTrans;
+@end
+
 @implementation GioWindowDelegate
 - (void)windowWillMiniaturize:(NSNotification *)notification {
 	NSWindow *window = (NSWindow *)[notification object];
-	gio_onHide((__bridge CFTypeRef)window.contentView);
+  GioView *view = (GioView *)window.contentView;
+	gio_onDraw(view.handle);
 }
 - (void)windowDidDeminiaturize:(NSNotification *)notification {
 	NSWindow *window = (NSWindow *)[notification object];
-	gio_onShow((__bridge CFTypeRef)window.contentView);
+  GioView *view = (GioView *)window.contentView;
+	gio_onDraw(view.handle);
 }
 - (void)windowWillEnterFullScreen:(NSNotification *)notification {
 	NSWindow *window = (NSWindow *)[notification object];
-	gio_onFullscreen((__bridge CFTypeRef)window.contentView);
+  GioView *view = (GioView *)window.contentView;
+	gio_onDraw(view.handle);
 }
 - (void)windowWillExitFullScreen:(NSNotification *)notification {
 	NSWindow *window = (NSWindow *)[notification object];
-	gio_onWindowed((__bridge CFTypeRef)window.contentView);
+  GioView *view = (GioView *)window.contentView;
+	gio_onDraw(view.handle);
 }
 - (void)windowDidChangeScreen:(NSNotification *)notification {
 	NSWindow *window = (NSWindow *)[notification object];
 	CGDirectDisplayID dispID = [[[window screen] deviceDescription][@"NSScreenNumber"] unsignedIntValue];
-	CFTypeRef view = (__bridge CFTypeRef)window.contentView;
-	gio_onChangeScreen(view, dispID);
+  GioView *view = (GioView *)window.contentView;
+	gio_onChangeScreen(view.handle, dispID);
 }
 - (void)windowDidBecomeKey:(NSNotification *)notification {
 	NSWindow *window = (NSWindow *)[notification object];
-	gio_onFocus((__bridge CFTypeRef)window.contentView, 1);
+	GioView *view = (GioView *)window.contentView;
+	if ([window firstResponder] == view) {
+		gio_onFocus(view.handle, 1);
+	}
 }
 - (void)windowDidResignKey:(NSNotification *)notification {
 	NSWindow *window = (NSWindow *)[notification object];
-	gio_onFocus((__bridge CFTypeRef)window.contentView, 0);
+	GioView *view = (GioView *)window.contentView;
+	if ([window firstResponder] == view) {
+		gio_onFocus(view.handle, 0);
+	}
 }
 @end
 
-static void handleMouse(NSView *view, NSEvent *event, int typ, CGFloat dx, CGFloat dy) {
+static void handleMouse(GioView *view, NSEvent *event, int typ, CGFloat dx, CGFloat dy) {
 	NSPoint p = [view convertPoint:[event locationInWindow] fromView:nil];
 	if (!event.hasPreciseScrollingDeltas) {
 		// dx and dy are in rows and columns.
@@ -56,11 +71,8 @@ static void handleMouse(NSView *view, NSEvent *event, int typ, CGFloat dx, CGFlo
 	}
 	// Origin is in the lower left corner. Convert to upper left.
 	CGFloat height = view.bounds.size.height;
-	gio_onMouse((__bridge CFTypeRef)view, (__bridge CFTypeRef)event, typ, event.buttonNumber, p.x, height - p.y, dx, dy, [event timestamp], [event modifierFlags]);
+	gio_onMouse(view.handle, (__bridge CFTypeRef)event, typ, event.buttonNumber, p.x, height - p.y, dx, dy, [event timestamp], [event modifierFlags]);
 }
-
-@interface GioView : NSView <CALayerDelegate,NSTextInputClient>
-@end
 
 @implementation GioView
 - (void)setFrameSize:(NSSize)newSize {
@@ -70,21 +82,19 @@ static void handleMouse(NSView *view, NSEvent *event, int typ, CGFloat dx, CGFlo
 // drawRect is called when OpenGL is used, displayLayer otherwise.
 // Don't know why.
 - (void)drawRect:(NSRect)r {
-	gio_onDraw((__bridge CFTypeRef)self);
+	gio_onDraw(self.handle);
 }
 - (void)displayLayer:(CALayer *)layer {
 	layer.contentsScale = self.window.backingScaleFactor;
-	gio_onDraw((__bridge CFTypeRef)self);
+	gio_onDraw(self.handle);
 }
 - (CALayer *)makeBackingLayer {
-	CALayer *layer = gio_layerFactory();
+	CALayer *layer = gio_layerFactory(self.presentWithTrans);
 	layer.delegate = self;
 	return layer;
 }
 - (void)viewDidMoveToWindow {
-	if (self.window == nil) {
-		gio_onClose((__bridge CFTypeRef)self);
-	}
+	gio_onAttached(self.handle, self.window != nil ? 1 : 0);
 }
 - (void)mouseDown:(NSEvent *)event {
 	handleMouse(self, event, MOUSE_DOWN, 0, 0);
@@ -122,34 +132,37 @@ static void handleMouse(NSView *view, NSEvent *event, int typ, CGFloat dx, CGFlo
 	handleMouse(self, event, MOUSE_SCROLL, dx, dy);
 }
 - (void)keyDown:(NSEvent *)event {
-	[self interpretKeyEvents:[NSArray arrayWithObject:event]];
 	NSString *keys = [event charactersIgnoringModifiers];
-	gio_onKeys((__bridge CFTypeRef)self, (__bridge CFTypeRef)keys, [event timestamp], [event modifierFlags], true);
+	gio_onKeys(self.handle, (__bridge CFTypeRef)event, (__bridge CFTypeRef)keys, [event timestamp], [event modifierFlags], true);
+}
+- (void)flagsChanged:(NSEvent *)event {
+	[self interpretKeyEvents:[NSArray arrayWithObject:event]];
+	gio_onFlagsChanged(self.handle, [event modifierFlags]);
 }
 - (void)keyUp:(NSEvent *)event {
 	NSString *keys = [event charactersIgnoringModifiers];
-	gio_onKeys((__bridge CFTypeRef)self, (__bridge CFTypeRef)keys, [event timestamp], [event modifierFlags], false);
+	gio_onKeys(self.handle, (__bridge CFTypeRef)event, (__bridge CFTypeRef)keys, [event timestamp], [event modifierFlags], false);
 }
 - (void)insertText:(id)string {
-	gio_onText((__bridge CFTypeRef)self, (__bridge CFTypeRef)string);
+	gio_onText(self.handle, (__bridge CFTypeRef)string);
 }
-- (void)doCommandBySelector:(SEL)sel {
-	// Don't pass commands up the responder chain.
-	// They will end up in a beep.
+- (void)doCommandBySelector:(SEL)action {
+	if (!gio_onCommandBySelector(self.handle)) {
+		[super doCommandBySelector:action];
+	}
 }
-
 - (BOOL)hasMarkedText {
-	int res = gio_hasMarkedText((__bridge CFTypeRef)self);
+	int res = gio_hasMarkedText(self.handle);
 	return res ? YES : NO;
 }
 - (NSRange)markedRange {
-	return gio_markedRange((__bridge CFTypeRef)self);
+	return gio_markedRange(self.handle);
 }
 - (NSRange)selectedRange {
-	return gio_selectedRange((__bridge CFTypeRef)self);
+	return gio_selectedRange(self.handle);
 }
 - (void)unmarkText {
-	gio_unmarkText((__bridge CFTypeRef)self);
+	gio_unmarkText(self.handle);
 }
 - (void)setMarkedText:(id)string
         selectedRange:(NSRange)selRange
@@ -161,14 +174,14 @@ static void handleMouse(NSView *view, NSEvent *event, int typ, CGFloat dx, CGFlo
 	} else {
 		str = string;
 	}
-	gio_setMarkedText((__bridge CFTypeRef)self, (__bridge CFTypeRef)str, selRange, replaceRange);
+	gio_setMarkedText(self.handle, (__bridge CFTypeRef)str, selRange, replaceRange);
 }
 - (NSArray<NSAttributedStringKey> *)validAttributesForMarkedText {
 	return nil;
 }
 - (NSAttributedString *)attributedSubstringForProposedRange:(NSRange)range
                                                 actualRange:(NSRangePointer)actualRange {
-	NSString *str = CFBridgingRelease(gio_substringForProposedRange((__bridge CFTypeRef)self, range, actualRange));
+	NSString *str = CFBridgingRelease(gio_substringForProposedRange(self.handle, range, actualRange));
 	return [[NSAttributedString alloc] initWithString:str attributes:nil];
 }
 - (void)insertText:(id)string
@@ -180,16 +193,33 @@ static void handleMouse(NSView *view, NSEvent *event, int typ, CGFloat dx, CGFlo
 	} else {
 		str = string;
 	}
-	gio_insertText((__bridge CFTypeRef)self, (__bridge CFTypeRef)str, replaceRange);
+	gio_insertText(self.handle, (__bridge CFTypeRef)str, replaceRange);
 }
 - (NSUInteger)characterIndexForPoint:(NSPoint)p {
-	return gio_characterIndexForPoint((__bridge CFTypeRef)self, p);
+	return gio_characterIndexForPoint(self.handle, p);
 }
 - (NSRect)firstRectForCharacterRange:(NSRange)rng
                          actualRange:(NSRangePointer)actual {
-    NSRect r = gio_firstRectForCharacterRange((__bridge CFTypeRef)self, rng, actual);
+    NSRect r = gio_firstRectForCharacterRange(self.handle, rng, actual);
     r = [self convertRect:r toView:nil];
     return [[self window] convertRectToScreen:r];
+}
+- (void)applicationWillUnhide:(NSNotification *)notification {
+	gio_onDraw(self.handle);
+}
+- (void)applicationDidHide:(NSNotification *)notification {
+	gio_onDraw(self.handle);
+}
+- (void)dealloc {
+	gio_onDestroy(self.handle);
+}
+- (BOOL) becomeFirstResponder {
+	gio_onFocus(self.handle, 1);
+	return [super becomeFirstResponder];
+ }
+- (BOOL) resignFirstResponder {
+	gio_onFocus(self.handle, 0);
+	return [super resignFirstResponder];
 }
 @end
 
@@ -240,7 +270,7 @@ void gio_showCursor() {
 
 // some cursors are not public, this tries to use a private cursor
 // and uses fallback when the use of private cursor fails.
-void gio_trySetPrivateCursor(SEL cursorName, NSCursor* fallback) {
+static void trySetPrivateCursor(SEL cursorName, NSCursor* fallback) {
 	if ([NSCursor respondsToSelector:cursorName]) {
 		id object = [NSCursor performSelector:cursorName];
 		if ([object isKindOfClass:[NSCursor class]]) {
@@ -272,7 +302,7 @@ void gio_setCursor(NSUInteger curID) {
 				break;
 			case 6: // pointer.CursorAllScroll
 				// For some reason, using _moveCursor fails on Monterey.
-				// gio_trySetPrivateCursor(@selector(_moveCursor), NSCursor.arrowCursor);
+				// trySetPrivateCursor(@selector(_moveCursor), NSCursor.arrowCursor);
 				[NSCursor.arrowCursor set];
 				break;
 			case 7: // pointer.CursorColResize
@@ -282,33 +312,31 @@ void gio_setCursor(NSUInteger curID) {
 				[NSCursor.resizeUpDownCursor set];
 				break;
 			case 9: // pointer.CursorGrab
-				// [NSCursor.openHandCursor set];
-				gio_trySetPrivateCursor(@selector(openHandCursor), NSCursor.arrowCursor);
+				[NSCursor.openHandCursor set];
 				break;
 			case 10: // pointer.CursorGrabbing
-				// [NSCursor.closedHandCursor set];
-				gio_trySetPrivateCursor(@selector(closedHandCursor), NSCursor.arrowCursor);
+				[NSCursor.closedHandCursor set];
 				break;
 			case 11: // pointer.CursorNotAllowed
 				[NSCursor.operationNotAllowedCursor set];
 				break;
 			case 12: // pointer.CursorWait
-				gio_trySetPrivateCursor(@selector(busyButClickableCursor), NSCursor.arrowCursor);
+				trySetPrivateCursor(@selector(busyButClickableCursor), NSCursor.arrowCursor);
 				break;
 			case 13: // pointer.CursorProgress
-				gio_trySetPrivateCursor(@selector(busyButClickableCursor), NSCursor.arrowCursor);
+				trySetPrivateCursor(@selector(busyButClickableCursor), NSCursor.arrowCursor);
 				break;
 			case 14: // pointer.CursorNorthWestResize
-				gio_trySetPrivateCursor(@selector(_windowResizeNorthWestCursor), NSCursor.resizeUpDownCursor);
+				trySetPrivateCursor(@selector(_windowResizeNorthWestCursor), NSCursor.resizeUpDownCursor);
 				break;
 			case 15: // pointer.CursorNorthEastResize
-				gio_trySetPrivateCursor(@selector(_windowResizeNorthEastCursor), NSCursor.resizeUpDownCursor);
+				trySetPrivateCursor(@selector(_windowResizeNorthEastCursor), NSCursor.resizeUpDownCursor);
 				break;
 			case 16: // pointer.CursorSouthWestResize
-				gio_trySetPrivateCursor(@selector(_windowResizeSouthWestCursor), NSCursor.resizeUpDownCursor);
+				trySetPrivateCursor(@selector(_windowResizeSouthWestCursor), NSCursor.resizeUpDownCursor);
 				break;
 			case 17: // pointer.CursorSouthEastResize
-				gio_trySetPrivateCursor(@selector(_windowResizeSouthEastCursor), NSCursor.resizeUpDownCursor);
+				trySetPrivateCursor(@selector(_windowResizeSouthEastCursor), NSCursor.resizeUpDownCursor);
 				break;
 			case 18: // pointer.CursorNorthSouthResize
 				[NSCursor.resizeUpDownCursor set];
@@ -329,10 +357,10 @@ void gio_setCursor(NSUInteger curID) {
 				[NSCursor.resizeDownCursor set];
 				break;
 			case 24: // pointer.CursorNorthEastSouthWestResize
-				gio_trySetPrivateCursor(@selector(_windowResizeNorthEastSouthWestCursor), NSCursor.resizeUpDownCursor);
+				trySetPrivateCursor(@selector(_windowResizeNorthEastSouthWestCursor), NSCursor.resizeUpDownCursor);
 				break;
 			case 25: // pointer.CursorNorthWestSouthEastResize
-				gio_trySetPrivateCursor(@selector(_windowResizeNorthWestSouthEastCursor), NSCursor.resizeUpDownCursor);
+				trySetPrivateCursor(@selector(_windowResizeNorthWestSouthEastCursor), NSCursor.resizeUpDownCursor);
 				break;
 			default:
 				[NSCursor.arrowCursor set];
@@ -362,19 +390,35 @@ CFTypeRef gio_createWindow(CFTypeRef viewRef, CGFloat width, CGFloat height, CGF
 		[window setAcceptsMouseMovedEvents:YES];
 		NSView *view = (__bridge NSView *)viewRef;
 		[window setContentView:view];
-		[window makeFirstResponder:view];
 		window.delegate = globalWindowDel;
 		return (__bridge_retained CFTypeRef)window;
 	}
 }
 
-CFTypeRef gio_createView(void) {
+CFTypeRef gio_createView(int presentWithTrans) {
 	@autoreleasepool {
 		NSRect frame = NSMakeRect(0, 0, 0, 0);
 		GioView* view = [[GioView alloc] initWithFrame:frame];
+		view.presentWithTrans = presentWithTrans ? YES : NO;
 		view.wantsLayer = YES;
 		view.layerContentsRedrawPolicy = NSViewLayerContentsRedrawDuringViewResize;
+
+		[[NSNotificationCenter defaultCenter] addObserver:view
+												 selector:@selector(applicationWillUnhide:)
+													 name:NSApplicationWillUnhideNotification
+												   object:nil];
+		[[NSNotificationCenter defaultCenter] addObserver:view
+												 selector:@selector(applicationDidHide:)
+													 name:NSApplicationDidHideNotification
+												   object:nil];
 		return CFBridgingRetain(view);
+	}
+}
+
+void gio_viewSetHandle(CFTypeRef viewRef, uintptr_t handle) {
+	@autoreleasepool {
+		GioView *v = (__bridge GioView *)viewRef;
+		v.handle = handle;
 	}
 }
 
@@ -383,12 +427,6 @@ CFTypeRef gio_createView(void) {
 	[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 	[NSApp activateIgnoringOtherApps:YES];
 	gio_onFinishLaunching();
-}
-- (void)applicationDidHide:(NSNotification *)aNotification {
-	gio_onAppHide();
-}
-- (void)applicationWillUnhide:(NSNotification *)notification {
-	gio_onAppShow();
 }
 @end
 

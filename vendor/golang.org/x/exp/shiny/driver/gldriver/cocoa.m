@@ -233,7 +233,7 @@ uint64 threadID() {
 @implementation AppDelegate
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
 	driverStarted();
-	[[NSRunningApplication currentApplication] activateWithOptions:(NSApplicationActivateAllWindows | NSApplicationActivateIgnoringOtherApps)];
+	[[NSRunningApplication currentApplication] activateWithOptions:NSApplicationActivateAllWindows];
 }
 
 - (void)applicationWillTerminate:(NSNotification *)aNotification {

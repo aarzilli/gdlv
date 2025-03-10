@@ -36,16 +36,16 @@ const (
 // boolean state.
 type SelectedOp bool
 
-// DisabledOp describes the disabled state.
-type DisabledOp bool
+// EnabledOp describes the enabled state.
+type EnabledOp bool
 
 func (l LabelOp) Add(o *op.Ops) {
-	data := ops.Write1(&o.Internal, ops.TypeSemanticLabelLen, string(l))
+	data := ops.Write1String(&o.Internal, ops.TypeSemanticLabelLen, string(l))
 	data[0] = byte(ops.TypeSemanticLabel)
 }
 
 func (d DescriptionOp) Add(o *op.Ops) {
-	data := ops.Write1(&o.Internal, ops.TypeSemanticDescLen, string(d))
+	data := ops.Write1String(&o.Internal, ops.TypeSemanticDescLen, string(d))
 	data[0] = byte(ops.TypeSemanticDesc)
 }
 
@@ -63,10 +63,10 @@ func (s SelectedOp) Add(o *op.Ops) {
 	}
 }
 
-func (d DisabledOp) Add(o *op.Ops) {
-	data := ops.Write(&o.Internal, ops.TypeSemanticDisabledLen)
-	data[0] = byte(ops.TypeSemanticDisabled)
-	if d {
+func (e EnabledOp) Add(o *op.Ops) {
+	data := ops.Write(&o.Internal, ops.TypeSemanticEnabledLen)
+	data[0] = byte(ops.TypeSemanticEnabled)
+	if e {
 		data[1] = 1
 	}
 }
