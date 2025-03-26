@@ -56,7 +56,7 @@ gioui.org/shader/gio
 ## explicit
 github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/xproto
-# github.com/aarzilli/nucular v0.0.0-20250310121838-5f1b1e2f5c89
+# github.com/aarzilli/nucular v0.0.0-20250326143821-b95de069f8be
 ## explicit; go 1.21
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard

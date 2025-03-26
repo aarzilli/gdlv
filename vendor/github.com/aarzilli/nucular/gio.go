@@ -141,8 +141,10 @@ func (mw *masterWindow) main() {
 			for {
 				e, ok := e.Source.Event(
 					pointer.Filter{
-						Target: eventTag,
-						Kinds:  pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Enter | pointer.Leave | pointer.Scroll,
+						Target:  eventTag,
+						Kinds:   pointer.Cancel | pointer.Press | pointer.Release | pointer.Move | pointer.Drag | pointer.Enter | pointer.Leave | pointer.Scroll,
+						ScrollX: pointer.ScrollRange{Min: math.MinInt, Max: math.MaxInt},
+						ScrollY: pointer.ScrollRange{Min: math.MinInt, Max: math.MaxInt},
 					},
 					key.Filter{
 						Focus:    eventTag,

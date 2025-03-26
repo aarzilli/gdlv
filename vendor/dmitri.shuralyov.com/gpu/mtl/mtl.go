@@ -1,4 +1,3 @@
-//go:build darwin
 // +build darwin
 
 // Package mtl provides access to Apple's Metal API (https://developer.apple.com/documentation/metal).

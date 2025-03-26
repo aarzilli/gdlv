@@ -13,13 +13,13 @@ import (
 // ScriptVerticalOrientation provides the glyph oriention
 // to use for vertical text.
 type ScriptVerticalOrientation struct {
-	exceptions     *unicode.RangeTable
-	script         language.Script
+	exceptions *unicode.RangeTable
+	script language.Script
 	isMainSideways bool
 }
-
+	
 // uprightOrMixedScripts is the list of scripts
-// which may use both mode ("upright" or "sideways") for vertical text orientation
+// which may use both mode ("upright" or "sideways") for vertical text orientation 
 var uprightOrMixedScripts = [...]ScriptVerticalOrientation{
 	{nil, language.Anatolian_Hieroglyphs, false},
 	{nil, language.Bopomofo, false},
