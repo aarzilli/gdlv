@@ -40,6 +40,11 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2025-07-28 / Version 1.14
+* Added substitute-path configuration guessing
+* Changed zoom key on macOS from Ctrl to Cmd
+* Restore breakpoint conditions when breakpoints are restored
+
 ## 2024-09-24 / Version 1.13
 * Added way to see captured variables inside function closures
 
