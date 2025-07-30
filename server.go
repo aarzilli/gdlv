@@ -13,7 +13,7 @@ import (
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/rpc2"
-	"github.com/go-delve/delve/pkg/goversion"
+	"github.com/aarzilli/gdlv/internal/goversion"
 )
 
 type ServerDescr struct {
@@ -84,9 +84,9 @@ func parseArguments() (descr ServerDescr) {
 	optflags := []string{"-gcflags", "-N -l"}
 	ver, _ := goversion.Installed()
 	switch {
-	case ver.Major < 0 || ver.AfterOrEqual(goversion.GoVersion{1, 10, -1, 0, 0, ""}):
+	case ver.Major < 0 || ver.AfterOrEqualRel(1, 10):
 		optflags = []string{"-gcflags", "all=-N -l"}
-	case ver.AfterOrEqual(goversion.GoVersion{1, 9, -1, 0, 0, ""}):
+	case ver.AfterOrEqualRel(1, 9):
 		optflags = []string{"-gcflags", "-N -l", "-a"}
 	}
 

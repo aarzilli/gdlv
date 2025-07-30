@@ -68,9 +68,6 @@ github.com/aarzilli/nucular/rect
 github.com/aarzilli/nucular/richtext
 github.com/aarzilli/nucular/style
 github.com/aarzilli/nucular/style-editor
-# github.com/go-delve/delve v1.2.0
-## explicit
-github.com/go-delve/delve/pkg/goversion
 # github.com/go-gl/glfw/v3.3/glfw v0.0.0-20231223183121-56fa3ac82ce7
 ## explicit; go 1.10
 github.com/go-gl/glfw/v3.3/glfw
