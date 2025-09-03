@@ -344,7 +344,7 @@ func nullCommand(out io.Writer, args string) error {
 
 func (c *Commands) help(out io.Writer, args string) error {
 	if args == "scope-expr" {
-		fmt.Fprintf(out, `A scope expression can be used as the first argument of the 'print' and 'display' commands to describe the scope in which an expression should be evaluated. For example in:
+		fmt.Fprint(out, `A scope expression can be used as the first argument of the 'print' and 'display' commands to describe the scope in which an expression should be evaluated. For example in:
 		
 print @g2f8 a+1
 
@@ -360,12 +360,13 @@ There are three kinds of frame specifiers:
 
 2. The character 'f' followed by a negative integer specifies the frame offset for the frame in which the expression should be evaluated. Gdlv will look in the topmost 100 frames for a frame with the same offset as the one specified.
 
-3. The character 'f' followed by a regular expression delimited by the character '/'. This specifies that the expression should be evaluated in the first frame that's executing a function whose name matches the regular expression.`)
+3. The character 'f' followed by a regular expression delimited by the character '/'. This specifies that the expression should be evaluated in the first frame that's executing a function whose name matches the regular expression.
+`)
 		return nil
 	}
 
 	if args == "format-expr" {
-		fmt.Fprintf(out, `A format expression can be used to change the way print and display format their output. The syntax is similar to the format directives of printf
+		fmt.Fprint(out, `A format expression can be used to change the way print and display format their output. The syntax is similar to the format directives of printf
 		
 print %02x
 	
@@ -393,7 +394,8 @@ print %5v x
 
 print %+0.2g%o%1000s x
 
-	Multiple formatting directives can be used simultaneously, in this example integer numbers will be print in octal, floating point numbers will be formatted with %+0.2g and strings will be loaded up to 1000 characters.`)
+	Multiple formatting directives can be used simultaneously, in this example integer numbers will be print in octal, floating point numbers will be formatted with %+0.2g and strings will be loaded up to 1000 characters.
+`)
 		return nil
 	}
 
