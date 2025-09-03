@@ -222,19 +222,27 @@ func (env *Env) Execute(out io.Writer, path string, source interface{}, mainFnNa
 		return starlark.None, err
 	}
 
+	err = env.saveGlobals(globals)
+	if err != nil {
+		return starlark.None, err
+	}
+
+	return env.callMain(thread, globals, mainFnName, args)
+}
+
+func (env *Env) saveGlobals(globals starlark.StringDict) error {
 	for name, val := range globals {
 		switch {
 		case strings.HasPrefix(name, commandPrefix):
 			err := env.createCallback(name, val)
 			if err != nil {
-				return starlark.None, err
+				return err
 			}
 		case name[0] >= 'A' && name[0] <= 'Z':
 			env.env[name] = val
 		}
 	}
-
-	return env.callMain(thread, globals, mainFnName, args)
+	return nil
 }
 
 // Cancel cancels the execution of a currently running script or function.

@@ -66,7 +66,7 @@ func (env *Env) REPL(out io.Writer, lineReader <-chan string, promptChan chan<- 
 		}
 	}
 	fmt.Fprintln(out)
-	return nil
+	return env.saveGlobals(globals)
 }
 
 const (
