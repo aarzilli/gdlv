@@ -493,6 +493,7 @@ func updateCommandPanel(w *nucular.Window) {
 			fmt.Fprintf(&scrollbackOut, "a script is running\n")
 		} else if starlarkMode != nil {
 			cmdhistory = append(cmdhistory, cmd)
+			historyShown = len(cmdhistory)
 			fmt.Fprintf(&scrollbackOut, "%s %s\n", p, cmd)
 			starlarkMode <- cmd
 		} else if canExecuteCmd(cmd) && !client.Running() {
