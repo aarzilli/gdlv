@@ -6,6 +6,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"go.starlark.net/starlark"
@@ -394,10 +395,26 @@ func evalScopedExpr(expr string, cfg api.LoadConfig, customFormatters bool) (*Va
 		return wrapApiVariable("", v, v.Name, v.Name, customFormatters, &se.Fmt, 0), &se.Fmt
 	}
 
+	tkr := time.NewTicker(500 * time.Millisecond)
+	starlarkDone := make(chan struct{})
+	starlarkWatchdogDone := make(chan struct{})
+	go func() {
+		select {
+		case <-tkr.C:
+			StarlarkEnv.Cancel()
+		case <-starlarkDone:
+			// done
+		}
+		close(starlarkWatchdogDone)
+	}()
+
 	sv, err := StarlarkEnv.Execute(&editorWriter{true}, "<expr>", strings.TrimLeft(se.EvalExpr[1:], " "), "<expr>", nil, nil)
 	if err != nil {
 		return unreadable(err.Error())
 	}
+	close(starlarkDone)
+	<-starlarkWatchdogDone
+	tkr.Stop()
 
 	v := convertStarlarkToVariable(expr, sv)
 	return wrapApiVariable("", v, v.Name, v.Name, customFormatters, &se.Fmt, 0), &se.Fmt
