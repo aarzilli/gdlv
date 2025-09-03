@@ -14,7 +14,7 @@ import (
 )
 
 // autoLoadConfig is the load configuration used to automatically load more from a variable
-var autoLoadConfig = api.LoadConfig{false, 1, 1024, 64, -1}
+var autoLoadConfig = api.LoadConfig{MaxVariableRecurse: 1, MaxStringLen: 1024, MaxArrayValues: 64, MaxStructFields: -1}
 
 type WrappedVariable interface {
 	UnwrapVariable() *api.Variable
@@ -26,8 +26,10 @@ var _ WrappedVariable = ptrVariableAsStarlarkValue{}
 
 // interfaceToStarlarkValue converts an interface{} variable (produced by
 // decoding JSON) into a starlark.Value.
-func (env *Env) interfaceToStarlarkValue(v interface{}) starlark.Value {
+func (env *Env) interfaceToStarlarkValue(v any) starlark.Value {
 	switch v := v.(type) {
+	case bool:
+		return starlark.Bool(v)
 	case uint8:
 		return starlark.MakeUint64(uint64(v))
 	case uint16:
@@ -64,6 +66,11 @@ func (env *Env) interfaceToStarlarkValue(v interface{}) starlark.Value {
 		return starlark.None
 	case error:
 		return starlark.String(v.Error())
+	case reflect.Value:
+		if v.Type().Kind() == reflect.Struct {
+			return structAsStarlarkValue{v, env}
+		}
+		return env.interfaceToStarlarkValue(v.Interface())
 	default:
 		vval := reflect.ValueOf(v)
 		switch vval.Type().Kind() {
@@ -100,10 +107,13 @@ func (v sliceAsStarlarkValue) Freeze() {
 }
 
 func (v sliceAsStarlarkValue) Hash() (uint32, error) {
-	return 0, fmt.Errorf("not hashable")
+	return 0, errors.New("not hashable")
 }
 
 func (v sliceAsStarlarkValue) String() string {
+	if x, ok := v.v.Interface().([]byte); ok {
+		return string(x)
+	}
 	return fmt.Sprintf("%#v", v.v)
 }
 
@@ -162,7 +172,7 @@ func (v structAsStarlarkValue) Freeze() {
 }
 
 func (v structAsStarlarkValue) Hash() (uint32, error) {
-	return 0, fmt.Errorf("not hashable")
+	return 0, errors.New("not hashable")
 }
 
 func (v structAsStarlarkValue) String() string {
@@ -188,10 +198,49 @@ func (v structAsStarlarkValue) Attr(name string) (starlark.Value, error) {
 		return r, err
 	}
 	r := v.v.FieldByName(name)
-	if r == (reflect.Value{}) {
-		return starlark.None, fmt.Errorf("no field named %q in %T", name, v.v.Interface())
+	if !r.IsValid() {
+		return starlark.None, starlark.NoSuchAttrError(fmt.Sprintf("no field named %q in %T", name, v.v.Interface()))
 	}
-	return v.env.interfaceToStarlarkValue(r.Interface()), nil
+	return v.env.interfaceToStarlarkValue(r), nil
+}
+
+func (v structAsStarlarkValue) SetField(name string, value starlark.Value) (err error) {
+	defer func() {
+		// reflect.Value.SetInt, SetFloat, etc panic
+		ierr := recover()
+		if ierr == nil {
+			return
+		}
+		err, _ = ierr.(error)
+		if err == nil {
+			panic(ierr)
+		}
+		err = fmt.Errorf("can not assign to %T.%q: %v", v.v.Interface(), name, err)
+	}()
+	if r, err := v.valueAttr(name); err != nil || r != nil {
+		return starlark.NoSuchAttrError(fmt.Sprintf("no field named %s in %T", name, v.v.Interface()))
+	}
+	r := v.v.FieldByName(name)
+	if !r.IsValid() {
+		return starlark.NoSuchAttrError(fmt.Sprintf("no field named %q in %T", name, v.v.Interface()))
+	}
+	switch value := value.(type) {
+	case starlark.Int:
+		n, ok := value.Int64()
+		if !ok {
+			return fmt.Errorf("can not assign big integer to %T.%q", v.v.Interface(), name)
+		}
+		r.SetInt(n)
+	case starlark.Float:
+		r.SetFloat(float64(value))
+	case starlark.String:
+		r.SetString(value.GoString())
+	case starlark.Bool:
+		r.SetBool(bool(value))
+	default:
+		return fmt.Errorf("can not assign value of type %T to %T.%q", value, v.v.Interface(), name)
+	}
+	return nil
 }
 
 func (v structAsStarlarkValue) valueAttr(name string) (starlark.Value, error) {
@@ -235,17 +284,14 @@ func (env *Env) variableValueToStarlarkValue(v *api.Variable, top bool) (starlar
 	case reflect.String:
 		return starlark.String(v.Value), nil
 	case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64, reflect.Int:
-		n, err := strconv.ParseInt(v.Value, 0, 64)
-		if err != nil {
-			return starlark.String(v.Value), nil
-		}
+		n, _ := strconv.ParseInt(prettyprint.ExtractIntValue(v.Value), 0, 64)
 		return starlark.MakeInt64(n), nil
 	case reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64, reflect.Uint, reflect.Uintptr:
-		n, err := strconv.ParseUint(v.Value, 0, 64)
-		if err != nil {
-			return starlark.String(v.Value), nil
-		}
+		n, _ := strconv.ParseUint(prettyprint.ExtractIntValue(v.Value), 0, 64)
 		return starlark.MakeUint64(n), nil
+	case reflect.Bool:
+		n, _ := strconv.ParseBool(v.Value)
+		return starlark.Bool(n), nil
 	case reflect.Float32, reflect.Float64:
 		switch v.Value {
 		case "+Inf":
@@ -255,7 +301,7 @@ func (env *Env) variableValueToStarlarkValue(v *api.Variable, top bool) (starlar
 		case "NaN":
 			return starlark.Float(math.NaN()), nil
 		default:
-			n, _ := strconv.ParseFloat(v.Value, 0)
+			n, _ := strconv.ParseFloat(v.Value, 64)
 			return starlark.Float(n), nil
 		}
 	case reflect.Ptr, reflect.Interface:
@@ -268,7 +314,7 @@ func (env *Env) variableValueToStarlarkValue(v *api.Variable, top bool) (starlar
 }
 
 func (env *Env) autoLoad(expr string) *api.Variable {
-	v, err := env.ctx.Client().EvalVariable(api.EvalScope{-1, 0, 0}, expr, autoLoadConfig)
+	v, err := env.ctx.Client().EvalVariable(api.EvalScope{GoroutineID: -1}, expr, autoLoadConfig)
 	if err != nil {
 		return &api.Variable{Unreadable: err.Error()}
 	}
@@ -300,7 +346,7 @@ func (v structVariableAsStarlarkValue) Freeze() {
 }
 
 func (v structVariableAsStarlarkValue) Hash() (uint32, error) {
-	return 0, fmt.Errorf("not hashable")
+	return 0, errors.New("not hashable")
 }
 
 func (v structVariableAsStarlarkValue) String() string {
@@ -364,7 +410,7 @@ func (v sliceVariableAsStarlarkValue) Freeze() {
 }
 
 func (v sliceVariableAsStarlarkValue) Hash() (uint32, error) {
-	return 0, fmt.Errorf("not hashable")
+	return 0, errors.New("not hashable")
 }
 
 func (v sliceVariableAsStarlarkValue) String() string {
@@ -434,7 +480,7 @@ func (v ptrVariableAsStarlarkValue) Freeze() {
 }
 
 func (v ptrVariableAsStarlarkValue) Hash() (uint32, error) {
-	return 0, fmt.Errorf("not hashable")
+	return 0, errors.New("not hashable")
 }
 
 func (v ptrVariableAsStarlarkValue) String() string {
@@ -471,10 +517,15 @@ func (v ptrVariableAsStarlarkValue) Attr(name string) (starlark.Value, error) {
 }
 
 func (v ptrVariableAsStarlarkValue) AttrNames() []string {
-	if len(v.v.Children) == 0 || v.v.Children[0].Kind != reflect.Struct {
+	if len(v.v.Children) == 0 {
+		// The pointer variable was not loaded; we don't know the field names.
 		return nil
 	}
-	// autodereference
+	if v.v.Children[0].Kind != reflect.Struct {
+		return nil
+	}
+	// autodereference: present the field names of the pointed-to struct as the
+	// fields of this pointer variable.
 	x := structVariableAsStarlarkValue{&v.v.Children[0], v.env}
 	return x.AttrNames()
 }
@@ -517,11 +568,11 @@ func (v mapVariableAsStarlarkValue) Freeze() {
 }
 
 func (v mapVariableAsStarlarkValue) Hash() (uint32, error) {
-	return 0, fmt.Errorf("not hashable")
+	return 0, errors.New("not hashable")
 }
 
 func (v mapVariableAsStarlarkValue) String() string {
-	return fmt.Sprintf("%#v", v.v)
+	return prettyprint.Singleline(v.v, true, false)
 }
 
 func (v mapVariableAsStarlarkValue) Truth() starlark.Bool {
@@ -622,7 +673,7 @@ func (it *mapVariableAsStarlarkValueIterator) Next(p *starlark.Value) bool {
 // This works similarly to encoding/json.Unmarshal and similar functions,
 // but instead of getting its input from a byte buffer, it uses a
 // starlark.Value.
-func unmarshalStarlarkValue(val starlark.Value, dst interface{}, path string) error {
+func unmarshalStarlarkValue(val starlark.Value, dst any, path string) error {
 	return unmarshalStarlarkValueIntl(val, reflect.ValueOf(dst), path)
 }
 
@@ -681,14 +732,13 @@ func unmarshalStarlarkValueIntl(val starlark.Value, dst reflect.Value, path stri
 		if dst.Kind() != reflect.Slice {
 			return converr()
 		}
-		r := []reflect.Value{}
+		dst.Set(reflect.MakeSlice(dst.Type(), val.Len(), val.Len()))
 		for i := 0; i < val.Len(); i++ {
-			cur := reflect.New(dst.Type().Elem())
+			cur := dst.Index(i).Addr()
 			err := unmarshalStarlarkValueIntl(val.Index(i), cur, path)
 			if err != nil {
 				return err
 			}
-			r = append(r, cur)
 		}
 	case *starlark.Dict:
 		if dst.Kind() != reflect.Struct {
@@ -700,7 +750,7 @@ func unmarshalStarlarkValueIntl(val starlark.Value, dst reflect.Value, path stri
 			}
 			fieldName := string(k.(starlark.String))
 			dstfield := dst.FieldByName(fieldName)
-			if dstfield == (reflect.Value{}) {
+			if !dstfield.IsValid() {
 				return converr(fmt.Sprintf("unknown field %s", fieldName))
 			}
 			valfield, _, _ := val.Get(starlark.String(fieldName))

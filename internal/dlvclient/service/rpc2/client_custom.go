@@ -24,6 +24,7 @@ type RPCClient struct {
 	retValLoadCfg *api.LoadConfig
 
 	recordedCache *bool
+	eventsFn      func(*api.Event)
 }
 
 // NewClient creates a new RPCClient.

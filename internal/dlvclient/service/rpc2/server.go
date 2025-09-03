@@ -6,6 +6,8 @@ import (
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 )
 
+const eventBufferSize = 100
+
 type ProcessPidIn struct {
 }
 
@@ -483,4 +485,11 @@ type GuessSubstitutePathIn struct {
 
 type GuessSubstitutePathOut struct {
 	List [][2]string
+}
+
+type GetEventsIn struct {
+}
+
+type GetEventsOut struct {
+	Events []api.Event
 }

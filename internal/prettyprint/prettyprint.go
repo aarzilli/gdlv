@@ -515,3 +515,14 @@ func Hexdigits(n uint64) int {
 	}
 	return int(math.Floor(math.Log10(float64(n))/math.Log10(16))) + 1
 }
+
+func ExtractIntValue(s string) string {
+	if s == "" || s[len(s)-1] != ')' {
+		return s
+	}
+	open := strings.LastIndex(s, "(")
+	if open < 0 {
+		return s
+	}
+	return s[open+1 : len(s)-1]
+}
