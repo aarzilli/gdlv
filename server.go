@@ -439,6 +439,8 @@ func (descr *ServerDescr) connectTo() {
 		}
 	}
 
+	client.SetEventsFn(handleDelveEvent)
+
 	client.SetReturnValuesLoadConfig(&LongLoadConfig)
 	wnd.Unlock()
 	if client == nil {

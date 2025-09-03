@@ -597,6 +597,16 @@ func expandTabs(in string) string {
 	return r
 }
 
+func handleDelveEvent(ev *api.Event) {
+	var scrollbackOut = editorWriter{true}
+	switch ev.Kind {
+	case api.EventResumed, api.EventStopped:
+		// not interested
+	case api.EventBinaryInfoDownload:
+		fmt.Fprintf(&scrollbackOut, "Downloading debug info for %s: %s\n", ev.BinaryInfoDownloadEventDetails.ImagePath, ev.BinaryInfoDownloadEventDetails.Progress)
+	}
+}
+
 type clearKind uint16
 
 const (
