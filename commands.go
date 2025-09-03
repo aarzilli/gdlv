@@ -201,6 +201,7 @@ See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a descri
 	display [@<scope-expr>] [format-expr] $ <starlark-expression>
 
 See $GOPATH/src/github.com/go-delve/delve/Documentation/cli/expr.md for a description of supported expressions.
+Starlark expressions must terminate within 500ms.
 Type 'help scope-expr' for a description of <scope-expr>.
 Type 'help format-expr' for a description of <format-expr>.`},
 		{aliases: []string{"details", "det", "dt"}, group: dataCmds, complete: completeVariable, cmdFn: detailsVar, helpMsg: `Opens details window for the specified expression.
