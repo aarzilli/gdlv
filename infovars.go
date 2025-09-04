@@ -662,6 +662,8 @@ func removeExpression(exprMenuIdx int) {
 	localsPanel.v = localsPanel.v[:len(localsPanel.v)-1]
 }
 
+const expressionEditorFlags = richtext.ShowTick | richtext.Editable | richtext.Clipboard
+
 func variableHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v *Variable) bool {
 	initialOpen := false
 	if flags.parentIsPtr() || flags.alwaysExpand() {
@@ -681,7 +683,7 @@ func variableHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, v 
 
 	ed, changed := richTextLookup(v.Variable, false, flags)
 	if exprMenu >= 0 {
-		ed.Flags |= richtext.ShowTick | richtext.Editable
+		ed.Flags |= expressionEditorFlags
 	}
 	if c := ed.Widget(w, changed || v.reformatted); c != nil {
 		v.reformatted = false
@@ -777,7 +779,7 @@ func variableNoHeader(w *nucular.Window, flags showVariableFlags, exprMenu int, 
 
 	ed, changed := richTextLookup(v.Variable, wrap, flags)
 	if exprMenu >= 0 {
-		ed.Flags |= richtext.ShowTick | richtext.Editable
+		ed.Flags |= expressionEditorFlags
 		if localsPanel.expressions[exprMenu].focus {
 			localsPanel.expressions[exprMenu].focus = false
 			w.Master().ActivateEditor(w, ed)
