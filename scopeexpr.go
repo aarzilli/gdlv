@@ -421,9 +421,11 @@ func evalScopedExpr(expr string, cfg api.LoadConfig, customFormatters bool) (*Va
 }
 
 func convertStarlarkToVariable(expr string, sv starlark.Value) *api.Variable {
+	const fakeAddr = 0xfaaa_0000_0000
 	switch sv := sv.(type) {
 	case *starlark.List:
 		r := &api.Variable{
+			Addr: fakeAddr,
 			Name: expr,
 			Type: "list", RealType: "list",
 			Kind: reflect.Slice,
@@ -435,13 +437,30 @@ func convertStarlarkToVariable(expr string, sv starlark.Value) *api.Variable {
 		}
 		return r
 
+	case *starlark.Dict:
+		r := &api.Variable{
+			Addr: fakeAddr,
+			Name: expr,
+			Type: "dict", RealType: "dict",
+			Kind: reflect.Map,
+			Len:  int64(sv.Len()),
+		}
+
+		items := sv.Items()
+		for i := range items {
+			r.Children = append(r.Children,
+				*convertStarlarkToVariable("", items[i][0]),
+				*convertStarlarkToVariable("", items[i][1]))
+		}
+		return r
+
 	case starbind.WrappedVariable:
 		return sv.UnwrapVariable()
 	case starlark.String:
-		return &api.Variable{Name: expr, Kind: reflect.String, Type: "string", RealType: "string", Len: int64(len(string(sv))), Value: string(sv)}
+		return &api.Variable{Addr: fakeAddr, Name: expr, Kind: reflect.String, Type: "string", RealType: "string", Len: int64(len(string(sv))), Value: string(sv)}
 	default:
 		s := sv.String()
-		return &api.Variable{Name: expr, Kind: reflect.String, Type: "string", RealType: "string", Len: int64(len(s)), Value: s}
+		return &api.Variable{Addr: fakeAddr, Name: expr, Kind: reflect.String, Type: "string", RealType: "string", Len: int64(len(s)), Value: s}
 	}
 }
 
