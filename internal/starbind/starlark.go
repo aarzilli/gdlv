@@ -2,9 +2,11 @@ package starbind
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
+	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -28,6 +30,7 @@ const (
 	dlvContextName               = "dlv_context"
 	curScopeBuiltinName          = "cur_scope"
 	defaultLoadConfigBuiltinName = "default_load_config"
+	targetObjectName             = "tgt"
 	helpBuiltinName              = "help"
 )
 
@@ -134,6 +137,8 @@ func New(ctx Context) *Env {
 	})
 	builtindoc(defaultLoadConfigBuiltinName, "()", "returns the default load configuration.")
 
+	env.env[targetObjectName] = targetObject{env}
+
 	env.env[helpBuiltinName] = starlark.NewBuiltin(helpBuiltinName, func(_ *starlark.Thread, _ *starlark.Builtin, args starlark.Tuple, kwargs []starlark.Tuple) (starlark.Value, error) {
 		switch len(args) {
 		case 0:
@@ -149,6 +154,7 @@ func New(ctx Context) *Env {
 			for _, bin := range bins {
 				fmt.Fprintf(env.out, "\t%s\n", bin)
 			}
+			fmt.Fprintf(env.out, "\n\nUse tgt.varname to access the varname variable in the target process (it is equivalent to 'eval(None, \"varname\").Variable').\n")
 		case 1:
 			switch x := args[0].(type) {
 			case *starlark.Builtin:
@@ -372,4 +378,42 @@ func decorateError(thread *starlark.Thread, err error) error {
 		return fmt.Errorf("%s:%d:%d: %v", pos.Filename(), pos.Line, pos.Col, err)
 	}
 	return fmt.Errorf("%s:%d: %v", pos.Filename(), pos.Line, err)
+}
+
+var _ starlark.HasAttrs = targetObject{}
+
+type targetObject struct {
+	env *Env
+}
+
+func (targetObject) Freeze() {
+}
+
+func (targetObject) Hash() (uint32, error) {
+	return 0, errors.New("not hashable")
+}
+
+func (targetObject) String() string {
+	return "<target variables>"
+}
+
+func (targetObject) Truth() starlark.Bool {
+	return true
+}
+
+func (targetObject) Type() string {
+	return "<target variables>"
+}
+
+func (tgt targetObject) AttrNames() []string {
+	return nil
+}
+
+func (tgt targetObject) Attr(name string) (starlark.Value, error) {
+	env := tgt.env
+	v, err := env.ctx.Client().EvalVariable(env.ctx.Scope(), name, env.ctx.LoadConfig())
+	if err != nil {
+		return starlark.None, fmt.Errorf("could not find variable %q: %v", name, err)
+	}
+	return structAsStarlarkValue{reflect.ValueOf(v).Elem(), env}, nil
 }
