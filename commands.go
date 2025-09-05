@@ -367,7 +367,7 @@ There are three kinds of frame specifiers:
 	}
 
 	if args == "format-expr" {
-		fmt.Fprint(out, `A format expression can be used to change the way print and display format their output. The syntax is similar to the format directives of printf
+		fmt.Fprint(out, `A format expression can be used to change the way print and display format their output. The syntax is similar to the format directives of printf.
 		
 print %02x
 	
@@ -392,6 +392,10 @@ print %100a x
 print %5v x
 	
 	Changes the recursion depth for structs and pointers to 5.
+
+print %5t x
+
+	If x is a slice or an array it will display its contents in a table of 5 columns. The expression %5.2t can be used to create a 5 columns by 2 lines table.
 
 print %+0.2g%o%1000s x
 
@@ -1259,11 +1263,11 @@ func printVar(out io.Writer, args string) error {
 	if len(args) == 0 {
 		return fmt.Errorf("not enough arguments")
 	}
-	val, sfmt := evalScopedExpr(args, getVariableLoadConfig(), false)
+	val, se := evalScopedExpr(args, getVariableLoadConfig(), false)
 	if val.Unreadable != "" {
 		return errors.New(val.Unreadable)
 	}
-	valstr := val.MultilineString("", sfmt)
+	valstr := val.MultilineString("", &se.Fmt)
 	nlcount := 0
 	for _, ch := range valstr {
 		if ch == '\n' {

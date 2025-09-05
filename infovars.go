@@ -281,6 +281,7 @@ type Expr struct {
 	exprSel                      richtext.Sel
 	focus                        bool
 	autocompl                    infovarAutocompl
+	TableCols                    int
 }
 
 func loadGlobals(p *asyncLoad) {
@@ -466,12 +467,16 @@ func loadOneExpr(i int) {
 		cfg.MaxStringLen = localsPanel.expressions[i].maxStringLen
 	}
 
-	localsPanel.v[i], _ = evalScopedExpr(localsPanel.expressions[i].Expr, cfg, true)
+	var se *ScopedExpr
+	localsPanel.v[i], se = evalScopedExpr(localsPanel.expressions[i].Expr, cfg, true)
 
 	localsPanel.v[i].Name = localsPanel.expressions[i].Expr
 	localsPanel.v[i].DisplayName = localsPanel.expressions[i].Expr
 	localsPanel.v[i].Varname += fmt.Sprintf(" expr%d", i)
 	localsPanel.v[i].reformatted = true
+	if se != nil {
+		localsPanel.expressions[i].TableCols = se.TableCols
+	}
 }
 
 func addExpression(newexpr string, focus bool) {
@@ -937,12 +942,12 @@ func showVariable(w *nucular.Window, depth int, flags showVariableFlags, exprMen
 	switch v.Kind {
 	case reflect.Slice:
 		if hdr() {
-			showArrayOrSliceContents(w, depth, flags, v)
+			showArrayOrSliceContents(w, depth, flags, exprMenu, v)
 			w.TreePop()
 		}
 	case reflect.Array:
 		if hdr() {
-			showArrayOrSliceContents(w, depth, flags, v)
+			showArrayOrSliceContents(w, depth, flags, exprMenu, v)
 			w.TreePop()
 		}
 	case reflect.Ptr:
@@ -996,7 +1001,7 @@ func showVariable(w *nucular.Window, depth int, flags showVariableFlags, exprMen
 			cblbl("nil")
 		} else {
 			if hdr() {
-				showInterfaceContents(w, depth, flags, v)
+				showInterfaceContents(w, depth, flags, exprMenu, v)
 				w.TreePop()
 			}
 		}
@@ -1050,10 +1055,32 @@ func showVariable(w *nucular.Window, depth int, flags showVariableFlags, exprMen
 	}
 }
 
-func showArrayOrSliceContents(w *nucular.Window, depth int, flags showVariableFlags, v *Variable) {
+func showArrayOrSliceContents(w *nucular.Window, depth int, flags showVariableFlags, exprMenuIdx int, v *Variable) {
 	if depth < 10 && !v.loading && len(v.Children) > 0 && autoloadMore(v.Children[0]) {
 		v.loading = true
 		loadMoreStruct(v)
+	}
+	if exprMenuIdx >= 0 && exprMenuIdx < len(localsPanel.expressions) {
+		tblCols := localsPanel.expressions[exprMenuIdx].TableCols
+		if tblCols > 0 {
+			w.Row(varRowHeight).Dynamic(tblCols)
+			for i := range v.Children {
+				v := v.Children[i]
+				ed, changed := richTextLookup(v.Variable, false, 0)
+				ed.Flags |= richtext.Clipboard | richtext.Keyboard
+				if c := ed.Widget(w, changed || v.reformatted); c != nil {
+					v.reformatted = false
+					if v.Value != "" && (v.Kind != reflect.Ptr || v.customFormat) {
+						c.Text(v.Value)
+					} else {
+						c.Text(v.SinglelineString(false, false))
+					}
+					c.End()
+				}
+			}
+			//TODO: expr
+			return
+		}
 	}
 	for i := range v.Children {
 		showVariable(w, depth+1, flags, -1, v.Children[i])
@@ -1085,7 +1112,7 @@ func showStructContents(w *nucular.Window, depth int, flags showVariableFlags, v
 	}
 }
 
-func showInterfaceContents(w *nucular.Window, depth int, flags showVariableFlags, v *Variable) {
+func showInterfaceContents(w *nucular.Window, depth int, flags showVariableFlags, exprMenu int, v *Variable) {
 	if len(v.Children) <= 0 {
 		return
 	}
@@ -1110,7 +1137,7 @@ func showInterfaceContents(w *nucular.Window, depth int, flags showVariableFlags
 	case reflect.Struct:
 		showStructContents(w, depth, flags, data)
 	case reflect.Array, reflect.Slice:
-		showArrayOrSliceContents(w, depth, flags, data)
+		showArrayOrSliceContents(w, depth, flags, exprMenu, data)
 	default:
 		showVariable(w, depth+1, flags, -1, data)
 	}

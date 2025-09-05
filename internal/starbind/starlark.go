@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"reflect"
 	"runtime"
 	"sort"
 	"strings"
@@ -415,5 +414,5 @@ func (tgt targetObject) Attr(name string) (starlark.Value, error) {
 	if err != nil {
 		return starlark.None, fmt.Errorf("could not find variable %q: %v", name, err)
 	}
-	return structAsStarlarkValue{reflect.ValueOf(v).Elem(), env}, nil
+	return env.variableValueToStarlarkValue(v, true)
 }

@@ -33,6 +33,8 @@ type ScopedExpr struct {
 	MaxArrayValues     int // maximum array values if > 0
 	MaxVariableRecurse int // maximum variable recursion if > 0
 	Fmt                prettyprint.SimpleFormat
+
+	TableLines, TableCols int
 }
 
 type ScopeExprKind uint8
@@ -197,6 +199,36 @@ func parseScopedExprLoad(in string, r *ScopedExpr) string {
 			return n
 
 		}
+		parseTwoNums := func() (int, int) {
+			s := in[:i+1]
+			s = s[1:]
+			s = s[:len(s)-1]
+			if s == "" {
+				return 0, 0
+			}
+			dot := strings.Index(s, ".")
+			var part1, part2 string
+			if dot < 0 {
+				part1 = s
+				part2 = "0"
+			} else {
+				part1 = s[:dot]
+				part2 = s[dot+1:]
+				if part1 == "" {
+					part1 = "0"
+				}
+				if part2 == "" {
+					part2 = "0"
+				}
+			}
+			n1, err1 := strconv.Atoi(part1)
+			n2, err2 := strconv.Atoi(part2)
+			if err1 != nil || err2 != nil {
+				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("invalid formatter %q", in[1:])}
+			}
+			return n1, n2
+
+		}
 		if (in[i] < '0' || in[i] > '9') && in[i] != '%' && in[i] != '#' && in[i] != '+' && in[i] != '.' {
 			switch in[i] {
 			case 's':
@@ -226,6 +258,17 @@ func parseScopedExprLoad(in string, r *ScopedExpr) string {
 				return in[i+1:]
 			case 'e', 'f', 'g', 'E', 'F', 'G':
 				r.Fmt.FloatFormat = in[:i+1]
+				return in[i+1:]
+			case 't':
+				cols, lines := parseTwoNums()
+				r.TableCols = cols
+				r.TableLines = lines
+				if lines > 0 {
+					tot := cols * lines
+					if tot > r.MaxArrayValues {
+						r.MaxArrayValues = tot
+					}
+				}
 				return in[i+1:]
 			default:
 				*r = ScopedExpr{Kind: InvalidScopeExpr, EvalExpr: fmt.Sprintf("unknown format string character '%c'", in[i])}
@@ -333,8 +376,8 @@ func exprIsScoped(expr string) bool {
 	}
 }
 
-func evalScopedExpr(expr string, cfg api.LoadConfig, customFormatters bool) (*Variable, *prettyprint.SimpleFormat) {
-	unreadable := func(err string) (*Variable, *prettyprint.SimpleFormat) {
+func evalScopedExpr(expr string, cfg api.LoadConfig, customFormatters bool) (*Variable, *ScopedExpr) {
+	unreadable := func(err string) (*Variable, *ScopedExpr) {
 		return &Variable{Variable: &api.Variable{Name: expr, Unreadable: err}}, nil
 	}
 
@@ -392,7 +435,7 @@ func evalScopedExpr(expr string, cfg api.LoadConfig, customFormatters bool) (*Va
 		if err != nil {
 			return unreadable(err.Error())
 		}
-		return wrapApiVariable("", v, v.Name, v.Name, customFormatters, &se.Fmt, 0), &se.Fmt
+		return wrapApiVariable("", v, v.Name, v.Name, customFormatters, &se.Fmt, 0), &se
 	}
 
 	tkr := time.NewTicker(500 * time.Millisecond)
@@ -417,7 +460,7 @@ func evalScopedExpr(expr string, cfg api.LoadConfig, customFormatters bool) (*Va
 	tkr.Stop()
 
 	v := convertStarlarkToVariable(expr, sv)
-	return wrapApiVariable("", v, v.Name, v.Name, customFormatters, &se.Fmt, 0), &se.Fmt
+	return wrapApiVariable("", v, v.Name, v.Name, customFormatters, &se.Fmt, 0), &se
 }
 
 func convertStarlarkToVariable(expr string, sv starlark.Value) *api.Variable {
