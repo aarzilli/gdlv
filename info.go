@@ -1005,9 +1005,15 @@ func breakpointContextualMenu(w *nucular.Window) {
 		if w.MenuItem(label.TA("Disable", "LC")) {
 			go disableBreakpoint(breakpoint)
 		}
+		if w.MenuItem(label.TA("Disable all", "LC")) {
+			go disableBreakpoint(nil)
+		}
 	} else {
 		if w.MenuItem(label.TA("Enable", "LC")) {
 			go enableBreakpoint(breakpoint)
+		}
+		if w.MenuItem(label.TA("Enable all", "LC")) {
+			go enableBreakpoint(nil)
 		}
 	}
 	if w.MenuItem(label.TA("Clear", "LC")) {

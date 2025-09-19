@@ -211,13 +211,14 @@ func (fbp *frozenBreakpoint) Set(out io.Writer, functionLoc *api.Location) {
 
 func disableBreakpoint(bp *api.Breakpoint) {
 	for i := range FrozenBreakpoints {
-		if FrozenBreakpoints[i].Bp.ID == bp.ID {
+		if bp == nil || FrozenBreakpoints[i].Bp.ID == bp.ID {
 			FrozenBreakpoints[i].Bp.Disabled = true
 			client.AmendBreakpoint(&FrozenBreakpoints[i].Bp)
-			break
+			if bp != nil {
+				break
+			}
 		}
 	}
-
 	saveConfiguration()
 	refreshState(refreshToSameFrame, clearBreakpoint, nil)
 	wnd.Changed()
@@ -225,10 +226,12 @@ func disableBreakpoint(bp *api.Breakpoint) {
 
 func enableBreakpoint(bp *api.Breakpoint) {
 	for i := range FrozenBreakpoints {
-		if FrozenBreakpoints[i].Bp.ID == bp.ID {
+		if bp == nil || FrozenBreakpoints[i].Bp.ID == bp.ID {
 			FrozenBreakpoints[i].Bp.Disabled = false
 			client.AmendBreakpoint(&FrozenBreakpoints[i].Bp)
-			break
+			if bp != nil {
+				break
+			}
 		}
 	}
 	saveConfiguration()
