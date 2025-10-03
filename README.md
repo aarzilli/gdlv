@@ -40,6 +40,14 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2025-10-03 / Version 1.15
+* Fix Go version detection for Go 1.25.x
+* Fix history navigation in starlark mode
+* Better support for starlark scripts in the expression window
+* Added %N.Mt formatter expression to show slices as tables
+* Added magic tgt object to starlark
+* Added support for the new Delve events channel
+
 ## 2025-07-28 / Version 1.14
 * Added substitute-path configuration guessing
 * Changed zoom key on macOS from Ctrl to Cmd
