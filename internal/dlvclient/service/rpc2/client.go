@@ -651,6 +651,16 @@ func (c *RPCClient) GuessSubstitutePath() ([][2]string, error) {
 	return out.List, err
 }
 
+func (c *RPCClient) CancelDownloads() error {
+	out := &CancelDownloadsOut{}
+	return c.call("CancelDownloads", CancelDownloadsIn{}, out)
+}
+
+func (c *RPCClient) DownloadLibraryDebugInfo(n int) error {
+	out := DownloadLibraryDebugInfoOut{}
+	return c.call("DownloadLibraryDebugInfo", DownloadLibraryDebugInfoIn{n}, out)
+}
+
 func (c *RPCClient) callWhileDrainingEvents(method string, args, reply any) error {
 	done := c.drainEvents()
 	err := c.call(method, args, reply)

@@ -493,3 +493,16 @@ type GetEventsIn struct {
 type GetEventsOut struct {
 	Events []api.Event
 }
+
+type CancelDownloadsIn struct {
+}
+
+type CancelDownloadsOut struct {
+}
+
+type DownloadLibraryDebugInfoIn struct {
+	N int
+}
+
+type DownloadLibraryDebugInfoOut struct {
+}

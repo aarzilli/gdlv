@@ -604,6 +604,8 @@ func handleDelveEvent(ev *api.Event) {
 		// not interested
 	case api.EventBinaryInfoDownload:
 		fmt.Fprintf(&scrollbackOut, "Downloading debug info for %s: %s\n", ev.BinaryInfoDownloadEventDetails.ImagePath, ev.BinaryInfoDownloadEventDetails.Progress)
+	case api.EventBreakpointMaterialized:
+		// Do nothing.
 	}
 }
 
