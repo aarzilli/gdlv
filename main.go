@@ -44,6 +44,9 @@ var boldFontData []byte
 var iconFontData []byte
 var codiconFontData []byte
 
+var downloadsMu sync.Mutex
+var downloadsInProgress = false
+
 var (
 	linkColor      = color.RGBA{0x00, 0x88, 0xdd, 0xff}
 	linkHoverColor = color.RGBA{0x00, 0xaa, 0xff, 0xff}
@@ -601,11 +604,19 @@ func handleDelveEvent(ev *api.Event) {
 	var scrollbackOut = editorWriter{true}
 	switch ev.Kind {
 	case api.EventResumed, api.EventStopped:
+		downloadsMu.Lock()
+		downloadsInProgress = false
+		downloadsMu.Unlock()
+		wnd.Changed()
 		// not interested
 	case api.EventBinaryInfoDownload:
+		downloadsMu.Lock()
+		downloadsInProgress = true
+		downloadsMu.Unlock()
+		wnd.Changed()
 		fmt.Fprintf(&scrollbackOut, "Downloading debug info for %s: %s\n", ev.BinaryInfoDownloadEventDetails.ImagePath, ev.BinaryInfoDownloadEventDetails.Progress)
 	case api.EventBreakpointMaterialized:
-		// Do nothing.
+		// not interested
 	}
 }
 

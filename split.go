@@ -298,8 +298,19 @@ func commandToolbar(sw *nucular.Window) {
 			doCommand(cmd)
 		}
 	}
+
+	downloadsMu.Lock()
+	downloadsInProgress := downloadsInProgress
+	downloadsMu.Unlock()
+
 	switch {
 	case client == nil:
+
+	case downloadsInProgress:
+		sw.LayoutSetWidth(200)
+		if sw.ButtonText("stop download") {
+			client.CancelDownloads()
+		}
 
 	case scriptRunning:
 		sw.LayoutSetWidth(100)

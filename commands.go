@@ -326,7 +326,11 @@ List currently attached processes.
 Switches to the specified process.
 `},
 
-		{aliases: []string{"libraries"}, cmdFn: libraries, helpMsg: `List loaded dynamic libraries`},
+		{aliases: []string{"libraries"}, cmdFn: libraries, helpMsg: `List loaded dynamic libraries
+	
+	libraries [-d N]
+
+If used with the -d option it will re-attempt to download the debug symbols for library N, using debuginfod-find.`},
 	}
 
 	sort.Sort(ByFirstAlias(c.cmds))
@@ -2052,6 +2056,21 @@ func target(out io.Writer, args string) error {
 }
 
 func libraries(out io.Writer, args string) error {
+	argv := strings.SplitN(args, " ", 2)
+	if len(argv) == 2 {
+		switch strings.TrimSpace(argv[0]) {
+		case "-d":
+			n, err := strconv.Atoi(strings.TrimSpace(argv[1]))
+			if err != nil {
+				return err
+			}
+			client.DownloadLibraryDebugInfo(n)
+		default:
+			return errors.New("wrong arguments")
+		}
+		return nil
+	}
+
 	libs, err := client.ListDynamicLibraries()
 	if err != nil {
 		return err
