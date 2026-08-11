@@ -11,6 +11,8 @@ github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 h1:1BDTz0u9nC3//pOC
 github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802/go.mod h1:IVnqGOEym/WlBOVXweHU+Q+/VP0lqqI8lqeDx9IjBqo=
 github.com/aarzilli/nucular v0.0.0-20260401121206-6e8a08ecb430 h1:0Bh1pG+IqxMl2YCjlpIcnU1FwSGOQn2BcbP2wd2hlAg=
 github.com/aarzilli/nucular v0.0.0-20260401121206-6e8a08ecb430/go.mod h1:HD5sNJdwkVNTyIDckk1g7kFpKgpOmLLBZhB8A0xSv9o=
+github.com/aarzilli/nucular v0.0.0-20260811150627-0d04f7b67c86 h1:XjTUbJnonhSePFsnVed15GMFlM9rAc+D1c22tIirrC4=
+github.com/aarzilli/nucular v0.0.0-20260811150627-0d04f7b67c86/go.mod h1:HD5sNJdwkVNTyIDckk1g7kFpKgpOmLLBZhB8A0xSv9o=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=

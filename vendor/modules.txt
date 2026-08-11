@@ -46,8 +46,6 @@ gioui.org/text
 gioui.org/unit
 gioui.org/widget
 gioui.org/widget/material
-# gioui.org/cpu v0.0.0-20210817075930-8d6a761490d2
-## explicit; go 1.17
 # gioui.org/shader v1.0.8
 ## explicit; go 1.16
 gioui.org/shader
@@ -56,13 +54,12 @@ gioui.org/shader/gio
 ## explicit
 github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/xproto
-# github.com/aarzilli/nucular v0.0.0-20260401121206-6e8a08ecb430
+# github.com/aarzilli/nucular v0.0.0-20260811150627-0d04f7b67c86
 ## explicit; go 1.25.0
 github.com/aarzilli/nucular
 github.com/aarzilli/nucular/clipboard
 github.com/aarzilli/nucular/command
 github.com/aarzilli/nucular/font
-github.com/aarzilli/nucular/internal/assets
 github.com/aarzilli/nucular/label
 github.com/aarzilli/nucular/rect
 github.com/aarzilli/nucular/richtext

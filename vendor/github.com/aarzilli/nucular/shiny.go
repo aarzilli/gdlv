@@ -35,8 +35,6 @@ import (
 	"golang.org/x/image/math/fixed"
 )
 
-//go:generate go-bindata -o internal/assets/assets.go -pkg assets DroidSansMono.ttf
-
 var clipboardStarted bool = false
 var clipboardMu sync.Mutex
 
