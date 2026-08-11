@@ -423,7 +423,8 @@ print %+0.2g%o%1000s x
 
 If you don't like the font or if it doesn't cover a script that you need you
 can change the font by setting the environment variables GDLV_NORMAL_FONT
-and GDLV_BOLD_FONT to the path of two ttf files.
+and GDLV_BOLD_FONT.
+Both of those variables can be set to a ';' separated list of ttf files.
 `)
 			return nil
 		}

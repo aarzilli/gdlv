@@ -8,7 +8,6 @@ import (
 	_ "embed"
 	"fmt"
 	"image/color"
-	"io/ioutil"
 	"math"
 	"os"
 	"runtime"
@@ -37,8 +36,8 @@ var iconFace font.Face
 var codiconFace font.Face
 var boldFace font.Face
 
-var normalFontData []byte
-var boldFontData []byte
+var normalFontDatas [][]byte
+var boldFontDatas [][]byte
 
 //go:embed fontawesome-webfont.ttf
 var iconFontData []byte
@@ -91,14 +90,11 @@ func setupStyle() {
 		customFonts := false
 
 		if normalFontPath != "" && boldFontPath != "" {
-			_, normerr := os.Stat(normalFontPath)
-			_, bolderr := os.Stat(boldFontPath)
+			var normerr, bolderr error
+			normalFontDatas, normerr = readFiles(strings.Split(normalFontPath, ";"))
+			boldFontDatas, bolderr = readFiles(strings.Split(boldFontPath, ";"))
 			if normerr == nil && bolderr == nil {
-				normalFontData, normerr = ioutil.ReadFile(normalFontPath)
-				boldFontData, bolderr = ioutil.ReadFile(boldFontPath)
-				if normerr == nil && bolderr == nil {
-					customFonts = true
-				}
+				customFonts = true
 			}
 			if normerr != nil {
 				fmt.Fprintf(os.Stderr, "Error opening GDLV_NORMAL_FONT %q: %v\n", normalFontPath, normerr)
@@ -113,7 +109,7 @@ func setupStyle() {
 		}
 
 		if !customFonts {
-			boldFontData = droidSansBoldData
+			boldFontDatas = [][]byte{droidSansBoldData}
 		}
 	})
 
@@ -139,13 +135,13 @@ func setupStyle() {
 		fmt.Fprintf(os.Stderr, "could not parse codicon font: %v\n", err)
 		os.Exit(1)
 	}
-	boldFace, err = font.NewFace(boldFontData, sz)
+	boldFace, err = font.NewFallbackFace(sz, boldFontDatas...)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "could not parse bold font: %v\n", err)
 		os.Exit(1)
 	}
-	if normalFontData != nil {
-		style.Font, err = font.NewFace(normalFontData, sz)
+	if normalFontDatas != nil {
+		style.Font, err = font.NewFallbackFace(sz, normalFontDatas...)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "could not parse normal font: %v\n", err)
 			os.Exit(1)
@@ -156,6 +152,18 @@ func setupStyle() {
 	starWidth = nucular.FontWidth(style.Font, breakpointIconChar)
 
 	saveConfiguration()
+}
+
+func readFiles(paths []string) ([][]byte, error) {
+	r := make([][]byte, len(paths))
+	for i := range paths {
+		var err error
+		r[i], err = os.ReadFile(paths[i])
+		if err != nil {
+			return nil, fmt.Errorf("error reading %s: %v", paths[i], err)
+		}
+	}
+	return r, nil
 }
 
 const commandLineHeight = 28
