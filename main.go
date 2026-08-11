@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	_ "embed"
 	"fmt"
 	"image/color"
 	"io/ioutil"
@@ -16,7 +17,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/aarzilli/gdlv/internal/assets"
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/rpc2"
 	"github.com/aarzilli/nucular"
@@ -27,8 +27,6 @@ import (
 
 	"golang.org/x/mobile/event/key"
 )
-
-//go:generate go-bindata -o internal/assets/assets.go -pkg assets fontawesome-webfont.ttf droid-sans.bold.ttf codicon.ttf
 
 const profileEnabled = false
 
@@ -41,8 +39,15 @@ var boldFace font.Face
 
 var normalFontData []byte
 var boldFontData []byte
+
+//go:embed fontawesome-webfont.ttf
 var iconFontData []byte
+
+//go:embed codicon.ttf
 var codiconFontData []byte
+
+//go:embed droid-sans.bold.ttf
+var droidSansBoldData []byte
 
 var downloadsMu sync.Mutex
 var downloadsInProgress = false
@@ -81,9 +86,6 @@ func setupStyle() {
 	}
 
 	fontInit.Do(func() {
-		iconFontData, _ = assets.Asset("fontawesome-webfont.ttf")
-		codiconFontData, _ = assets.Asset("codicon.ttf")
-
 		normalFontPath := os.Getenv("GDLV_NORMAL_FONT")
 		boldFontPath := os.Getenv("GDLV_BOLD_FONT")
 		customFonts := false
@@ -111,7 +113,7 @@ func setupStyle() {
 		}
 
 		if !customFonts {
-			boldFontData, _ = assets.Asset("droid-sans.bold.ttf")
+			boldFontData = droidSansBoldData
 		}
 	})
 
