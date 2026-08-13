@@ -2694,6 +2694,7 @@ func (ctx *context) nonblockOpen(flags WindowFlags, body rect.Rect, header rect.
 	popup.idx = len(ctx.Windows)
 	popup.updateFn = updateFn
 	ctx.Windows = append(ctx.Windows, popup)
+	ctx.Input.activateWindow = popup
 
 	popup.Bounds = body
 	popup.layout = &panel{}

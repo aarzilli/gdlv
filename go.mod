@@ -1,7 +1,7 @@
 module github.com/aarzilli/gdlv
 
 require (
-	github.com/aarzilli/nucular v0.0.0-20260811150627-0d04f7b67c86
+	github.com/aarzilli/nucular v0.0.0-20260813095138-bd24df043b63
 	go.starlark.net v0.0.0-20200821142938-949cc6f4b097
 	golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a
 )
