@@ -40,7 +40,6 @@ func ParseAttachList(src []byte) (AttachList, int, error) {
 	n += 4
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading AttachList: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -355,7 +354,6 @@ func ParseGDEF(src []byte) (GDEF, int, error) {
 	n += 12
 
 	{
-
 		if offsetGlyphClassDef != 0 { // ignore null offset
 			if L := len(src); L < offsetGlyphClassDef {
 				return item, 0, fmt.Errorf("reading GDEF: "+"EOF: expected length: %d, got %d", offsetGlyphClassDef, L)
@@ -373,7 +371,6 @@ func ParseGDEF(src []byte) (GDEF, int, error) {
 		}
 	}
 	{
-
 		if offsetAttachList != 0 { // ignore null offset
 			if L := len(src); L < offsetAttachList {
 				return item, 0, fmt.Errorf("reading GDEF: "+"EOF: expected length: %d, got %d", offsetAttachList, L)
@@ -388,7 +385,6 @@ func ParseGDEF(src []byte) (GDEF, int, error) {
 		}
 	}
 	{
-
 		if offsetLigCaretList != 0 { // ignore null offset
 			if L := len(src); L < offsetLigCaretList {
 				return item, 0, fmt.Errorf("reading GDEF: "+"EOF: expected length: %d, got %d", offsetLigCaretList, L)
@@ -403,7 +399,6 @@ func ParseGDEF(src []byte) (GDEF, int, error) {
 		}
 	}
 	{
-
 		if offsetMarkAttachClass != 0 { // ignore null offset
 			if L := len(src); L < offsetMarkAttachClass {
 				return item, 0, fmt.Errorf("reading GDEF: "+"EOF: expected length: %d, got %d", offsetMarkAttachClass, L)
@@ -450,7 +445,6 @@ func ParseLigCaretList(src []byte) (LigCaretList, int, error) {
 	n += 4
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading LigCaretList: "+"EOF: expected length: %d, got %d", offsetCoverage, L)

@@ -630,7 +630,6 @@ func ParseEncodingRecord(src []byte, parentSrc []byte) (EncodingRecord, int, err
 	n += 8
 
 	{
-
 		if offsetSubtable != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetSubtable {
 				return item, 0, fmt.Errorf("reading EncodingRecord: "+"EOF: expected length: %d, got %d", offsetSubtable, L)
@@ -689,7 +688,6 @@ func ParseVariationSelector(src []byte, parentSrc []byte) (VariationSelector, in
 	n += 11
 
 	{
-
 		if offsetDefaultUVS != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetDefaultUVS {
 				return item, 0, fmt.Errorf("reading VariationSelector: "+"EOF: expected length: %d, got %d", offsetDefaultUVS, L)
@@ -704,7 +702,6 @@ func ParseVariationSelector(src []byte, parentSrc []byte) (VariationSelector, in
 		}
 	}
 	{
-
 		if offsetNonDefaultUVS != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetNonDefaultUVS {
 				return item, 0, fmt.Errorf("reading VariationSelector: "+"EOF: expected length: %d, got %d", offsetNonDefaultUVS, L)

@@ -104,7 +104,7 @@ func newShapePlan(font *Font, props SegmentProperties,
 	sp.init(true, font, props, userFeatures, coords)
 
 	if debugMode {
-		fmt.Println("NEW SHAPE PLAN - compiling shaper plan")
+		fmt.Println("NEW SHAPE PLAN - compiling shaper plan for script", props.Script)
 	}
 	sp.shaper.compile(props, userFeatures)
 

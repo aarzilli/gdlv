@@ -46,7 +46,6 @@ func ParseAlternateSubs(src []byte) (AlternateSubs, int, error) {
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading AlternateSubs: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -122,7 +121,6 @@ func ParseChainedContextualSubs1(src []byte) (ChainedContextualSubs1, int, error
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading ChainedContextualSubs1: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -184,7 +182,6 @@ func ParseChainedContextualSubs2(src []byte) (ChainedContextualSubs2, int, error
 	n += 12
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading ChainedContextualSubs2: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -202,7 +199,6 @@ func ParseChainedContextualSubs2(src []byte) (ChainedContextualSubs2, int, error
 		}
 	}
 	{
-
 		if offsetBacktrackClassDef != 0 { // ignore null offset
 			if L := len(src); L < offsetBacktrackClassDef {
 				return item, 0, fmt.Errorf("reading ChainedContextualSubs2: "+"EOF: expected length: %d, got %d", offsetBacktrackClassDef, L)
@@ -220,7 +216,6 @@ func ParseChainedContextualSubs2(src []byte) (ChainedContextualSubs2, int, error
 		}
 	}
 	{
-
 		if offsetInputClassDef != 0 { // ignore null offset
 			if L := len(src); L < offsetInputClassDef {
 				return item, 0, fmt.Errorf("reading ChainedContextualSubs2: "+"EOF: expected length: %d, got %d", offsetInputClassDef, L)
@@ -238,7 +233,6 @@ func ParseChainedContextualSubs2(src []byte) (ChainedContextualSubs2, int, error
 		}
 	}
 	{
-
 		if offsetLookaheadClassDef != 0 { // ignore null offset
 			if L := len(src); L < offsetLookaheadClassDef {
 				return item, 0, fmt.Errorf("reading ChainedContextualSubs2: "+"EOF: expected length: %d, got %d", offsetLookaheadClassDef, L)
@@ -464,7 +458,6 @@ func ParseContextualSubs1(src []byte) (ContextualSubs1, int, error) {
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading ContextualSubs1: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -524,7 +517,6 @@ func ParseContextualSubs2(src []byte) (ContextualSubs2, int, error) {
 	n += 8
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading ContextualSubs2: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -542,7 +534,6 @@ func ParseContextualSubs2(src []byte) (ContextualSubs2, int, error) {
 		}
 	}
 	{
-
 		if offsetClassDef != 0 { // ignore null offset
 			if L := len(src); L < offsetClassDef {
 				return item, 0, fmt.Errorf("reading ContextualSubs2: "+"EOF: expected length: %d, got %d", offsetClassDef, L)
@@ -769,7 +760,6 @@ func ParseLigatureSubs(src []byte) (LigatureSubs, int, error) {
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading LigatureSubs: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -828,7 +818,6 @@ func ParseMultipleSubs(src []byte) (MultipleSubs, int, error) {
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading MultipleSubs: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -887,7 +876,6 @@ func ParseReverseChainSingleSubs(src []byte) (ReverseChainSingleSubs, int, error
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading ReverseChainSingleSubs: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -1063,7 +1051,6 @@ func ParseSingleSubstData1(src []byte) (SingleSubstData1, int, error) {
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading SingleSubstData1: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -1096,7 +1083,6 @@ func ParseSingleSubstData2(src []byte) (SingleSubstData2, int, error) {
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading SingleSubstData2: "+"EOF: expected length: %d, got %d", offsetCoverage, L)

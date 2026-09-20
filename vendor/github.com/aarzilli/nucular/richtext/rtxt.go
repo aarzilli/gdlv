@@ -472,7 +472,7 @@ func (rtxt *RichText) initialize(w *nucular.Window, changed *bool) {
 
 	rtxt.arrowKey, rtxt.pageKey = 0, 0
 	if rtxt.focused && (rtxt.flags&Keyboard != 0 || rtxt.flags&Editable != 0) {
-		rtxt.arrowKey, rtxt.pageKey = rtxt.handleKeyboard(w.Input(), changed)
+		rtxt.arrowKey, rtxt.pageKey = rtxt.handleKeyboard(w, w.Input(), changed)
 	}
 
 	rtxt.Events = 0

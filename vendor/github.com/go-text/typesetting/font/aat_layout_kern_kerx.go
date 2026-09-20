@@ -41,7 +41,7 @@ type KernSubtable struct {
 	// high bit of the Coverage field, following 'kerx' conventions
 	coverage byte
 
-	// IsExtended [true] for AAT `kerx` subtables, false for 'kern' subtables
+	// IsExtended is [true] for AAT `kerx` subtables, false for 'kern' subtables
 	IsExtended bool
 
 	// 0 for scalar values
@@ -199,7 +199,7 @@ func newKern1(k tables.KernData1) Kern1 {
 		Values: k.Values,
 		Machine: AATStateTable{
 			nClass:  uint32(k.StateSize),
-			class:   class,
+			Class:   class,
 			states:  states,
 			entries: k.Entries,
 		},
@@ -282,7 +282,7 @@ func (kd Kern6) KernPair(left, right GID) int16 {
 // AATStateTable supports both regular and extended AAT state machines
 type AATStateTable struct {
 	nClass  uint32
-	class   tables.AATLookup
+	Class   tables.AATLookup
 	states  [][]uint16             // each sub array has length stateSize
 	entries []tables.AATStateEntry // length is the maximum state + 1
 }
@@ -290,7 +290,7 @@ type AATStateTable struct {
 func newAATStableTable(k tables.AATStateTableExt) AATStateTable {
 	return AATStateTable{
 		nClass:  k.StateSize,
-		class:   k.Class,
+		Class:   k.Class,
 		states:  k.States,
 		entries: k.Entries,
 	}
@@ -301,7 +301,7 @@ func (st *AATStateTable) GetClass(glyph GID) uint16 {
 	if glyph == 0xFFFF { // deleted glyph
 		return 2 // class deleted
 	}
-	c, ok := st.class.Class(tables.GlyphID(glyph))
+	c, ok := st.Class.Class(tables.GlyphID(glyph))
 	if !ok {
 		return 1 // class out of bounds
 	}

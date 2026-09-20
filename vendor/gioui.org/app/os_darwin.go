@@ -5,7 +5,7 @@ package app
 /*
 #include <Foundation/Foundation.h>
 
-__attribute__ ((visibility ("hidden"))) void gio_wakeupMainThread(void);
+__attribute__ ((visibility ("hidden"))) void gio_runOnMain(uintptr_t h);
 __attribute__ ((visibility ("hidden"))) CFTypeRef gio_createDisplayLink(void);
 __attribute__ ((visibility ("hidden"))) void gio_releaseDisplayLink(CFTypeRef dl);
 __attribute__ ((visibility ("hidden"))) int gio_startDisplayLink(CFTypeRef dl);
@@ -40,8 +40,10 @@ static CFTypeRef newNSString(unichar *chars, NSUInteger length) {
 }
 */
 import "C"
+
 import (
 	"errors"
+	"runtime/cgo"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -73,8 +75,6 @@ type displayLink struct {
 // displayLinks maps CFTypeRefs to *displayLinks.
 var displayLinks sync.Map
 
-var mainFuncs = make(chan func(), 1)
-
 func isMainThread() bool {
 	return bool(C.isMainThread())
 }
@@ -85,22 +85,15 @@ func runOnMain(f func()) {
 		f()
 		return
 	}
-	go func() {
-		mainFuncs <- f
-		C.gio_wakeupMainThread()
-	}()
+	C.gio_runOnMain(C.uintptr_t(cgo.NewHandle(f)))
 }
 
-//export gio_dispatchMainFuncs
-func gio_dispatchMainFuncs() {
-	for {
-		select {
-		case f := <-mainFuncs:
-			f()
-		default:
-			return
-		}
-	}
+//export gio_runFunc
+func gio_runFunc(h C.uintptr_t) {
+	handle := cgo.Handle(h)
+	defer handle.Delete()
+	f := handle.Value().(func())
+	f()
 }
 
 // nsstringToString converts a NSString to a Go string.
@@ -109,11 +102,8 @@ func nsstringToString(str C.CFTypeRef) string {
 		return ""
 	}
 	n := C.nsstringLength(str)
-	if n == 0 {
-		return ""
-	}
 	chars := make([]uint16, n)
-	C.nsstringGetCharacters(str, (*C.unichar)(unsafe.Pointer(&chars[0])), 0, n)
+	C.nsstringGetCharacters(str, (*C.unichar)(unsafe.Pointer(unsafe.SliceData(chars))), 0, n)
 	utf8 := utf16.Decode(chars)
 	return string(utf8)
 }
@@ -121,10 +111,7 @@ func nsstringToString(str C.CFTypeRef) string {
 // stringToNSString converts a Go string to a retained NSString.
 func stringToNSString(str string) C.CFTypeRef {
 	u16 := utf16.Encode([]rune(str))
-	var chars *C.unichar
-	if len(u16) > 0 {
-		chars = (*C.unichar)(unsafe.Pointer(&u16[0]))
-	}
+	chars := (*C.unichar)(unsafe.Pointer(unsafe.SliceData(u16)))
 	return C.newNSString(chars, C.NSUInteger(len(u16)))
 }
 

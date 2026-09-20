@@ -12,7 +12,10 @@ This package may be used by UI toolkits and markup language renderers. Both use-
 The entry point of the library is the `FontMap` type. It should be created for each text shaping task and be filled either with system fonts (by calling `UseSystemFonts`) or with user-provided font files (using `AddFont`, `AddFace`), or both.
 To leverage all the system fonts, the first usage of `UseSystemFonts` triggers a scan which builds a font index. Its content is saved on disk so that subsequent usage by the same app are not slowed down by this step.
 
-Once initialized, the font map is used to select fonts matching a `Query` with `SetQuery`. A query is defined by one or several families and an `Aspect`, containining style, weight, stretchiness. Finally, the font map satisfies the `shaping.Fontmap` interface, so that is may be used with `shaping.SplitByFace`.
+Once initialized, the font map is used to select fonts matching a `Query` with `SetQuery`. A query is defined by one or several families and an `Aspect`, containining style, weight, stretchiness. `SetScript` may be called to
+influence fallback font resolution.
+
+Finally, the font map satisfies the `shaping.Fontmap` interface, so that is may be used with `shaping.SplitByFace`.
 
 ## Zoom on the implementation
 

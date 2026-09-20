@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
 //go:build windows
-// +build windows
 
 package windows
 
@@ -108,6 +107,80 @@ type MonitorInfo struct {
 	Flags    uint32
 }
 
+type CopyDataStruct struct {
+	DwData uintptr
+	CbData uint32
+	LpData uintptr
+}
+
+type POINTER_INPUT_TYPE int32
+
+const (
+	PT_POINTER  POINTER_INPUT_TYPE = 1
+	PT_TOUCH    POINTER_INPUT_TYPE = 2
+	PT_PEN      POINTER_INPUT_TYPE = 3
+	PT_MOUSE    POINTER_INPUT_TYPE = 4
+	PT_TOUCHPAD POINTER_INPUT_TYPE = 5
+)
+
+type POINTER_INFO_POINTER_FLAGS int32
+
+const (
+	POINTER_FLAG_NEW            POINTER_INFO_POINTER_FLAGS = 0x00000001
+	POINTER_FLAG_INRANGE        POINTER_INFO_POINTER_FLAGS = 0x00000002
+	POINTER_FLAG_INCONTACT      POINTER_INFO_POINTER_FLAGS = 0x00000004
+	POINTER_FLAG_FIRSTBUTTON    POINTER_INFO_POINTER_FLAGS = 0x00000010
+	POINTER_FLAG_SECONDBUTTON   POINTER_INFO_POINTER_FLAGS = 0x00000020
+	POINTER_FLAG_THIRDBUTTON    POINTER_INFO_POINTER_FLAGS = 0x00000040
+	POINTER_FLAG_FOURTHBUTTON   POINTER_INFO_POINTER_FLAGS = 0x00000080
+	POINTER_FLAG_FIFTHBUTTON    POINTER_INFO_POINTER_FLAGS = 0x00000100
+	POINTER_FLAG_PRIMARY        POINTER_INFO_POINTER_FLAGS = 0x00002000
+	POINTER_FLAG_CONFIDENCE     POINTER_INFO_POINTER_FLAGS = 0x00004000
+	POINTER_FLAG_CANCELED       POINTER_INFO_POINTER_FLAGS = 0x00008000
+	POINTER_FLAG_DOWN           POINTER_INFO_POINTER_FLAGS = 0x00010000
+	POINTER_FLAG_UPDATE         POINTER_INFO_POINTER_FLAGS = 0x00020000
+	POINTER_FLAG_UP             POINTER_INFO_POINTER_FLAGS = 0x00040000
+	POINTER_FLAG_WHEEL          POINTER_INFO_POINTER_FLAGS = 0x00080000
+	POINTER_FLAG_HWHEEL         POINTER_INFO_POINTER_FLAGS = 0x00100000
+	POINTER_FLAG_CAPTURECHANGED POINTER_INFO_POINTER_FLAGS = 0x00200000
+	POINTER_FLAG_HASTRANSFORM   POINTER_INFO_POINTER_FLAGS = 0x00400000
+)
+
+type POINTER_BUTTON_CHANGE_TYPE int32
+
+const (
+	POINTER_CHANGE_NONE              POINTER_BUTTON_CHANGE_TYPE = 0
+	POINTER_CHANGE_FIRSTBUTTON_DOWN  POINTER_BUTTON_CHANGE_TYPE = 1
+	POINTER_CHANGE_FIRSTBUTTON_UP    POINTER_BUTTON_CHANGE_TYPE = 2
+	POINTER_CHANGE_SECONDBUTTON_DOWN POINTER_BUTTON_CHANGE_TYPE = 3
+	POINTER_CHANGE_SECONDBUTTON_UP   POINTER_BUTTON_CHANGE_TYPE = 4
+	POINTER_CHANGE_THIRDBUTTON_DOWN  POINTER_BUTTON_CHANGE_TYPE = 5
+	POINTER_CHANGE_THIRDBUTTON_UP    POINTER_BUTTON_CHANGE_TYPE = 6
+	POINTER_CHANGE_FOURTHBUTTON_DOWN POINTER_BUTTON_CHANGE_TYPE = 7
+	POINTER_CHANGE_FOURTHBUTTON_UP   POINTER_BUTTON_CHANGE_TYPE = 8
+	POINTER_CHANGE_FIFTHBUTTON_DOWN  POINTER_BUTTON_CHANGE_TYPE = 9
+	POINTER_CHANGE_FIFTHBUTTON_UP    POINTER_BUTTON_CHANGE_TYPE = 10
+)
+
+type PointerInfo struct {
+	PointerType           POINTER_INPUT_TYPE
+	PointerId             uint32
+	FrameId               uint32
+	PointerFlags          POINTER_INFO_POINTER_FLAGS
+	SourceDevice          syscall.Handle
+	HwndTarget            syscall.Handle
+	PtPixelLocation       Point
+	PtHimetricLocation    Point
+	PtPixelLocationRaw    Point
+	PtHimetricLocationRaw Point
+	DwTime                uint32
+	HistoryCount          uint32
+	InputData             int32
+	DwKeyStates           uint32
+	PerformanceCount      uint64
+	ButtonChangeType      POINTER_BUTTON_CHANGE_TYPE
+}
+
 const (
 	TRUE = 1
 
@@ -130,10 +203,12 @@ const (
 	GCS_RESULTREADSTR = 0x0200
 	GCS_RESULTSTR     = 0x0800
 
-	CFS_POINT        = 0x0002
-	CFS_CANDIDATEPOS = 0x0040
+	CFS_POINT   = 0x0002
+	CFS_EXCLUDE = 0x0080
 
-	HWND_TOPMOST = ^(uint32(1) - 1) // -1
+	HWND_TOP       = syscall.Handle(0)
+	HWND_TOPMOST   = ^(syscall.Handle(1) - 1) // -1
+	HWND_NOTOPMOST = ^(syscall.Handle(2) - 1) // -2
 
 	HTCAPTION     = 2
 	HTCLIENT      = 1
@@ -161,6 +236,8 @@ const (
 	IDC_UPARROW     = 32516 // Vertical arrow
 	IDC_WAIT        = 32514 // Hour
 
+	IDI_APPLICATION = 32512 // Default application icon
+
 	INFINITE = 0xFFFFFFFF
 
 	LOGPIXELSX = 88
@@ -185,6 +262,7 @@ const (
 	SW_SHOWMAXIMIZED = 3
 	SW_SHOWNORMAL    = 1
 	SW_SHOW          = 5
+	SW_RESTORE       = 9
 
 	SWP_FRAMECHANGED  = 0x0020
 	SWP_NOMOVE        = 0x0002
@@ -244,45 +322,52 @@ const (
 
 	UNICODE_NOCHAR = 65535
 
-	WM_CANCELMODE           = 0x001F
-	WM_CHAR                 = 0x0102
-	WM_CLOSE                = 0x0010
-	WM_CREATE               = 0x0001
-	WM_DPICHANGED           = 0x02E0
-	WM_DESTROY              = 0x0002
-	WM_ERASEBKGND           = 0x0014
-	WM_GETMINMAXINFO        = 0x0024
-	WM_IME_COMPOSITION      = 0x010F
-	WM_IME_ENDCOMPOSITION   = 0x010E
-	WM_IME_STARTCOMPOSITION = 0x010D
-	WM_KEYDOWN              = 0x0100
-	WM_KEYUP                = 0x0101
-	WM_KILLFOCUS            = 0x0008
-	WM_LBUTTONDOWN          = 0x0201
-	WM_LBUTTONUP            = 0x0202
-	WM_MBUTTONDOWN          = 0x0207
-	WM_MBUTTONUP            = 0x0208
-	WM_MOUSEMOVE            = 0x0200
-	WM_MOUSEWHEEL           = 0x020A
-	WM_MOUSEHWHEEL          = 0x020E
-	WM_NCACTIVATE           = 0x0086
-	WM_NCHITTEST            = 0x0084
-	WM_NCCALCSIZE           = 0x0083
-	WM_PAINT                = 0x000F
-	WM_QUIT                 = 0x0012
-	WM_SETCURSOR            = 0x0020
-	WM_SETFOCUS             = 0x0007
-	WM_SHOWWINDOW           = 0x0018
-	WM_SIZE                 = 0x0005
-	WM_STYLECHANGED         = 0x007D
-	WM_SYSKEYDOWN           = 0x0104
-	WM_SYSKEYUP             = 0x0105
-	WM_RBUTTONDOWN          = 0x0204
-	WM_RBUTTONUP            = 0x0205
-	WM_TIMER                = 0x0113
-	WM_UNICHAR              = 0x0109
-	WM_USER                 = 0x0400
-	WM_WINDOWPOSCHANGED     = 0x0047
+	WM_CANCELMODE            = 0x001F
+	WM_CHAR                  = 0x0102
+	WM_CLOSE                 = 0x0010
+	WM_COPYDATA              = 0x004A
+	WM_CREATE                = 0x0001
+	WM_DPICHANGED            = 0x02E0
+	WM_DESTROY               = 0x0002
+	WM_ERASEBKGND            = 0x0014
+	WM_GETMINMAXINFO         = 0x0024
+	WM_IME_COMPOSITION       = 0x010F
+	WM_IME_ENDCOMPOSITION    = 0x010E
+	WM_IME_STARTCOMPOSITION  = 0x010D
+	WM_KEYDOWN               = 0x0100
+	WM_KEYUP                 = 0x0101
+	WM_KILLFOCUS             = 0x0008
+	WM_LBUTTONDOWN           = 0x0201
+	WM_LBUTTONUP             = 0x0202
+	WM_MBUTTONDOWN           = 0x0207
+	WM_MBUTTONUP             = 0x0208
+	WM_MOUSEMOVE             = 0x0200
+	WM_MOUSEWHEEL            = 0x020A
+	WM_MOUSEHWHEEL           = 0x020E
+	WM_NCACTIVATE            = 0x0086
+	WM_NCHITTEST             = 0x0084
+	WM_NCCALCSIZE            = 0x0083
+	WM_PAINT                 = 0x000F
+	WM_POINTERCAPTURECHANGED = 0x024C
+	WM_POINTERDOWN           = 0x0246
+	WM_POINTERUP             = 0x0247
+	WM_POINTERUPDATE         = 0x0245
+	WM_POINTERWHEEL          = 0x024E
+	WM_POINTERHWHEEL         = 0x024F
+	WM_QUIT                  = 0x0012
+	WM_RBUTTONDOWN           = 0x0204
+	WM_RBUTTONUP             = 0x0205
+	WM_SETCURSOR             = 0x0020
+	WM_SETFOCUS              = 0x0007
+	WM_SHOWWINDOW            = 0x0018
+	WM_SIZE                  = 0x0005
+	WM_STYLECHANGED          = 0x007D
+	WM_SYSKEYDOWN            = 0x0104
+	WM_SYSKEYUP              = 0x0105
+	WM_TIMER                 = 0x0113
+	WM_UNICHAR               = 0x0109
+	WM_USER                  = 0x0400
+	WM_WINDOWPOSCHANGED      = 0x0047
 
 	WS_CLIPCHILDREN     = 0x02000000
 	WS_CLIPSIBLINGS     = 0x04000000
@@ -345,7 +430,9 @@ var (
 	_DefWindowProc               = user32.NewProc("DefWindowProcW")
 	_DestroyWindow               = user32.NewProc("DestroyWindow")
 	_DispatchMessage             = user32.NewProc("DispatchMessageW")
+	_FindWindow                  = user32.NewProc("FindWindowW")
 	_EmptyClipboard              = user32.NewProc("EmptyClipboard")
+	_EnableMouseInPointer        = user32.NewProc("EnableMouseInPointer")
 	_GetWindowRect               = user32.NewProc("GetWindowRect")
 	_GetClientRect               = user32.NewProc("GetClientRect")
 	_GetClipboardData            = user32.NewProc("GetClipboardData")
@@ -355,6 +442,7 @@ var (
 	_GetMessage                  = user32.NewProc("GetMessageW")
 	_GetMessageTime              = user32.NewProc("GetMessageTime")
 	_GetMonitorInfo              = user32.NewProc("GetMonitorInfoW")
+	_GetPointerInfo              = user32.NewProc("GetPointerInfo")
 	_GetSystemMetrics            = user32.NewProc("GetSystemMetrics")
 	_GetWindowLong               = user32.NewProc("GetWindowLongPtrW")
 	_GetWindowLong32             = user32.NewProc("GetWindowLongW")
@@ -372,9 +460,12 @@ var (
 	_PostQuitMessage             = user32.NewProc("PostQuitMessage")
 	_ReleaseCapture              = user32.NewProc("ReleaseCapture")
 	_RegisterClassExW            = user32.NewProc("RegisterClassExW")
+	_RegisterTouchWindow         = user32.NewProc("RegisterTouchWindow")
 	_ReleaseDC                   = user32.NewProc("ReleaseDC")
 	_ScreenToClient              = user32.NewProc("ScreenToClient")
 	_ShowWindow                  = user32.NewProc("ShowWindow")
+	_IsIconic                    = user32.NewProc("IsIconic")
+	_SendMessage                 = user32.NewProc("SendMessageW")
 	_SetCapture                  = user32.NewProc("SetCapture")
 	_SetCursor                   = user32.NewProc("SetCursor")
 	_SetClipboardData            = user32.NewProc("SetClipboardData")
@@ -427,7 +518,10 @@ func CloseClipboard() error {
 }
 
 func CreateWindowEx(dwExStyle uint32, lpClassName uint16, lpWindowName string, dwStyle uint32, x, y, w, h int32, hWndParent, hMenu, hInstance syscall.Handle, lpParam uintptr) (syscall.Handle, error) {
-	wname := syscall.StringToUTF16Ptr(lpWindowName)
+	wname, err := syscall.UTF16PtrFromString(lpWindowName)
+	if err != nil {
+		return 0, fmt.Errorf("CreateWindowEx failed: %v", err)
+	}
 	hwnd, _, err := _CreateWindowEx.Call(
 		uintptr(dwExStyle),
 		uintptr(lpClassName),
@@ -443,6 +537,31 @@ func CreateWindowEx(dwExStyle uint32, lpClassName uint16, lpWindowName string, d
 		return 0, fmt.Errorf("CreateWindowEx failed: %v", err)
 	}
 	return syscall.Handle(hwnd), nil
+}
+
+func GetPointerInfo(pointerId uint32) (PointerInfo, error) {
+	var info PointerInfo
+	r1, _, err := _GetPointerInfo.Call(uintptr(pointerId), uintptr(unsafe.Pointer(&info)))
+	if r1 == 0 {
+		return PointerInfo{}, fmt.Errorf("GetPointerInfo failed: %v", err)
+	}
+	return info, nil
+}
+
+func RegisterTouchWindow(hwnd syscall.Handle, flags uint32) error {
+	r1, _, err := _RegisterTouchWindow.Call(uintptr(hwnd), uintptr(flags))
+	if r1 == 0 {
+		return fmt.Errorf("RegisterTouchWindow failed: %v", err)
+	}
+	return nil
+}
+
+func EnableMouseInPointer(enable uint) error {
+	r1, _, err := _EnableMouseInPointer.Call(uintptr(enable))
+	if r1 == 0 {
+		return fmt.Errorf("EnableMouseInPointer failed: %v", err)
+	}
+	return nil
 }
 
 func DefWindowProc(hwnd syscall.Handle, msg uint32, wparam, lparam uintptr) uintptr {
@@ -472,6 +591,18 @@ func EmptyClipboard() error {
 		return fmt.Errorf("EmptyClipboard: %v", err)
 	}
 	return nil
+}
+
+func FindWindow(lpClassName string) (syscall.Handle, error) {
+	className, err := syscall.UTF16PtrFromString(lpClassName)
+	if err != nil {
+		return 0, fmt.Errorf("FindWindow failed: %v", err)
+	}
+	hwnd, _, err := _FindWindow.Call(uintptr(unsafe.Pointer(className)), 0)
+	if hwnd == 0 {
+		return 0, fmt.Errorf("FindWindow failed: %v", err)
+	}
+	return syscall.Handle(hwnd), nil
 }
 
 func GetWindowRect(hwnd syscall.Handle) Rect {
@@ -572,11 +703,11 @@ func GetWindowDPI(hwnd syscall.Handle) int {
 	}
 }
 
-func GetWindowPlacement(hwnd syscall.Handle) *WindowPlacement {
+func GetWindowPlacement(hwnd syscall.Handle) WindowPlacement {
 	var wp WindowPlacement
 	wp.length = uint32(unsafe.Sizeof(wp))
 	_GetWindowPlacement.Call(uintptr(hwnd), uintptr(unsafe.Pointer(&wp)))
-	return &wp
+	return wp
 }
 
 func GetMonitorInfo(hwnd syscall.Handle) MonitorInfo {
@@ -615,7 +746,7 @@ func ImmGetCompositionString(imc syscall.Handle, key int) string {
 		return ""
 	}
 	u16 := make([]uint16, size/unsafe.Sizeof(uint16(0)))
-	_ImmGetCompositionString.Call(uintptr(imc), uintptr(key), uintptr(unsafe.Pointer(&u16[0])), size)
+	_ImmGetCompositionString.Call(uintptr(imc), uintptr(key), uintptr(unsafe.Pointer(unsafe.SliceData(u16))), size)
 	return string(utf16.Decode(u16))
 }
 
@@ -634,12 +765,13 @@ func ImmSetCompositionWindow(imc syscall.Handle, x, y int) {
 	_ImmSetCompositionWindow.Call(uintptr(imc), uintptr(unsafe.Pointer(&f)))
 }
 
-func ImmSetCandidateWindow(imc syscall.Handle, x, y int) {
+func ImmSetCandidateWindow(imc syscall.Handle, x, y int, r Rect) {
 	f := CandidateForm{
-		dwStyle: CFS_CANDIDATEPOS,
+		dwStyle: CFS_EXCLUDE,
 		ptCurrentPos: Point{
 			X: int32(x), Y: int32(y),
 		},
+		rcArea: r,
 	}
 	_ImmSetCandidateWindow.Call(uintptr(imc), uintptr(unsafe.Pointer(&f)))
 }
@@ -656,7 +788,7 @@ func SetWindowPlacement(hwnd syscall.Handle, wp *WindowPlacement) {
 	_SetWindowPlacement.Call(uintptr(hwnd), uintptr(unsafe.Pointer(wp)))
 }
 
-func SetWindowPos(hwnd syscall.Handle, hwndInsertAfter uint32, x, y, dx, dy int32, style uintptr) {
+func SetWindowPos(hwnd, hwndInsertAfter syscall.Handle, x, y, dx, dy int32, style uintptr) {
 	_SetWindowPos.Call(uintptr(hwnd), uintptr(hwndInsertAfter),
 		uintptr(x), uintptr(y),
 		uintptr(dx), uintptr(dy),
@@ -665,7 +797,10 @@ func SetWindowPos(hwnd syscall.Handle, hwndInsertAfter uint32, x, y, dx, dy int3
 }
 
 func SetWindowText(hwnd syscall.Handle, title string) {
-	wname := syscall.StringToUTF16Ptr(title)
+	wname, err := syscall.UTF16PtrFromString(title)
+	if err != nil {
+		panic(err)
+	}
 	_SetWindowText.Call(uintptr(hwnd), uintptr(unsafe.Pointer(wname)))
 }
 
@@ -781,6 +916,14 @@ func ReleaseDC(hdc syscall.Handle) {
 	_ReleaseDC.Call(uintptr(hdc))
 }
 
+func SendMessage(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) error {
+	r, _, err := _SendMessage.Call(uintptr(hwnd), uintptr(msg), wParam, lParam)
+	if r == 0 {
+		return fmt.Errorf("SendMessage failed: %v", err)
+	}
+	return nil
+}
+
 func SetForegroundWindow(hwnd syscall.Handle) {
 	_SetForegroundWindow.Call(uintptr(hwnd))
 }
@@ -824,6 +967,12 @@ func ScreenToClient(hwnd syscall.Handle, p *Point) {
 
 func ShowWindow(hwnd syscall.Handle, nCmdShow int32) {
 	_ShowWindow.Call(uintptr(hwnd), uintptr(nCmdShow))
+}
+
+// IsIconic reports whether the window is minimized.
+func IsIconic(hwnd syscall.Handle) bool {
+	r, _, _ := _IsIconic.Call(uintptr(hwnd))
+	return r != 0
 }
 
 func TranslateMessage(m *Msg) {

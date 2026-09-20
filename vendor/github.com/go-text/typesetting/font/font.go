@@ -154,6 +154,11 @@ type Font struct {
 	bitmap bitmap
 	sbix   sbix
 
+	STAT *STAT // optional
+
+	COLR *tables.COLR1 // color glyphs, optional
+	CPAL CPAL          // color glyphs, optional
+
 	os2   os2
 	names tables.Name
 	head  tables.Head
@@ -267,6 +272,24 @@ func NewFont(ld *ot.Loader) (*Font, error) {
 	svg, _, _ := tables.ParseSVG(raw)
 	out.svg, _ = newSvg(svg)
 
+	raw, _ = ld.RawTable(ot.MustNewTag("COLR"))
+	if colr, err := tables.ParseCOLR(raw); err == nil {
+		out.COLR = &colr
+		// color table without CPAL is broken
+		raw, _ = ld.RawTable(ot.MustNewTag("CPAL"))
+		cpal, _, _ := tables.ParseCPAL(raw)
+		out.CPAL, err = newCPAL(cpal)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	raw, _ = ld.RawTable(ot.MustNewTag("STAT"))
+	stat, _, err := tables.ParseSTAT(raw)
+	if err == nil {
+		out.STAT = &stat
+	}
+
 	out.hhea, out.hmtx, _ = loadHmtx(ld, out.nGlyphs)
 	out.vhea, out.vmtx, _ = loadVmtx(ld, out.nGlyphs)
 
@@ -286,7 +309,7 @@ func NewFont(ld *ot.Loader) (*Font, error) {
 		}
 
 		raw, _ = ld.RawTable(ot.MustNewTag("VVAR"))
-		vvar, _, err := tables.ParseHVAR(raw)
+		vvar, _, err := tables.ParseVVAR(raw)
 		if err == nil {
 			out.vvar = &vvar
 		}
@@ -302,21 +325,22 @@ func NewFont(ld *ot.Loader) (*Font, error) {
 	out.names, _, _ = tables.ParseName(raw)
 
 	// layout tables
-	out.GDEF, _ = loadGDEF(ld, len(out.fvar))
 
-	raw, _ = ld.RawTable(ot.MustNewTag("GSUB"))
-	layout, _, err := tables.ParseLayout(raw)
+	gsubRaw, _ := ld.RawTable(ot.MustNewTag("GSUB"))
+	layout, _, err := tables.ParseLayout(gsubRaw)
 	// harfbuzz relies on GSUB.Loookups being nil when the table is absent
 	if err == nil {
 		out.GSUB, _ = newGSUB(layout)
 	}
 
-	raw, _ = ld.RawTable(ot.MustNewTag("GPOS"))
-	layout, _, err = tables.ParseLayout(raw)
+	gposRaw, _ := ld.RawTable(ot.MustNewTag("GPOS"))
+	layout, _, err = tables.ParseLayout(gposRaw)
 	// harfbuzz relies on GPOS.Loookups being nil when the table is absent
 	if err == nil {
 		out.GPOS, _ = newGPOS(layout)
 	}
+
+	out.GDEF, _ = loadGDEF(ld, len(out.fvar), gsubRaw, gposRaw)
 
 	raw, _ = ld.RawTable(ot.MustNewTag("morx"))
 	morx, _, _ := tables.ParseMorx(raw, out.nGlyphs)
@@ -343,6 +367,98 @@ func NewFont(ld *ot.Loader) (*Font, error) {
 	out.Ltag, _, _ = tables.ParseLtag(raw)
 
 	return &out, nil
+}
+
+// see harfbuzz/src/hb-ot-layout.cc
+func isGDEFBlocklisted(gdef, gsub, gpos []byte) bool {
+	id := uint64(len(gdef))<<42 | uint64(len(gsub))<<21 | uint64(len(gpos))
+	switch id {
+	/* sha1sum:c5ee92f0bca4bfb7d06c4d03e8cf9f9cf75d2e8a Windows 7? timesi.ttf */
+	case 442<<42 | 2874<<21 | 42038,
+		/* sha1sum:37fc8c16a0894ab7b749e35579856c73c840867b Windows 7? timesbi.ttf */
+		430<<42 | 2874<<21 | 40662,
+		/* sha1sum:19fc45110ea6cd3cdd0a5faca256a3797a069a80 Windows 7 timesi.ttf */
+		442<<42 | 2874<<21 | 39116,
+		/* sha1sum:6d2d3c9ed5b7de87bc84eae0df95ee5232ecde26 Windows 7 timesbi.ttf */
+		430<<42 | 2874<<21 | 39374,
+		/* sha1sum:8583225a8b49667c077b3525333f84af08c6bcd8 OS X 10.11.3 Times New Roman Italic.ttf */
+		490<<42 | 3046<<21 | 41638,
+		/* sha1sum:ec0f5a8751845355b7c3271d11f9918a966cb8c9 OS X 10.11.3 Times New Roman Bold Italic.ttf */
+		478<<42 | 3046<<21 | 41902,
+		/* sha1sum:96eda93f7d33e79962451c6c39a6b51ee893ce8c  tahoma.ttf from Windows 8 */
+		898<<42 | 12554<<21 | 46470,
+		/* sha1sum:20928dc06014e0cd120b6fc942d0c3b1a46ac2bc  tahomabd.ttf from Windows 8 */
+		910<<42 | 12566<<21 | 47732,
+		/* sha1sum:4f95b7e4878f60fa3a39ca269618dfde9721a79e  tahoma.ttf from Windows 8.1 */
+		928<<42 | 23298<<21 | 59332,
+		/* sha1sum:6d400781948517c3c0441ba42acb309584b73033  tahomabd.ttf from Windows 8.1 */
+		940<<42 | 23310<<21 | 60732,
+		/* tahoma.ttf v6.04 from Windows 8.1 x64, see https://bugzilla.mozilla.org/show_bug.cgi?id=1279925 */
+		964<<42 | 23836<<21 | 60072,
+		/* tahomabd.ttf v6.04 from Windows 8.1 x64, see https://bugzilla.mozilla.org/show_bug.cgi?id=1279925 */
+		976<<42 | 23832<<21 | 61456,
+		/* sha1sum:e55fa2dfe957a9f7ec26be516a0e30b0c925f846  tahoma.ttf from Windows 10 */
+		994<<42 | 24474<<21 | 60336,
+		/* sha1sum:7199385abb4c2cc81c83a151a7599b6368e92343  tahomabd.ttf from Windows 10 */
+		1006<<42 | 24470<<21 | 61740,
+		/* tahoma.ttf v6.91 from Windows 10 x64, see https://bugzilla.mozilla.org/show_bug.cgi?id=1279925 */
+		1006<<42 | 24576<<21 | 61346,
+		/* tahomabd.ttf v6.91 from Windows 10 x64, see https://bugzilla.mozilla.org/show_bug.cgi?id=1279925 */
+		1018<<42 | 24572<<21 | 62828,
+		/* sha1sum:b9c84d820c49850d3d27ec498be93955b82772b5  tahoma.ttf from Windows 10 AU */
+		1006<<42 | 24576<<21 | 61352,
+		/* sha1sum:2bdfaab28174bdadd2f3d4200a30a7ae31db79d2  tahomabd.ttf from Windows 10 AU */
+		1018<<42 | 24572<<21 | 62834,
+		/* sha1sum:b0d36cf5a2fbe746a3dd277bffc6756a820807a7  Tahoma.ttf from Mac OS X 10.9 */
+		832<<42 | 7324<<21 | 47162,
+		/* sha1sum:12fc4538e84d461771b30c18b5eb6bd434e30fba  Tahoma Bold.ttf from Mac OS X 10.9 */
+		844<<42 | 7302<<21 | 45474,
+		/* sha1sum:eb8afadd28e9cf963e886b23a30b44ab4fd83acc  himalaya.ttf from Windows 7 */
+		180<<42 | 13054<<21 | 7254,
+		/* sha1sum:73da7f025b238a3f737aa1fde22577a6370f77b0  himalaya.ttf from Windows 8 */
+		192<<42 | 12638<<21 | 7254,
+		/* sha1sum:6e80fd1c0b059bbee49272401583160dc1e6a427  himalaya.ttf from Windows 8.1 */
+		192<<42 | 12690<<21 | 7254,
+		/* 8d9267aea9cd2c852ecfb9f12a6e834bfaeafe44  cantarell-fonts-0.0.21/otf/Cantarell-Regular.otf */
+		/* 983988ff7b47439ab79aeaf9a45bd4a2c5b9d371  cantarell-fonts-0.0.21/otf/Cantarell-Oblique.otf */
+		188<<42 | 248<<21 | 3852,
+		/* 2c0c90c6f6087ffbfea76589c93113a9cbb0e75f  cantarell-fonts-0.0.21/otf/Cantarell-Bold.otf */
+		/* 55461f5b853c6da88069ffcdf7f4dd3f8d7e3e6b  cantarell-fonts-0.0.21/otf/Cantarell-Bold-Oblique.otf */
+		188<<42 | 264<<21 | 3426,
+		/* d125afa82a77a6475ac0e74e7c207914af84b37a padauk-2.80/Padauk.ttf RHEL 7.2 */
+		1058<<42 | 47032<<21 | 11818,
+		/* 0f7b80437227b90a577cc078c0216160ae61b031 padauk-2.80/Padauk-Bold.ttf RHEL 7.2*/
+		1046<<42 | 47030<<21 | 12600,
+		/* d3dde9aa0a6b7f8f6a89ef1002e9aaa11b882290 padauk-2.80/Padauk.ttf Ubuntu 16.04 */
+		1058<<42 | 71796<<21 | 16770,
+		/* 5f3c98ccccae8a953be2d122c1b3a77fd805093f padauk-2.80/Padauk-Bold.ttf Ubuntu 16.04 */
+		1046<<42 | 71790<<21 | 17862,
+		/* 6c93b63b64e8b2c93f5e824e78caca555dc887c7 padauk-2.80/Padauk-book.ttf */
+		1046<<42 | 71788<<21 | 17112,
+		/* d89b1664058359b8ec82e35d3531931125991fb9 padauk-2.80/Padauk-bookbold.ttf */
+		1058<<42 | 71794<<21 | 17514,
+		/* 824cfd193aaf6234b2b4dc0cf3c6ef576c0d00ef padauk-3.0/Padauk-book.ttf */
+		1330<<42 | 109904<<21 | 57938,
+		/* 91fcc10cf15e012d27571e075b3b4dfe31754a8a padauk-3.0/Padauk-bookbold.ttf */
+		1330<<42 | 109904<<21 | 58972,
+		/* sha1sum: c26e41d567ed821bed997e937bc0c41435689e85  Padauk.ttf
+		 *  "Padauk Regular" "Version 2.5", see https://crbug.com/681813 */
+		1004<<42 | 59092<<21 | 14836,
+		/* 88d2006ca084f04af2df1954ed714a8c71e8400f  Courier New.ttf from macOS 15 */
+		588<<42 | 5078<<21 | 14418,
+		/* 608e3ebb6dd1aee521cff08eb07d500a2c59df68  Courier New Bold.ttf from macOS 15 */
+		588<<42 | 5078<<21 | 14238,
+		/* d13221044ff054efd78f1cd8631b853c3ce85676  cour.ttf from Windows 10 */
+		894<<42 | 17162<<21 | 33960,
+		/* 68ed4a22d8067fcf1622ac6f6e2f4d3a2e3ec394  courbd.ttf from Windows 10 */
+		894<<42 | 17154<<21 | 34472,
+		/* 4cdb0259c96b7fd7c103821bb8f08f7cc6b211d7  cour.ttf from Windows 8.1 */
+		816<<42 | 7868<<21 | 17052,
+		/* 920483d8a8ed37f7f0afdabbe7f679aece7c75d8  courbd.ttf from Windows 8.1 */
+		816<<42 | 7868<<21 | 17138:
+		return true
+	}
+	return false
 }
 
 var bhedTag = ot.MustNewTag("bhed")
@@ -468,11 +584,17 @@ func loadVmtx(ld *ot.Loader, numGlyphs int) (*tables.Hhea, tables.Hmtx, error) {
 	return loadHVtmx(rawHead, rawMetrics, numGlyphs)
 }
 
-func loadGDEF(ld *ot.Loader, axisCount int) (tables.GDEF, error) {
+func loadGDEF(ld *ot.Loader, axisCount int, gsub, gpos []byte) (tables.GDEF, error) {
 	raw, err := ld.RawTable(ot.MustNewTag("GDEF"))
 	if err != nil {
 		return tables.GDEF{}, err
 	}
+
+	// Nuke the GDEF tables of to avoid unwanted width-zeroing.
+	if isGDEFBlocklisted(raw, gsub, gpos) {
+		return tables.GDEF{}, nil
+	}
+
 	GDEF, _, err := tables.ParseGDEF(raw)
 	if err != nil {
 		return tables.GDEF{}, err
@@ -487,11 +609,14 @@ func loadGDEF(ld *ot.Loader, axisCount int) (tables.GDEF, error) {
 
 // Face is a font with user-provided settings.
 // Contrary to the [*Font] objects, Faces are NOT safe for concurrent use.
-// A Face caches glyph extents and should be reused when possible.
+// A Face caches glyph extents and rune to glyph mapping, and should be reused when possible.
+//
+// Also note that an empty [Face] is invalid : the [NewFace] constructor is required to properly init caches.
 type Face struct {
 	*Font
 
 	extentsCache extentsCache
+	cmapCache    cache21_19_8
 
 	coords       []tables.Coord
 	xPpem, yPpem uint16
@@ -499,7 +624,24 @@ type Face struct {
 
 // NewFace wraps [font] and initializes glyph caches.
 func NewFace(font *Font) *Face {
-	return &Face{Font: font, extentsCache: make(extentsCache, font.nGlyphs)}
+	out := &Face{Font: font, extentsCache: make(extentsCache, font.nGlyphs)}
+	out.cmapCache.clear()
+	return out
+}
+
+// NominalGlyph returns the glyph used to represent the given rune,
+// or false if not found.
+// Note that it only looks into the cmap, without taking account substitutions
+// nor variation selectors.
+func (f *Face) NominalGlyph(ch rune) (GID, bool) {
+	if g, ok := f.cmapCache.get(uint32(ch)); ok {
+		return GID(g), ok
+	}
+	g, ok := f.Cmap.Lookup(ch)
+	if ok {
+		f.cmapCache.set(uint32(ch), uint32(g))
+	}
+	return g, ok
 }
 
 // Ppem returns the horizontal and vertical pixels-per-em (ppem), used to select bitmap sizes.

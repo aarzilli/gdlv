@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
-//go:build android || (darwin && ios)
-// +build android darwin,ios
+//go:build android || ios
 
 package app
 
@@ -25,6 +24,6 @@ func runMain() {
 		// Indirect call, since the linker does not know the address of main when
 		// laying down this package.
 		fn := mainMain
-		fn()
+		go fn()
 	})
 }

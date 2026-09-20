@@ -297,7 +297,7 @@ func (cg *CompositeGlyph) parseGlyphs(src []byte) error {
 }
 
 // already handled in parseGlyphs
-func (cg *CompositeGlyph) parseInstructions(src []byte) error { return nil }
+func (cg *CompositeGlyph) parseInstructions(_ []byte) error { return nil }
 
 type CompositeGlyphPart struct {
 	Flags      uint16

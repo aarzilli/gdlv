@@ -29,7 +29,7 @@ vec3 transform3x2(m3x2 t, vec3 v)
 
 void main()
 {
-    vec2 p = vec2((pos * _block.transform.xy) + _block.transform.zw);
+    vec2 p = (pos * _block.transform.xy) + _block.transform.zw;
     if (_block.fbo != 0.0)
     {
         m3x2 param = m3x2(vec3(1.0, 0.0, 0.0), vec3(0.0, 1.0, 0.0));

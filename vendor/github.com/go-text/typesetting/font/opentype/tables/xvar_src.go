@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math"
 )
 
 // ------------------------------------ fvar ------------------------------------
@@ -84,6 +85,26 @@ type ItemVarStore struct {
 	ItemVariationDatas  []ItemVariationData `arrayCount:"FirstUint16" offsetsArray:"Offset32"` // [itemVariationDataCount] Offsets in bytes from the start of the item variation store to each item variation data subtable.
 }
 
+// GetDelta uses the variation [store] and the selected instance coordinates [coords]
+// to compute the value at [index].
+func (store ItemVarStore) GetDelta(index VariationStoreIndex, coords []Coord) float32 {
+	if int(index.DeltaSetOuter) >= len(store.ItemVariationDatas) {
+		return 0
+	}
+	varData := store.ItemVariationDatas[index.DeltaSetOuter]
+	if int(index.DeltaSetInner) >= len(varData.DeltaSets) {
+		return 0
+	}
+	deltaSet := varData.DeltaSets[index.DeltaSetInner]
+	var delta float32
+	for i, regionIndex := range varData.RegionIndexes {
+		region := store.VariationRegionList.VariationRegions[regionIndex]
+		v := region.Evaluate(coords)
+		delta += float32(deltaSet[i]) * v
+	}
+	return delta
+}
+
 // AxisCount returns the number of axis found in the
 // var store, which must be the same as the one in the 'fvar' table.
 // It returns -1 if the store is empty
@@ -105,6 +126,16 @@ type VariationRegion struct {
 	RegionAxes []RegionAxisCoordinates // [axisCount]
 }
 
+// Evaluate returns the scalar factor of the region
+func (vr VariationRegion) Evaluate(coords []Coord) float32 {
+	v := float32(1)
+	for axis, coord := range coords {
+		factor := vr.RegionAxes[axis].evaluate(coord)
+		v *= factor
+	}
+	return v
+}
+
 type RegionAxisCoordinates struct {
 	StartCoord Coord // The region start coordinate value for the current axis.
 	PeakCoord  Coord // The region peak coordinate value for the current axis.
@@ -116,11 +147,13 @@ type RegionAxisCoordinates struct {
 func (reg RegionAxisCoordinates) evaluate(coord Coord) float32 {
 	start, peak, end := reg.StartCoord, reg.PeakCoord, reg.EndCoord
 	if peak == 0 || coord == peak {
-		return 1.
+		return 1
+	} else if coord == 0 { // Faster
+		return 0
 	}
 
 	if coord <= start || end <= coord {
-		return 0.
+		return 0
 	}
 
 	// Interpolate
@@ -299,6 +332,11 @@ type HVAR struct {
 	RsbMapping          *DeltaSetMapping `offsetSize:"Offset32"` // Offset in bytes from the start of this table to the delta-set index mapping for right side bearings (may be NULL).
 }
 
+func (t *HVAR) AdvanceDelta(glyph GlyphID, coords []Coord) float32 {
+	index := t.AdvanceWidthMapping.Index(glyph)
+	return t.ItemVariationStore.GetDelta(index, coords)
+}
+
 // VariationStoreIndex reference an item in the variation store
 type VariationStoreIndex struct {
 	DeltaSetOuter, DeltaSetInner uint16
@@ -368,7 +406,18 @@ func (ds *DeltaSetMapping) parseMap(src []byte) error {
 }
 
 // See - https://learn.microsoft.com/fr-fr/typography/opentype/spec/vvar
-type VVAR = HVAR
+type VVAR struct {
+	HVAR
+	VOrgMapping *DeltaSetMapping `offsetSize:"Offset32"` // Offset in bytes from the start of this table to the delta-set index mapping for Y coordinates of vertical origins (may be NULL).
+}
+
+func (vv *VVAR) VorgDelta(glyph GlyphID, coords []Coord) float32 {
+	if vv.VOrgMapping == nil {
+		return 0
+	}
+	varidx := vv.VOrgMapping.Index(glyph)
+	return vv.ItemVariationStore.GetDelta(varidx, coords)
+}
 
 // ------------------------------------ avar ------------------------------------
 
@@ -384,6 +433,108 @@ type SegmentMaps struct {
 	// [positionMapCount]	The array of axis value map records for this axis.
 	// Each axis value map record provides a single axis-value mapping correspondence.
 	AxisValueMaps []AxisValueMap `arrayCount:"FirstUint16"`
+}
+
+func (sm SegmentMaps) Map(value Coord) Coord {
+	// copied from harfbuzz/src/hb-ot-var-avar-table.hh
+
+	l := sm.AxisValueMaps
+
+	// The following special-cases are not part of OpenType, which requires
+	// that at least -1, 0, and +1 must be mapped. But we include these as
+	// part of a better error recovery scheme.
+	if len(l) == 0 {
+		return value
+	} else if len(l) == 1 {
+		return value - l[0].FromCoordinate + l[0].ToCoordinate
+	}
+
+	// At least two mappings now.
+
+	// CoreText is wild...
+	// PingFangUI avar needs all this special-casing...
+	// So we implement an extended version of the spec here,
+	// which is more robust and more likely to be compatible with
+	// the wild.
+
+	const p1 = Coord(1 << 14)
+	const m1 = -p1
+
+	start := 0
+	end := len(l)
+	if l[start].FromCoordinate == m1 && l[start].ToCoordinate == m1 && l[start+1].FromCoordinate == m1 {
+		start++
+	}
+	if l[end-1].FromCoordinate == p1 && l[end-1].ToCoordinate == p1 && l[end-2].FromCoordinate == p1 {
+		end--
+	}
+
+	// Look for exact match first, and do lots of special-casing.
+	var i int
+	for i = start; i < end; i++ {
+		if value == l[i].FromCoordinate {
+			break
+		}
+	}
+	if i < end {
+		// There's at least one exact match. See if there are more.
+		j := i
+		for ; j+1 < end; j++ {
+			if value != l[j+1].FromCoordinate {
+				break
+			}
+		}
+
+		// [i,j] inclusive are all exact matches:
+
+		// If there's only one, return it. This is the only spec-compliant case.
+		if i == j {
+			return l[i].ToCoordinate
+		}
+		// If there's exactly three, return the middle one.
+		if i+2 == j {
+			return l[i+1].ToCoordinate
+		}
+
+		// Ignore the middle ones. Return the one mapping closer to 0.
+		if value < 0 {
+			return l[j].ToCoordinate
+		}
+		if value > 0 {
+			return l[i].ToCoordinate
+		}
+
+		// Mapping 0 ? CoreText seems confused. It seems to prefer 0 here...
+		// So we'll just return the smallest one. lol
+		if abs(l[i].ToCoordinate) < abs(l[j].ToCoordinate) {
+			return l[i].ToCoordinate
+		}
+		return l[j].ToCoordinate
+	}
+
+	// There's at least two and we're not an exact match. Prepare to lerp.
+
+	// Find the segment we're in.
+	for i = start; i < end; i++ {
+		if value < l[i].FromCoordinate {
+			break
+		}
+	}
+
+	if i == 0 {
+		// Value before all segments; Shift.
+		return value - l[0].FromCoordinate + l[0].ToCoordinate
+	}
+	if i == end {
+		// Value after all segments; Shift.
+		return value - l[end-1].FromCoordinate + l[end-1].ToCoordinate
+	}
+
+	// Actually interpolate.
+	before := l[i-1]
+	after := l[i]
+	denom := float64(after.FromCoordinate - before.FromCoordinate) // Can't be zero by now.
+	return before.ToCoordinate + Coord(math.Round(float64(after.ToCoordinate-before.ToCoordinate)*float64(value-before.FromCoordinate))/denom)
 }
 
 type AxisValueMap struct {
@@ -423,4 +574,116 @@ func (mv *MVAR) parseValueRecords(src []byte) error {
 type VarValueRecord struct {
 	ValueTag Tag                 // Four-byte tag identifying a font-wide measure.
 	Index    VariationStoreIndex // A delta-set index — used to select an item variation data subtable within the item variation store.
+}
+
+// ------------------------------------------------- STAT -------------------------------------------------
+
+// STAT is the Style Attributes Table
+// See https://learn.microsoft.com/en-us/typography/opentype/spec/stat
+type STAT struct {
+	majorVersion         uint16         // Major version number of the style attributes table — set to 1.
+	minorVersion         uint16         // Minor version number of the style attributes table — set to 2.
+	designAxisSize       uint16         // The size in bytes of each axis record.
+	designAxisCount      uint16         // The number of axis records. In a font with an 'fvar' table, this value must be greater than or equal to the axisCount value in the 'fvar' table. In all fonts, must be greater than zero if axisValueCount is greater than zero.
+	designAxes           []AxisRecord   `offsetSize:"Offset32" arrayCount:"ComputedField-designAxisCount"` // Offset in bytes from the beginning of the STAT table to the start of the design axes array. If designAxisCount is zero, set to zero; if designAxisCount is greater than zero, must be greater than zero.
+	axisValueCount       uint16         // The number of axis value tables.
+	axisValues           AxisValueArray `offsetSize:"Offset32" arguments:"valuesCount=.axisValueCount"` // Offset in bytes from the beginning of the STAT table to the start of the design axes value offsets array. If axisValueCount is zero, set to zero; if axisValueCount is greater than zero, must be greater than zero.
+	elidedFallbackNameID uint16         // Name ID used as fallback when projection of names into a particular font model produces a subfamily name containing only elidable elements.
+}
+
+func (st *STAT) getAxisIndex(tag Tag) (uint16, bool) {
+	for index, record := range st.designAxes {
+		if record.Tag == tag {
+			return uint16(index), true
+		}
+	}
+	return 0, false
+}
+
+func (st STAT) Value(tag Tag) (float32, bool) {
+	axisIndex, ok := st.getAxisIndex(tag)
+	if !ok {
+		return 0, false
+	}
+
+	for _, axisValue := range st.axisValues.Values {
+		if axisValue.index() == axisIndex {
+			return axisValue.valueFor(axisIndex), true
+		}
+	}
+
+	return 0, false
+}
+
+type AxisRecord struct {
+	Tag      Tag    // A tag identifying the axis of design variation.
+	NameID   NameID // The name ID for entries in the 'name' table that provide a display string for this axis.
+	Ordering uint16 // A value that applications can use to determine primary sorting of face names, or for ordering of labels when composing family or face names.
+}
+
+type AxisValueArray struct {
+	Values []AxisValue `offsetsArray:"Offset16"` // Offset in bytes from the beginning of the STAT table to the start of the design axes value offsets array. If axisValueCount is zero, set to zero; if axisValueCount is greater than zero, must be greater than zero.
+}
+
+type AxisValue interface {
+	name() NameID
+	index() uint16
+	valueFor(index uint16) float32
+}
+
+func (av AxisValue1) name() NameID { return av.valueNameID }
+func (av AxisValue2) name() NameID { return av.valueNameID }
+func (av AxisValue3) name() NameID { return av.valueNameID }
+func (av AxisValue4) name() NameID { return av.valueNameID }
+
+func (av AxisValue1) index() uint16 { return av.axisIndex }
+func (av AxisValue2) index() uint16 { return av.axisIndex }
+func (av AxisValue3) index() uint16 { return av.axisIndex }
+func (av AxisValue4) index() uint16 { return 0xFFFF }
+
+func (av AxisValue1) valueFor(index uint16) float32 { return av.value }
+func (av AxisValue2) valueFor(index uint16) float32 { return av.nominalValue }
+func (av AxisValue3) valueFor(index uint16) float32 { return av.value }
+func (av AxisValue4) valueFor(index uint16) float32 {
+	return av.axisValues[index].value
+}
+
+type AxisValue1 struct {
+	format      uint16    `unionTag:"1"` // Format identifier — set to 1.
+	axisIndex   uint16    // Zero-base index into the axis record array identifying the axis of design variation to which the axis value table applies. Must be less than designAxisCount.
+	flags       uint16    // Flags — see below for details.
+	valueNameID NameID    // The name ID for entries in the 'name' table that provide a display string for this attribute value.
+	value       Float1616 // A numeric value for this attribute value.
+}
+
+type AxisValue2 struct {
+	format        uint16    `unionTag:"2"` // Format identifier — set to 2.
+	axisIndex     uint16    // Zero-base index into the axis record array identifying the axis of design variation to which the axis value table applies. Must be less than designAxisCount.
+	flags         uint16    // Flags — see below for details.
+	valueNameID   NameID    // The name ID for entries in the 'name' table that provide a display string for this attribute value.
+	nominalValue  Float1616 // A nominal numeric value for this attribute value.
+	rangeMinValue Float1616 // The minimum value for a range associated with the specified name ID.
+	rangeMaxValue Float1616 // The maximum value for a range associated with the specified name ID
+}
+
+type AxisValue3 struct {
+	format      uint16    `unionTag:"3"` // Format identifier — set to 3.
+	axisIndex   uint16    // Zero-base index into the axis record array identifying the axis of design variation to which the axis value table applies. Must be less than designAxisCount.
+	flags       uint16    // Flags — see below for details.
+	valueNameID NameID    // The name ID for entries in the 'name' table that provide a display string for this attribute value.
+	value       Float1616 // A numeric value for this attribute value.
+	linkedValue Float1616 // The numeric value for a style-linked mapping from this value.
+}
+
+type AxisValue4 struct {
+	format      uint16            `unionTag:"4"` //	Format identifier — set to 4.
+	axisCount   uint16            // The total number of axes contributing to this axis-values combination.
+	flags       uint16            // Flags — see below for details.
+	valueNameID NameID            // The name ID for entries in the 'name' table that provide a display string for this combination of axis values.
+	axisValues  []AxisValueRecord `arrayCount:"ComputedField-axisCount"` //[axisCount]	Array of AxisValue records that provide the combination of axis values, one for each contributing axis.
+}
+
+type AxisValueRecord struct {
+	axisIndex uint16    //	Zero-base index into the axis record array identifying the axis to which this value applies. Must be less than designAxisCount.
+	value     Float1616 //	A numeric value for this attribute value.
 }

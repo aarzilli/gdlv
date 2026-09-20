@@ -35,6 +35,7 @@ func (run *Output) AddWordSpacing(text []rune, additionalSpacing fixed.Int26_6) 
 		// we have a word separator: add space
 		// we do it by enlarging the separator glyph advance
 		// and distributing space around the glyph content
+		run.Glyphs[i].Advance += additionalSpacing
 		if isVertical {
 			run.Glyphs[i].YAdvance += additionalSpacing
 			run.Glyphs[i].YOffset += additionalSpacing / 2
@@ -64,6 +65,7 @@ func (run *Output) AddLetterSpacing(additionalSpacing fixed.Int26_6, isStartRun,
 
 		// start : apply spacing at boundary only if the run is not the first
 		if startGIdx > 0 || !isStartRun {
+			run.Glyphs[startGIdx].Advance += halfSpacing
 			if isVertical {
 				run.Glyphs[startGIdx].YAdvance += halfSpacing
 				run.Glyphs[startGIdx].YOffset += halfSpacing
@@ -77,6 +79,7 @@ func (run *Output) AddLetterSpacing(additionalSpacing fixed.Int26_6, isStartRun,
 		// end : apply spacing at boundary only if the run is not the last
 		isLastCluster := startGIdx+startGlyph.GlyphCount >= len(run.Glyphs)
 		if !isLastCluster || !isEndRun {
+			run.Glyphs[endGIdx].Advance += halfSpacing
 			if isVertical {
 				run.Glyphs[endGIdx].YAdvance += halfSpacing
 			} else {
@@ -99,6 +102,7 @@ func (run *Output) trimStartLetterSpacing() {
 	}
 	firstG := &run.Glyphs[0]
 	halfSpacing := firstG.startLetterSpacing
+	firstG.Advance -= halfSpacing
 	if run.Direction.IsVertical() {
 		firstG.YAdvance -= halfSpacing
 		firstG.YOffset -= halfSpacing

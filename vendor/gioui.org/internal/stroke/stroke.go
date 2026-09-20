@@ -87,7 +87,7 @@ func (qs *StrokeQuads) lineTo(pt f32.Point) {
 func (qs *StrokeQuads) arc(f1, f2 f32.Point, angle float32) {
 	pen := qs.pen()
 	m, segments := ArcTransform(pen, f1.Add(pen), f2.Add(pen), angle)
-	for i := 0; i < segments; i++ {
+	for range segments {
 		p0 := qs.pen()
 		p1 := m.Transform(p0)
 		p2 := m.Transform(p1)
@@ -327,13 +327,26 @@ func strokePathNorm(p0, p1, p2 f32.Point, t, d float32) f32.Point {
 func rot90CW(p f32.Point) f32.Point { return f32.Pt(+p.Y, -p.X) }
 
 func normPt(p f32.Point, l float32) f32.Point {
-	if (p.X == 0 && p.Y == l) || (p.Y == 0 && p.X == l) {
-		return f32.Point{X: p.X, Y: p.Y}
+	if (p.X == 0 && p.Y == 0) || l == 0 {
+		return f32.Point{}
+	}
+	isVerticalUnit := p.X == 0 && (p.Y == l || p.Y == -l)
+	isHorizontalUnit := p.Y == 0 && (p.X == l || p.X == -l)
+	if isVerticalUnit || isHorizontalUnit {
+		if math.Signbit(float64(l)) {
+			return f32.Point{X: -p.X, Y: -p.Y}
+		} else {
+			return f32.Point{X: p.X, Y: p.Y}
+		}
 	}
 	d := math.Hypot(float64(p.X), float64(p.Y))
 	l64 := float64(l)
 	if math.Abs(d-l64) < 1e-10 {
-		return f32.Point{}
+		if math.Signbit(float64(l)) {
+			return f32.Point{X: -p.X, Y: -p.Y}
+		} else {
+			return f32.Point{X: p.X, Y: p.Y}
+		}
 	}
 	n := float32(l64 / d)
 	return f32.Point{X: p.X * n, Y: p.Y * n}
@@ -348,8 +361,10 @@ func perpDot(p, q f32.Point) float32 {
 }
 
 func angleBetween(n0, n1 f32.Point) float64 {
-	return math.Atan2(float64(n1.Y), float64(n1.X)) -
+	angle := math.Atan2(float64(n1.Y), float64(n1.X)) -
 		math.Atan2(float64(n0.Y), float64(n0.X))
+	// Keep joins on the shortest arc when atan2 wraps at +/-Pi.
+	return math.Remainder(angle, 2*math.Pi)
 }
 
 // strokePathCurv returns the curvature at t, along the quadratic Bézier
@@ -440,7 +455,6 @@ func flattenQuadBezier(qs StrokeQuads, p0, p1, p2 f32.Point, d, flatness float32
 }
 
 func (qs *StrokeQuads) addLine(p0, ctrl, p1 f32.Point, t, d float32) {
-
 	switch i := len(*qs); i {
 	case 0:
 		p0 = p0.Add(strokePathNorm(p0, ctrl, p1, 0, d))
@@ -473,7 +487,6 @@ func quadInterp(p, q f32.Point, t float32) f32.Point {
 // quadBezierSplit returns the pair of triplets (from,ctrl,to) Bézier curve,
 // split before (resp. after) the provided parametric t value.
 func quadBezierSplit(p0, p1, p2 f32.Point, t float32) (f32.Point, f32.Point, f32.Point, f32.Point, f32.Point, f32.Point) {
-
 	var (
 		b0 = p0
 		b1 = quadInterp(p0, p1, t)
@@ -577,12 +590,10 @@ func ArcTransform(p, f1, f2 f32.Point, angle float32) (transform f32.Affine2D, s
 		}
 	}
 
-	var (
-		θ   = angle / float32(segments)
-		ref f32.Affine2D // transform from absolute frame to ellipse-based one
-		rot f32.Affine2D // rotation matrix for each segment
-		inv f32.Affine2D // transform from ellipse-based frame to absolute one
-	)
+	θ := angle / float32(segments)
+	ref := f32.AffineId() // transform from absolute frame to ellipse-based one
+	rot := f32.AffineId() // rotation matrix for each segment
+	inv := f32.AffineId() // transform from ellipse-based frame to absolute one
 	center := f32.Point{
 		X: 0.5 * (f1.X + f2.X),
 		Y: 0.5 * (f1.Y + f2.Y),

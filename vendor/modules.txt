@@ -1,8 +1,8 @@
 # dmitri.shuralyov.com/gpu/mtl v0.0.0-20221208032759-85de2813cf6b
 ## explicit
 dmitri.shuralyov.com/gpu/mtl
-# gioui.org v0.8.0
-## explicit; go 1.21
+# gioui.org v0.10.2
+## explicit; go 1.24.0
 gioui.org/app
 gioui.org/app/internal/windows
 gioui.org/app/internal/xkb
@@ -46,7 +46,7 @@ gioui.org/text
 gioui.org/unit
 gioui.org/widget
 gioui.org/widget/material
-# gioui.org/shader v1.0.8
+# gioui.org/shader v1.0.9
 ## explicit; go 1.16
 gioui.org/shader
 gioui.org/shader/gio
@@ -54,12 +54,12 @@ gioui.org/shader/gio
 ## explicit
 github.com/BurntSushi/xgb
 github.com/BurntSushi/xgb/xproto
-# github.com/aarzilli/nucular v0.0.0-20260813095138-bd24df043b63
+# github.com/aarzilli/nucular v0.0.0-20260919163313-dfefea0307a2
 ## explicit; go 1.25.0
 github.com/aarzilli/nucular
-github.com/aarzilli/nucular/clipboard
 github.com/aarzilli/nucular/command
 github.com/aarzilli/nucular/font
+github.com/aarzilli/nucular/internal/clipboard
 github.com/aarzilli/nucular/label
 github.com/aarzilli/nucular/rect
 github.com/aarzilli/nucular/richtext
@@ -74,8 +74,8 @@ github.com/go-gl/glfw/v3.3/glfw/glfw/deps/mingw
 github.com/go-gl/glfw/v3.3/glfw/glfw/deps/vs2008
 github.com/go-gl/glfw/v3.3/glfw/glfw/include/GLFW
 github.com/go-gl/glfw/v3.3/glfw/glfw/src
-# github.com/go-text/typesetting v0.2.1
-## explicit; go 1.17
+# github.com/go-text/typesetting v0.3.4
+## explicit; go 1.19
 github.com/go-text/typesetting/di
 github.com/go-text/typesetting/font
 github.com/go-text/typesetting/font/cff
@@ -84,10 +84,10 @@ github.com/go-text/typesetting/font/opentype
 github.com/go-text/typesetting/font/opentype/tables
 github.com/go-text/typesetting/fontscan
 github.com/go-text/typesetting/harfbuzz
+github.com/go-text/typesetting/internal/unicodedata
 github.com/go-text/typesetting/language
 github.com/go-text/typesetting/segmenter
 github.com/go-text/typesetting/shaping
-github.com/go-text/typesetting/unicodedata
 # github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0
 ## explicit
 github.com/golang/freetype
@@ -110,12 +110,10 @@ go.starlark.net/internal/spell
 go.starlark.net/resolve
 go.starlark.net/starlark
 go.starlark.net/syntax
-# golang.org/x/exp v0.0.0-20240707233637-46b078467d37
-## explicit; go 1.20
-golang.org/x/exp/constraints
-golang.org/x/exp/slices
-# golang.org/x/exp/shiny v0.0.0-20240707233637-46b078467d37
-## explicit; go 1.18
+# golang.org/x/exp v0.0.0-20250408133849-7e4ce0ab07d0
+## explicit; go 1.23.0
+# golang.org/x/exp/shiny v0.0.0-20250408133849-7e4ce0ab07d0
+## explicit; go 1.23.0
 golang.org/x/exp/shiny/driver
 golang.org/x/exp/shiny/driver/gldriver
 golang.org/x/exp/shiny/driver/internal/drawer
@@ -166,12 +164,18 @@ golang.org/x/mobile/event/paint
 golang.org/x/mobile/event/size
 golang.org/x/mobile/geom
 golang.org/x/mobile/gl
-# golang.org/x/sys v0.22.0
-## explicit; go 1.18
+# golang.org/x/net v0.48.0
+## explicit; go 1.24.0
+golang.org/x/net/idna
+# golang.org/x/sys v0.39.0
+## explicit; go 1.24.0
 golang.org/x/sys/unix
 golang.org/x/sys/windows
+golang.org/x/sys/windows/registry
 # golang.org/x/text v0.35.0
 ## explicit; go 1.25.0
 golang.org/x/text/runes
+golang.org/x/text/secure/bidirule
 golang.org/x/text/transform
 golang.org/x/text/unicode/bidi
+golang.org/x/text/unicode/norm

@@ -32,6 +32,9 @@ type context struct {
 	trashFrame    bool
 	autopos       image.Point
 
+	hasNextClipboard bool
+	nextClipboard    string
+
 	finalCmds command.Buffer
 
 	dockedWindowFocus int
@@ -70,6 +73,12 @@ func (ctx *context) Update() {
 		contextBegin(ctx, ctx.Windows[0].layout)
 		for i := 0; i < len(ctx.Windows); i++ {
 			ctx.Windows[i].began = false
+		}
+		if ctx.hasNextClipboard {
+			ctx.Input.HasClipboard = true
+			ctx.Input.Clipboard = ctx.nextClipboard
+			ctx.hasNextClipboard = false
+			ctx.nextClipboard = ""
 		}
 		ctx.Restack()
 		ctx.FindFocus()
@@ -217,6 +226,8 @@ func (ctx *context) Reset() {
 	in.Mouse.Prev.Y = in.Mouse.Pos.Y
 	in.Mouse.Delta = image.Point{}
 	in.Keyboard.Keys = in.Keyboard.Keys[0:0]
+	in.HasClipboard = false
+	in.Clipboard = ""
 }
 
 func (ctx *context) Restack() {

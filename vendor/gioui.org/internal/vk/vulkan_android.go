@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
 //go:build !nowayland
-// +build !nowayland
 
 package vk
 
@@ -17,6 +16,7 @@ static VkResult vkCreateAndroidSurfaceKHR(PFN_vkCreateAndroidSurfaceKHR f, VkIns
 }
 */
 import "C"
+
 import (
 	"fmt"
 	"unsafe"

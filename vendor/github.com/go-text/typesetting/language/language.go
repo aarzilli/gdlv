@@ -4,6 +4,7 @@ package language
 
 import (
 	"os"
+	"sort"
 	"strings"
 )
 
@@ -49,7 +50,7 @@ func (l Language) Primary() Language {
 }
 
 // SimpleInheritance returns the list of matching language, using simple truncation inheritance.
-// The resulting slice starts with the given whole language.
+// The resulting slice starts with the given whole
 // See http://www.unicode.org/reports/tr35/#Locale_Inheritance for more information.
 func (l Language) SimpleInheritance() []Language {
 	tags := strings.Split(string(l), "-")
@@ -62,7 +63,7 @@ func (l Language) SimpleInheritance() []Language {
 }
 
 // IsDerivedFrom returns `true` if `l` has
-// the `root` as primary language.
+// the `root` as primary
 func (l Language) IsDerivedFrom(root Language) bool { return l.Primary() == root }
 
 // IsUndetermined returns `true` if its primary language is "und".
@@ -155,4 +156,165 @@ func DefaultLanguage() Language {
 	}
 
 	return ""
+}
+
+// LangID is a compact representation of a language
+// this package has orthographic knowledge of.
+//
+// The zero value represents a language not known by the package.
+type LangID uint16
+
+// NewLangID returns the compact index of the given language,
+// or false if it is not supported by this package.
+//
+// Derived languages not exactly supported are mapped to their primary part : for instance,
+// 'fr-be' is mapped to 'fr'
+func NewLangID(l Language) (LangID, bool) {
+	if i, ok := binarySearchLang(l, languagesInfos[:knownLangsCount]); ok {
+		return LangID(i), true
+	}
+	if i, ok := binarySearchLang(l, languagesInfos[knownLangsCount:]); ok {
+		return knownLangsCount + LangID(i), true
+	}
+	return 0, false
+}
+
+func binarySearchLang(l Language, records []languageInfo) (int, bool) {
+	// binary search
+	index := sort.Search(len(records), func(i int) bool {
+		return (records)[i].lang >= l
+	})
+	if index != len(records) && records[index].lang == l { // extact match
+		return index, true
+	}
+	if index == len(records) {
+		index--
+	}
+	// i is the index where l should be :
+	// try to match the primary part
+	root := l.Primary()
+	for ; index >= 0; index-- {
+		entry := records[index]
+		if entry.lang > root { // keep going
+			continue
+		} else if entry.lang < root {
+			// no root match
+			return 0, false
+		} else { // found the root
+			return index, true
+		}
+	}
+	return 0, false
+}
+
+func (lang LangID) Language() Language {
+	if int(lang) >= len(languagesInfos) {
+		return "<invalid language>"
+	}
+	return languagesInfos[lang].lang
+}
+
+// UseScript returns true if 's' is used to to write the language.
+//
+// If nothing is known about the language (including if 'lang' is 0),
+// true will be returned.
+func (lang LangID) UseScript(s Script) bool {
+	if !s.Strong() { // Common and Inherited are never included in the table
+		return true
+	}
+	if lang == 0 || lang >= knownLangsCount {
+		return true
+	}
+	usedScripts := languagesInfos[lang].scripts
+	return usedScripts[0] == s || usedScripts[1] == s || usedScripts[2] == s
+}
+
+// ScriptToLang maps a script to a language that is reasonably
+// representative of the script. This will usually be the
+// most widely spoken or used language written in that script:
+// for instance, the sample language for `Cyrillic`
+// is 'ru' (Russian), the sample language for `Arabic` is 'ar'.
+//
+// For some scripts, no sample language will be returned because there
+// is no language that is sufficiently representative. The best
+// example of this is `Han`, where various different
+// variants of written Chinese, Japanese, and Korean all use
+// significantly different sets of Han characters and forms
+// of shared characters. No sample language can be provided
+// for many historical scripts as well.
+//
+// inspired by pango/pango-language.c
+var ScriptToLang = map[Script]LangID{
+	Arabic:   LangAr,
+	Armenian: LangHy,
+	Bengali:  LangBn,
+	// Used primarily in Taiwan, but not part of the standard
+	// zh-tw orthography
+	Bopomofo: 0,
+	Cherokee: LangChr,
+	Coptic:   LangCop,
+	Cyrillic: LangRu,
+	// Deseret was used to write English
+	Deseret:    0,
+	Devanagari: LangHi,
+	Ethiopic:   LangAm,
+	Georgian:   LangKa,
+	Gothic:     0,
+	Greek:      LangEl,
+	Gujarati:   LangGu,
+	Gurmukhi:   LangPa,
+	Han:        0,
+	Hangul:     LangKo,
+	Hebrew:     LangHe,
+	Hiragana:   LangJa,
+	Kannada:    LangKn,
+	Katakana:   LangJa,
+	Khmer:      LangKm,
+	Lao:        LangLo,
+	Latin:      LangEn,
+	Malayalam:  LangMl,
+	Mongolian:  LangMn,
+	Myanmar:    LangMy,
+	// Ogham was used to write old Irish
+	Ogham:               0,
+	Old_Italic:          0,
+	Oriya:               LangOr,
+	Runic:               0,
+	Sinhala:             LangSi,
+	Syriac:              LangSyr,
+	Tamil:               LangTa,
+	Telugu:              LangTe,
+	Thaana:              LangDv,
+	Thai:                LangTh,
+	Tibetan:             LangBo,
+	Canadian_Aboriginal: LangIu,
+	Yi:                  0,
+	Tagalog:             LangTl,
+	// Phillipino Languages/scripts
+	Hanunoo:  LangHnn,
+	Buhid:    LangBku,
+	Tagbanwa: LangTbw,
+
+	Braille: 0,
+	Cypriot: 0,
+	Limbu:   0,
+	// Used for Somali (so) in the past
+	Osmanya: 0,
+	// The Shavian alphabet was designed for English
+	Shavian:  0,
+	Linear_B: 0,
+	Tai_Le:   0,
+	Ugaritic: LangUga,
+
+	New_Tai_Lue: 0,
+	Buginese:    LangBug,
+	// The original script for Old Church Slavonic (chu), later
+	// written with Cyrillic
+	Glagolitic: 0,
+	// Used for for Berber (ber), but Arabic script is more common
+	Tifinagh:     0,
+	Syloti_Nagri: LangSyl,
+	Old_Persian:  LangPeo,
+
+	Nko: LangNqo,
 }

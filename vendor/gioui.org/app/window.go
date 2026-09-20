@@ -439,15 +439,13 @@ func (c *callbacks) EditorState() editorState {
 
 func (c *callbacks) SetComposingRegion(r key.Range) {
 	c.w.imeState.compose = r
+	c.w.driver.ProcessEvent(key.CompositionEvent(r))
 }
 
 func (c *callbacks) EditorInsert(text string) {
 	sel := c.w.imeState.Selection.Range
 	c.EditorReplace(sel, text)
-	start := sel.Start
-	if sel.End < start {
-		start = sel.End
-	}
+	start := min(sel.End, sel.Start)
 	sel.Start = start + utf8.RuneCountInString(text)
 	sel.End = sel.Start
 	c.SetEditorSelection(sel)
@@ -969,6 +967,15 @@ func CustomRenderer(custom bool) Option {
 func Decorated(enabled bool) Option {
 	return func(_ unit.Metric, cnf *Config) {
 		cnf.Decorated = enabled
+	}
+}
+
+// TopMost windows will be rendered above all other non-top-most windows.
+//
+// TopMost windows are supported on macOS, Windows.
+func TopMost(enabled bool) Option {
+	return func(_ unit.Metric, cnf *Config) {
+		cnf.TopMost = enabled
 	}
 }
 

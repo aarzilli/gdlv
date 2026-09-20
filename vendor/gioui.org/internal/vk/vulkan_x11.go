@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
 //go:build ((linux && !android) || freebsd) && !nox11
-// +build linux,!android freebsd
-// +build !nox11
 
 package vk
 
@@ -17,6 +15,7 @@ static VkResult vkCreateXlibSurfaceKHR(PFN_vkCreateXlibSurfaceKHR f, VkInstance 
 }
 */
 import "C"
+
 import (
 	"fmt"
 	"unsafe"

@@ -5,6 +5,7 @@ package input
 import (
 	"image"
 	"io"
+	"slices"
 	"strings"
 	"time"
 
@@ -62,7 +63,8 @@ type Router struct {
 // Source implements the interface between a Router and user interface widgets.
 // The zero-value Source is disabled.
 type Source struct {
-	r *Router
+	r        *Router
+	disabled bool
 }
 
 // Command represents a request such as moving the focus, or initiating a clipboard read.
@@ -107,7 +109,12 @@ const (
 type SemanticID uint
 
 // SystemEvent is a marker for events that have platform specific
-// side-effects. SystemEvents are never matched by catch-all filters.
+// side-effects. SystemEvents are never matched by catch-all filters;
+// only filters that explicitly match the event, such as a
+// [gioui.org/io/key.Filter] with a non-empty Name, receive them.
+// [gioui.org/app.Window] uses SystemEvent for keys reserved for focus
+// navigation: Tab and Shift-Tab, and on mobile the arrow keys. If no
+// handler matches such an event, the window moves focus instead.
 type SystemEvent struct {
 	Event event.Event
 }
@@ -171,30 +178,38 @@ func (q *Router) Source() Source {
 
 // Execute a command.
 func (s Source) Execute(c Command) {
-	if !s.enabled() {
+	if !s.Enabled() {
 		return
 	}
 	s.r.execute(c)
 }
 
-// enabled reports whether the source is enabled. Only enabled
-// Sources deliver events and respond to commands.
-func (s Source) enabled() bool {
-	return s.r != nil
+// Disabled returns a copy of this source that don't deliver any events.
+func (s Source) Disabled() Source {
+	s2 := s
+	s2.disabled = true
+	return s2
+}
+
+// Enabled reports whether the source is enabled. Only enabled
+// Sources deliver events.
+func (s Source) Enabled() bool {
+	return s.r != nil && !s.disabled
 }
 
 // Focused reports whether tag is focused, according to the most recent
 // [key.FocusEvent] delivered.
 func (s Source) Focused(tag event.Tag) bool {
-	if !s.enabled() {
+	if !s.Enabled() {
 		return false
 	}
 	return s.r.state().keyState.focus == tag
 }
 
 // Event returns the next event that matches at least one of filters.
+// If the source is disabled, no events will be reported.
 func (s Source) Event(filters ...event.Filter) (event.Event, bool) {
-	if !s.enabled() {
+	if !s.Enabled() {
 		return nil, false
 	}
 	return s.r.Event(filters...)
@@ -293,7 +308,7 @@ func (q *Router) Event(filters ...event.Filter) (event.Event, bool) {
 				}
 			}
 			if match {
-				change.events = append(change.events[:j], change.events[j+1:]...)
+				change.events = slices.Delete(change.events, j, j+1)
 				// Fast forward state to last matched.
 				q.collapseState(i)
 				return evt.event, true
@@ -409,7 +424,7 @@ func (f *filter) Merge(f2 filter) {
 
 func (f *filter) Matches(e event.Event) bool {
 	switch e.(type) {
-	case key.FocusEvent, key.SnippetEvent, key.EditEvent, key.SelectionEvent:
+	case key.FocusEvent, key.SnippetEvent, key.EditEvent, key.SelectionEvent, key.CompositionEvent:
 		return f.focusable
 	default:
 		return f.pointer.Matches(e)
@@ -448,6 +463,13 @@ func (q *Router) processEvent(e event.Event, system bool) {
 				e.End = r.End
 			}
 		}
+		var evts []taggedEvent
+		if f := state.focus; f != nil {
+			evts = append(evts, taggedEvent{tag: f, event: e})
+		}
+		q.changeState(e, state, evts)
+	case key.CompositionEvent:
+		e = key.CompositionEvent(rangeNorm(key.Range(e)))
 		var evts []taggedEvent
 		if f := state.focus; f != nil {
 			evts = append(evts, taggedEvent{tag: f, event: e})
@@ -618,11 +640,11 @@ func (q *Router) RevealFocus(viewport image.Rectangle) {
 	viewport = q.pointer.queue.ClipFor(area, viewport)
 
 	topleft := bounds.Min.Sub(viewport.Min)
-	topleft = max(topleft, bounds.Max.Sub(viewport.Max))
-	topleft = min(image.Pt(0, 0), topleft)
+	topleft = maxPoint(topleft, bounds.Max.Sub(viewport.Max))
+	topleft = minPoint(image.Pt(0, 0), topleft)
 	bottomright := bounds.Max.Sub(viewport.Max)
-	bottomright = min(bottomright, bounds.Min.Sub(viewport.Min))
-	bottomright = max(image.Pt(0, 0), bottomright)
+	bottomright = minPoint(bottomright, bounds.Min.Sub(viewport.Min))
+	bottomright = maxPoint(image.Pt(0, 0), bottomright)
 	s := topleft
 	if s.X == 0 {
 		s.X = bottomright.X
@@ -649,7 +671,7 @@ func (q *Router) ScrollFocus(dist image.Point) {
 	}))
 }
 
-func max(p1, p2 image.Point) image.Point {
+func maxPoint(p1, p2 image.Point) image.Point {
 	m := p1
 	if p2.X > m.X {
 		m.X = p2.X
@@ -660,7 +682,7 @@ func max(p1, p2 image.Point) image.Point {
 	return m
 }
 
-func min(p1, p2 image.Point) image.Point {
+func minPoint(p1, p2 image.Point) image.Point {
 	m := p1
 	if p2.X < m.X {
 		m.X = p2.X
@@ -769,13 +791,15 @@ func (q *Router) collect() {
 	pc.Reset()
 	kq := &q.key.queue
 	q.key.queue.Reset()
-	var t f32.Affine2D
+	t := f32.AffineId()
 	for encOp, ok := q.reader.Decode(); ok; encOp, ok = q.reader.Decode() {
 		switch ops.OpType(encOp.Data[0]) {
 		case ops.TypeSave:
 			id := ops.DecodeSave(encOp.Data)
 			if extra := id - len(q.savedTrans) + 1; extra > 0 {
-				q.savedTrans = append(q.savedTrans, make([]f32.Affine2D, extra)...)
+				for range extra {
+					q.savedTrans = append(q.savedTrans, f32.AffineId())
+				}
 			}
 			q.savedTrans[id] = t
 		case ops.TypeLoad:

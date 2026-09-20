@@ -4,6 +4,7 @@ package input
 
 import (
 	"image"
+	"slices"
 	"sort"
 
 	"gioui.org/f32"
@@ -17,6 +18,7 @@ type EditorState struct {
 		Transform f32.Affine2D
 		key.Range
 		key.Caret
+		CompositionBounds image.Rectangle
 	}
 	Snippet key.Snippet
 }
@@ -280,6 +282,7 @@ func (q *keyQueue) Focus(handlers map[event.Tag]*handler, state keyState, focus 
 		return state, nil
 	}
 	state.content = EditorState{}
+	state.content.Selection.Transform = f32.AffineId()
 	var evts []taggedEvent
 	if state.focus != nil {
 		evts = append(evts, taggedEvent{tag: state.focus, event: key.FocusEvent{Focus: false}})
@@ -304,10 +307,8 @@ func (s keyState) softKeyboard(show bool) keyState {
 }
 
 func (k *keyFilter) Add(f key.Filter) {
-	for _, f2 := range *k {
-		if f == f2 {
-			return
-		}
+	if slices.Contains(*k, f) {
+		return
 	}
 	*k = append(*k, f)
 }
@@ -332,6 +333,7 @@ func (q *keyQueue) setSelection(state keyState, req key.SelectionCmd) keyState {
 	}
 	state.content.Selection.Range = req.Range
 	state.content.Selection.Caret = req.Caret
+	state.content.Selection.CompositionBounds = req.CompositionBounds
 	return state
 }
 

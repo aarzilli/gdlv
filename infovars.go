@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/aarzilli/nucular"
-	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
@@ -507,7 +506,7 @@ func showExprMenu(parentw *nucular.Window, exprMenuIdx int, v *Variable, ed *ric
 
 	if ed.Sel.S != ed.Sel.E {
 		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
-			clipboard.Set(ed.Get(ed.Sel))
+			w.SetClipboard(ed.Get(ed.Sel))
 		}
 	}
 

@@ -336,6 +336,7 @@ func unpackDeltas(data []byte, pointNumbersCount int) ([]int16, error) {
 // update `points` in place
 func (gvar gvar) applyDeltasToPoints(glyph gID, coords []VarCoord, points []contourPoint) {
 	// adapted from harfbuzz/src/hb-ot-var-gvar-table.hh
+	const phantomOnly = false
 
 	if int(glyph) >= len(gvar.variations) { // should not happend
 		return
@@ -345,13 +346,6 @@ func (gvar gvar) applyDeltasToPoints(glyph gID, coords []VarCoord, points []cont
 	origPoints := append([]contourPoint(nil), points...)
 	// flag is used to indicate referenced point
 	deltas := make([]contourPoint, len(points))
-
-	var endPoints []int // index into points
-	for i, p := range points {
-		if p.isEndPoint {
-			endPoints = append(endPoints, i)
-		}
-	}
 
 	varData := gvar.variations[glyph]
 	for _, tuple := range varData {
@@ -379,59 +373,69 @@ func (gvar gvar) applyDeltasToPoints(glyph gID, coords []VarCoord, points []cont
 		}
 
 		/* infer deltas for unreferenced points */
-		startPoint := 0
-		for _, endPoint := range endPoints {
-			// check the number of unreferenced points in a contour.
-			// If no unref points or no ref points, nothing to do.
-			unrefCount := 0
-			for _, p := range deltas[startPoint : endPoint+1] {
-				if !p.isExplicit {
-					unrefCount++
-				}
-			}
-			j := startPoint
-			if unrefCount == 0 || unrefCount > endPoint-startPoint {
-				goto noMoreGaps
-			}
-
+		if !applyToAll && !phantomOnly {
+			startPoint, endPoint := 0, 0
 			for {
-				/* Locate the next gap of unreferenced points between two referenced points prev and next.
-				 * Note that a gap may wrap around at left (startPoint) and/or at right (endPoint).
-				 */
-				var prev, next, i int
-				for {
-					i = j
-					j = nextIndex(i, startPoint, endPoint)
-					if deltas[i].isExplicit && !deltas[j].isExplicit {
-						break
+				for endPoint < len(points) && !points[endPoint].isEndPoint {
+					endPoint++
+				}
+				if endPoint == len(points) {
+					break
+				}
+
+				// check the number of unreferenced points in a contour.
+				// If no unref points or no ref points, nothing to do.
+				unrefCount := 0
+				for _, p := range deltas[startPoint : endPoint+1] {
+					if !p.isExplicit {
+						unrefCount++
 					}
 				}
-				prev, j = i, i
+				j := startPoint
+				if unrefCount == 0 || unrefCount > endPoint-startPoint {
+					goto noMoreGaps
+				}
+
 				for {
-					i = j
-					j = nextIndex(i, startPoint, endPoint)
-					if !deltas[i].isExplicit && deltas[j].isExplicit {
-						break
+					/* Locate the next gap of unreferenced points between two referenced points prev and next.
+					 * Note that a gap may wrap around at left (startPoint) and/or at right (endPoint).
+					 */
+					var prev, next, i int
+					for {
+						i = j
+						j = nextIndex(i, startPoint, endPoint)
+						if deltas[i].isExplicit && !deltas[j].isExplicit {
+							break
+						}
+					}
+					prev, j = i, i
+					for {
+						i = j
+						j = nextIndex(i, startPoint, endPoint)
+						if !deltas[i].isExplicit && deltas[j].isExplicit {
+							break
+						}
+					}
+					next = j
+					/* Infer deltas for all unref points in the gap between prev and next */
+					i = prev
+					for {
+						i = nextIndex(i, startPoint, endPoint)
+						if i == next {
+							break
+						}
+						deltas[i].X = inferDelta(origPoints[i].X, origPoints[prev].X, origPoints[next].X, deltas[prev].X, deltas[next].X)
+						deltas[i].Y = inferDelta(origPoints[i].Y, origPoints[prev].Y, origPoints[next].Y, deltas[prev].Y, deltas[next].Y)
+						unrefCount--
+						if unrefCount == 0 {
+							goto noMoreGaps
+						}
 					}
 				}
-				next = j
-				/* Infer deltas for all unref points in the gap between prev and next */
-				i = prev
-				for {
-					i = nextIndex(i, startPoint, endPoint)
-					if i == next {
-						break
-					}
-					deltas[i].X = inferDelta(origPoints[i].X, origPoints[prev].X, origPoints[next].X, deltas[prev].X, deltas[next].X)
-					deltas[i].Y = inferDelta(origPoints[i].Y, origPoints[prev].Y, origPoints[next].Y, deltas[prev].Y, deltas[next].Y)
-					unrefCount--
-					if unrefCount == 0 {
-						goto noMoreGaps
-					}
-				}
+			noMoreGaps:
+				startPoint = endPoint + 1
+				endPoint = startPoint
 			}
-		noMoreGaps:
-			startPoint = endPoint + 1
 		}
 
 		// apply specified / inferred deltas to points
@@ -469,21 +473,6 @@ func inferDelta(targetVal, prevVal, nextVal, prevDelta, nextDelta float32) float
 	// linear interpolation
 	r := (targetVal - prevVal) / (nextVal - prevVal)
 	return prevDelta + r*(nextDelta-prevDelta)
-}
-
-// ------------------------------ hvar/vvar ------------------------------
-
-func getAdvanceDeltaUnscaled(t *tables.HVAR, glyph tables.GlyphID, coords []VarCoord) float32 {
-	index := t.AdvanceWidthMapping.Index(glyph)
-	return t.ItemVariationStore.GetDelta(index, coords)
-}
-
-func getLsbDeltaUnscaled(t *tables.HVAR, glyph tables.GlyphID, coords []VarCoord) float32 {
-	if t.LsbMapping == nil {
-		return 0
-	}
-	index := t.LsbMapping.Index(glyph)
-	return t.ItemVariationStore.GetDelta(index, coords)
 }
 
 func sanitizeGDEF(table tables.GDEF, axisCount int) error {
@@ -593,8 +582,6 @@ func (fv fvar) normalizeCoordinates(coords []float32) []VarCoord {
 //
 // This method panics if `coords` has not the correct length, that is the number of axis inf 'fvar'.
 func (f *Font) NormalizeVariations(coords []float32) []VarCoord {
-	// ported from freetype2
-
 	// Axis normalization is a two-stage process.  First we normalize
 	// based on the [min,def,max] values for the axis to be [-1,0,1].
 	// Then, if there's an `avar' table, we renormalize this range.
@@ -602,16 +589,7 @@ func (f *Font) NormalizeVariations(coords []float32) []VarCoord {
 
 	// now applying 'avar'
 	for i, av := range f.avar.AxisSegmentMaps {
-		l := av.AxisValueMaps
-		for j := 1; j < len(l); j++ {
-			previous, pair := l[j-1], l[j]
-			if normalized[i] < pair.FromCoordinate {
-
-				normalized[i] = previous.ToCoordinate + VarCoord(math.Round(float64(normalized[i]-previous.FromCoordinate)*
-					float64(pair.ToCoordinate-previous.ToCoordinate)/float64(pair.FromCoordinate-previous.FromCoordinate)))
-				break
-			}
-		}
+		normalized[i] = av.Map(normalized[i])
 	}
 
 	return normalized

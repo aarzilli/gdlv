@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
 //go:build ((linux && !android) || freebsd) && !nowayland
-// +build linux,!android freebsd
-// +build !nowayland
 
 package vk
 
@@ -19,6 +17,7 @@ static VkResult vkCreateWaylandSurfaceKHR(PFN_vkCreateWaylandSurfaceKHR f, VkIns
 }
 */
 import "C"
+
 import (
 	"fmt"
 	"unsafe"

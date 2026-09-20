@@ -31,8 +31,10 @@ type KeyboardInput struct {
 }
 
 type Input struct {
-	Keyboard KeyboardInput
-	Mouse    MouseInput
+	Keyboard     KeyboardInput
+	Mouse        MouseInput
+	HasClipboard bool
+	Clipboard    string
 
 	activateEditor interface{}
 	activateWindow *Window

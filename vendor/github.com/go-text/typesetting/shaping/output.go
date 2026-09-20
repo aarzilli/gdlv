@@ -26,11 +26,19 @@ type Glyph struct {
 	// YBearing is the distance between the dot (with offset applied) and
 	// the top of the glyph content, typically positive
 	YBearing fixed.Int26_6
+	// Advance is the distance between the current dot (without offset applied) and the next dot.
+	// It is typically positive for horizontal text, and negative for vertical text.
+	Advance fixed.Int26_6
+
 	// XAdvance is the distance between the current dot (without offset applied) and the next dot.
 	// It is typically positive for horizontal text, and always zero for vertical text.
+	//
+	// Deprecated: Use Advance instead.
 	XAdvance fixed.Int26_6
 	// YAdvance is the distance between the current dot (without offset applied) and the next dot.
 	// It is typically negative for vertical text, and always zero for horizontal text.
+	//
+	// Deprecated: Use Advance instead.
 	YAdvance fixed.Int26_6
 
 	// Offsets to be applied to the dot before actually drawing
@@ -43,11 +51,17 @@ type Glyph struct {
 	// this glyph cluster. All glyphs sharing the same cluster value
 	// are part of the same cluster and will have identical RuneCount
 	// and GlyphCount fields.
+	//
+	// Deprecated: Use TextIndex() instead.
 	ClusterIndex int
 	// RuneCount is the number of input runes shaped into this output
 	// glyph cluster.
+	//
+	// Deprecated: Use RunesCount() instead.
 	RuneCount int
 	// GlyphCount is the number of glyphs in this output glyph cluster.
+	//
+	// Deprecated: Use GlyphsCount() instead.
 	GlyphCount int
 	GlyphID    font.GID
 	Mask       uint32
@@ -58,6 +72,19 @@ type Glyph struct {
 	// and will trim [startLetterSpacing] at the start of the lines
 	startLetterSpacing, endLetterSpacing fixed.Int26_6
 }
+
+// TextIndex is the lowest rune index of all runes shaped into
+// this glyph cluster. All glyphs sharing the same cluster value
+// are part of the same cluster and will have identical RunesCount
+// and GlyphsCount values.
+func (g Glyph) TextIndex() int { return g.ClusterIndex }
+
+// RuneCount is the number of input runes shaped into this output
+// glyph cluster.
+func (g Glyph) RunesCount() int { return g.RuneCount }
+
+// GlyphsCount is the number of glyphs in this output glyph cluster.
+func (g Glyph) GlyphsCount() int { return g.GlyphCount }
 
 // LeftSideBearing returns the distance from the glyph's X origin to
 // its leftmost edge. This value can be negative if the glyph extends
@@ -70,7 +97,7 @@ func (g Glyph) LeftSideBearing() fixed.Int26_6 {
 // the edge of the glyph's advance. This value can be negative if the glyph's
 // right edge is after the end of its advance.
 func (g Glyph) RightSideBearing() fixed.Int26_6 {
-	return g.XAdvance - g.Width - g.XBearing
+	return g.Advance - g.Width - g.XBearing
 }
 
 // Bounds describes the minor-axis bounds of a line of text. In a LTR or RTL
@@ -169,14 +196,8 @@ func (o *Output) FromFontUnit(v float32) fixed.Int26_6 {
 // and can be used to speed up line wrapping logic.
 func (o *Output) RecomputeAdvance() {
 	advance := fixed.Int26_6(0)
-	if o.Direction.IsVertical() {
-		for _, g := range o.Glyphs {
-			advance += g.YAdvance
-		}
-	} else { // horizontal
-		for _, g := range o.Glyphs {
-			advance += g.XAdvance
-		}
+	for _, g := range o.Glyphs {
+		advance += g.Advance
 	}
 	o.Advance = advance
 }
@@ -204,11 +225,11 @@ func (o *Output) advanceSpaceAware(paragraphDir di.Direction) fixed.Int26_6 {
 	}
 	if o.Direction.IsVertical() {
 		if lastG.Height == 0 {
-			return o.Advance - lastG.YAdvance
+			return o.Advance - lastG.Advance
 		}
 	} else { // horizontal
 		if lastG.Width == 0 {
-			return o.Advance - lastG.XAdvance
+			return o.Advance - lastG.Advance
 		}
 	}
 	return o.Advance - lastG.endLetterSpacing
@@ -228,7 +249,7 @@ func (o *Output) RecalculateAll() {
 	if o.Direction.IsVertical() {
 		for i := range o.Glyphs {
 			g := &o.Glyphs[i]
-			advance += g.YAdvance
+			advance += g.Advance
 			depth := g.XOffset + g.XBearing // start of the glyph
 			if depth < descent {
 				descent = depth
@@ -241,7 +262,7 @@ func (o *Output) RecalculateAll() {
 	} else { // horizontal
 		for i := range o.Glyphs {
 			g := &o.Glyphs[i]
-			advance += g.XAdvance
+			advance += g.Advance
 			height := g.YBearing + g.YOffset
 			if height > ascent {
 				ascent = height
@@ -276,8 +297,7 @@ func (out *Output) sideways() {
 		out.Glyphs[i].XBearing = g.YBearing + g.Height
 		out.Glyphs[i].YBearing = g.Width
 		// switch advance direction
-		out.Glyphs[i].XAdvance = 0
-		out.Glyphs[i].YAdvance = -g.XAdvance // YAdvance is negative
+		out.Glyphs[i].Advance = -g.Advance // Advance for vertical text is negative
 		// apply a rotation around the dot, and position the glyph
 		// below the dot
 		out.Glyphs[i].XOffset = g.YOffset

@@ -12,6 +12,7 @@ import android.app.Fragment;
 import android.app.FragmentManager;
 import android.app.FragmentTransaction;
 import android.content.Context;
+import android.content.Intent;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
@@ -61,7 +62,6 @@ public final class GioView extends SurfaceView implements Choreographer.FrameCal
 	private static boolean jniLoaded;
 
 	private final SurfaceHolder.Callback surfCallbacks;
-	private final View.OnFocusChangeListener focusCallback;
 	private final InputMethodManager imm;
 	private final float scrollXScale;
 	private final float scrollYScale;
@@ -113,12 +113,6 @@ public final class GioView extends SurfaceView implements Choreographer.FrameCal
 		nhandle = onCreateView(this);
 		setFocusable(true);
 		setFocusableInTouchMode(true);
-		focusCallback = new View.OnFocusChangeListener() {
-			@Override public void onFocusChange(View v, boolean focus) {
-				GioView.this.onFocusChange(nhandle, focus);
-			}
-		};
-		setOnFocusChangeListener(focusCallback);
 		surfCallbacks = new SurfaceHolder.Callback() {
 			@Override public void surfaceCreated(SurfaceHolder holder) {
 				// Ignore; surfaceChanged is guaranteed to be called immediately after this.
@@ -315,6 +309,15 @@ public final class GioView extends SurfaceView implements Choreographer.FrameCal
 		window.setAttributes(layoutParams);
 	}
 
+	protected void onIntentEvent(Intent intent) {
+		if (intent == null) {
+			return;
+		}
+		if (intent.getData() != null) {
+			this.onOpenURI(nhandle, intent.getData().toString());
+		}
+	}
+
 	@Override protected boolean dispatchHoverEvent(MotionEvent event) {
 		if (!accessManager.isTouchExplorationEnabled()) {
 			return super.dispatchHoverEvent(event);
@@ -472,6 +475,18 @@ public final class GioView extends SurfaceView implements Choreographer.FrameCal
 		}
 	}
 
+	public void pause() {
+		if (nhandle != 0) {
+		    onFocusChange(nhandle, false);
+        }
+	}
+
+	public void resume() {
+		if (nhandle != 0) {
+		    onFocusChange(nhandle, true);
+        }
+	}
+
 	public void destroy() {
 		if (nhandle != 0) {
 			onDestroyView(nhandle);
@@ -553,6 +568,7 @@ public final class GioView extends SurfaceView implements Choreographer.FrameCal
 	static private native void onExitTouchExploration(long handle);
 	static private native void onA11yFocus(long handle, int viewId);
 	static private native void onClearA11yFocus(long handle, int viewId);
+	static private native void onOpenURI(long handle, String uri);
 	static private native void imeSetSnippet(long handle, int start, int end);
 	static private native String imeSnippet(long handle);
 	static private native int imeSnippetStart(long handle);

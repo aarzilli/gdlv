@@ -61,12 +61,8 @@ func (h *Hover) Update(q input.Source) bool {
 				h.entered = false
 			}
 		case pointer.Enter:
-			if !h.entered {
-				h.pid = e.PointerID
-			}
-			if h.pid == e.PointerID {
-				h.entered = true
-			}
+			h.pid = e.PointerID
+			h.entered = true
 		}
 	}
 	return h.entered
@@ -222,12 +218,7 @@ func (c *Click) Update(q input.Source) (ClickEvent, bool) {
 			if e.Source == pointer.Mouse && e.Buttons != pointer.ButtonPrimary {
 				break
 			}
-			if !c.hovered {
-				c.pid = e.PointerID
-			}
-			if c.pid != e.PointerID {
-				break
-			}
+			c.pid = e.PointerID
 			c.pressed = true
 			if e.Time-c.clickedAt < doubleClickDuration {
 				c.clicks++
@@ -322,6 +313,8 @@ func (s *Scroll) Update(cfg unit.Metric, q input.Source, t time.Time, axis Axis,
 				s.scroll += e.Scroll.X
 			case Vertical:
 				s.scroll += e.Scroll.Y
+			case Both:
+				s.scroll += e.Scroll.X + e.Scroll.Y
 			}
 			iscroll := int(s.scroll)
 			s.scroll -= float32(iscroll)
@@ -353,10 +346,15 @@ func (s *Scroll) Update(cfg unit.Metric, q input.Source, t time.Time, axis Axis,
 }
 
 func (s *Scroll) val(axis Axis, p f32.Point) float32 {
-	if axis == Horizontal {
+	switch axis {
+	case Horizontal:
 		return p.X
-	} else {
+	case Vertical:
 		return p.Y
+	case Both:
+		return p.X + p.Y
+	default:
+		return 0
 	}
 }
 

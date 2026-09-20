@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
 //go:build linux || freebsd
-// +build linux freebsd
 
 package vk
 
@@ -385,12 +384,12 @@ static VkResult vkQueuePresentKHR(PFN_vkQueuePresentKHR f, VkQueue queue, const 
 }
 */
 import "C"
+
 import (
 	"errors"
 	"fmt"
 	"image"
 	"math"
-	"reflect"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -1167,7 +1166,6 @@ func CreateFramebuffer(d Device, rp RenderPass, view ImageView, width, height in
 		return nilFramebuffer, fmt.Errorf("vulkan: vkCreateFramebuffer: %w", err)
 	}
 	return fbo, nil
-
 }
 
 func DestroyFramebuffer(d Device, f Framebuffer) {
@@ -1343,10 +1341,8 @@ func CmdPipelineBarrier(cmdBuf CommandBuffer, srcStage, dstStage PipelineStageFl
 }
 
 func CmdPushConstants(cmdBuf CommandBuffer, layout PipelineLayout, stages ShaderStageFlags, offset int, data []byte) {
-	if len(data) == 0 {
-		return
-	}
-	C.vkCmdPushConstants(funcs.vkCmdPushConstants, cmdBuf, layout, stages, C.uint32_t(offset), C.uint32_t(len(data)), unsafe.Pointer(&data[0]))
+	C.vkCmdPushConstants(funcs.vkCmdPushConstants, cmdBuf, layout, stages, C.uint32_t(offset), C.uint32_t(len(data)),
+		unsafe.Pointer(unsafe.SliceData(data)))
 }
 
 func CmdBindPipeline(cmdBuf CommandBuffer, bindPoint PipelineBindPoint, pipe Pipeline) {
@@ -1536,11 +1532,10 @@ func DestroyBuffer(d Device, buf Buffer) {
 }
 
 func CreateShaderModule(d Device, spirv string) (ShaderModule, error) {
-	ptr := unsafe.Pointer((*reflect.StringHeader)(unsafe.Pointer(&spirv)).Data)
 	inf := C.VkShaderModuleCreateInfo{
 		sType:    C.VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,
 		codeSize: C.size_t(len(spirv)),
-		pCode:    (*C.uint32_t)(ptr),
+		pCode:    (*C.uint32_t)(unsafe.Pointer(unsafe.StringData(spirv))),
 	}
 
 	var mod C.VkShaderModule

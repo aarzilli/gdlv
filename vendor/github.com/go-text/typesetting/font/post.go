@@ -4,7 +4,6 @@ package font
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/go-text/typesetting/font/opentype/tables"
 )
@@ -296,11 +295,11 @@ func newPost(pst tables.Post) (post, error) {
 	case tables.PostNames10:
 		out.names = postNames10or30{}
 	case tables.PostNames20:
-		var err error
-		out.names, err = newPostNames20(names)
-		if err != nil {
+		n := postNames20(names)
+		if err := n.sanitize(); err != nil {
 			return out, err
 		}
+		out.names = n
 	case tables.PostNames30:
 		// no-op, do not use the post name tables
 	}
@@ -324,57 +323,37 @@ func (p postNames10or30) glyphName(x GID) string {
 	return builtInPostNames[x]
 }
 
-type postNames20 struct {
-	glyphNameIndexes []uint16 // size numGlyph
-	names            []string
-}
+type postNames20 tables.PostNames20
 
 func (p postNames20) glyphName(x GID) string {
-	if int(x) >= len(p.glyphNameIndexes) {
+	if int(x) >= len(p.GlyphNameIndexes) {
 		return ""
 	}
-	u := int(p.glyphNameIndexes[x])
+	u := int(p.GlyphNameIndexes[x])
 	if u < numBuiltInPostNames {
 		return builtInPostNames[u]
 	}
 	u -= numBuiltInPostNames
-	return p.names[u]
+	return p.Strings[u]
 }
 
-func newPostNames20(names tables.PostNames20) (postNames20, error) {
-	out := postNames20{glyphNameIndexes: names.GlyphNameIndexes}
-	// we check at parse time that all the indexes are valid:
-	// we find the maximum
+// check that all the indexes are valid
+func (p postNames20) sanitize() error {
 	var maxIndex uint16
-	for _, u := range names.GlyphNameIndexes {
+	// find the maximum
+	for _, u := range p.GlyphNameIndexes {
 		// https://developer.apple.com/fonts/TrueType-Reference-Manual/RM06/Chap6post.html
 		// says that "32768 through 65535 are reserved for future use".
 		if u > 32767 {
-			return postNames20{}, errors.New("invalid index in Postscript names table format 20")
+			return errors.New("invalid index in Postscript names table format 20")
 		}
 		if u > maxIndex {
 			maxIndex = u
 		}
 	}
 
-	// read all the string data until the end of the table
-	// quoting the spec
-	// "Strings are in Pascal string format, meaning that the first byte of
-	// a given string is a length: the number of characters in that string.
-	// The length byte is not included; for example, a length byte of 8 indicates
-	// that the 8 bytes following the length byte comprise the string character data."
-	for i := 0; i < len(names.StringData); {
-		length := int(names.StringData[i]) // read the length
-		E, L := i+1+length, len(names.StringData)
-		if L < E {
-			return postNames20{}, fmt.Errorf("invalid Postscript names tables format 20: EOF: expected %d, got %d", E, L)
-		}
-		out.names = append(out.names, string(names.StringData[i+1:E]))
-		i = E
+	if int(maxIndex) >= numBuiltInPostNames && len(p.Strings) < (int(maxIndex)-numBuiltInPostNames) {
+		return errors.New("invalid index in Postscript names table format 20")
 	}
-
-	if int(maxIndex) >= numBuiltInPostNames && len(out.names) < (int(maxIndex)-numBuiltInPostNames) {
-		return postNames20{}, errors.New("invalid index in Postscript names table format 20")
-	}
-	return out, nil
+	return nil
 }

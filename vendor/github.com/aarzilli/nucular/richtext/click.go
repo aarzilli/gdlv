@@ -7,7 +7,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/aarzilli/nucular"
-	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 
@@ -32,7 +31,7 @@ func (rtxt *RichText) handleClick(w *nucular.Window, r rect.Rect, in *nucular.In
 			fn = func(w *nucular.Window) {
 				w.Row(20).Dynamic(1)
 				if w.MenuItem(label.TA("Copy", "LC")) {
-					clipboard.Set(rtxt.Get(rtxt.Sel))
+					w.SetClipboard(rtxt.Get(rtxt.Sel))
 					w.Close()
 				}
 			}
@@ -345,7 +344,7 @@ func (citer *citer) Rune() rune {
 	return c
 }
 
-func (rtxt *RichText) handleKeyboard(in *nucular.Input, changed *bool) (arrowKey, pageKey int) {
+func (rtxt *RichText) handleKeyboard(w *nucular.Window, in *nucular.Input, changed *bool) (arrowKey, pageKey int) {
 	if !rtxt.focused {
 		return
 	}
@@ -354,7 +353,7 @@ func (rtxt *RichText) handleKeyboard(in *nucular.Input, changed *bool) (arrowKey
 			switch {
 			case k.Modifiers == key.ModControl && k.Code == key.CodeC:
 				if rtxt.flags&Clipboard != 0 {
-					clipboard.Set(rtxt.Get(rtxt.Sel))
+					w.SetClipboard(rtxt.Get(rtxt.Sel))
 				}
 			case k.Code == key.CodeUpArrow:
 				return -1, 0
@@ -370,6 +369,9 @@ func (rtxt *RichText) handleKeyboard(in *nucular.Input, changed *bool) (arrowKey
 	if rtxt.flags&Editable != 0 {
 		if in.Keyboard.Text != "" {
 			rtxt.replace(in.Keyboard.Text, changed)
+		}
+		if rtxt.flags&Clipboard != 0 && in.HasClipboard {
+			rtxt.replace(in.Clipboard, changed)
 		}
 		for _, k := range in.Keyboard.Keys {
 			switch k.Code {
@@ -457,16 +459,16 @@ func (rtxt *RichText) handleKeyboard(in *nucular.Input, changed *bool) (arrowKey
 				}
 			case key.CodeC:
 				if k.Modifiers == key.ModControl && rtxt.flags&Clipboard != 0 {
-					clipboard.Set(rtxt.Get(rtxt.Sel))
+					w.SetClipboard(rtxt.Get(rtxt.Sel))
 				}
 			case key.CodeX:
 				if k.Modifiers == key.ModControl && rtxt.flags&Clipboard != 0 {
-					clipboard.Set(rtxt.Get(rtxt.Sel))
+					w.SetClipboard(rtxt.Get(rtxt.Sel))
 					rtxt.replace("", changed)
 				}
 			case key.CodeV:
 				if k.Modifiers == key.ModControl && rtxt.flags&Clipboard != 0 {
-					rtxt.replace(clipboard.Get(), changed)
+					w.GetClipboard()
 				}
 			}
 		}

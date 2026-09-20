@@ -180,7 +180,6 @@ func ParseChainedContextualPos1(src []byte) (ChainedContextualPos1, int, error) 
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading ChainedContextualPos1: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -242,7 +241,6 @@ func ParseChainedContextualPos2(src []byte) (ChainedContextualPos2, int, error) 
 	n += 12
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading ChainedContextualPos2: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -260,7 +258,6 @@ func ParseChainedContextualPos2(src []byte) (ChainedContextualPos2, int, error) 
 		}
 	}
 	{
-
 		if offsetBacktrackClassDef != 0 { // ignore null offset
 			if L := len(src); L < offsetBacktrackClassDef {
 				return item, 0, fmt.Errorf("reading ChainedContextualPos2: "+"EOF: expected length: %d, got %d", offsetBacktrackClassDef, L)
@@ -278,7 +275,6 @@ func ParseChainedContextualPos2(src []byte) (ChainedContextualPos2, int, error) 
 		}
 	}
 	{
-
 		if offsetInputClassDef != 0 { // ignore null offset
 			if L := len(src); L < offsetInputClassDef {
 				return item, 0, fmt.Errorf("reading ChainedContextualPos2: "+"EOF: expected length: %d, got %d", offsetInputClassDef, L)
@@ -296,7 +292,6 @@ func ParseChainedContextualPos2(src []byte) (ChainedContextualPos2, int, error) 
 		}
 	}
 	{
-
 		if offsetLookaheadClassDef != 0 { // ignore null offset
 			if L := len(src); L < offsetLookaheadClassDef {
 				return item, 0, fmt.Errorf("reading ChainedContextualPos2: "+"EOF: expected length: %d, got %d", offsetLookaheadClassDef, L)
@@ -639,7 +634,6 @@ func ParseContextualPos1(src []byte) (ContextualPos1, int, error) {
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading ContextualPos1: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -699,7 +693,6 @@ func ParseContextualPos2(src []byte) (ContextualPos2, int, error) {
 	n += 8
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading ContextualPos2: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -717,7 +710,6 @@ func ParseContextualPos2(src []byte) (ContextualPos2, int, error) {
 		}
 	}
 	{
-
 		if offsetClassDef != 0 { // ignore null offset
 			if L := len(src); L < offsetClassDef {
 				return item, 0, fmt.Errorf("reading ContextualPos2: "+"EOF: expected length: %d, got %d", offsetClassDef, L)
@@ -859,7 +851,6 @@ func ParseCursivePos(src []byte) (CursivePos, int, error) {
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading CursivePos: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -1102,7 +1093,6 @@ func ParseMarkBasePos(src []byte) (MarkBasePos, int, error) {
 	n += 12
 
 	{
-
 		if offsetMarkCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetMarkCoverage {
 				return item, 0, fmt.Errorf("reading MarkBasePos: "+"EOF: expected length: %d, got %d", offsetMarkCoverage, L)
@@ -1120,7 +1110,6 @@ func ParseMarkBasePos(src []byte) (MarkBasePos, int, error) {
 		}
 	}
 	{
-
 		if offsetBaseCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetBaseCoverage {
 				return item, 0, fmt.Errorf("reading MarkBasePos: "+"EOF: expected length: %d, got %d", offsetBaseCoverage, L)
@@ -1138,7 +1127,6 @@ func ParseMarkBasePos(src []byte) (MarkBasePos, int, error) {
 		}
 	}
 	{
-
 		if offsetMarkArray != 0 { // ignore null offset
 			if L := len(src); L < offsetMarkArray {
 				return item, 0, fmt.Errorf("reading MarkBasePos: "+"EOF: expected length: %d, got %d", offsetMarkArray, L)
@@ -1153,7 +1141,6 @@ func ParseMarkBasePos(src []byte) (MarkBasePos, int, error) {
 		}
 	}
 	{
-
 		if offsetBaseArray != 0 { // ignore null offset
 			if L := len(src); L < offsetBaseArray {
 				return item, 0, fmt.Errorf("reading MarkBasePos: "+"EOF: expected length: %d, got %d", offsetBaseArray, L)
@@ -1186,7 +1173,6 @@ func ParseMarkLigPos(src []byte) (MarkLigPos, int, error) {
 	n += 12
 
 	{
-
 		if offsetMarkCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetMarkCoverage {
 				return item, 0, fmt.Errorf("reading MarkLigPos: "+"EOF: expected length: %d, got %d", offsetMarkCoverage, L)
@@ -1204,7 +1190,6 @@ func ParseMarkLigPos(src []byte) (MarkLigPos, int, error) {
 		}
 	}
 	{
-
 		if offsetLigatureCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetLigatureCoverage {
 				return item, 0, fmt.Errorf("reading MarkLigPos: "+"EOF: expected length: %d, got %d", offsetLigatureCoverage, L)
@@ -1222,7 +1207,6 @@ func ParseMarkLigPos(src []byte) (MarkLigPos, int, error) {
 		}
 	}
 	{
-
 		if offsetMarkArray != 0 { // ignore null offset
 			if L := len(src); L < offsetMarkArray {
 				return item, 0, fmt.Errorf("reading MarkLigPos: "+"EOF: expected length: %d, got %d", offsetMarkArray, L)
@@ -1237,7 +1221,6 @@ func ParseMarkLigPos(src []byte) (MarkLigPos, int, error) {
 		}
 	}
 	{
-
 		if offsetLigatureArray != 0 { // ignore null offset
 			if L := len(src); L < offsetLigatureArray {
 				return item, 0, fmt.Errorf("reading MarkLigPos: "+"EOF: expected length: %d, got %d", offsetLigatureArray, L)
@@ -1270,7 +1253,6 @@ func ParseMarkMarkPos(src []byte) (MarkMarkPos, int, error) {
 	n += 12
 
 	{
-
 		if offsetMark1Coverage != 0 { // ignore null offset
 			if L := len(src); L < offsetMark1Coverage {
 				return item, 0, fmt.Errorf("reading MarkMarkPos: "+"EOF: expected length: %d, got %d", offsetMark1Coverage, L)
@@ -1288,7 +1270,6 @@ func ParseMarkMarkPos(src []byte) (MarkMarkPos, int, error) {
 		}
 	}
 	{
-
 		if offsetMark2Coverage != 0 { // ignore null offset
 			if L := len(src); L < offsetMark2Coverage {
 				return item, 0, fmt.Errorf("reading MarkMarkPos: "+"EOF: expected length: %d, got %d", offsetMark2Coverage, L)
@@ -1306,7 +1287,6 @@ func ParseMarkMarkPos(src []byte) (MarkMarkPos, int, error) {
 		}
 	}
 	{
-
 		if offsetMark1Array != 0 { // ignore null offset
 			if L := len(src); L < offsetMark1Array {
 				return item, 0, fmt.Errorf("reading MarkMarkPos: "+"EOF: expected length: %d, got %d", offsetMark1Array, L)
@@ -1321,7 +1301,6 @@ func ParseMarkMarkPos(src []byte) (MarkMarkPos, int, error) {
 		}
 	}
 	{
-
 		if offsetMark2Array != 0 { // ignore null offset
 			if L := len(src); L < offsetMark2Array {
 				return item, 0, fmt.Errorf("reading MarkMarkPos: "+"EOF: expected length: %d, got %d", offsetMark2Array, L)
@@ -1396,7 +1375,6 @@ func ParsePairPosData1(src []byte) (PairPosData1, int, error) {
 	n += 10
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading PairPosData1: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -1460,7 +1438,6 @@ func ParsePairPosData2(src []byte) (PairPosData2, int, error) {
 	n += 16
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading PairPosData2: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -1478,7 +1455,6 @@ func ParsePairPosData2(src []byte) (PairPosData2, int, error) {
 		}
 	}
 	{
-
 		if offsetClassDef1 != 0 { // ignore null offset
 			if L := len(src); L < offsetClassDef1 {
 				return item, 0, fmt.Errorf("reading PairPosData2: "+"EOF: expected length: %d, got %d", offsetClassDef1, L)
@@ -1496,7 +1472,6 @@ func ParsePairPosData2(src []byte) (PairPosData2, int, error) {
 		}
 	}
 	{
-
 		if offsetClassDef2 != 0 { // ignore null offset
 			if L := len(src); L < offsetClassDef2 {
 				return item, 0, fmt.Errorf("reading PairPosData2: "+"EOF: expected length: %d, got %d", offsetClassDef2, L)
@@ -1514,7 +1489,6 @@ func ParsePairPosData2(src []byte) (PairPosData2, int, error) {
 		}
 	}
 	{
-
 		item.classData = src[0:]
 	}
 	return item, n, nil
@@ -1673,7 +1647,6 @@ func ParseSinglePosData1(src []byte) (SinglePosData1, int, error) {
 	n += 6
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading SinglePosData1: "+"EOF: expected length: %d, got %d", offsetCoverage, L)
@@ -1714,7 +1687,6 @@ func ParseSinglePosData2(src []byte) (SinglePosData2, int, error) {
 	n += 8
 
 	{
-
 		if offsetCoverage != 0 { // ignore null offset
 			if L := len(src); L < offsetCoverage {
 				return item, 0, fmt.Errorf("reading SinglePosData2: "+"EOF: expected length: %d, got %d", offsetCoverage, L)

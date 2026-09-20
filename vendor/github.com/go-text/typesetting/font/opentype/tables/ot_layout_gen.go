@@ -163,7 +163,6 @@ func ParseFeatureTableSubstitutionRecord(src []byte, parentSrc []byte) (FeatureT
 	n += 6
 
 	{
-
 		if offsetAlternateFeature != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetAlternateFeature {
 				return item, 0, fmt.Errorf("reading FeatureTableSubstitutionRecord: "+"EOF: expected length: %d, got %d", offsetAlternateFeature, L)
@@ -220,7 +219,6 @@ func ParseFeatureVariationRecord(src []byte, parentSrc []byte) (FeatureVariation
 	n += 8
 
 	{
-
 		if offsetConditionSet != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetConditionSet {
 				return item, 0, fmt.Errorf("reading FeatureVariationRecord: "+"EOF: expected length: %d, got %d", offsetConditionSet, L)
@@ -235,7 +233,6 @@ func ParseFeatureVariationRecord(src []byte, parentSrc []byte) (FeatureVariation
 		}
 	}
 	{
-
 		if offsetSubstitutions != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetSubstitutions {
 				return item, 0, fmt.Errorf("reading FeatureVariationRecord: "+"EOF: expected length: %d, got %d", offsetSubstitutions, L)
@@ -294,7 +291,6 @@ func ParseLayout(src []byte) (Layout, int, error) {
 	n += 10
 
 	{
-
 		if offsetScriptList != 0 { // ignore null offset
 			if L := len(src); L < offsetScriptList {
 				return item, 0, fmt.Errorf("reading Layout: "+"EOF: expected length: %d, got %d", offsetScriptList, L)
@@ -309,7 +305,6 @@ func ParseLayout(src []byte) (Layout, int, error) {
 		}
 	}
 	{
-
 		if offsetFeatureList != 0 { // ignore null offset
 			if L := len(src); L < offsetFeatureList {
 				return item, 0, fmt.Errorf("reading Layout: "+"EOF: expected length: %d, got %d", offsetFeatureList, L)
@@ -324,7 +319,6 @@ func ParseLayout(src []byte) (Layout, int, error) {
 		}
 	}
 	{
-
 		if offsetLookupList != 0 { // ignore null offset
 			if L := len(src); L < offsetLookupList {
 				return item, 0, fmt.Errorf("reading Layout: "+"EOF: expected length: %d, got %d", offsetLookupList, L)
@@ -399,7 +393,6 @@ func ParseScript(src []byte) (Script, int, error) {
 	n += 4
 
 	{
-
 		if offsetDefaultLangSys != 0 { // ignore null offset
 			if L := len(src); L < offsetDefaultLangSys {
 				return item, 0, fmt.Errorf("reading Script: "+"EOF: expected length: %d, got %d", offsetDefaultLangSys, L)

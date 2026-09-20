@@ -5,6 +5,7 @@ import (
 	"image"
 	"io"
 	"math"
+	"slices"
 	"sort"
 	"unicode"
 	"unicode/utf8"
@@ -17,7 +18,6 @@ import (
 	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
-	"golang.org/x/exp/slices"
 	"golang.org/x/image/math/fixed"
 )
 
@@ -81,6 +81,7 @@ type textView struct {
 	lastMask        rune
 	viewSize        image.Point
 	valid           bool
+	version         uint64
 	regions         []Region
 	dims            layout.Dimensions
 
@@ -173,14 +174,17 @@ func (e *textView) closestToLineCol(line, col int) combinedPos {
 	return e.index.closestToLineCol(screenPos{line: line, col: col})
 }
 
-func (e *textView) closestToXY(x fixed.Int26_6, y int) combinedPos {
+func (e *textView) closestToXY(x fixed.Int26_6, y int) (combinedPos, bool) {
 	e.makeValid()
 	return e.index.closestToXY(x, y)
 }
 
-func (e *textView) closestToXYGraphemes(x fixed.Int26_6, y int) combinedPos {
+func (e *textView) closestToXYGraphemes(x fixed.Int26_6, y int) (combinedPos, bool) {
 	// Find the closest existing rune position to the provided coordinates.
-	pos := e.closestToXY(x, y)
+	pos, atEndOfLine := e.closestToXY(x, y)
+	if atEndOfLine {
+		return pos, true
+	}
 	// Resolve cluster boundaries on either side of the rune position.
 	firstOption := e.moveByGraphemes(pos.runes, 0)
 	distance := 1
@@ -194,9 +198,9 @@ func (e *textView) closestToXYGraphemes(x fixed.Int26_6, y int) combinedPos {
 	second := e.closestToRune(secondOption)
 	secondDist := absFixed(second.x - x)
 	if firstDist > secondDist {
-		return second
+		return second, false
 	} else {
-		return first
+		return first, false
 	}
 }
 
@@ -214,8 +218,11 @@ func (e *textView) MoveLines(distance int, selAct selectionAction) {
 	x := caretStart.x + e.caret.xoff
 	// Seek to line.
 	pos := e.closestToLineCol(caretStart.lineCol.line+distance, 0)
-	pos = e.closestToXYGraphemes(x, pos.y)
+	pos, atEndOfLine := e.closestToXYGraphemes(x, pos.y)
 	e.caret.start = pos.runes
+	if atEndOfLine && pos.runes > 0 {
+		e.caret.start = pos.runes - 1
+	}
 	e.caret.xoff = x - pos.x
 	e.updateSelection(selAct)
 }
@@ -356,10 +363,7 @@ func (e *textView) PaintText(gtx layout.Context, material op.CallOp) {
 // caretWidth returns the width occupied by the caret for the current
 // gtx.
 func (e *textView) caretWidth(gtx layout.Context) int {
-	carWidth2 := gtx.Dp(1) / 2
-	if carWidth2 < 1 {
-		carWidth2 = 1
-	}
+	carWidth2 := max(gtx.Dp(1)/2, 1)
 	return carWidth2
 }
 
@@ -428,10 +432,7 @@ func (e *textView) ScrollBounds() image.Rectangle {
 	if e.SingleLine {
 		if len(e.index.lines) > 0 {
 			line := e.index.lines[0]
-			b.Min.X = line.xOff.Floor()
-			if b.Min.X > 0 {
-				b.Min.X = 0
-			}
+			b.Min.X = min(line.xOff.Floor(), 0)
 		}
 		b.Max.X = e.dims.Size.X + b.Min.X - e.viewSize.X
 	} else {
@@ -472,7 +473,8 @@ func (e *textView) scrollAbs(x, y int) {
 func (e *textView) MoveCoord(pos image.Point) {
 	x := fixed.I(pos.X + e.scrollOff.X)
 	y := pos.Y + e.scrollOff.Y
-	e.caret.start = e.closestToXYGraphemes(x, y).runes
+	p, _ := e.closestToXYGraphemes(x, y)
+	e.caret.start = p.runes
 	e.caret.xoff = 0
 }
 
@@ -572,6 +574,7 @@ func (e *textView) runeOffset(r int) int {
 func (e *textView) invalidate() {
 	e.offIndex = e.offIndex[:0]
 	e.valid = false
+	e.version++
 }
 
 // Replace the text between start and end with s. Indices are in runes.
@@ -610,7 +613,7 @@ func (e *textView) MovePages(pages int, selAct selectionAction) {
 	caret := e.closestToRune(e.caret.start)
 	x := caret.x + e.caret.xoff
 	y := caret.y + pages*e.viewSize.Y
-	pos := e.closestToXYGraphemes(x, y)
+	pos, _ := e.closestToXYGraphemes(x, y)
 	e.caret.start = pos.runes
 	e.caret.xoff = x - pos.x
 	e.updateSelection(selAct)
@@ -717,7 +720,7 @@ func (e *textView) MoveWord(distance int, selAct selectionAction) {
 		}
 		return r
 	}
-	for ii := 0; ii < words; ii++ {
+	for range words {
 		for r := next(); unicode.IsSpace(r) && !atEnd(); r = next() {
 			e.MoveCaret(direction, 0)
 			caret = e.closestToRune(e.caret.start)

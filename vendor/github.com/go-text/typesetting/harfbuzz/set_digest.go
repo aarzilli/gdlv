@@ -6,44 +6,29 @@ import (
 
 // ported from src/hb-set-digest.hh Copyright © 2012  Google, Inc. Behdad Esfahbod
 
-const maskBits = 4 * 8 // 4 = size(setDigestLowestBits)
+const (
+	maskBits = 8 * 8 // 4 = size(setDigestLowestBits)
+	mb1      = maskBits - 1
+	one      = maskT(1)
+	all      = ^maskT(0)
+)
 
 type setType = gID
 
-type setBits uint32
+type maskT uint64
 
-func maskFor(g setType, shift uint) setBits {
-	return 1 << ((g >> shift) & (maskBits - 1))
-}
-
-func (sd *setBits) add(g setType, shift uint) { *sd |= maskFor(g, shift) }
-
-func (sd *setBits) addRange(a, b setType, shift uint) {
-	if (b>>shift)-(a>>shift) >= maskBits-1 {
-		*sd = ^setBits(0)
+func addRangeTo(dst *maskT, a, b setType, shift uint) {
+	if (b>>shift)-(a>>shift) >= mb1 {
+		*dst = ^maskT(0)
 	} else {
-		mb := maskFor(b, shift)
-		ma := maskFor(a, shift)
-		var op setBits
+		ma := one << ((a >> shift) & mb1)
+		mb := one << ((b >> shift) & mb1)
+		var op maskT
 		if mb < ma {
 			op = 1
 		}
-		*sd |= mb + (mb - ma) - op
+		*dst |= mb + (mb - ma) - op
 	}
-}
-
-func (sd *setBits) addArray(arr []setType, shift uint) {
-	for _, v := range arr {
-		sd.add(v, shift)
-	}
-}
-
-func (sd setBits) mayHave(g setType, shift uint) bool {
-	return sd&maskFor(g, shift) != 0
-}
-
-func (sd setBits) mayHaveSet(g setBits) bool {
-	return sd&g != 0
 }
 
 /* This is a combination of digests that performs "best".
@@ -52,45 +37,65 @@ func (sd setBits) mayHaveSet(g setBits) bool {
 const (
 	shift0 = 4
 	shift1 = 0
-	shift2 = 9
+	shift2 = 6
 )
 
-// setDigest implement various "filters" that support
-// "approximate member query".  Conceptually these are like Bloom
-// Filter and Quotient Filter, however, much smaller, faster, and
-// designed to fit the requirements of our uses for glyph coverage
-// queries.
+// The set-digests implement "filters" that support "approximate
+// member query".  Conceptually these are like Bloom Filter and
+// Quotient Filter, however, much smaller, faster, and designed
+// to fit the requirements of our uses for glyph coverage queries.
 //
 // Our filters are highly accurate if the lookup covers fairly local
 // set of glyphs, but fully flooded and ineffective if coverage is
 // all over the place.
 //
-// The frozen-set can be used instead of a digest, to trade more
-// memory for 100% accuracy, but in practice, that doesn't look like
-// an attractive trade-off.
-type setDigest [3]setBits
+// The way these are used is that the filter is first populated by
+// a lookup's or subtable's Coverage table(s), and then when we
+// want to apply the lookup or subtable to a glyph, before trying
+// to apply, we ask the filter if the glyph may be covered. If it's
+// not, we return early.  We can also match a digest against another
+// digest.
+//
+// We use these filters at three levels:
+//   - If the digest for all the glyphs in the buffer as a whole
+//     does not match the digest for the lookup, skip the lookup.
+//   - For each glyph, if it doesn't match the lookup digest,
+//     skip it.
+//   - For each glyph, if it doesn't match the subtable digest,
+//     skip it.
+//
+// The filter we use is a combination of three bits-pattern
+// filters. A bits-pattern filter checks a number of bits (5 or 6)
+// of the input number (glyph-id in most cases) and checks whether
+// its pattern is amongst the patterns of any of the accepted values.
+// The accepted patterns are represented as a "long" integer. Each
+// check is done using four bitwise operations only.
+type setDigest [3]maskT
 
 // add adds the given rune to the set.
 func (sd *setDigest) add(g setType) {
-	sd[0].add(g, shift0)
-	sd[1].add(g, shift1)
-	sd[2].add(g, shift2)
+	sd[0] |= one << ((g >> shift0) & mb1)
+	sd[1] |= one << ((g >> shift1) & mb1)
+	sd[2] |= one << ((g >> shift2) & mb1)
 }
 
 // addRange adds the given, inclusive range to the set,
 // in an efficient manner.
 func (sd *setDigest) addRange(a, b setType) {
-	sd[0].addRange(a, b, shift0)
-	sd[1].addRange(a, b, shift1)
-	sd[2].addRange(a, b, shift2)
+	if sd[0] == all || sd[1] == all || sd[2] == all {
+		return
+	}
+	addRangeTo(&sd[0], a, b, shift0)
+	addRangeTo(&sd[1], a, b, shift1)
+	addRangeTo(&sd[2], a, b, shift2)
 }
 
 // addArray is a convenience method to add
 // many runes.
 func (sd *setDigest) addArray(arr []setType) {
-	sd[0].addArray(arr, shift0)
-	sd[1].addArray(arr, shift1)
-	sd[2].addArray(arr, shift2)
+	for _, v := range arr {
+		sd.add(v)
+	}
 }
 
 // mayHave performs an "approximate member query": if the return value
@@ -98,11 +103,13 @@ func (sd *setDigest) addArray(arr []setType) {
 // Otherwise, we don't kwow, it might be a false positive.
 // Note that runes in the set are certain to return `true`.
 func (sd setDigest) mayHave(g setType) bool {
-	return sd[0].mayHave(g, shift0) && sd[1].mayHave(g, shift1) && sd[2].mayHave(g, shift2)
+	return sd[0]&(one<<((g>>shift0)&mb1)) != 0 &&
+		sd[1]&(one<<((g>>shift1)&mb1)) != 0 &&
+		sd[2]&(one<<((g>>shift2)&mb1)) != 0
 }
 
-func (sd setDigest) mayHaveDigest(o setDigest) bool {
-	return sd[0].mayHaveSet(o[0]) && sd[1].mayHaveSet(o[1]) && sd[2].mayHaveSet(o[2])
+func (sd setDigest) mayIntersects(o setDigest) bool {
+	return sd[0]&o[0] != 0 && sd[1]&o[1] != 0 && sd[2]&o[2] != 0
 }
 
 func (sd *setDigest) collectCoverage(cov tables.Coverage) {

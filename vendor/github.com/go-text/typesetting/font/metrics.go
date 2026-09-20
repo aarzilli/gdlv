@@ -132,7 +132,7 @@ var (
 
 // return the height from baseline (in font units)
 func (f *Face) runeHeight(r rune) float32 {
-	gid, ok := f.Font.NominalGlyph(r)
+	gid, ok := f.NominalGlyph(r)
 	if !ok {
 		return 0
 	}
@@ -218,28 +218,11 @@ func (f *Font) getBaseAdvance(gid gID, table tables.Hmtx, isVertical bool) int16
 	return table.Advance(gid)
 }
 
-// return the base side bearing, handling invalid glyph index
-func getSideBearing(gid gID, table tables.Hmtx) int16 {
-	LM, LS := len(table.Metrics), len(table.LeftSideBearings)
-	index := int(gid)
-	if index < LM {
-		return table.Metrics[index].LeftSideBearing
-	} else if index < LS+LM {
-		return table.LeftSideBearings[index-LM]
-	} else {
-		return 0
-	}
-}
-
 func clamp(v float32) float32 {
 	if v < 0 {
 		v = 0
 	}
 	return v
-}
-
-func ceil(v float32) int16 {
-	return int16(math.Ceil(float64(v)))
 }
 
 func (f *Face) getGlyphAdvanceVar(gid gID, isVertical bool) float32 {
@@ -256,7 +239,7 @@ func (f *Face) HorizontalAdvance(gid GID) float32 {
 		return float32(advance)
 	}
 	if f.hvar != nil {
-		return float32(advance) + getAdvanceDeltaUnscaled(f.hvar, gID(gid), f.coords)
+		return float32(advance) + f.hvar.AdvanceDelta(gID(gid), f.coords)
 	}
 	return f.getGlyphAdvanceVar(gID(gid), false)
 }
@@ -278,30 +261,9 @@ func (f *Face) VerticalAdvance(gid GID) float32 {
 		return -float32(advance)
 	}
 	if f.vvar != nil {
-		return -float32(advance) - getAdvanceDeltaUnscaled(f.vvar, gID(gid), f.coords)
+		return -float32(advance) - f.vvar.AdvanceDelta(gID(gid), f.coords)
 	}
 	return -f.getGlyphAdvanceVar(gID(gid), true)
-}
-
-func (f *Face) getGlyphSideBearingVar(gid gID, isVertical bool) int16 {
-	extents, phantoms := f.getGlyfPoints(gid, true)
-	if isVertical {
-		return ceil(phantoms[phantomTop].Y - extents.YBearing)
-	}
-	return int16(phantoms[phantomLeft].X)
-}
-
-// take variations into account
-func (f *Face) getVerticalSideBearing(glyph gID) int16 {
-	// base side bearing
-	sideBearing := getSideBearing(glyph, f.vmtx)
-	if !f.isVar() {
-		return sideBearing
-	}
-	if f.vvar != nil {
-		return sideBearing + int16(getLsbDeltaUnscaled(f.vvar, glyph, f.coords))
-	}
-	return f.getGlyphSideBearingVar(glyph, true)
 }
 
 func (f *Font) GlyphHOrigin(GID) (x, y int32, found bool) {
@@ -309,32 +271,47 @@ func (f *Font) GlyphHOrigin(GID) (x, y int32, found bool) {
 	return 0, 0, true
 }
 
-func (f *Face) GlyphVOrigin(glyph GID) (x, y int32, found bool) {
-	x = int32(f.HorizontalAdvance(glyph) / 2)
+func (f *Face) GlyphVOrigin(glyph GID) (x, y float32) {
+	// First, set the x value to half the advance width.
+	x = f.HorizontalAdvance(glyph) / 2
 
+	// If there is VORG, always use it. It uses VVAR for variations if necessary.
 	if f.vorg != nil {
-		y = int32(f.vorg.YOrigin(gID(glyph)))
-		return x, y, true
+		y = float32(f.vorg.YOrigin(gID(glyph)))
+		if f.isVar() && f.vvar != nil {
+			y += f.vvar.VorgDelta(gID(glyph), f.coords)
+		}
+		return x, y
 	}
+
+	// If and only if `vmtx` is present and it's a `glyf` font,
+	// we use the top phantom point, deduced from vmtx,glyf[,gvar].
+	if !f.vmtx.IsEmpty() && f.glyf != nil {
+		y = f.getVOriginWithVar(gID(glyph))
+		return x, y
+	}
+
+	// Otherwise, use glyph extents to center the glyph vertically.
+	// If getting glyph extents failed, just use the font ascender.
+	fontExtents, _ := f.FontHExtents()
+	fontAdvance := fontExtents.Ascender - fontExtents.Descender
 
 	if extents, ok := f.getExtentsFromGlyf(gID(glyph)); ok {
-		if f.HasVerticalMetrics() {
-			tsb := f.getVerticalSideBearing(gID(glyph))
-			y = int32(extents.YBearing) + int32(tsb)
-			return x, y, true
-		}
-
-		fontExtents, _ := f.FontHExtents()
-		advance := fontExtents.Ascender - fontExtents.Descender
-		diff := advance - -extents.Height
-		y = int32(extents.YBearing + (diff / 2))
-		return x, y, true
+		diff := fontAdvance - -extents.Height
+		y = extents.YBearing + float32(int(diff)/2)
+		return x, y
 	}
 
-	fontExtents, ok := f.FontHExtents()
-	y = int32(fontExtents.Ascender)
+	y = fontExtents.Ascender
+	return x, y
+}
 
-	return x, y, ok
+func (f *Face) getVOriginWithVar(gid gID) float32 {
+	if int(gid) >= f.nGlyphs {
+		return 0
+	}
+	_, phantoms := f.getGlyfPoints(gid, false)
+	return phantoms[phantomTop].Y
 }
 
 func (f *Face) getExtentsFromGlyf(glyph gID) (GlyphExtents, bool) {
@@ -425,11 +402,11 @@ func (f *Face) glyphExtentsRaw(glyph GID) (GlyphExtents, bool) {
 	if ok {
 		return out, ok
 	}
-	out, ok = f.getExtentsFromGlyf(gID(glyph))
+	out, ok = f.getExtentsFromBitmap(gID(glyph), f.xPpem, f.yPpem)
 	if ok {
 		return out, ok
 	}
-	out, ok = f.getExtentsFromCff1(gID(glyph))
+	out, ok = f.getExtentsFromGlyf(gID(glyph))
 	if ok {
 		return out, ok
 	}
@@ -437,6 +414,6 @@ func (f *Face) glyphExtentsRaw(glyph GID) (GlyphExtents, bool) {
 	if ok {
 		return out, ok
 	}
-	out, ok = f.getExtentsFromBitmap(gID(glyph), f.xPpem, f.yPpem)
+	out, ok = f.getExtentsFromCff1(gID(glyph))
 	return out, ok
 }

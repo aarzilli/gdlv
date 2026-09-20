@@ -5,8 +5,13 @@ package app
 import (
 	"errors"
 	"fmt"
+	"gioui.org/io/transfer"
+	syscall "golang.org/x/sys/windows"
+	"golang.org/x/sys/windows/registry"
 	"image"
 	"io"
+	"math"
+	"os"
 	"runtime"
 	"sort"
 	"strings"
@@ -15,8 +20,6 @@ import (
 	"unicode"
 	"unicode/utf8"
 	"unsafe"
-
-	syscall "golang.org/x/sys/windows"
 
 	"gioui.org/app/internal/windows"
 	"gioui.org/op"
@@ -28,7 +31,6 @@ import (
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
-	"gioui.org/io/transfer"
 )
 
 type Win32ViewEvent struct {
@@ -36,10 +38,9 @@ type Win32ViewEvent struct {
 }
 
 type window struct {
-	hwnd        syscall.Handle
-	hdc         syscall.Handle
-	w           *callbacks
-	pointerBtns pointer.Buttons
+	hwnd syscall.Handle
+	hdc  syscall.Handle
+	w    *callbacks
 
 	// cursorIn tracks whether the cursor was inside the window according
 	// to the most recent WM_SETCURSOR.
@@ -56,6 +57,8 @@ type window struct {
 }
 
 const _WM_WAKEUP = windows.WM_USER + iota
+
+const copyDataURLType = 0xffffff00
 
 type gpuAPI struct {
 	priority    int
@@ -82,6 +85,7 @@ var resources struct {
 }
 
 func osMain() {
+	processURLEvent(startupURI())
 	select {}
 }
 
@@ -132,14 +136,32 @@ func initResources() error {
 		return err
 	}
 	resources.cursor = c
-	icon, _ := windows.LoadImage(hInst, iconID, windows.IMAGE_ICON, 0, 0, windows.LR_DEFAULTSIZE|windows.LR_SHARED)
+	// Prefer an icon supplied at IDI_APPLICATION, which is where a
+	// resource author puts an icon meant for the window and title bar.
+	// Fall back to the first icon group for resources built without
+	// one, which is the previous behavior. A binary with no icon
+	// resources at all keeps an icon-less window class, as before.
+	var icon syscall.Handle
+	for _, id := range []uint32{windows.IDI_APPLICATION, iconID} {
+		h, err := windows.LoadImage(hInst, id, windows.IMAGE_ICON, 0, 0, windows.LR_DEFAULTSIZE|windows.LR_SHARED)
+		if err == nil {
+			icon = h
+			break
+		}
+	}
+
+	appid, err := syscall.UTF16PtrFromString(ID)
+	if err != nil {
+		return err
+	}
+
 	wcls := windows.WndClassEx{
 		CbSize:        uint32(unsafe.Sizeof(windows.WndClassEx{})),
 		Style:         windows.CS_HREDRAW | windows.CS_VREDRAW | windows.CS_OWNDC,
 		LpfnWndProc:   syscall.NewCallback(windowProc),
 		HInstance:     hInst,
 		HIcon:         icon,
-		LpszClassName: syscall.StringToUTF16Ptr("GioWindow"),
+		LpszClassName: appid,
 	}
 	cls, err := windows.RegisterClassEx(&wcls)
 	if err != nil {
@@ -173,6 +195,12 @@ func (w *window) init() error {
 		resources.handle,
 		0)
 	if err != nil {
+		return err
+	}
+	if err := windows.RegisterTouchWindow(hwnd, 0); err != nil {
+		return err
+	}
+	if err := windows.EnableMouseInPointer(1); err != nil {
 		return err
 	}
 	w.hdc, err = windows.GetDC(hwnd)
@@ -265,18 +293,32 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 				return 0
 			}
 		}
-	case windows.WM_LBUTTONDOWN:
-		w.pointerButton(pointer.ButtonPrimary, true, lParam, getModifiers())
-	case windows.WM_LBUTTONUP:
-		w.pointerButton(pointer.ButtonPrimary, false, lParam, getModifiers())
-	case windows.WM_RBUTTONDOWN:
-		w.pointerButton(pointer.ButtonSecondary, true, lParam, getModifiers())
-	case windows.WM_RBUTTONUP:
-		w.pointerButton(pointer.ButtonSecondary, false, lParam, getModifiers())
-	case windows.WM_MBUTTONDOWN:
-		w.pointerButton(pointer.ButtonTertiary, true, lParam, getModifiers())
-	case windows.WM_MBUTTONUP:
-		w.pointerButton(pointer.ButtonTertiary, false, lParam, getModifiers())
+	case windows.WM_POINTERDOWN, windows.WM_POINTERUP, windows.WM_POINTERUPDATE, windows.WM_POINTERCAPTURECHANGED:
+		pid := getPointerIDwParam(wParam)
+		pi, err := windows.GetPointerInfo(uint32(pid))
+		if err != nil {
+			panic(err)
+		}
+		switch msg {
+		case windows.WM_POINTERDOWN:
+			windows.SetCapture(w.hwnd)
+		case windows.WM_POINTERUP:
+			windows.ReleaseCapture()
+		}
+
+		kind := pointer.Move
+		switch pi.ButtonChangeType {
+		case windows.POINTER_CHANGE_FIRSTBUTTON_DOWN, windows.POINTER_CHANGE_SECONDBUTTON_DOWN, windows.POINTER_CHANGE_THIRDBUTTON_DOWN, windows.POINTER_CHANGE_FOURTHBUTTON_DOWN, windows.POINTER_CHANGE_FIFTHBUTTON_DOWN:
+			kind = pointer.Press
+		case windows.POINTER_CHANGE_FIRSTBUTTON_UP, windows.POINTER_CHANGE_SECONDBUTTON_UP, windows.POINTER_CHANGE_THIRDBUTTON_UP, windows.POINTER_CHANGE_FOURTHBUTTON_UP, windows.POINTER_CHANGE_FIFTHBUTTON_UP:
+			kind = pointer.Release
+		}
+
+		if (pi.PointerFlags&windows.POINTER_FLAG_CANCELED != 0) || (msg == windows.WM_POINTERCAPTURECHANGED) {
+			kind = pointer.Cancel
+		}
+
+		w.pointerUpdate(pi, pid, kind, lParam)
 	case windows.WM_CANCELMODE:
 		w.ProcessEvent(pointer.Event{
 			Kind: pointer.Cancel,
@@ -296,20 +338,9 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 		np := windows.Point{X: int32(x), Y: int32(y)}
 		windows.ScreenToClient(w.hwnd, &np)
 		return w.hitTest(int(np.X), int(np.Y))
-	case windows.WM_MOUSEMOVE:
-		x, y := coordsFromlParam(lParam)
-		p := f32.Point{X: float32(x), Y: float32(y)}
-		w.ProcessEvent(pointer.Event{
-			Kind:      pointer.Move,
-			Source:    pointer.Mouse,
-			Position:  p,
-			Buttons:   w.pointerBtns,
-			Time:      windows.GetMessageTime(),
-			Modifiers: getModifiers(),
-		})
-	case windows.WM_MOUSEWHEEL:
+	case windows.WM_POINTERWHEEL:
 		w.scrollEvent(wParam, lParam, false, getModifiers())
-	case windows.WM_MOUSEHWHEEL:
+	case windows.WM_POINTERHWHEEL:
 		w.scrollEvent(wParam, lParam, true, getModifiers())
 	case windows.WM_DESTROY:
 		w.ProcessEvent(Win32ViewEvent{})
@@ -351,8 +382,7 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 		w.update()
 	case windows.WM_WINDOWPOSCHANGED:
 		w.update()
-	case windows.WM_SIZE:
-		w.update()
+		return 0
 	case windows.WM_GETMINMAXINFO:
 		mm := (*windows.MinMaxInfo)(unsafe.Pointer(lParam))
 
@@ -390,54 +420,89 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 			return windows.TRUE
 		}
 		defer windows.ImmReleaseContext(w.hwnd, imc)
-		sel := w.w.EditorState().Selection
-		caret := sel.Transform.Transform(sel.Caret.Pos.Add(f32.Pt(0, sel.Caret.Descent)))
-		icaret := image.Pt(int(caret.X+.5), int(caret.Y+.5))
-		windows.ImmSetCompositionWindow(imc, icaret.X, icaret.Y)
-		windows.ImmSetCandidateWindow(imc, icaret.X, icaret.Y)
+		w.updateIMEWindows(imc)
+		return windows.TRUE
 	case windows.WM_IME_COMPOSITION:
 		imc := windows.ImmGetContext(w.hwnd)
 		if imc == 0 {
 			return windows.TRUE
 		}
 		defer windows.ImmReleaseContext(w.hwnd, imc)
+		defer w.updateIMEWindows(imc)
 		state := w.w.EditorState()
-		rng := state.compose
-		if rng.Start == -1 {
-			rng = state.Selection.Range
+		if lParam&windows.GCS_RESULTSTR != 0 {
+			// RESULTSTR is committed text. Keep it separate from COMPSTR so a
+			// preedit update never looks like a commit.
+			rng := imeRange(state)
+			result := windows.ImmGetCompositionString(imc, windows.GCS_RESULTSTR)
+			start := rng.Start
+			w.w.EditorReplace(rng, result)
+			end := start + utf8.RuneCountInString(result)
+			w.w.SetComposingRegion(key.Range{Start: -1, End: -1})
+			w.w.SetEditorSelection(key.Range{Start: end, End: end})
+			if lParam&windows.GCS_COMPSTR == 0 {
+				return windows.TRUE
+			}
+			state = w.w.EditorState()
 		}
-		if rng.Start > rng.End {
-			rng.Start, rng.End = rng.End, rng.Start
+		if lParam&windows.GCS_COMPSTR != 0 {
+			// COMPSTR is still preedit text, so keep the composing range alive.
+			rng := imeRange(state)
+			replacement := windows.ImmGetCompositionString(imc, windows.GCS_COMPSTR)
+			end := rng.Start + utf8.RuneCountInString(replacement)
+			w.w.EditorReplace(rng, replacement)
+			state = w.w.EditorState()
+			comp := key.Range{
+				Start: rng.Start,
+				End:   end,
+			}
+			if lParam&windows.GCS_DELTASTART != 0 {
+				start := windows.ImmGetCompositionValue(imc, windows.GCS_DELTASTART)
+				comp.Start = state.RunesIndex(state.UTF16Index(comp.Start) + start)
+			}
+			w.w.SetComposingRegion(comp)
+			pos := end
+			if lParam&windows.GCS_CURSORPOS != 0 {
+				rel := windows.ImmGetCompositionValue(imc, windows.GCS_CURSORPOS)
+				pos = state.RunesIndex(state.UTF16Index(rng.Start) + rel)
+			}
+			w.w.SetEditorSelection(key.Range{Start: pos, End: pos})
+			return windows.TRUE
 		}
-		var replacement string
-		switch {
-		case lParam&windows.GCS_RESULTSTR != 0:
-			replacement = windows.ImmGetCompositionString(imc, windows.GCS_RESULTSTR)
-		case lParam&windows.GCS_COMPSTR != 0:
-			replacement = windows.ImmGetCompositionString(imc, windows.GCS_COMPSTR)
+		if lParam&(windows.GCS_DELTASTART|windows.GCS_CURSORPOS) == 0 || state.compose.Start == -1 {
+			return windows.TRUE
 		}
-		end := rng.Start + utf8.RuneCountInString(replacement)
-		w.w.EditorReplace(rng, replacement)
-		state = w.w.EditorState()
-		comp := key.Range{
-			Start: rng.Start,
-			End:   end,
-		}
+		// Some composition messages only move the IME cursor or clause start.
+		rng := normRange(state.compose)
+		comp := rng
 		if lParam&windows.GCS_DELTASTART != 0 {
 			start := windows.ImmGetCompositionValue(imc, windows.GCS_DELTASTART)
 			comp.Start = state.RunesIndex(state.UTF16Index(comp.Start) + start)
+			w.w.SetComposingRegion(comp)
 		}
-		w.w.SetComposingRegion(comp)
-		pos := end
 		if lParam&windows.GCS_CURSORPOS != 0 {
 			rel := windows.ImmGetCompositionValue(imc, windows.GCS_CURSORPOS)
-			pos = state.RunesIndex(state.UTF16Index(rng.Start) + rel)
+			pos := state.RunesIndex(state.UTF16Index(rng.Start) + rel)
+			w.w.SetEditorSelection(key.Range{Start: pos, End: pos})
 		}
-		w.w.SetEditorSelection(key.Range{Start: pos, End: pos})
 		return windows.TRUE
 	case windows.WM_IME_ENDCOMPOSITION:
 		w.w.SetComposingRegion(key.Range{Start: -1, End: -1})
 		return windows.TRUE
+	case windows.WM_COPYDATA:
+		data := (*windows.CopyDataStruct)(unsafe.Pointer(lParam))
+		switch data.DwData {
+		case copyDataURLType:
+			if schemesURI == "" {
+				return windows.TRUE
+			}
+
+			uri := syscall.UTF16PtrToString((*uint16)(unsafe.Pointer(data.LpData)))
+			if processURLEvent(uri) {
+				w.Perform(system.ActionRaise)
+			}
+			return windows.TRUE
+		}
 	}
 
 	return windows.DefWindowProc(hwnd, msg, wParam, lParam)
@@ -460,37 +525,94 @@ func getModifiers() key.Modifiers {
 	return kmods
 }
 
+// updateIMEWindows keeps the Windows IME popup near the text being edited.
+func (w *window) updateIMEWindows(imc syscall.Handle) {
+	sel := w.w.EditorState().Selection
+	top := sel.Transform.Transform(sel.Caret.Pos.Add(f32.Pt(0, -sel.Caret.Ascent)))
+	base := sel.Transform.Transform(sel.Caret.Pos)
+	bottom := sel.Transform.Transform(sel.Caret.Pos.Add(f32.Pt(0, sel.Caret.Descent)))
+
+	itop := image.Pt(int(top.X+.5), int(top.Y+.5))
+	ibase := image.Pt(int(base.X+.5), int(base.Y+.5))
+	ibottom := image.Pt(int(bottom.X+.5), int(bottom.Y+.5))
+	if ibottom.Y <= itop.Y {
+		ibottom.Y = itop.Y + 1
+	}
+	exclude := windows.Rect{
+		Left:   int32(ibase.X),
+		Top:    int32(itop.Y),
+		Right:  int32(ibase.X + 1),
+		Bottom: int32(ibottom.Y),
+	}
+	x, y := ibottom.X, ibottom.Y
+	if !sel.CompositionBounds.Empty() {
+		exclude = transformRect(sel.Transform, sel.CompositionBounds)
+		x = int(exclude.Left)
+		y = int(exclude.Bottom)
+	}
+	windows.ImmSetCompositionWindow(imc, x, y)
+	windows.ImmSetCandidateWindow(imc, x, y, exclude)
+}
+
+// transformRect maps a local rectangle to window coordinates. Transform all
+// corners because an affine transform may flip or rotate the rectangle.
+func transformRect(t f32.Affine2D, r image.Rectangle) windows.Rect {
+	p0 := t.Transform(f32.Pt(float32(r.Min.X), float32(r.Min.Y)))
+	p1 := t.Transform(f32.Pt(float32(r.Max.X), float32(r.Min.Y)))
+	p2 := t.Transform(f32.Pt(float32(r.Max.X), float32(r.Max.Y)))
+	p3 := t.Transform(f32.Pt(float32(r.Min.X), float32(r.Max.Y)))
+
+	minX := min(min(p0.X, p1.X), min(p2.X, p3.X))
+	minY := min(min(p0.Y, p1.Y), min(p2.Y, p3.Y))
+	maxX := max(max(p0.X, p1.X), max(p2.X, p3.X))
+	maxY := max(max(p0.Y, p1.Y), max(p2.Y, p3.Y))
+	left := int32(math.Floor(float64(minX)))
+	top := int32(math.Floor(float64(minY)))
+	right := int32(math.Ceil(float64(maxX)))
+	bottom := int32(math.Ceil(float64(maxY)))
+	if right <= left {
+		right = left + 1
+	}
+	if bottom <= top {
+		bottom = top + 1
+	}
+	return windows.Rect{
+		Left:   left,
+		Top:    top,
+		Right:  right,
+		Bottom: bottom,
+	}
+}
+
 // hitTest returns the non-client area hit by the point, needed to
 // process WM_NCHITTEST.
 func (w *window) hitTest(x, y int) uintptr {
-	if w.config.Mode != Windowed {
-		// Only windowed mode should allow resizing.
-		return windows.HTCLIENT
-	}
-	// Check for resize handle before system actions; otherwise it can be impossible to
-	// resize a custom-decorations window when the system move area is flush with the
-	// edge of the window.
-	top := y <= w.borderSize.Y
-	bottom := y >= w.config.Size.Y-w.borderSize.Y
-	left := x <= w.borderSize.X
-	right := x >= w.config.Size.X-w.borderSize.X
-	switch {
-	case top && left:
-		return windows.HTTOPLEFT
-	case top && right:
-		return windows.HTTOPRIGHT
-	case bottom && left:
-		return windows.HTBOTTOMLEFT
-	case bottom && right:
-		return windows.HTBOTTOMRIGHT
-	case top:
-		return windows.HTTOP
-	case bottom:
-		return windows.HTBOTTOM
-	case left:
-		return windows.HTLEFT
-	case right:
-		return windows.HTRIGHT
+	if w.config.Mode == Windowed {
+		// Check for resize handle before system actions; otherwise it can be impossible to
+		// resize a custom-decorations window when the system move area is flush with the
+		// edge of the window.
+		top := y <= w.borderSize.Y
+		bottom := y >= w.config.Size.Y-w.borderSize.Y
+		left := x <= w.borderSize.X
+		right := x >= w.config.Size.X-w.borderSize.X
+		switch {
+		case top && left:
+			return windows.HTTOPLEFT
+		case top && right:
+			return windows.HTTOPRIGHT
+		case bottom && left:
+			return windows.HTBOTTOMLEFT
+		case bottom && right:
+			return windows.HTBOTTOMRIGHT
+		case top:
+			return windows.HTTOP
+		case bottom:
+			return windows.HTBOTTOM
+		case left:
+			return windows.HTLEFT
+		case right:
+			return windows.HTRIGHT
+		}
 	}
 	p := f32.Pt(float32(x), float32(y))
 	if a, ok := w.w.ActionAt(p); ok && a == system.ActionMove {
@@ -499,34 +621,28 @@ func (w *window) hitTest(x, y int) uintptr {
 	return windows.HTCLIENT
 }
 
-func (w *window) pointerButton(btn pointer.Buttons, press bool, lParam uintptr, kmods key.Modifiers) {
+func (w *window) pointerUpdate(pi windows.PointerInfo, pid pointer.ID, kind pointer.Kind, lParam uintptr) {
 	if !w.config.Focused {
 		windows.SetFocus(w.hwnd)
 	}
 
-	var kind pointer.Kind
-	if press {
-		kind = pointer.Press
-		if w.pointerBtns == 0 {
-			windows.SetCapture(w.hwnd)
-		}
-		w.pointerBtns |= btn
-	} else {
-		kind = pointer.Release
-		w.pointerBtns &^= btn
-		if w.pointerBtns == 0 {
-			windows.ReleaseCapture()
-		}
+	src := pointer.Touch
+	if pi.PointerType == windows.PT_MOUSE {
+		src = pointer.Mouse
 	}
+
 	x, y := coordsFromlParam(lParam)
-	p := f32.Point{X: float32(x), Y: float32(y)}
+	np := windows.Point{X: int32(x), Y: int32(y)}
+	windows.ScreenToClient(w.hwnd, &np)
+	p := f32.Point{X: float32(np.X), Y: float32(np.Y)}
 	w.ProcessEvent(pointer.Event{
 		Kind:      kind,
-		Source:    pointer.Mouse,
+		Source:    src,
 		Position:  p,
-		Buttons:   w.pointerBtns,
+		PointerID: pid,
+		Buttons:   getPointerButtons(pi),
 		Time:      windows.GetMessageTime(),
-		Modifiers: kmods,
+		Modifiers: getModifiers(),
 	})
 }
 
@@ -537,6 +653,12 @@ func coordsFromlParam(lParam uintptr) (int, int) {
 }
 
 func (w *window) scrollEvent(wParam, lParam uintptr, horizontal bool, kmods key.Modifiers) {
+	pid := getPointerIDwParam(wParam)
+	pi, err := windows.GetPointerInfo(uint32(pid))
+	if err != nil {
+		panic(err)
+	}
+
 	x, y := coordsFromlParam(lParam)
 	// The WM_MOUSEWHEEL coordinates are in screen coordinates, in contrast
 	// to other mouse events.
@@ -559,7 +681,7 @@ func (w *window) scrollEvent(wParam, lParam uintptr, horizontal bool, kmods key.
 		Kind:      pointer.Scroll,
 		Source:    pointer.Mouse,
 		Position:  p,
-		Buttons:   w.pointerBtns,
+		Buttons:   getPointerButtons(pi),
 		Scroll:    sp,
 		Modifiers: kmods,
 		Time:      windows.GetMessageTime(),
@@ -595,7 +717,12 @@ func (w *window) EditorStateChanged(old, new editorState) {
 		return
 	}
 	defer windows.ImmReleaseContext(w.hwnd, imc)
-	if old.Selection.Range != new.Selection.Range || old.Snippet != new.Snippet {
+	if old.Selection.Caret != new.Selection.Caret ||
+		old.Selection.Transform != new.Selection.Transform ||
+		old.Selection.CompositionBounds != new.Selection.CompositionBounds {
+		w.updateIMEWindows(imc)
+	}
+	if shouldCancelComposition(old, new) {
 		windows.ImmNotifyIME(imc, windows.NI_COMPOSITIONSTR, windows.CPS_CANCEL, 0)
 	}
 }
@@ -669,7 +796,13 @@ func (w *window) ReadClipboard() {
 	w.readClipboard()
 }
 
-func (w *window) readClipboard() error {
+func (w *window) readClipboard() (cerr error) {
+	defer func() {
+		if cerr != nil {
+			w.processDataEvent("")
+		}
+	}()
+
 	if err := windows.OpenClipboard(w.hwnd); err != nil {
 		return err
 	}
@@ -684,13 +817,17 @@ func (w *window) readClipboard() error {
 	}
 	defer windows.GlobalUnlock(mem)
 	content := gowindows.UTF16PtrToString((*uint16)(unsafe.Pointer(ptr)))
+	w.processDataEvent(content)
+	return nil
+}
+
+func (w *window) processDataEvent(content string) {
 	w.ProcessEvent(transfer.DataEvent{
 		Type: "application/text",
 		Open: func() io.ReadCloser {
 			return io.NopCloser(strings.NewReader(content))
 		},
 	})
-	return nil
 }
 
 func (w *window) Configure(options []Option) {
@@ -707,7 +844,16 @@ func (w *window) Configure(options []Option) {
 	style := windows.GetWindowLong(w.hwnd, windows.GWL_STYLE)
 	var showMode int32
 	var x, y, width, height int32
-	swpStyle := uintptr(windows.SWP_NOZORDER | windows.SWP_FRAMECHANGED)
+	swpStyle := uintptr(windows.SWP_FRAMECHANGED)
+	if cnf.TopMost == w.config.TopMost {
+		// Don't change the z-order if TopMost didn't change.
+		swpStyle |= windows.SWP_NOZORDER
+	}
+	hwndAfter := windows.HWND_NOTOPMOST
+	if cnf.TopMost {
+		hwndAfter = windows.HWND_TOPMOST
+	}
+	w.config.TopMost = cnf.TopMost
 	winStyle := uintptr(windows.WS_OVERLAPPEDWINDOW)
 	style &^= winStyle
 	switch cnf.Mode {
@@ -750,8 +896,17 @@ func (w *window) Configure(options []Option) {
 		swpStyle |= windows.SWP_NOMOVE | windows.SWP_NOSIZE
 		showMode = windows.SW_SHOWMAXIMIZED
 	}
+
+	// Disable window resizing if MinSize and MaxSize are equal.
+	if cnf.MaxSize != (image.Point{}) && cnf.MinSize == cnf.MaxSize {
+		style &^= windows.WS_MAXIMIZEBOX
+		style &^= windows.WS_THICKFRAME
+	}
+
+	// Note: these invocation all trigger the windows callback method which may process a pending system.ActionCenter
+	// action, so SetWindowPos should come first so as to not "overwrite" system.ActionCenter.
+	windows.SetWindowPos(w.hwnd, hwndAfter, x, y, width, height, swpStyle)
 	windows.SetWindowLong(w.hwnd, windows.GWL_STYLE, style)
-	windows.SetWindowPos(w.hwnd, 0, x, y, width, height, swpStyle)
 	windows.ShowWindow(w.hwnd, showMode)
 }
 
@@ -865,23 +1020,26 @@ func (w *window) Perform(acts system.Action) {
 			r := windows.GetWindowRect(w.hwnd)
 			dx := r.Right - r.Left
 			dy := r.Bottom - r.Top
-			// Calculate center position on current monitor.
-			mi := windows.GetMonitorInfo(w.hwnd).Monitor
-			x := (mi.Right - mi.Left - dx) / 2
-			y := (mi.Bottom - mi.Top - dy) / 2
+			// Center in the usable area of the current monitor.
+			area := windows.GetMonitorInfo(w.hwnd).WorkArea
+			x := (area.Right + area.Left - dx) / 2
+			y := (area.Bottom + area.Top - dy) / 2
 			windows.SetWindowPos(w.hwnd, 0, x, y, dx, dy, windows.SWP_NOZORDER|windows.SWP_FRAMECHANGED)
 		case system.ActionRaise:
-			w.raise()
+			// A minimized window has to be restored before it can be
+			// brought to the front; SetForegroundWindow on its own
+			// leaves it minimized, so raising an iconified window did
+			// nothing at all.
+			if windows.IsIconic(w.hwnd) {
+				windows.ShowWindow(w.hwnd, windows.SW_RESTORE)
+			}
+			windows.SetForegroundWindow(w.hwnd)
+			windows.SetWindowPos(w.hwnd, windows.HWND_TOP, 0, 0, 0, 0,
+				windows.SWP_NOMOVE|windows.SWP_NOSIZE|windows.SWP_SHOWWINDOW)
 		case system.ActionClose:
 			windows.PostMessage(w.hwnd, windows.WM_CLOSE, 0, 0)
 		}
 	})
-}
-
-func (w *window) raise() {
-	windows.SetForegroundWindow(w.hwnd)
-	windows.SetWindowPos(w.hwnd, windows.HWND_TOPMOST, 0, 0, 0, 0,
-		windows.SWP_NOMOVE|windows.SWP_NOSIZE|windows.SWP_SHOWWINDOW)
 }
 
 func convertKeyCode(code uintptr) (key.Name, bool) {
@@ -992,4 +1150,258 @@ func (Win32ViewEvent) implementsViewEvent() {}
 func (Win32ViewEvent) ImplementsEvent()     {}
 func (w Win32ViewEvent) Valid() bool {
 	return w != (Win32ViewEvent{})
+}
+
+// LOWORD (minwindef.h)
+func loWord(val uint32) uint16 {
+	return uint16(val & 0xFFFF)
+}
+
+// GET_POINTERID_WPARAM (winuser.h)
+func getPointerIDwParam(wParam uintptr) pointer.ID {
+	return pointer.ID(loWord(uint32(wParam)))
+}
+
+func getPointerButtons(pi windows.PointerInfo) pointer.Buttons {
+	var btns pointer.Buttons
+
+	if pi.PointerFlags&windows.POINTER_FLAG_FIRSTBUTTON != 0 {
+		btns |= pointer.ButtonPrimary
+	} else {
+		btns &^= pointer.ButtonPrimary
+	}
+	if pi.PointerFlags&windows.POINTER_FLAG_SECONDBUTTON != 0 {
+		btns |= pointer.ButtonSecondary
+	} else {
+		btns &^= pointer.ButtonSecondary
+	}
+	if pi.PointerFlags&windows.POINTER_FLAG_THIRDBUTTON != 0 {
+		btns |= pointer.ButtonTertiary
+	} else {
+		btns &^= pointer.ButtonTertiary
+	}
+	if pi.PointerFlags&windows.POINTER_FLAG_FOURTHBUTTON != 0 {
+		btns |= pointer.ButtonQuaternary
+	} else {
+		btns &^= pointer.ButtonQuaternary
+	}
+	if pi.PointerFlags&windows.POINTER_FLAG_FIFTHBUTTON != 0 {
+		btns |= pointer.ButtonQuinary
+	} else {
+		btns &^= pointer.ButtonQuinary
+	}
+
+	return btns
+}
+
+// schemesURI is a list of schemes, comma separated, that must be
+// defined using -X compiler ldflag, that used in gogio.
+var schemesURI string
+
+func init() {
+	if schemesURI == "" {
+		return
+	}
+
+	currentSchemes := strings.Split(schemesURI, ",")
+	oldSchemes := registeredSchemes(ID)
+
+	for _, s := range currentSchemes {
+		for i, o := range oldSchemes {
+			if s == o {
+				oldSchemes = append(oldSchemes[:i], oldSchemes[i+1:]...)
+				break
+			}
+		}
+	}
+
+	if len(oldSchemes) > 0 {
+		go unregisterSchemes(ID, oldSchemes)
+	}
+
+	if len(currentSchemes) == 0 {
+		return
+	}
+
+	// On Windows, launching the app using a URI will start a new instance of the app,
+	// a new window. That behavior, by default, doesn't align with iOS/Android/macOS, where
+	// the deeplink sends the event to the running app (if any). We are emulating it.
+	if hwnd, _ := windows.FindWindow(ID); hwnd != 0 {
+		if u := startupURI(); u != "" {
+			broadcastURI(hwnd, u)
+		}
+		os.Exit(0)
+		return
+	}
+
+	go registerSchemes(ID, currentSchemes)
+}
+
+func startupURI() string {
+	if len(os.Args) == 3 && os.Args[1] == "-gio_launch_url" {
+		return os.Args[2]
+	}
+	return ""
+}
+
+func processURLEvent(rawurl string) bool {
+	if rawurl == "" {
+		return false
+	}
+
+	evt, err := newURLEvent(rawurl)
+	if err != nil {
+		return false
+	}
+
+	for _, scheme := range strings.Split(schemesURI, ",") {
+		if strings.EqualFold(scheme, evt.URL.Scheme) {
+			processGlobalEvent(evt)
+			return true
+		}
+	}
+
+	return false
+}
+
+func broadcastURI(hwnd syscall.Handle, uri string) {
+	data, err := syscall.UTF16FromString(uri)
+	if err != nil {
+		return // Only happens if uri contains NULL character.
+	}
+
+	pinner := new(runtime.Pinner)
+	defer pinner.Unpin()
+	pinner.Pin(unsafe.Pointer(unsafe.SliceData(data)))
+
+	msg := &windows.CopyDataStruct{
+		DwData: copyDataURLType,
+		CbData: uint32(len(data) * int(unsafe.Sizeof(data[0]))),
+		LpData: uintptr(unsafe.Pointer(unsafe.SliceData(data))),
+	}
+	pinner.Pin(unsafe.Pointer(msg))
+
+	// SendMessage blocks until the message is processed.
+	windows.SendMessage(hwnd, windows.WM_COPYDATA, 0, uintptr(unsafe.Pointer(msg)))
+}
+
+func registeredSchemes(appid string) []string {
+	meta, err := registry.OpenKey(registry.CURRENT_USER, `Software\\`+appid, registry.ALL_ACCESS)
+	if err != nil {
+		return nil
+	}
+	defer meta.Close()
+
+	schemes, _, _ := meta.GetStringsValue("URISchemes")
+	return schemes
+}
+
+func registerSchemes(appid string, schemes []string) error {
+	reg := func(scheme string) error {
+		key, existent, err := registry.CreateKey(registry.CURRENT_USER, `Software\\Classes\\`+scheme, registry.ALL_ACCESS)
+		if err != nil {
+			return err
+		}
+		defer key.Close()
+
+		if existent {
+			// Check if the existent key belongs to the current application
+			id, _, err := key.GetStringValue("appid")
+			if err != nil || id != appid {
+				return fmt.Errorf("scheme %s already registered by another application", scheme)
+			}
+		}
+
+		path, err := os.Executable()
+		if err != nil {
+			return err
+		}
+
+		if err = key.SetStringValue("", "URL:"+scheme+" Protocol"); err != nil {
+			return err
+		}
+		if err = key.SetStringValue("URL Protocol", ""); err != nil {
+			return err
+		}
+		if err = key.SetStringValue("appid", appid); err != nil {
+			return err
+		}
+
+		icon, _, err := registry.CreateKey(key, `DefaultIcon`, registry.ALL_ACCESS)
+		if err != nil {
+			return err
+		}
+		defer icon.Close()
+
+		if err = icon.SetStringValue("", `"`+path+`",1`); err != nil {
+			return err
+		}
+
+		cmd, _, err := registry.CreateKey(key, `shell\\open\\command`, registry.ALL_ACCESS)
+		if err != nil {
+			return err
+		}
+		defer cmd.Close()
+
+		if err = cmd.SetStringValue("", `"`+path+`" -gio_launch_url "%1"`); err != nil {
+			return err
+		}
+
+		return nil
+	}
+
+	for _, scheme := range schemes {
+		if scheme == "" {
+			continue // just in case
+		}
+		if err := reg(scheme); err != nil {
+			return err
+		}
+	}
+
+	meta, _, err := registry.CreateKey(registry.CURRENT_USER, `Software\\`+appid, registry.ALL_ACCESS)
+	if err != nil {
+		return err
+	}
+	defer meta.Close()
+
+	if err = meta.SetStringsValue("URISchemes", schemes); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func unregisterSchemes(appid string, schemes []string) {
+	classes, err := registry.OpenKey(registry.CURRENT_USER, `Software\\Classes`, registry.ALL_ACCESS)
+	if err != nil {
+		return
+	}
+	defer classes.Close()
+
+	for _, scheme := range schemes {
+		if scheme == "" {
+			continue // just in case
+		}
+
+		key, err := registry.OpenKey(classes, scheme, registry.ALL_ACCESS)
+		if err != nil {
+			continue
+		}
+
+		id, _, err := key.GetStringValue("appid")
+		if err == nil && id != appid {
+			continue
+		}
+
+		for _, k := range []string{`DefaultIcon`, `shell\\open\\command`, `shell\\open`, `shell`} {
+			registry.DeleteKey(key, k)
+		}
+
+		if err := key.Close(); err != nil {
+			continue
+		}
+
+		registry.DeleteKey(classes, scheme)
+	}
 }

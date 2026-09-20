@@ -22,7 +22,6 @@ func ParseName(src []byte) (Name, int, error) {
 	n += 6
 
 	{
-
 		if offsetStringData != 0 { // ignore null offset
 			if L := len(src); L < offsetStringData {
 				return item, 0, fmt.Errorf("reading Name: "+"EOF: expected length: %d, got %d", offsetStringData, L)

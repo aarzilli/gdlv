@@ -48,3 +48,8 @@ func (s Script) String() string {
 	binary.BigEndian.PutUint32(buf[:], uint32(s))
 	return string(buf[:])
 }
+
+// Strong returns true if the script is not Common or Inherited
+func (s Script) Strong() bool {
+	return s != Common && s != Inherited
+}

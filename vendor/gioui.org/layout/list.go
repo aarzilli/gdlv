@@ -29,6 +29,10 @@ type List struct {
 	ScrollToEnd bool
 	// Alignment is the cross axis alignment of list elements.
 	Alignment Alignment
+	// ScrollAnyAxis allows any scroll axis to scroll the list, not just the main axis.
+	ScrollAnyAxis bool
+	// Gap is the space in pixels between children.
+	Gap int
 
 	cs          Constraints
 	scroll      gesture.Scroll
@@ -128,7 +132,7 @@ func (l *List) Layout(gtx Context, len int, w ListElement) Dimensions {
 	}
 
 	if numLaidOut > 0 {
-		l.Position.Length = laidOutTotalLength * len / numLaidOut
+		l.Position.Length = laidOutTotalLength*len/numLaidOut + l.Gap*(len-1)
 	} else {
 		l.Position.Length = 0
 	}
@@ -159,12 +163,19 @@ func (l *List) update(gtx Context) {
 			max = 0
 		}
 	}
+
 	xrange := pointer.ScrollRange{Min: min, Max: max}
 	yrange := pointer.ScrollRange{}
-	if l.Axis == Vertical {
+
+	axis := gesture.Axis(l.Axis)
+	if l.ScrollAnyAxis {
+		axis = gesture.Both
+		yrange = xrange
+	} else if l.Axis == Vertical {
 		xrange, yrange = yrange, xrange
 	}
-	d := l.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, gesture.Axis(l.Axis), xrange, yrange)
+	d := l.scroll.Update(gtx.Metric, gtx.Source, gtx.Now, axis, xrange, yrange)
+
 	l.scrollDelta = d
 	l.Position.Offset += d
 }
@@ -214,11 +225,11 @@ func (l *List) nextDir() iterationDir {
 	if len(l.children) > 0 {
 		if l.Position.First > 0 {
 			firstChild := l.children[0]
-			firstSize = l.Axis.Convert(firstChild.size).X
+			firstSize = l.Axis.Convert(firstChild.size).X + l.Gap
 		}
 		if last < l.len {
 			lastChild := l.children[len(l.children)-1]
-			lastSize = l.Axis.Convert(lastChild.size).X
+			lastSize = l.Axis.Convert(lastChild.size).X + l.Gap
 		}
 	}
 	switch {
@@ -236,6 +247,9 @@ func (l *List) nextDir() iterationDir {
 func (l *List) end(dims Dimensions, call op.CallOp) {
 	child := scrollChild{dims.Size, call}
 	mainSize := l.Axis.Convert(child.size).X
+	if len(l.children) > 0 {
+		l.maxSize += l.Gap
+	}
 	l.maxSize += mainSize
 	switch l.dir {
 	case iterateForward:
@@ -245,7 +259,7 @@ func (l *List) end(dims Dimensions, call op.CallOp) {
 		copy(l.children[1:], l.children)
 		l.children[0] = child
 		l.Position.First--
-		l.Position.Offset += mainSize
+		l.Position.Offset += mainSize + l.Gap
 	default:
 		panic("call Next before End")
 	}
@@ -270,7 +284,7 @@ func (l *List) layout(ops *op.Ops, macro op.MacroOp) Dimensions {
 			break
 		}
 		l.Position.First++
-		l.Position.Offset -= mainSize
+		l.Position.Offset -= mainSize + l.Gap
 		first = child
 		children = children[1:]
 	}
@@ -281,6 +295,9 @@ func (l *List) layout(ops *op.Ops, macro op.MacroOp) Dimensions {
 		sz := l.Axis.Convert(child.size)
 		if c := sz.Y; c > maxCross {
 			maxCross = c
+		}
+		if i > 0 {
+			size += l.Gap
 		}
 		size += sz.X
 		if size >= mainMax {
@@ -308,10 +325,6 @@ func (l *List) layout(ops *op.Ops, macro op.MacroOp) Dimensions {
 			cross = (maxCross - sz.Y) / 2
 		}
 		childSize := sz.X
-		min := pos
-		if min < 0 {
-			min = 0
-		}
 		pt := l.Axis.Convert(image.Pt(pos, cross))
 		trans := op.Offset(pt).Push(ops)
 		child.call.Add(ops)
@@ -321,14 +334,19 @@ func (l *List) layout(ops *op.Ops, macro op.MacroOp) Dimensions {
 	// Lay out leading invisible child.
 	if first != (scrollChild{}) {
 		sz := l.Axis.Convert(first.size)
-		pos -= sz.X
+		pos -= sz.X + l.Gap
 		layout(first)
+		pos += l.Gap
 	}
-	for _, child := range children {
+	for i, child := range children {
+		if i > 0 {
+			pos += l.Gap
+		}
 		layout(child)
 	}
 	// Lay out trailing invisible child.
 	if last != (scrollChild{}) {
+		pos += l.Gap
 		layout(last)
 	}
 	atStart := l.Position.First == 0 && l.Position.Offset <= 0

@@ -1,6 +1,10 @@
 package harfbuzz
 
-import "fmt"
+import (
+	"fmt"
+
+	ucd "github.com/go-text/typesetting/internal/unicodedata"
+)
 
 // ported from harfbuzz/src/hb-ot-shape-fallback.cc Copyright © 2011,2012 Google, Inc. Behdad Esfahbod
 
@@ -126,7 +130,7 @@ func recategorizeCombiningClass(u rune, klass uint8) uint8 {
 
 func fallbackMarkPositionRecategorizeMarks(buffer *Buffer) {
 	for i, info := range buffer.Info {
-		if info.unicode.generalCategory() == nonSpacingMark {
+		if info.unicode.generalCategory() == ucd.Mn {
 			combiningClass := info.getModifiedCombiningClass()
 			combiningClass = recategorizeCombiningClass(info.codepoint, combiningClass)
 			buffer.Info[i].setModifiedCombiningClass(combiningClass)
@@ -137,7 +141,7 @@ func fallbackMarkPositionRecategorizeMarks(buffer *Buffer) {
 func zeroMarkAdvances(buffer *Buffer, start, end int, adjustOffsetsWhenZeroing bool) {
 	info := buffer.Info
 	for i := start; i < end; i++ {
-		if info[i].unicode.generalCategory() != nonSpacingMark {
+		if info[i].unicode.generalCategory() != ucd.Mn {
 			continue
 		}
 		if adjustOffsetsWhenZeroing {
@@ -327,6 +331,9 @@ func positionCluster(plan *otShapePlan, font *Font, buffer *Buffer,
 			// find mark glyphs
 			var j int
 			for j = i + 1; j < end; j++ {
+				if info[j].isHidden() || info[j].isDefaultIgnorable() {
+					continue
+				}
 				if !info[j].isUnicodeMark() {
 					break
 				}
@@ -345,7 +352,7 @@ func fallbackMarkPosition(plan *otShapePlan, font *Font, buffer *Buffer,
 	var start int
 	info := buffer.Info
 	for i := 1; i < len(info); i++ {
-		if !info[i].isUnicodeMark() {
+		if !info[i].isUnicodeMark() && !info[i].isHidden() && !info[i].isDefaultIgnorable() {
 			positionCluster(plan, font, buffer, start, i, adjustOffsetsWhenZeroing)
 			start = i
 		}

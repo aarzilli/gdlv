@@ -348,3 +348,105 @@ type AATLoopkupExt10 struct {
 	FirstGlyph GlyphID
 	Values     []uint32 `arrayCount:"FirstUint16"`
 }
+
+func (src AATLoopkup0) Coverage() [][2]GlyphID {
+	return [][2]GlyphID{{0, GlyphID(len(src.Values) - 1)}}
+}
+
+func (src AATLoopkupExt0) Coverage() [][2]GlyphID {
+	return [][2]GlyphID{{0, GlyphID(len(src.Values) - 1)}}
+}
+
+func (src AATLoopkup2) Coverage() [][2]GlyphID {
+	out := make([][2]GlyphID, 0, len(src.Records))
+	for _, record := range src.Records {
+		if record.FirstGlyph == 0xFFFF {
+			continue
+		}
+		out = append(out, [2]GlyphID{record.FirstGlyph, record.LastGlyph})
+	}
+	return out
+}
+
+func (src AATLoopkupExt2) Coverage() [][2]GlyphID {
+	out := make([][2]GlyphID, 0, len(src.Records))
+	for _, record := range src.Records {
+		if record.FirstGlyph == 0xFFFF {
+			continue
+		}
+		out = append(out, [2]GlyphID{record.FirstGlyph, record.LastGlyph})
+	}
+	return out
+}
+
+func (src AATLoopkup4) Coverage() [][2]GlyphID {
+	out := make([][2]GlyphID, 0, len(src.Records))
+	for _, record := range src.Records {
+		if record.FirstGlyph == 0xFFFF {
+			continue
+		}
+		out = append(out, [2]GlyphID{record.FirstGlyph, record.LastGlyph})
+	}
+	return out
+}
+
+func (src AATLoopkupExt4) Coverage() [][2]GlyphID {
+	out := make([][2]GlyphID, 0, len(src.Records))
+	for _, record := range src.Records {
+		if record.FirstGlyph == 0xFFFF {
+			continue
+		}
+		out = append(out, [2]GlyphID{record.FirstGlyph, record.LastGlyph})
+	}
+	return out
+}
+
+func (src AATLoopkup6) Coverage() [][2]GlyphID {
+	out := make([][2]GlyphID, 0, len(src.Records))
+	for _, record := range src.Records {
+		if record.Glyph == 0xFFFF {
+			continue
+		}
+		out = append(out, [2]GlyphID{record.Glyph, record.Glyph})
+	}
+	return out
+}
+
+func (src AATLoopkupExt6) Coverage() [][2]GlyphID {
+	out := make([][2]GlyphID, 0, len(src.Records))
+	for _, record := range src.Records {
+		if record.Glyph == 0xFFFF {
+			continue
+		}
+		out = append(out, [2]GlyphID{record.Glyph, record.Glyph})
+	}
+	return out
+}
+
+func (src AATLoopkup8) Coverage() [][2]GlyphID {
+	if len(src.Values) == 0 || src.FirstGlyph == 0xFFFF {
+		return nil
+	}
+	return [][2]GlyphID{{src.FirstGlyph, src.FirstGlyph + GlyphID(len(src.Values)-1)}}
+}
+
+func (src AATLoopkupExt8) Coverage() [][2]GlyphID {
+	if len(src.Values) == 0 || src.FirstGlyph == 0xFFFF {
+		return nil
+	}
+	return [][2]GlyphID{{src.FirstGlyph, src.FirstGlyph + GlyphID(len(src.Values)-1)}}
+}
+
+func (src AATLoopkup10) Coverage() [][2]GlyphID {
+	if len(src.Values) == 0 || src.FirstGlyph == 0xFFFF {
+		return nil
+	}
+	return [][2]GlyphID{{src.FirstGlyph, src.FirstGlyph + GlyphID(len(src.Values)-1)}}
+}
+
+func (src AATLoopkupExt10) Coverage() [][2]GlyphID {
+	if len(src.Values) == 0 || src.FirstGlyph == 0xFFFF {
+		return nil
+	}
+	return [][2]GlyphID{{src.FirstGlyph, src.FirstGlyph + GlyphID(len(src.Values)-1)}}
+}

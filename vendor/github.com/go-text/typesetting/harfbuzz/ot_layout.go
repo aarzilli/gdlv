@@ -1,6 +1,8 @@
 package harfbuzz
 
 import (
+	"fmt"
+
 	"github.com/go-text/typesetting/font"
 	ot "github.com/go-text/typesetting/font/opentype"
 	"github.com/go-text/typesetting/font/opentype/tables"
@@ -29,14 +31,7 @@ const (
 	otMarkAttachmentType uint16 = 0xFF00
 )
 
-//  /**
-//   * SECTION:hb-ot-layout
-//   * @title: hb-ot-layout
-//   * @short_description: OpenType Layout
-//   * @include: hb-ot.h
-//   *
-//   * Functions for querying OpenType Layout features in the font face.
-//   **/
+type otLayoutMappingCache = cache15_8_7
 
 const maxNestingLevel = 6
 
@@ -70,16 +65,25 @@ func (c *otApplyContext) applyString(proxy otProxyMeta, accel *otLayoutLookupAcc
 }
 
 func (c *otApplyContext) applyForward(accel *otLayoutLookupAccelerator) bool {
-	ret := false
 	buffer := c.buffer
-	for buffer.idx < len(buffer.Info) {
-		applied := false
-		if accel.digest.mayHave(gID(buffer.cur(0).Glyph)) &&
-			(buffer.cur(0).Mask&c.lookupMask) != 0 &&
-			c.checkGlyphProperty(buffer.cur(0), c.lookupProps) {
-			applied = accel.apply(c)
+	info := buffer.Info
+	ret := false
+	for {
+		j := buffer.idx
+		for j < len(info) &&
+			!(accel.digest.mayHave(gID(info[j].Glyph)) &&
+				(info[j].Mask&c.lookupMask) != 0 &&
+				c.checkGlyphProperty(&info[j], c.lookupProps)) {
+			j++
+		}
+		if j > buffer.idx {
+			buffer.nextGlyphs(j - buffer.idx)
+		}
+		if buffer.idx >= len(info) {
+			break
 		}
 
+		applied := accel.apply(c)
 		if applied {
 			ret = true
 		} else {
@@ -93,18 +97,81 @@ func (c *otApplyContext) applyBackward(accel *otLayoutLookupAccelerator) bool {
 	ret := false
 	buffer := c.buffer
 	for do := true; do; do = buffer.idx >= 0 {
-		if accel.digest.mayHave(gID(buffer.cur(0).Glyph)) &&
-			(buffer.cur(0).Mask&c.lookupMask != 0) &&
-			c.checkGlyphProperty(buffer.cur(0), c.lookupProps) {
+		cur := buffer.cur(0)
+		if accel.digest.mayHave(gID(cur.Glyph)) &&
+			(cur.Mask&c.lookupMask != 0) &&
+			c.checkGlyphProperty(cur, c.lookupProps) {
 			applied := accel.apply(c)
 			ret = ret || applied
 		}
 
 		// the reverse lookup doesn't "advance" cursor (for good reason).
 		buffer.idx--
-
 	}
 	return ret
+}
+
+func (m *otMap) apply(proxy otProxy, plan *otShapePlan, font *Font, buffer *Buffer) {
+	tableIndex := proxy.tableIndex
+	i := 0
+	c := &m.applyContext
+
+	c.reset(tableIndex, font, buffer)
+	c.recurseFunc = proxy.recurseFunc
+
+	for stageI, stage := range m.stages[tableIndex] {
+
+		if debugMode {
+			fmt.Printf("\tAPPLY - stage %d\n", stageI)
+		}
+
+		for ; i < stage.lastLookup; i++ {
+			lookup := m.lookups[tableIndex][i]
+			lookupIndex := lookup.index
+
+			if debugMode {
+				fmt.Printf("\t\tLookup %d start\n", lookupIndex)
+			}
+
+			// Only try applying the lookup if there is any overlap.
+			accel := &proxy.accels[lookupIndex]
+			if accel.digest.mayIntersects(buffer.digest) {
+				c.lookupIndex = lookupIndex
+				c.lookupMask = lookup.mask
+				c.autoZWJ = lookup.autoZWJ
+				c.autoZWNJ = lookup.autoZWNJ
+				c.random = lookup.random
+				c.perSyllable = lookup.perSyllable
+
+				// pathological cases
+				if len(c.buffer.Info) > c.buffer.maxLen {
+					return
+				}
+				c.applyString(proxy.otProxyMeta, accel)
+			}
+
+			if debugMode {
+				fmt.Print("\t\tLookup end : ")
+				if proxy.tableIndex == 0 {
+					fmt.Println(c.buffer.Info)
+				} else {
+					fmt.Println(c.buffer.Pos)
+				}
+			}
+
+		}
+
+		if stage.pauseFunc != nil {
+			if debugMode {
+				fmt.Println("\t\tExecuting pause function")
+			}
+
+			if stage.pauseFunc(plan, font, buffer) {
+				// Refresh working buffer digest since buffer changed.
+				buffer.updateDigest()
+			}
+		}
+	}
 }
 
 /*
@@ -141,7 +208,7 @@ func hasCrossKerning(kern font.Kernx) bool {
 func (sp *otShapePlan) otLayoutKern(font *Font, buffer *Buffer) {
 	kern := font.face.Kern
 	c := newAatApplyContext(sp, font, buffer)
-	c.applyKernx(kern)
+	c.applyKernx(kern, font.kernAccels)
 }
 
 var otTagLatinScript = ot.NewTag('l', 'a', 't', 'n')
@@ -352,8 +419,8 @@ func otLayoutPositionStart(_ *Font, buffer *Buffer) {
 }
 
 // Called after positioning lookups are performed, to finish glyph offsets.
-func otLayoutPositionFinishOffsets(_ *Font, buffer *Buffer) {
-	positionFinishOffsetsGPOS(buffer)
+func otLayoutPositionFinishOffsets(font *Font, buffer *Buffer) {
+	positionFinishOffsetsGPOS(font, buffer)
 }
 
 func glyphInfoSubstituted(info *GlyphInfo) bool {
@@ -369,5 +436,7 @@ func clearSubstitutionFlags(_ *otShapePlan, _ *Font, buffer *Buffer) bool {
 }
 
 func reverseGraphemes(b *Buffer) {
+	// MONOTONE_GRAPHEMES was already applied and is taken care of by _hb_grapheme_group_func.
+	// So we just check for MONOTONE_CHARACTERS here.
 	b.reverseGroups(func(_, gi2 *GlyphInfo) bool { return gi2.isContinuation() }, b.ClusterLevel == MonotoneGraphemes)
 }

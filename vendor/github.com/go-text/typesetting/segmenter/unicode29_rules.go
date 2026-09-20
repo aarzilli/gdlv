@@ -3,7 +3,7 @@
 package segmenter
 
 import (
-	ucd "github.com/go-text/typesetting/unicodedata"
+	ucd "github.com/go-text/typesetting/internal/unicodedata"
 )
 
 // -----------------------------------------------------------------------
@@ -14,28 +14,30 @@ import (
 // at a grapheme break.
 // See https://unicode.org/reports/tr29/#Grapheme_Cluster_Boundary_Rules
 func (cr *cursor) applyGraphemeBoundaryRules() bool {
-	triggerGB11 := cr.updatePictoSequence()    // apply rule GB11
-	triggerGB12_13 := cr.updateGraphemeRIOdd() // apply rule GB12 and GB13
+	triggerGB9c := cr.updateIndicConjunctBreakSequence() // apply rule GB9c
+	triggerGB11 := cr.updatePictoSequence()              // apply rule GB11
+	triggerGB12_13 := cr.updateGraphemeRIOdd()           // apply rule GB12 and GB13
 
 	br0, br1 := cr.prevGrapheme, cr.grapheme
 	if cr.r == '\n' && cr.prev == '\r' {
 		return false // Rule GB3
-	} else if br0 == ucd.GraphemeBreakControl || br0 == ucd.GraphemeBreakCR || br0 == ucd.GraphemeBreakLF ||
-		br1 == ucd.GraphemeBreakControl || br1 == ucd.GraphemeBreakCR || br1 == ucd.GraphemeBreakLF {
+	} else if br0&(ucd.GB_Control|ucd.GB_CR|ucd.GB_LF) != 0 ||
+		br1&(ucd.GB_Control|ucd.GB_CR|ucd.GB_LF) != 0 {
 		return true // Rules GB4 && GB5
-	} else if br0 == ucd.GraphemeBreakL &&
-		(br1 == ucd.GraphemeBreakL || br1 == ucd.GraphemeBreakV || br1 == ucd.GraphemeBreakLV || br1 == ucd.GraphemeBreakLVT) { // rule GB6
+	} else if br0 == ucd.GB_L && br1&(ucd.GB_L|ucd.GB_V|ucd.GB_LV|ucd.GB_LVT) != 0 { // rule GB6
 		return false
-	} else if (br0 == ucd.GraphemeBreakLV || br0 == ucd.GraphemeBreakV) && (br1 == ucd.GraphemeBreakV || br1 == ucd.GraphemeBreakT) {
+	} else if br0&(ucd.GB_LV|ucd.GB_V) != 0 && br1&(ucd.GB_V|ucd.GB_T) != 0 {
 		return false // rule GB7
-	} else if (br0 == ucd.GraphemeBreakLVT || br0 == ucd.GraphemeBreakT) && br1 == ucd.GraphemeBreakT {
+	} else if br0&(ucd.GB_LVT|ucd.GB_T) != 0 && br1 == ucd.GB_T {
 		return false // rule GB8
-	} else if br1 == ucd.GraphemeBreakExtend || br1 == ucd.GraphemeBreakZWJ {
+	} else if br1&(ucd.GB_Extend|ucd.GB_ZWJ) != 0 {
 		return false // Rule GB9
-	} else if br1 == ucd.GraphemeBreakSpacingMark {
+	} else if br1 == ucd.GB_SpacingMark {
 		return false // Rule GB9a
-	} else if br0 == ucd.GraphemeBreakPrepend {
+	} else if br0 == ucd.GB_Prepend {
 		return false // Rule GB9b
+	} else if triggerGB9c {
+		return false // Rule GB9c
 	} else if triggerGB11 { // Rule GB11
 		return false
 	} else if triggerGB12_13 {
@@ -48,7 +50,7 @@ func (cr *cursor) applyGraphemeBoundaryRules() bool {
 // update `isPrevGraphemeRIOdd` used for the rules GB12 and GB13
 // and returns `true` if one of them triggered
 func (cr *cursor) updateGraphemeRIOdd() (trigger bool) {
-	if cr.grapheme == ucd.GraphemeBreakRegional_Indicator {
+	if cr.grapheme == ucd.GB_Regional_Indicator {
 		trigger = cr.isPrevGraphemeRIOdd
 		cr.isPrevGraphemeRIOdd = !cr.isPrevGraphemeRIOdd // switch the parity
 	} else {
@@ -78,9 +80,9 @@ func (cr *cursor) updatePictoSequence() bool {
 		}
 		return false
 	case inPictoExtend:
-		if cr.grapheme == ucd.GraphemeBreakExtend {
+		if cr.grapheme == ucd.GB_Extend {
 			// continue the sequence with an Extend rune
-		} else if cr.grapheme == ucd.GraphemeBreakZWJ {
+		} else if cr.grapheme == ucd.GB_ZWJ {
 			// close the variable part of the sequence with (ZWJ)
 			cr.pictoSequence = seenPictoZWJ
 		} else {
@@ -102,6 +104,58 @@ func (cr *cursor) updatePictoSequence() bool {
 	}
 }
 
+// see rule GB9c
+type indicCBSequenceState uint8
+
+const (
+	noIndicCBSequence   indicCBSequenceState = iota // we are not in a sequence
+	inIndicCBSequence                               // we are in (Consonant) (Extend Linker)* pattern
+	seenIndicCBSequence                             // we have seen (Consonant) (Extend Linker)* (Linker) (Extend Linker)*
+)
+
+// update the `indicConjunctBreakSequence` state used for rule CB9c pattern :
+// (Consonant) (Extend Linker)* (Linker) (Extend Linker)* (Consonant)
+// and returns true if we matched one
+func (cr *cursor) updateIndicConjunctBreakSequence() bool {
+	cb := cr.indicConjunctBreak
+	switch cr.indicConjunctBreakSequence {
+	case noIndicCBSequence:
+		// we are not in a sequence yet, start it if we have a Consonant
+		if cb == ucd.ICBConsonant {
+			cr.indicConjunctBreakSequence = inIndicCBSequence
+		}
+		return false
+	case inIndicCBSequence:
+		if cb == ucd.ICBExtend {
+			// continue the sequence
+		} else if cb == ucd.ICBLinker {
+			// we now have at least on Linker
+			cr.indicConjunctBreakSequence = seenIndicCBSequence
+		} else if cb == ucd.ICBConsonant {
+			// reset the sequence
+		} else {
+			// stop the sequence
+			cr.indicConjunctBreakSequence = noIndicCBSequence
+		}
+		return false
+	case seenIndicCBSequence:
+		if cb&(ucd.ICBExtend|ucd.ICBLinker) != 0 {
+			// continue the sequence
+			return false
+		} else if cb == ucd.ICBConsonant {
+			// start a new sequence
+			cr.indicConjunctBreakSequence = inIndicCBSequence
+			return true
+		} else {
+			// stop the sequence
+			cr.indicConjunctBreakSequence = noIndicCBSequence
+			return false
+		}
+	default:
+		panic("exhaustive switch")
+	}
+}
+
 // -----------------------------------------------------------------------
 // ------------------------- Word boundaries -----------------------------
 // -----------------------------------------------------------------------
@@ -109,11 +163,11 @@ func (cr *cursor) updatePictoSequence() bool {
 // update `isPrevWordRIOdd` used for the rules WB15 and WB16
 // and returns `true` if one of them triggered
 func (cr *cursor) updateWordRIOdd() (trigger bool) {
-	if cr.word == ucd.WordBreakExtendFormat {
+	if cr.word == ucd.WB_ExtendFormat {
 		return false // skip
 	}
 
-	if cr.word == ucd.WordBreakRegional_Indicator {
+	if cr.word == ucd.WB_Regional_Indicator {
 		trigger = cr.isPrevWordRIOdd
 		cr.isPrevWordRIOdd = !cr.isPrevWordRIOdd // switch the parity
 	} else {
@@ -138,50 +192,44 @@ func (cr *cursor) applyWordBoundaryRules(i int) (isWordBoundary, removePrevNoExt
 
 	if cr.prev == '\u000D' && cr.r == '\u000A' { // Rule WB3
 		isWordBoundary = false
-	} else if prev == ucd.WordBreakNewlineCRLF && isAfterNoExtend {
+	} else if prev == ucd.WB_NewlineCRLF && isAfterNoExtend {
 		// The extra check for prevWordNoExtend is to correctly handle sequences like
 		// Newline ÷ Extend × Extend
 		// since we have not skipped ExtendFormat yet.
 		isWordBoundary = true // Rule WB3a
-	} else if current == ucd.WordBreakNewlineCRLF {
+	} else if current == ucd.WB_NewlineCRLF {
 		isWordBoundary = true // Rule WB3b
 	} else if cr.prev == 0x200D && cr.isExtentedPic {
 		isWordBoundary = false // Rule WB3c
-	} else if prev == ucd.WordBreakWSegSpace &&
-		current == ucd.WordBreakWSegSpace && isAfterNoExtend {
+	} else if prev == ucd.WB_WSegSpace &&
+		current == ucd.WB_WSegSpace && isAfterNoExtend {
 		isWordBoundary = false // Rule WB3d
-	} else if current == ucd.WordBreakExtendFormat {
+	} else if current == ucd.WB_ExtendFormat {
 		isWordBoundary = false // Rules WB4
-	} else if (prev == ucd.WordBreakALetter || prev == ucd.WordBreakHebrew_Letter || prev == ucd.WordBreakNumeric) &&
-		(current == ucd.WordBreakALetter || current == ucd.WordBreakHebrew_Letter || current == ucd.WordBreakNumeric) {
+	} else if prev&(ucd.WB_ALetter|ucd.WB_Hebrew_Letter|ucd.WB_Numeric) != 0 &&
+		current&(ucd.WB_ALetter|ucd.WB_Hebrew_Letter|ucd.WB_Numeric) != 0 {
 		isWordBoundary = false // Rules WB5, WB8, WB9, WB10
-	} else if prev == ucd.WordBreakKatakana && current == ucd.WordBreakKatakana {
+	} else if prev == ucd.WB_Katakana && current == ucd.WB_Katakana {
 		isWordBoundary = false // Rule WB13
-	} else if (prev == ucd.WordBreakALetter ||
-		prev == ucd.WordBreakHebrew_Letter ||
-		prev == ucd.WordBreakNumeric ||
-		prev == ucd.WordBreakKatakana ||
-		prev == ucd.WordBreakExtendNumLet) &&
-		current == ucd.WordBreakExtendNumLet {
+	} else if prev&(ucd.WB_ALetter|ucd.WB_Hebrew_Letter|ucd.WB_Numeric|ucd.WB_Katakana|ucd.WB_ExtendNumLet) != 0 &&
+		current == ucd.WB_ExtendNumLet {
 		isWordBoundary = false // Rule WB13a
-	} else if prev == ucd.WordBreakExtendNumLet &&
-		(current == ucd.WordBreakALetter || current == ucd.WordBreakHebrew_Letter || current == ucd.WordBreakNumeric ||
-			current == ucd.WordBreakKatakana) {
+	} else if prev == ucd.WB_ExtendNumLet &&
+		current&(ucd.WB_ALetter|ucd.WB_Hebrew_Letter|ucd.WB_Numeric|ucd.WB_Katakana) != 0 {
 		isWordBoundary = false // Rule WB13b
-	} else if (prevPrev == ucd.WordBreakALetter || prevPrev == ucd.WordBreakHebrew_Letter) &&
-		(prev == ucd.WordBreakMidLetter || prev == ucd.WordBreakMidNumLet || prev == ucd.WordBreakSingle_Quote) &&
-		(current == ucd.WordBreakALetter || current == ucd.WordBreakHebrew_Letter) {
+	} else if prevPrev&(ucd.WB_ALetter|ucd.WB_Hebrew_Letter) != 0 &&
+		prev&(ucd.WB_MidLetter|ucd.WB_MidNumLet|ucd.WB_Single_Quote) != 0 &&
+		current&(ucd.WB_ALetter|ucd.WB_Hebrew_Letter) != 0 {
 		removePrevNoExtend = true // Rule WB6
 		isWordBoundary = false    // Rule WB7
-	} else if prev == ucd.WordBreakHebrew_Letter && current == ucd.WordBreakSingle_Quote {
+	} else if prev == ucd.WB_Hebrew_Letter && current == ucd.WB_Single_Quote {
 		isWordBoundary = false // Rule WB7a
-	} else if prevPrev == ucd.WordBreakHebrew_Letter && cr.prev == 0x0022 &&
-		current == ucd.WordBreakHebrew_Letter {
+	} else if prevPrev == ucd.WB_Hebrew_Letter && cr.prev == 0x0022 &&
+		current == ucd.WB_Hebrew_Letter {
 		removePrevNoExtend = true // Rule WB7b
 		isWordBoundary = false    // Rule WB7c
-	} else if (prevPrev == ucd.WordBreakNumeric && current == ucd.WordBreakNumeric) &&
-		(prev == ucd.WordBreakMidNum || prev == ucd.WordBreakMidNumLet ||
-			prev == ucd.WordBreakSingle_Quote) {
+	} else if (prevPrev == ucd.WB_Numeric && current == ucd.WB_Numeric) &&
+		prev&(ucd.WB_MidNum|ucd.WB_MidNumLet|ucd.WB_Single_Quote) != 0 {
 		isWordBoundary = false    // Rule WB11
 		removePrevNoExtend = true // Rule WB12
 	} else if triggerWB15_16 {

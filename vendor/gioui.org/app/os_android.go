@@ -136,6 +136,8 @@ import (
 	"unicode/utf16"
 	"unsafe"
 
+	"gioui.org/io/transfer"
+
 	"gioui.org/internal/f32color"
 	"gioui.org/op"
 
@@ -146,7 +148,6 @@ import (
 	"gioui.org/io/pointer"
 	"gioui.org/io/semantic"
 	"gioui.org/io/system"
-	"gioui.org/io/transfer"
 	"gioui.org/unit"
 )
 
@@ -216,8 +217,6 @@ type AndroidViewEvent struct {
 }
 
 type jvalue uint64 // The largest JNI type fits in 64 bits.
-
-var dataDirChan = make(chan string, 1)
 
 var android struct {
 	// mu protects all fields of this structure. However, once a
@@ -294,8 +293,7 @@ var mainWindow = newWindowRendezvous()
 var mainFuncs = make(chan func(env *C.JNIEnv), 1)
 
 var (
-	dataDirOnce sync.Once
-	dataPath    string
+	dataPath string
 )
 
 var (
@@ -342,9 +340,9 @@ func (w *window) NewContext() (context, error) {
 }
 
 func dataDir() (string, error) {
-	dataDirOnce.Do(func() {
-		dataPath = <-dataDirChan
-	})
+	if dataPath == "" {
+		panic("DataDir isn't valid before main")
+	}
 	return dataPath, nil
 }
 
@@ -397,7 +395,7 @@ func Java_org_gioui_Gio_runGoMain(env *C.JNIEnv, class C.jclass, jdataDir C.jbyt
 		os.Setenv("HOME", dataDir)
 	}
 
-	dataDirChan <- dataDir
+	dataPath = dataDir
 	C.jni_ReleaseByteArrayElements(env, jdataDir, dirBytes)
 
 	runMain()
@@ -662,6 +660,15 @@ func Java_org_gioui_GioView_onClearA11yFocus(env *C.JNIEnv, class C.jclass, view
 	if w.semantic.focusID == w.semIDFor(virtID) {
 		w.semantic.focusID = 0
 	}
+}
+
+//export Java_org_gioui_GioView_onOpenURI
+func Java_org_gioui_GioView_onOpenURI(env *C.JNIEnv, class C.jclass, view C.jlong, uri C.jstring) {
+	evt, err := newURLEvent(goString(env, uri))
+	if err != nil {
+		return
+	}
+	processGlobalEvent(evt)
 }
 
 func (w *window) ProcessEvent(e event.Event) {
@@ -1225,18 +1232,12 @@ func javaBool(b bool) C.jboolean {
 
 func javaString(env *C.JNIEnv, str string) C.jstring {
 	utf16Chars := utf16.Encode([]rune(str))
-	var ptr *C.jchar
-	if len(utf16Chars) > 0 {
-		ptr = (*C.jchar)(unsafe.Pointer(&utf16Chars[0]))
-	}
+	ptr := (*C.jchar)(unsafe.Pointer(unsafe.SliceData(utf16Chars)))
 	return C.jni_NewString(env, ptr, C.int(len(utf16Chars)))
 }
 
 func varArgs(args []jvalue) *C.jvalue {
-	if len(args) == 0 {
-		return nil
-	}
-	return (*C.jvalue)(unsafe.Pointer(&args[0]))
+	return (*C.jvalue)(unsafe.Pointer(unsafe.SliceData(args)))
 }
 
 func callStaticVoidMethod(env *C.JNIEnv, cls C.jclass, method C.jmethodID, args ...jvalue) error {
@@ -1318,6 +1319,7 @@ func findClass(env *C.JNIEnv, name string) C.jclass {
 }
 
 func osMain() {
+	select {}
 }
 
 func newWindow(window *callbacks, options []Option) {

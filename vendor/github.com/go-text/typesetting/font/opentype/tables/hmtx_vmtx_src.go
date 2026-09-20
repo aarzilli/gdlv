@@ -14,6 +14,7 @@ func (table Hmtx) IsEmpty() bool {
 	return len(table.Metrics)+len(table.LeftSideBearings) == 0
 }
 
+// Advance returns the base side bearing, defaulting to 0 for invalid glyph index
 func (table Hmtx) Advance(gid GlyphID) int16 {
 	LM, LS := len(table.Metrics), len(table.LeftSideBearings)
 	index := int(gid)
@@ -23,6 +24,19 @@ func (table Hmtx) Advance(gid GlyphID) int16 {
 		return table.Metrics[len(table.Metrics)-1].AdvanceWidth
 	}
 	return 0
+}
+
+// SideBearing returns the base side bearing, defaulting to 0 for invalid glyph index
+func (table Hmtx) SideBearing(gid GlyphID) int16 {
+	LM, LS := len(table.Metrics), len(table.LeftSideBearings)
+	index := int(gid)
+	if index < LM {
+		return table.Metrics[index].LeftSideBearing
+	} else if index < LS+LM {
+		return table.LeftSideBearings[index-LM]
+	} else {
+		return 0
+	}
 }
 
 type LongHorMetric struct {

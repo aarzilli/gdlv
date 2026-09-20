@@ -11,7 +11,6 @@ import (
 	"golang.org/x/mobile/event/key"
 	"golang.org/x/mobile/event/mouse"
 
-	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/font"
 	"github.com/aarzilli/nucular/label"
@@ -1288,19 +1287,22 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 				begin = ed.SelectStart
 				end = ed.SelectEnd
 			}
-			clipboard.Set(string(ed.Buffer[begin:end]))
+			ed.win.SetClipboard(string(ed.Buffer[begin:end]))
 			if cut {
 				ed.Cut()
 				cursor_follow = true
 			}
 		}
 
-		/* paste handler */
-		if paste && (ed.Flags&EditClipboard != 0) {
-			ed.Paste(clipboard.Get())
+		if ed.Flags&EditClipboard != 0 && inp.HasClipboard {
+			ed.Paste(inp.Clipboard)
 			cursor_follow = true
 		}
 
+		/* paste handler */
+		if paste && (ed.Flags&EditClipboard != 0) {
+			ed.win.GetClipboard()
+		}
 	}
 
 	/* set widget state */

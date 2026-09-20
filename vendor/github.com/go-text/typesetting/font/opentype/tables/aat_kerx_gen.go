@@ -241,7 +241,6 @@ func ParseAATStateTableExt(src []byte, valuesCount int, entryDataSize int) (AATS
 	n += 16
 
 	{
-
 		if offsetClass != 0 { // ignore null offset
 			if L := len(src); L < offsetClass {
 				return item, 0, fmt.Errorf("reading AATStateTableExt: "+"EOF: expected length: %d, got %d", offsetClass, L)
@@ -438,7 +437,6 @@ func ParseKerxData2(src []byte, parentSrc []byte, valuesCount int) (KerxData2, i
 	n += 16
 
 	{
-
 		if offsetLeft != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetLeft {
 				return item, 0, fmt.Errorf("reading KerxData2: "+"EOF: expected length: %d, got %d", offsetLeft, L)
@@ -456,7 +454,6 @@ func ParseKerxData2(src []byte, parentSrc []byte, valuesCount int) (KerxData2, i
 		}
 	}
 	{
-
 		if offsetRight != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetRight {
 				return item, 0, fmt.Errorf("reading KerxData2: "+"EOF: expected length: %d, got %d", offsetRight, L)
@@ -623,7 +620,6 @@ func parseLoopkupRecordExt4(src []byte, parentSrc []byte) (loopkupRecordExt4, in
 	n += 6
 
 	{
-
 		if offsetValues != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetValues {
 				return item, 0, fmt.Errorf("reading loopkupRecordExt4: "+"EOF: expected length: %d, got %d", offsetValues, L)

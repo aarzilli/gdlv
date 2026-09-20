@@ -2,7 +2,7 @@
 
 // SPDX-License-Identifier: Unlicense OR MIT
 
-precision mediump float;
+precision highp float;
 
 layout(location=0) in highp vec2 vFrom;
 layout(location=1) in highp vec2 vCtrl;

@@ -19,7 +19,9 @@ type Event struct {
 	Source Source
 	// PointerID is the id for the pointer and can be used
 	// to track a particular pointer from Press to
-	// Release or Cancel.
+	// Release. Populated for Press, Release, Move, Drag,
+	// Enter, Leave, and Cancel; Scroll events are not
+	// bound to a tracked pointer and leave it zero.
 	PointerID ID
 	// Priority is the priority of the receiving handler
 	// for this event.
@@ -43,8 +45,7 @@ type Event struct {
 
 // PassOp sets the pass-through mode. InputOps added while the pass-through
 // mode is set don't block events to siblings.
-type PassOp struct {
-}
+type PassOp struct{}
 
 // PassStack represents a PassOp on the pass stack.
 type PassStack struct {
@@ -207,9 +208,6 @@ const (
 	// Shared priority is for handlers that
 	// are part of a matching set larger than 1.
 	Shared Priority = iota
-	// Foremost priority is like Shared, but the
-	// handler is the foremost of the matching set.
-	Foremost
 	// Grabbed is used for matching sets of size 1.
 	Grabbed
 )
@@ -223,6 +221,12 @@ const (
 	ButtonSecondary
 	// ButtonTertiary is the tertiary button, usually the middle button.
 	ButtonTertiary
+	// ButtonQuaternary is the fourth button, usually used for browser
+	// navigation (backward)
+	ButtonQuaternary
+	// ButtonQuinary is the fifth button, usually used for browser
+	// navigation (forward)
+	ButtonQuinary
 )
 
 func (s ScrollRange) Union(s2 ScrollRange) ScrollRange {
@@ -295,8 +299,6 @@ func (p Priority) String() string {
 	switch p {
 	case Shared:
 		return "Shared"
-	case Foremost:
-		return "Foremost"
 	case Grabbed:
 		return "Grabbed"
 	default:
@@ -331,6 +333,12 @@ func (b Buttons) String() string {
 	}
 	if b.Contain(ButtonTertiary) {
 		strs = append(strs, "ButtonTertiary")
+	}
+	if b.Contain(ButtonQuaternary) {
+		strs = append(strs, "ButtonQuaternary")
+	}
+	if b.Contain(ButtonQuinary) {
+		strs = append(strs, "ButtonQuinary")
 	}
 	return strings.Join(strs, "|")
 }

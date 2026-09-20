@@ -1,6 +1,7 @@
 package shaping
 
 import (
+	"math"
 	"sort"
 
 	"github.com/go-text/typesetting/di"
@@ -255,6 +256,8 @@ func cutRun(run Output, mapping []glyphIndex, startRune, endRune int, trimStart 
 type breakOption struct {
 	// breakAtRune is the index at which it is safe to break.
 	breakAtRune int
+	// required indicates that the break option is mandatory.
+	required bool
 }
 
 // isValid returns whether a given option violates shaping rules (like breaking
@@ -266,6 +269,9 @@ func (option breakOption) isValid(runeToGlyph []int, out Output) bool {
 		// Check if this break is valid.
 		gIdx := runeToGlyph[breakAfter]
 		g2Idx := runeToGlyph[nextRune]
+		if gIdx >= len(out.Glyphs) || g2Idx >= len(out.Glyphs) {
+			return false
+		}
 		cIdx := out.Glyphs[gIdx].ClusterIndex
 		c2Idx := out.Glyphs[g2Idx].ClusterIndex
 		if cIdx == c2Idx {
@@ -313,8 +319,12 @@ func (b *breaker) nextWordRaw() (option breakOption, ok bool) {
 		currentSegment := b.wordSegmenter.Line()
 		// Note : we dont use penalties for Mandatory Breaks so far,
 		// we could add it with currentSegment.IsMandatoryBreak
+		breakAtRune := currentSegment.Offset + len(currentSegment.Text) - 1
 		option := breakOption{
-			breakAtRune: currentSegment.Offset + len(currentSegment.Text) - 1,
+			breakAtRune: breakAtRune,
+			// Don't treat the EOF line break as special. We implicitly always break after
+			// the end of text input anyway.
+			required: currentSegment.IsMandatoryBreak && breakAtRune != b.totalRunes-1,
 		}
 		return option, true
 	}
@@ -422,7 +432,8 @@ type WrapConfig struct {
 	// the text. A value of zero means no limit.
 	TruncateAfterLines int
 	// Truncator, if provided, will be inserted at the end of a truncated line. This
-	// feature is only active if TruncateAfterLines is nonzero.
+	// feature is only active if TruncateAfterLines is nonzero. See the documentation
+	// for [LineWrapper.WrapNextLine] for details about how this works.
 	Truncator Output
 	// TextContinues indicates that the paragraph wrapped by this config is not the
 	// final paragraph in the text. This alters text truncation when filling the
@@ -767,16 +778,48 @@ func (l *LineWrapper) Prepare(config WrapConfig, paragraph []rune, runs RunItera
 // that many lines. The truncated return value is the count of runes truncated from
 // the end of the text. The returned lines are only valid until the next call to
 // [*LineWrapper.WrapParagraph] or [*LineWrapper.Prepare].
+//
+// See [(*LineWrapper).WrapNextLine] for a description of how [WrapConfig]'s truncation
+// features impact the wrapped text output. This method returns the quantity of runes
+// truncated by line wrapping in the [truncated] return value.
+//
+// See also [WrapParagraphF] which supports a decimal [maxWidth].
 func (l *LineWrapper) WrapParagraph(config WrapConfig, maxWidth int, paragraph []rune, runs RunIterator) (_ []Line, truncated int) {
+	maxFixed := math.MaxInt32 >> 6
+	if maxWidth > maxFixed {
+		maxWidth = maxFixed
+	}
+	return l.WrapParagraphF(config, fixed.I(maxWidth), paragraph, runs)
+}
+
+// WrapParagraphF is the same as [WrapParagraph], but accepts a non integer [maxWidth].
+func (l *LineWrapper) WrapParagraphF(config WrapConfig, maxWidth fixed.Int26_6, paragraph []rune, runs RunIterator) (_ []Line, truncated int) {
 	l.scratch.reset()
 	// Check whether we can skip line wrapping altogether for the simple single-run-that-fits case.
 	if !(config.TextContinues && config.TruncateAfterLines == 1) {
 		runs.Save()
-		_, firstRun, hasFirst := runs.Next()
-		_, _, hasSecond := runs.Peek()
-		if hasFirst && !hasSecond {
-			if firstRun.Advance.Ceil() <= maxWidth {
-				return l.scratch.singleRunParagraph(firstRun), 0
+		// We can only skip wrapping if the text doesn't contain any forced line
+		// breaks that need to be evaluated by the real algorithm, so we need to
+		// quickly scan it for that.
+		l.breaker = newBreaker(&l.seg, paragraph)
+		hasMandatoryBreak := false
+		for {
+			option, ok := l.breaker.nextWordBreak()
+			if !ok {
+				break
+			}
+			if option.required {
+				hasMandatoryBreak = true
+				break
+			}
+		}
+		if !hasMandatoryBreak {
+			_, firstRun, hasFirst := runs.Next()
+			_, _, hasSecond := runs.Peek()
+			if hasFirst && !hasSecond {
+				if firstRun.Advance <= maxWidth {
+					return l.scratch.singleRunParagraph(firstRun), 0
+				}
 			}
 		}
 		runs.Restore()
@@ -788,7 +831,7 @@ func (l *LineWrapper) WrapParagraph(config WrapConfig, maxWidth int, paragraph [
 		done bool
 	)
 	for !done {
-		line, done = l.WrapNextLine(maxWidth)
+		line, done = l.WrapNextLineF(maxWidth)
 		if line.Line != nil {
 			l.scratch.paragraphAppend(line.Line)
 		}
@@ -829,10 +872,10 @@ type lineConfig struct {
 	// truncating indicates whether this line is being truncated (if sufficiently long).
 	truncating bool
 	// maxWidth is the maximum space a line can occupy.
-	maxWidth int
+	maxWidth fixed.Int26_6
 	// truncatedMaxWidth holds the maximum width of the line available for text if the truncator
 	// is occupying part of the line.
-	truncatedMaxWidth int
+	truncatedMaxWidth fixed.Int26_6
 }
 
 // WrappedLine is the result of wrapping one line of text.
@@ -846,6 +889,12 @@ type WrappedLine struct {
 	// of the next line. It will equal len(text) if all the text
 	// fit in one line.
 	NextLine int
+
+	// TrimmedTrailingWhitespace is the space taken by trailing whitespace
+	// before if was trimmed (usually positive).
+	// It is zero if [DisableTrailingWhitespaceTrim] is set to true,
+	// or if there is no whitespace at the end of the line.
+	TrimmedTrailingWhitespace fixed.Int26_6
 }
 
 // swapVisualOrder inverts the visual index of runs in [subline], by swapping pairs of visual indices across the midpoint
@@ -882,6 +931,7 @@ func computeBidiOrdering(dir di.Direction, finalLine Line) {
 }
 
 func (l *LineWrapper) postProcessLine(finalLine Line, done bool) (WrappedLine, bool) {
+	var trimmed fixed.Int26_6
 	if len(finalLine) > 0 {
 		computeBidiOrdering(l.config.Direction, finalLine)
 		if !l.config.DisableTrailingWhitespaceTrim {
@@ -896,11 +946,12 @@ func (l *LineWrapper) postProcessLine(finalLine Line, done bool) (WrappedLine, b
 					break
 				}
 			}
+			finalVisualRun := &finalLine[goalIdx]
+
 			// This next block locates the first/last visual glyph on the line and
 			// zeroes its advance if it is whitespace.
-			finalVisualRun := &finalLine[goalIdx]
-			var finalVisualGlyph *Glyph
 			if L := len(finalVisualRun.Glyphs); L > 0 {
+				var finalVisualGlyph *Glyph
 				if l.config.Direction.Progression() == di.FromTopLeft {
 					finalVisualGlyph = &finalVisualRun.Glyphs[L-1]
 				} else {
@@ -910,13 +961,17 @@ func (l *LineWrapper) postProcessLine(finalLine Line, done bool) (WrappedLine, b
 				if finalVisualRun.Direction.IsVertical() {
 					if finalVisualGlyph.Height == 0 {
 						finalVisualGlyph.YAdvance = 0
+						finalVisualGlyph.Advance = 0
 					}
 				} else { // horizontal
 					if finalVisualGlyph.Width == 0 {
 						finalVisualGlyph.XAdvance = 0
+						finalVisualGlyph.Advance = 0
 					}
 				}
+				beforeTrim := finalVisualRun.Advance
 				finalVisualRun.RecomputeAdvance()
+				trimmed = beforeTrim - finalVisualRun.Advance
 			}
 		}
 
@@ -939,7 +994,12 @@ func (l *LineWrapper) postProcessLine(finalLine Line, done bool) (WrappedLine, b
 			insertTruncator = truncated > 0 || l.config.TextContinues
 		}
 		if insertTruncator {
-			finalLine = append(finalLine, l.config.Truncator)
+			truncator := l.config.Truncator
+			truncator.Runes.Count = truncated
+			truncator.Runes.Offset = l.lineStartRune
+			finalLine = append(finalLine, truncator)
+			// We've just modified the line, we need to recompute the bidi ordering.
+			computeBidiOrdering(l.config.Direction, finalLine)
 		}
 	}
 
@@ -948,7 +1008,7 @@ func (l *LineWrapper) postProcessLine(finalLine Line, done bool) (WrappedLine, b
 		l.more = false
 	}
 
-	return WrappedLine{finalLine, truncated, l.lineStartRune}, done
+	return WrappedLine{finalLine, truncated, l.lineStartRune, trimmed}, done
 }
 
 // WrapNextLine wraps the shaped glyphs of a paragraph to a particular max width.
@@ -958,7 +1018,27 @@ func (l *LineWrapper) postProcessLine(finalLine Line, done bool) (WrappedLine, b
 //
 // The returned line is only valid until the next call to
 // [*LineWrapper.Prepare] or [*LineWrapper.WrapParagraph].
+//
+// If the LineWrapper's [WrapConfig].TruncateAfterLines
+// is non-zero, the final line of text returned by successive calls to WrapNextLine
+// may be truncated. The quantity of runes truncated by wrapping the line is
+// returned in [WrappedLine].Truncated. If this is non-zero AND the LineWrapper's
+// [WrapConfig].Truncator is set, the final line will end with an extra [Output].
+// [Output]s before the final [Output] will represent the input runes that are still
+// visible before truncation, and the final [Output] will be a copy of the Truncator
+// with its Runes.Count set to the quantity of runes truncated during line wrapping.
+//
+// See also [WrapNextLineF] which supports a decimal [maxWidth].
 func (l *LineWrapper) WrapNextLine(maxWidth int) (out WrappedLine, done bool) {
+	maxFixed := math.MaxInt32 >> 6
+	if maxWidth > maxFixed {
+		maxWidth = maxFixed
+	}
+	return l.WrapNextLineF(fixed.I(maxWidth))
+}
+
+// WrapNextLineF is the same as [WrapNextLine], but accepts a non integer [maxWidth].
+func (l *LineWrapper) WrapNextLineF(maxWidth fixed.Int26_6) (out WrappedLine, done bool) {
 	// If we've already finished the paragraph, don't do any more work.
 	if !l.more {
 		return WrappedLine{NextLine: l.lineStartRune}, true
@@ -969,38 +1049,16 @@ func (l *LineWrapper) WrapNextLine(maxWidth int) (out WrappedLine, done bool) {
 	}()
 
 	// If the iterator is empty, return early.
-	_, firstRun, hasFirst := l.glyphRuns.Peek()
+	_, _, hasFirst := l.glyphRuns.Peek()
 	if !hasFirst {
 		return WrappedLine{}, true
 	}
 	l.scratch.startLine()
-	truncating := l.config.TruncateAfterLines == 1
-
-	// If we're not truncating, the iterator contains only one run, and that run fits, take the fast path.
-	if !(l.config.TextContinues && truncating) && firstRun.Runes.Offset == l.lineStartRune && firstRun.Advance.Ceil() <= maxWidth {
-		// Save current iterator state so we can peek ahead.
-		l.glyphRuns.Save()
-		// Advance beyond firstRun, which we already know from the Peek() above.
-		_, _, _ = l.glyphRuns.Next()
-		_, _, hasSecond := l.glyphRuns.Peek()
-		emptyLine := len(firstRun.Glyphs) == 0
-		if emptyLine || !hasSecond {
-			if emptyLine {
-				// Pass empty lines through as empty.
-				firstRun.Runes = Range{Count: l.breaker.totalRunes}
-			}
-			l.scratch.candidateAppend(firstRun)
-			l.scratch.markCandidateBest()
-			return WrappedLine{Line: l.scratch.finalizeBest()}, true
-		}
-		// Restore iterator state in preparation for real line wrapping algorithm.
-		l.glyphRuns.Restore()
-	}
 
 	config := lineConfig{
-		truncating:        truncating,
+		truncating:        l.config.TruncateAfterLines == 1,
 		maxWidth:          maxWidth,
-		truncatedMaxWidth: maxWidth - l.config.Truncator.Advance.Ceil(),
+		truncatedMaxWidth: maxWidth - l.config.Truncator.Advance,
 	}
 	done = l.wrapNextLine(config)
 	finalLine := l.scratch.finalizeBest()
@@ -1037,6 +1095,9 @@ func (l *LineWrapper) wrapNextLine(config lineConfig) (done bool) {
 			continue
 		case fits:
 			l.scratch.markCandidateBest(candidateRun)
+			if option.required {
+				return false
+			}
 			continue
 		case endLine:
 			// Found a valid line ending the text, append the candidateRun and use it.
@@ -1165,7 +1226,7 @@ func (l *LineWrapper) processBreakOption(option breakOption, config lineConfig) 
 	}
 	isFirstInLine := l.scratch.candidateLen() == 0
 	candidateRun := cutRun(run, l.mapper.mapping, l.lineStartRune, option.breakAtRune, isFirstInLine)
-	candidateLineWidth := (candidateRun.advanceSpaceAware(l.config.Direction) + l.scratch.candidateAdvance()).Ceil()
+	candidateLineWidth := candidateRun.advanceSpaceAware(l.config.Direction) + l.scratch.candidateAdvance()
 	if candidateLineWidth > config.maxWidth {
 		// The run doesn't fit on the line.
 		if !l.scratch.hasBest() {

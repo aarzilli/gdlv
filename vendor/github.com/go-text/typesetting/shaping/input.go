@@ -3,14 +3,12 @@
 package shaping
 
 import (
-	"unicode"
-
 	"github.com/go-text/typesetting/di"
 	"github.com/go-text/typesetting/font"
 	ot "github.com/go-text/typesetting/font/opentype"
 	"github.com/go-text/typesetting/harfbuzz"
+	ucd "github.com/go-text/typesetting/internal/unicodedata"
 	"github.com/go-text/typesetting/language"
-	"github.com/go-text/typesetting/unicodedata"
 	"golang.org/x/image/math/fixed"
 	"golang.org/x/text/unicode/bidi"
 )
@@ -67,10 +65,24 @@ type FontFeature struct {
 // Fontmap provides a general mechanism to select
 // a face to use when shaping text.
 type Fontmap interface {
-	// ResolveFace is called by `SplitByFace` for each input rune potentially
+	// ResolveFace is called by [SplitByFace] and [Segmenter.Split] for each input rune potentially
 	// triggering a face change.
-	// It must always return a valid (non nil ) *font.Face value.
+	// It must always return a valid (non nil) [*font.Face] value.
 	ResolveFace(r rune) *font.Face
+}
+
+// FontmapScript is an optional interface supporting script hints.
+type FontmapScript interface {
+	Fontmap
+
+	// SetScript set the script to which the (next) runes passed to [ResolveFace]
+	// belong.
+	//
+	// Providing this information before calling [ResolveFace] is useful for two reasons :
+	//	- optimizing [ResolveFace] for runes with a shared script
+	//	- for runes with Common and Inherited script, the script resolved by a segmentation step
+	//	  is more accurate
+	SetScript(language.Script)
 }
 
 var _ Fontmap = fixedFontmap(nil)
@@ -95,14 +107,14 @@ func (ff fixedFontmap) ResolveFace(r rune) *font.Face {
 // must not be empty.
 // The 'Face' field of 'input' is ignored: only 'availableFaces' are consulted.
 // Rune coverage is obtained by calling the NominalGlyph() method of each font.
-// See also SplitByFace for a more general approach of font selection.
+// See also [SplitByFace] for a more general approach of font selection.
 func SplitByFontGlyphs(input Input, availableFaces []*font.Face) []Input {
 	return SplitByFace(input, fixedFontmap(availableFaces))
 }
 
 // SplitByFace split the runes from 'input' to several items, sharing the same
 // characteristics as 'input', expected for the `Face` which is set to
-// the return value of the `Fontmap.ResolveFace` call.
+// the return value of the [Fontmap.ResolveFace] call.
 // The 'Face' field of 'input' is ignored: only 'availableFaces' is used to select the face.
 func SplitByFace(input Input, availableFaces Fontmap) []Input {
 	return splitByFace(input, availableFaces, nil)
@@ -131,6 +143,7 @@ type delimEntry struct {
 // Split segments the given pre-configured input according to:
 //   - text direction
 //   - script
+//   - language
 //   - (vertical text only) glyph orientation
 //   - face, as defined by [faces]
 //
@@ -140,6 +153,7 @@ type delimEntry struct {
 //   - Text, RunStart, RunEnd
 //   - Direction
 //   - Script
+//   - Language
 //   - Face
 //
 // [text.Direction] is used during bidi ordering, and should refer to the general
@@ -147,6 +161,9 @@ type delimEntry struct {
 //
 // For vertical text, if its orientation is set, is copied as it is; otherwise, the
 // orientation is resolved using the Unicode recommendations (see https://www.unicode.org/reports/tr50/).
+//
+// When possible, the language are resolved to match the current script. For instance,
+// (language: 'fr', script: 'arabic') is resolved to language: 'arabic'.
 //
 // The returned sliced is owned by the [Segmenter] and is only valid until
 // the next call to [Split].
@@ -156,6 +173,8 @@ func (seg *Segmenter) Split(text Input, faces Fontmap) []Input {
 
 	seg.input, seg.output = seg.output, seg.input // output is empty
 	seg.splitByScript()
+
+	seg.enforceLanguages()
 
 	// if needed, resolve text orientation for vertical text
 	if text.Direction.IsVertical() && !text.Direction.HasVerticalOrientation() {
@@ -201,7 +220,7 @@ func (seg *Segmenter) splitByBidi(text Input) {
 	}
 	seg.bidiParagraph.SetString(string(text.Text[text.RunStart:text.RunEnd]), bidi.DefaultDirection(def))
 	out, err := seg.bidiParagraph.Order()
-	if err != nil {
+	if err != nil || out.NumRuns() == 0 {
 		seg.output = append(seg.output, text)
 		return
 	}
@@ -262,7 +281,7 @@ func (seg *Segmenter) splitByScript() {
 			// we register paired delimiters
 
 			delimIndex := -1
-			if rScript == language.Common || rScript == language.Inherited {
+			if !rScript.Strong() {
 				delimIndex = lookupDelimIndex(r)
 			}
 
@@ -290,7 +309,7 @@ func (seg *Segmenter) splitByScript() {
 			}
 
 			// check if we have a 'real' change of script, or not
-			if rScript == language.Common || rScript == language.Inherited || rScript == currentInput.Script {
+			if !rScript.Strong() || rScript == currentInput.Script {
 				// no change
 				continue
 			} else if currentInput.Script == language.Common {
@@ -318,10 +337,32 @@ func (seg *Segmenter) splitByScript() {
 	}
 }
 
+// assume splitByScript has been called and enforce sane languages
+func (seg *Segmenter) enforceLanguages() {
+	initialLang := seg.output[0].Language
+
+	// if no language is specified, use a default
+	// known by the library
+	if initialLang == "" {
+		initialLang = "en"
+	}
+
+	initialLangID, ok := language.NewLangID(initialLang)
+	if !ok {
+		// the language is unknown to the library, nothing to do
+		return
+	}
+
+	for i, run := range seg.output {
+		resolved := enforceLang(initialLangID, run.Script)
+		seg.output[i].Language = resolved.Language()
+	}
+}
+
 // assume the script has been resolved
 func (seg *Segmenter) splitByVertOrientation() {
 	for _, input := range seg.input {
-		vo := unicodedata.LookupVerticalOrientation(input.Script)
+		vo := ucd.LookupVerticalOrientation(input.Script)
 		currentInput := input
 
 		for i := input.RunStart; i < input.RunEnd; i++ {
@@ -351,8 +392,13 @@ func (seg *Segmenter) splitByVertOrientation() {
 	}
 }
 
+// assume [splitByScript] has been called
 func (seg *Segmenter) splitByFace(faces Fontmap) {
+	withScript, hasScriptSupport := faces.(FontmapScript)
 	for _, input := range seg.input {
+		if hasScriptSupport {
+			withScript.SetScript(input.Script)
+		}
 		seg.output = splitByFace(input, faces, seg.output)
 	}
 }
@@ -424,10 +470,32 @@ func splitByFace(input Input, availableFaces Fontmap, buffer []Input) []Input {
 // https://bugzilla.gnome.org/show_bug.cgi?id=781123
 // for more details.
 func ignoreFaceChange(r rune) bool {
-	return unicode.Is(unicode.Cc, r) || // control
-		unicode.Is(unicode.Cs, r) || // surrogate
-		unicode.Is(unicode.Zl, r) || // line separator
-		unicode.Is(unicode.Zp, r) || // paragraph separator
-		(unicode.Is(unicode.Zs, r) && r != '\u1680') || // space separator != OGHAM SPACE MARK
+	g := ucd.LookupGeneralCategory(r)
+	return g == ucd.Cc || // control
+		g == ucd.Cs || // surrogate
+		g == ucd.Zl || // line separator
+		g == ucd.Zp || // paragraph separator
+		(g == ucd.Zs && r != '\u1680') || // space separator != OGHAM SPACE MARK
 		harfbuzz.IsDefaultIgnorable(r)
+}
+
+// enforceLang makes sure the returned language is compatible with
+// the given script, so that it maybe be usefull for Opentype shaping.
+//
+// A typical example is a Korean text found into a French paragraph :
+//
+//	enforceLang("fr", language.Hangul) -> "ko"
+func enforceLang(lang language.LangID, s language.Script) language.LangID {
+	if lang.UseScript(s) {
+		// the language is consistent with the script, return it
+		return lang
+	}
+
+	// the language is not used for the script, try to replace it
+	if l := language.ScriptToLang[s]; l != 0 {
+		return l
+	}
+
+	// we do not have good replacement, leave it as it is
+	return lang
 }

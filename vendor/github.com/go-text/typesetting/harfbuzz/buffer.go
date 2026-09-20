@@ -24,14 +24,14 @@ const (
 type bufferScratchFlags uint32
 
 const (
-	bsfHasNonASCII bufferScratchFlags = 1 << iota
+	bsfHasFractionSlash bufferScratchFlags = 1 << iota
 	bsfHasDefaultIgnorables
 	bsfHasSpaceFallback
 	bsfHasGPOSAttachment
-	// bsfHasUnsafeToBreak
 	bsfHasCGJ
-	bsfHasGlyphFlags
 	bsfHasBrokenSyllable
+	bsfHasVariationSelectorFallback
+	bsfHasContinuations
 
 	bsfDefault bufferScratchFlags = 0x00000000
 
@@ -82,9 +82,10 @@ type Buffer struct {
 	Invisible GID
 
 	// Glyph that replaces characters not found in the font during shaping.
-	// The not-found glyph defaults to zero, sometimes knows as the
+	// The not-found glyph defaults to zero, sometimes known as the
 	// ".notdef" glyph.
-	NotFound GID
+	NotFound                  GID
+	notFoundVariationSelector GID
 
 	// Information about how the text in the buffer should be treated.
 	Flags ShappingOptions
@@ -106,15 +107,18 @@ type Buffer struct {
 	haveOutput bool
 
 	planCache map[Face][]*shapePlan
+
+	digest setDigest
 }
 
 // NewBuffer allocate a storage with default options.
 // It should then be populated with `AddRunes` and shapped with `Shape`.
 func NewBuffer() *Buffer {
 	return &Buffer{
-		ClusterLevel: MonotoneGraphemes,
-		maxOps:       maxOpsDefault,
-		planCache:    map[Face][]*shapePlan{},
+		ClusterLevel:              MonotoneGraphemes,
+		maxOps:                    maxOpsDefault,
+		planCache:                 map[Face][]*shapePlan{},
+		notFoundVariationSelector: 0xFFFFFFFF,
 	}
 }
 
@@ -195,7 +199,7 @@ func (b *Buffer) GuessSegmentProperties() {
 	if b.Props.Script == 0 {
 		for _, info := range b.Info {
 			script := language.LookupScript(info.codepoint)
-			if script != language.Common && script != language.Inherited && script != language.Unknown {
+			if script.Strong() && script != language.Unknown {
 				b.Props.Script = script
 				break
 			}
@@ -223,6 +227,7 @@ func (b *Buffer) Clear() {
 	b.Flags = 0
 	b.Invisible = 0
 	b.NotFound = 0
+	b.notFoundVariationSelector = 0xFFFFFFFF
 
 	b.Props = SegmentProperties{}
 	b.scratchFlags = 0
@@ -252,11 +257,11 @@ func (b *Buffer) prev() *GlyphInfo {
 	return &b.outInfo[len(b.outInfo)-1]
 }
 
-func (b *Buffer) digest() (d setDigest) {
+func (b *Buffer) updateDigest() {
+	b.digest = setDigest{}
 	for _, glyph := range b.Info {
-		d.add(gID(glyph.Glyph))
+		b.digest.add(gID(glyph.Glyph))
 	}
-	return d
 }
 
 // func (b Buffer) has_separate_output() bool { return info != b.outInfo }
@@ -369,15 +374,17 @@ func (b *Buffer) resetMasks(mask GlyphMask) {
 // The start index will be from out-buffer if [fromOutBuffer] is true.
 // If [interior] is true, then the cluster having the minimum value is skipped.
 func (b *Buffer) setGlyphFlags(mask GlyphMask, start, end int, interior, fromOutBuffer bool) {
-	end = min(end, len(b.Info))
+	if end != maxInt && end-start > 255 {
+		return
+	}
+
+	info := b.Info
+	end = min(end, len(info))
 
 	if interior && !fromOutBuffer && end-start < 2 {
 		return
 	}
 
-	b.scratchFlags |= bsfHasGlyphFlags
-
-	info := b.Info
 	if !fromOutBuffer || !b.haveOutput {
 		if !interior {
 			for i := start; i < end; i++ {
@@ -409,10 +416,18 @@ func (b *Buffer) setGlyphFlags(mask GlyphMask, start, end int, interior, fromOut
 }
 
 func (b *Buffer) setMasks(value, mask GlyphMask, clusterStart, clusterEnd int) {
+	if mask == 0 {
+		return
+	}
 	notMask := ^mask
 	value &= mask
 
-	if mask == 0 {
+	b.maxOps -= len(b.Info)
+
+	if clusterStart == 0 && clusterEnd == -1 {
+		for i, info := range b.Info {
+			b.Info[i].Mask = (info.Mask & notMask) | value
+		}
 		return
 	}
 
@@ -432,6 +447,8 @@ func (b *Buffer) mergeClusters(start, end int) {
 		b.unsafeToBreak(start, end)
 		return
 	}
+
+	b.maxOps -= end - start
 
 	cluster := b.Info[start].Cluster
 
@@ -600,13 +617,14 @@ func (b *Buffer) infosSetGlyphFlags(infos []GlyphInfo, start, end, cluster int, 
 		return
 	}
 
+	b.maxOps -= end - start
+
 	clusterFirst := infos[start].Cluster
 	clusterLast := infos[end-1].Cluster
 
 	if b.ClusterLevel == Characters || (cluster != clusterFirst && cluster != clusterLast) {
 		for i := start; i < end; i++ {
 			if cluster != infos[i].Cluster {
-				b.scratchFlags |= bsfHasGlyphFlags
 				infos[i].Mask |= mask
 			}
 		}
@@ -617,12 +635,10 @@ func (b *Buffer) infosSetGlyphFlags(infos []GlyphInfo, start, end, cluster int, 
 
 	if cluster == clusterFirst {
 		for i := end; start < i && infos[i-1].Cluster != clusterFirst; i-- {
-			b.scratchFlags |= bsfHasGlyphFlags
 			infos[i-1].Mask |= mask
 		}
 	} else /* cluster == clusterLast */ {
 		for i := start; i < end && infos[i].Cluster != clusterLast; i++ {
-			b.scratchFlags |= bsfHasGlyphFlags
 			infos[i].Mask |= mask
 		}
 	}
@@ -676,7 +692,7 @@ func (b *Buffer) reverseRange(start, end int) {
 	}
 }
 
-// Reverse reverses buffer contents, that is the `Info` and `Pos` slices.
+// Reverse reverses buffer contents, that is the order of the `Info` and `Pos` slices.
 func (b *Buffer) Reverse() { b.reverseRange(0, len(b.Info)) }
 
 func (b *Buffer) reverseClusters() {
@@ -732,12 +748,18 @@ func (b *Buffer) allocateLigID() uint8 {
 	return ligID
 }
 
-func (b *Buffer) shiftForward(count int) {
+// return false if maximum ops limit is reached
+func (b *Buffer) shiftForward(count int) bool {
 	//   assert (have_output);
 	L := len(b.Info)
+	b.maxOps -= L - b.idx
+	if b.maxOps < 0 {
+		return false
+	}
 	b.Info = append(b.Info, make([]GlyphInfo, count)...)
 	copy(b.Info[b.idx+count:], b.Info[b.idx:L])
 	b.idx += count
+	return true
 }
 
 func (b *Buffer) moveTo(i int) {
@@ -758,7 +780,10 @@ func (b *Buffer) moveTo(i int) {
 		count := outL - i
 
 		if b.idx < count {
-			b.shiftForward(count - b.idx)
+			ok := b.shiftForward(count - b.idx)
+			if !ok {
+				return
+			}
 		}
 
 		// assert(idx >= count)
@@ -766,6 +791,13 @@ func (b *Buffer) moveTo(i int) {
 		b.idx -= count
 		copy(b.Info[b.idx:], b.outInfo[outL-count:outL])
 		b.outInfo = b.outInfo[:outL-count]
+	}
+}
+
+func (b *Buffer) collectGlyphs(out *intSet) {
+	out.Clear()
+	for _, info := range b.Info {
+		out.addGlyph(info.Glyph)
 	}
 }
 

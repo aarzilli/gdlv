@@ -22,6 +22,10 @@ type lineInfo struct {
 	glyphs          int
 }
 
+func (l lineInfo) getLineEnd() fixed.Int26_6 {
+	return l.xOff + l.width
+}
+
 type glyphIndex struct {
 	// glyphs holds the glyphs processed.
 	glyphs []text.Glyph
@@ -231,46 +235,61 @@ func (g *glyphIndex) Glyph(gl text.Glyph) {
 }
 
 func (g *glyphIndex) closestToRune(runeIdx int) (combinedPos, int) {
-	if len(g.positions) == 0 {
+	n := len(g.positions)
+	if n == 0 {
 		return combinedPos{}, 0
 	}
-	i := sort.Search(len(g.positions), func(i int) bool {
+	i := sort.Search(n, func(i int) bool {
 		pos := g.positions[i]
 		return pos.runes >= runeIdx
 	})
-	if i > 0 {
-		i--
+
+	notFound := i == n
+	if notFound {
+		return g.positions[n-1], n - 1
 	}
-	closest := g.positions[i]
-	closestI := i
-	for ; i < len(g.positions); i++ {
-		if g.positions[i].runes == runeIdx {
-			return g.positions[i], i
-		}
-	}
-	return closest, closestI
+	return g.positions[i], i
 }
 
 func (g *glyphIndex) closestToLineCol(lineCol screenPos) combinedPos {
-	if len(g.positions) == 0 {
+	n := len(g.positions)
+	if n == 0 {
 		return combinedPos{}
 	}
-	i := sort.Search(len(g.positions), func(i int) bool {
+	i := sort.Search(n, func(i int) bool {
 		pos := g.positions[i]
 		return pos.lineCol.line > lineCol.line || (pos.lineCol.line == lineCol.line && pos.lineCol.col >= lineCol.col)
 	})
-	if i > 0 {
-		i--
+	notFound := i == n
+	if notFound {
+		return g.positions[n-1]
 	}
-	prior := g.positions[i]
-	if i+1 >= len(g.positions) {
+	pos := g.positions[i]
+	foundInNextLine := pos.lineCol.line > lineCol.line
+	if foundInNextLine && i > 0 {
+		prior := g.positions[i-1]
+		prior.x = g.lines[lineCol.line].getLineEnd()
 		return prior
 	}
-	next := g.positions[i+1]
-	if next.lineCol != lineCol {
-		return prior
+	return pos
+}
+
+func (g *glyphIndex) atStartOfLine(pos combinedPos) bool {
+	if pos.runes == 0 {
+		return true
 	}
-	return next
+	prevRuneIndex := pos.runes - 1
+	lineOfPrevRune := g.positions[prevRuneIndex].lineCol.line
+	return lineOfPrevRune < pos.lineCol.line
+}
+
+func (g *glyphIndex) atEndOfLine(pos combinedPos) bool {
+	if pos.runes == g.positions[len(g.positions)-1].runes {
+		return true
+	}
+	next := pos.runes + 1
+	hasNext := next < len(g.positions)
+	return hasNext && g.positions[next].lineCol.line > pos.lineCol.line
 }
 
 func dist(a, b fixed.Int26_6) fixed.Int26_6 {
@@ -280,9 +299,9 @@ func dist(a, b fixed.Int26_6) fixed.Int26_6 {
 	return b - a
 }
 
-func (g *glyphIndex) closestToXY(x fixed.Int26_6, y int) combinedPos {
+func (g *glyphIndex) closestToXY(x fixed.Int26_6, y int) (pos combinedPos, atEndOfLine bool) {
 	if len(g.positions) == 0 {
-		return combinedPos{}
+		return combinedPos{}, false
 	}
 	i := sort.Search(len(g.positions), func(i int) bool {
 		pos := g.positions[i]
@@ -292,7 +311,7 @@ func (g *glyphIndex) closestToXY(x fixed.Int26_6, y int) combinedPos {
 	// short. Return either the last position or (if there are no
 	// positions) the zero position.
 	if i == len(g.positions) {
-		return g.positions[i-1]
+		return g.positions[i-1], false
 	}
 	first := g.positions[i]
 	// Find the best X coordinate.
@@ -308,14 +327,22 @@ func (g *glyphIndex) closestToXY(x fixed.Int26_6, y int) combinedPos {
 		distance := dist(candidate.x, x)
 		// If we are *really* close to the current position candidate, just choose it.
 		if distance.Round() == 0 {
-			return g.positions[i]
+			return g.positions[i], false
 		}
 		if distance < closestDist {
 			closestDist = distance
 			closest = i
 		}
 	}
-	return g.positions[closest]
+	next := closest + 1
+	hasNext := next < len(g.positions)
+	if hasNext && g.atEndOfLine(g.positions[closest]) {
+		distance := dist(g.lines[line].getLineEnd(), x)
+		if distance < closestDist {
+			return g.positions[next], true
+		}
+	}
+	return g.positions[closest], false
 }
 
 // makeRegion creates a text-aligned rectangle from start to end. The vertical

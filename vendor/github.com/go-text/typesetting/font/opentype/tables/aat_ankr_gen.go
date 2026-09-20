@@ -69,7 +69,6 @@ func ParseAATLookupRecord4(src []byte, parentSrc []byte) (AATLookupRecord4, int,
 	n += 6
 
 	{
-
 		if offsetValues != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetValues {
 				return item, 0, fmt.Errorf("reading AATLookupRecord4: "+"EOF: expected length: %d, got %d", offsetValues, L)
@@ -288,7 +287,6 @@ func ParseAnkr(src []byte, valuesCount int) (Ankr, int, error) {
 	n += 12
 
 	{
-
 		if offsetLookupTable != 0 { // ignore null offset
 			if L := len(src); L < offsetLookupTable {
 				return item, 0, fmt.Errorf("reading Ankr: "+"EOF: expected length: %d, got %d", offsetLookupTable, L)
@@ -306,7 +304,6 @@ func ParseAnkr(src []byte, valuesCount int) (Ankr, int, error) {
 		}
 	}
 	{
-
 		if offsetGlyphDataTable != 0 { // ignore null offset
 			if L := len(src); L < offsetGlyphDataTable {
 				return item, 0, fmt.Errorf("reading Ankr: "+"EOF: expected length: %d, got %d", offsetGlyphDataTable, L)

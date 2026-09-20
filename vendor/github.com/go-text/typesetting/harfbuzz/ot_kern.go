@@ -29,7 +29,7 @@ func kern(driver fontP.SimpleKerns, crossStream bool, font *Font, buffer *Buffer
 			continue
 		}
 
-		skippyIter.reset(idx, 1)
+		skippyIter.resetFast(idx)
 		if ok, _ := skippyIter.next(); !ok {
 			idx++
 			continue

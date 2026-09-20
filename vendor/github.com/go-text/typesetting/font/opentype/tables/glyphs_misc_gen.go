@@ -22,7 +22,6 @@ func ParseSVG(src []byte) (SVG, int, error) {
 	n += 10
 
 	{
-
 		if offsetSVGDocumentList != 0 { // ignore null offset
 			if L := len(src); L < offsetSVGDocumentList {
 				return item, 0, fmt.Errorf("reading SVG: "+"EOF: expected length: %d, got %d", offsetSVGDocumentList, L)

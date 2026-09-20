@@ -41,14 +41,10 @@ var (
 	_eglWaitClient          *syscall.Proc
 )
 
-var loadOnce sync.Once
+var loadOnce = sync.OnceValue(loadDLLs)
 
 func loadEGL() error {
-	var err error
-	loadOnce.Do(func() {
-		err = loadDLLs()
-	})
-	return err
+	return loadOnce()
 }
 
 func loadDLLs() error {
@@ -186,6 +182,6 @@ func eglWaitClient() bool {
 
 // issue34474KeepAlive calls runtime.KeepAlive as a
 // workaround for golang.org/issue/34474.
-func issue34474KeepAlive(v interface{}) {
+func issue34474KeepAlive(v any) {
 	runtime.KeepAlive(v)
 }

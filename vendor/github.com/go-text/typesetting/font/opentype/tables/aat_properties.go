@@ -182,6 +182,10 @@ func (lk AATLoopkupExt10) Class(g GlyphID) (uint32, bool) {
 type AatLookupMixed interface {
 	// Returns 0 if not supported
 	ClassUint32(GlyphID) uint32
+
+	// Coverage returns the glyphs covered by this lookup as
+	// a list of inclusive ranges
+	Coverage() [][2]GlyphID
 }
 
 func (lk AATLoopkup0) ClassUint32(g GlyphID) uint32 {

@@ -12,26 +12,30 @@ import (
 	"io"
 	"math"
 	"os"
+	"runtime"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"gioui.org/app"
 	"gioui.org/f32"
+	gclipboard "gioui.org/io/clipboard"
 	"gioui.org/io/event"
 	"gioui.org/io/input"
 	"gioui.org/io/key"
 	"gioui.org/io/pointer"
 	"gioui.org/io/system"
+	"gioui.org/io/transfer"
 	"gioui.org/op"
 	gioclip "gioui.org/op/clip"
 	"gioui.org/op/paint"
 	"gioui.org/text"
 	"gioui.org/unit"
 
-	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/font"
+	iclipboard "github.com/aarzilli/nucular/internal/clipboard"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 
@@ -59,6 +63,7 @@ type masterWindow struct {
 }
 
 var clipboardStarted bool = false
+var hasX11Clipboard = false
 var clipboardMu sync.Mutex
 
 func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, updatefn UpdateFn) MasterWindow {
@@ -73,7 +78,10 @@ func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, update
 	clipboardMu.Lock()
 	if !clipboardStarted {
 		clipboardStarted = true
-		clipboard.Start()
+		if (runtime.GOOS == "linux" && (os.Getenv("WAYLAND_DISPLAY") == "")) || runtime.GOOS == "freebsd" {
+			hasX11Clipboard = true
+			iclipboard.Start()
+		}
 	}
 	clipboardMu.Unlock()
 
@@ -159,6 +167,10 @@ func (mw *masterWindow) main() {
 					key.FocusFilter{
 						Target: eventTag,
 					},
+					transfer.TargetFilter{
+						Target: eventTag,
+						Type:   "application/text",
+					},
 				)
 
 				if !ok {
@@ -192,6 +204,12 @@ func (mw *masterWindow) main() {
 						}
 						mw.ctx.Input.Keyboard.Keys = append(mw.ctx.Input.Keyboard.Keys, gio2mobileKey(e))
 						mw.uilock.Unlock()
+					}
+				case transfer.DataEvent:
+					buf, err := io.ReadAll(e.Open())
+					if err == nil {
+						mw.ctx.Input.HasClipboard = true
+						mw.ctx.Input.Clipboard = string(buf)
 					}
 				}
 			}
@@ -608,6 +626,19 @@ func (ctx *context) Draw(ops *op.Ops, source input.Source, size image.Point, per
 			c := font2pointerCursor[icmd.Cursor]
 			c.Add(ops)
 			stack.Pop()
+
+		case command.SetClipboardCmd:
+			source.Execute(gclipboard.WriteCmd{Type: "application/text", Data: io.NopCloser(strings.NewReader(icmd.Text.String))})
+
+		case command.GetClipboardCmd:
+			source.Execute(gclipboard.ReadCmd{eventTag})
+
+		case command.GetPrimarySelectionCmd:
+			if hasX11Clipboard {
+				ctx.nextClipboard = iclipboard.GetPrimary()
+				ctx.hasNextClipboard = true
+				ctx.trashFrame = true
+			}
 
 		default:
 			panic(UnknownCommandErr)

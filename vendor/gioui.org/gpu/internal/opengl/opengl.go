@@ -8,6 +8,7 @@ import (
 	"image"
 	"math/bits"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 	"unsafe"
@@ -717,10 +718,7 @@ func (b *Backend) NewTexture(format driver.TextureFormat, width, height int, min
 	if mipmap {
 		nmipmaps := 1
 		if mipmap {
-			dim := width
-			if height > dim {
-				dim = height
-			}
+			dim := max(height, width)
 			log2 := 32 - bits.LeadingZeros32(uint32(dim)) - 1
 			nmipmaps = log2 + 1
 		}
@@ -1030,19 +1028,19 @@ func (p *uniforms) update(funcs *gl.Functions, buf *buffer) {
 		switch {
 		case u.typ == shader.DataTypeFloat && u.size == 1:
 			data := data[:4]
-			v := *(*[1]float32)(unsafe.Pointer(&data[0]))
+			v := *(*[1]float32)(unsafe.Pointer(unsafe.SliceData(data)))
 			funcs.Uniform1f(u.uniform, v[0])
 		case u.typ == shader.DataTypeFloat && u.size == 2:
 			data := data[:8]
-			v := *(*[2]float32)(unsafe.Pointer(&data[0]))
+			v := *(*[2]float32)(unsafe.Pointer(unsafe.SliceData(data)))
 			funcs.Uniform2f(u.uniform, v[0], v[1])
 		case u.typ == shader.DataTypeFloat && u.size == 3:
 			data := data[:12]
-			v := *(*[3]float32)(unsafe.Pointer(&data[0]))
+			v := *(*[3]float32)(unsafe.Pointer(unsafe.SliceData(data)))
 			funcs.Uniform3f(u.uniform, v[0], v[1], v[2])
 		case u.typ == shader.DataTypeFloat && u.size == 4:
 			data := data[:16]
-			v := *(*[4]float32)(unsafe.Pointer(&data[0]))
+			v := *(*[4]float32)(unsafe.Pointer(unsafe.SliceData(data)))
 			funcs.Uniform4f(u.uniform, v[0], v[1], v[2], v[3])
 		default:
 			panic("unsupported uniform data type or size")
@@ -1132,7 +1130,7 @@ func (b *Backend) setupVertexArrays() {
 		enabled[inp.Location] = true
 		b.glstate.vertexAttribPointer(b.funcs, buf.obj, inp.Location, l.Size, gltyp, false, p.layout.Stride, buf.offset+l.Offset)
 	}
-	for i := 0; i < max; i++ {
+	for i := range max {
 		b.glstate.setVertexAttribArray(b.funcs, i, enabled[i])
 	}
 }
@@ -1175,7 +1173,7 @@ func (t *texture) ReadPixels(src image.Rectangle, pixels []byte, stride int) err
 	} else {
 		tmp := make([]byte, w*h*4)
 		t.backend.funcs.ReadPixels(src.Min.X, src.Min.Y, w, h, gl.RGBA, gl.UNSIGNED_BYTE, tmp)
-		for y := 0; y < h; y++ {
+		for y := range h {
 			copy(pixels[y*stride:], tmp[y*w*4:])
 		}
 	}
@@ -1186,7 +1184,7 @@ func (b *Backend) BindPipeline(pl driver.Pipeline) {
 	p := pl.(*pipeline)
 	b.state.pipeline = p
 	b.glstate.useProgram(b.funcs, p.prog.obj)
-	b.SetBlend(p.blend.Enable)
+	b.SetBlend(p.blend.IsEnabled())
 	b.BlendFunc(p.blend.SrcFactor, p.blend.DstFactor)
 }
 
@@ -1357,12 +1355,7 @@ func alphaTripleFor(ver [2]int) textureTriple {
 }
 
 func hasExtension(exts []string, ext string) bool {
-	for _, e := range exts {
-		if ext == e {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(exts, ext)
 }
 
 func firstBufferType(typ driver.BufferBinding) gl.Enum {

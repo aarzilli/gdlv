@@ -15,9 +15,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/command"
 	"github.com/aarzilli/nucular/font"
+	"github.com/aarzilli/nucular/internal/clipboard"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 
@@ -642,6 +642,17 @@ func (ctx *context) Draw(wimg *image.RGBA) int {
 			}
 		case command.CursorCmd:
 			// not supported by shiny
+
+		case command.SetClipboardCmd:
+			clipboard.Set(icmd.Text.String)
+		case command.GetClipboardCmd:
+			ctx.nextClipboard = clipboard.Get()
+			ctx.hasNextClipboard = true
+			ctx.trashFrame = true
+		case command.GetPrimarySelectionCmd:
+			ctx.nextClipboard = clipboard.GetPrimary()
+			ctx.hasNextClipboard = true
+			ctx.trashFrame = true
 		default:
 			panic(UnknownCommandErr)
 		}

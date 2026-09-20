@@ -137,7 +137,7 @@ func (c *otApplyContext) applyGSUB(table tables.GSUBLookup) bool {
 	}
 
 	if debugMode {
-		fmt.Printf("\tAPPLY - type %T at index %d\n", table, c.buffer.idx)
+		fmt.Printf("\t\tAPPLY - type %T at index %d\n", table, c.buffer.idx)
 	}
 
 	switch data := table.(type) {
@@ -272,27 +272,36 @@ func (c *otApplyContext) applySubsAlternate(alternates []gID) bool {
 	return true
 }
 
+func (c *otApplyContext) applyOneLigature(lig tables.Ligature) bool {
+	count := len(lig.ComponentGlyphIDs) + 1
+
+	// Special-case to make it in-place and not consider this
+	// as a "ligated" substitution.
+	if count == 1 {
+		c.replaceGlyph(GID(lig.LigatureGlyph))
+		return true
+	}
+
+	if count > maxContextLength {
+		return false
+	}
+
+	ok, matchEnd, totalComponentCount := c.matchInput(lig.ComponentGlyphIDs, matchGlyph)
+	if !ok {
+		c.buffer.unsafeToConcat(c.buffer.idx, matchEnd)
+		return false
+	}
+
+	c.ligateInput(count, matchEnd, lig.LigatureGlyph, totalComponentCount)
+
+	return true
+}
+
 func (c *otApplyContext) applySubsLigature(ligatureSet []tables.Ligature) bool {
 	for _, lig := range ligatureSet {
-		count := len(lig.ComponentGlyphIDs) + 1
-
-		// Special-case to make it in-place and not consider this
-		// as a "ligated" substitution.
-		if count == 1 {
-			c.replaceGlyph(GID(lig.LigatureGlyph))
+		if c.applyOneLigature(lig) {
 			return true
 		}
-
-		var matchPositions [maxContextLength]int
-
-		ok, matchEnd, totalComponentCount := c.matchInput(lig.ComponentGlyphIDs, matchGlyph, &matchPositions)
-		if !ok {
-			c.buffer.unsafeToConcat(c.buffer.idx, matchEnd)
-			continue
-		}
-		c.ligateInput(count, matchPositions, matchEnd, lig.LigatureGlyph, totalComponentCount)
-
-		return true
 	}
 	return false
 }

@@ -45,6 +45,9 @@ const (
 	ImageCmd
 	TextCmd
 	CursorCmd
+	SetClipboardCmd
+	GetClipboardCmd
+	GetPrimarySelectionCmd
 )
 
 type Line struct {
@@ -192,4 +195,16 @@ func (b *Buffer) Cursor(r rect.Rect, cursor font.Cursor) {
 	cmd.Rect = r
 	cmd.Cursor = cursor
 	b.Commands = append(b.Commands, cmd)
+}
+
+func (b *Buffer) SetClipboard(text string) {
+	b.Commands = append(b.Commands, Command{Kind: SetClipboardCmd, Text: Text{String: text}})
+}
+
+func (b *Buffer) GetClipboard() {
+	b.Commands = append(b.Commands, Command{Kind: GetClipboardCmd})
+}
+
+func (b *Buffer) GetPrimarySelection() {
+	b.Commands = append(b.Commands, Command{Kind: GetPrimarySelectionCmd})
 }

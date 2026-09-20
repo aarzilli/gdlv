@@ -451,3 +451,5 @@ func (ft *Font) Describe() Description {
 	desc := fontDescriptor{ft.os2.os2Desc, ft.names, ft.head}
 	return Description{desc.family(), desc.aspect()}
 }
+
+type STAT = tables.STAT

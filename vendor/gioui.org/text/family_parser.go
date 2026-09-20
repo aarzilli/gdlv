@@ -224,7 +224,7 @@ func (p *parser) parse(rule string) ([]string, error) {
 //
 //	LIST ::= <FACE> <COMMA> <LIST> | <FACE>
 func (p *parser) parseList() error {
-	if len(p.tokens) < 0 {
+	if len(p.tokens) == 0 {
 		return fmt.Errorf("expected family name, got EOF")
 	}
 	if head := p.tokens[0]; head.kind != tokenStr {

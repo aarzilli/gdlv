@@ -320,21 +320,36 @@ func (rs *RuneSet) deserializeFrom(data []byte) (int, error) {
 // a sorted slice of unique, increasing scripts
 type ScriptSet []language.Script
 
+// contains returns true is [s] is in the set.
+func (ss ScriptSet) contains(s language.Script) bool {
+	// we use a linear search since in practice the script sets are
+	// rather small (see BenchmarkScriptSet_contains)
+	for _, script := range ss {
+		if script > s { // optimization, using the fact the slice is increasing
+			return false
+		}
+		if script == s {
+			return true
+		}
+	}
+	return false
+}
+
 // insert adds the given script to the set if it is not already present.
-func (s *ScriptSet) insert(newScript language.Script) {
-	scriptIdx := sort.Search(len([]language.Script(*s)), func(i int) bool {
-		return (*s)[i] >= newScript
+func (ss *ScriptSet) insert(newScript language.Script) {
+	scriptIdx := sort.Search(len([]language.Script(*ss)), func(i int) bool {
+		return (*ss)[i] >= newScript
 	})
-	if scriptIdx != len(*s) && (*s)[scriptIdx] == newScript {
+	if scriptIdx != len(*ss) && (*ss)[scriptIdx] == newScript {
 		return
 	}
 	// Grow the slice if necessary.
-	startLen := len(*s)
-	*s = append(*s, language.Script(0))[:startLen]
+	startLen := len(*ss)
+	*ss = append(*ss, language.Script(0))[:startLen]
 	// Shift all elements from scriptIdx onward to the right one position.
-	*s = append((*s)[:scriptIdx+1], (*s)[scriptIdx:]...)
+	*ss = append((*ss)[:scriptIdx+1], (*ss)[scriptIdx:]...)
 	// Insert newScript at the correct position.
-	(*s)[scriptIdx] = newScript
+	(*ss)[scriptIdx] = newScript
 }
 
 const scriptSize = 4

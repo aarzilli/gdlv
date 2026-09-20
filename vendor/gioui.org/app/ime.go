@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Unlicense OR MIT
+
 package app
 
 import (
 	"unicode"
 	"unicode/utf16"
+	"unicode/utf8"
 
 	"gioui.org/io/input"
 	"gioui.org/io/key"
@@ -14,10 +16,31 @@ type editorState struct {
 	compose key.Range
 }
 
-func (e *editorState) Replace(r key.Range, text string) {
+func shouldCancelComposition(old, new editorState) bool {
+	return old.Selection.Range != new.Selection.Range || !areSnippetsConsistent(old.Snippet, new.Snippet)
+}
+
+// imeRange is the range currently owned by the IME. While composing, both
+// preedit updates and commits replace that range; otherwise they replace the
+// editor selection.
+func imeRange(state editorState) key.Range {
+	rng := state.compose
+	if rng.Start == -1 {
+		rng = state.Selection.Range
+	}
+	return normRange(rng)
+}
+
+// normRange makes text replacement independent of the selection direction.
+func normRange(r key.Range) key.Range {
 	if r.Start > r.End {
 		r.Start, r.End = r.End, r.Start
 	}
+	return r
+}
+
+func (e *editorState) Replace(r key.Range, text string) {
+	r = normRange(r)
 	runes := []rune(text)
 	newEnd := r.Start + len(runes)
 	adjust := func(pos int) int {
@@ -115,4 +138,29 @@ func (e *editorState) RunesIndex(chars int) int {
 	}
 	// Assume runes after snippets are one UTF-16 character each.
 	return runes + chars
+}
+
+// areSnippetsConsistent reports whether the content of the old snippet is
+// consistent with the content of the new.
+func areSnippetsConsistent(old, new key.Snippet) bool {
+	// Compute the overlapping range.
+	r := old.Range
+	r.Start = max(r.Start, new.Start)
+	r.End = max(r.End, r.Start)
+	r.End = min(r.End, new.End)
+	return snippetSubstring(old, r) == snippetSubstring(new, r)
+}
+
+func snippetSubstring(s key.Snippet, r key.Range) string {
+	for r.Start > s.Start && r.Start < s.End {
+		_, n := utf8.DecodeRuneInString(s.Text)
+		s.Text = s.Text[n:]
+		s.Start++
+	}
+	for r.End < s.End && r.End > s.Start {
+		_, n := utf8.DecodeLastRuneInString(s.Text)
+		s.Text = s.Text[:len(s.Text)-n]
+		s.End--
+	}
+	return s.Text
 }

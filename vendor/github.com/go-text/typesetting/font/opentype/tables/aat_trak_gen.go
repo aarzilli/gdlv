@@ -22,7 +22,6 @@ func ParseTrackData(src []byte, parentSrc []byte) (TrackData, int, error) {
 	n += 8
 
 	{
-
 		if offsetSizeTable != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetSizeTable {
 				return item, 0, fmt.Errorf("reading TrackData: "+"EOF: expected length: %d, got %d", offsetSizeTable, L)
@@ -71,7 +70,6 @@ func ParseTrackTableEntry(src []byte, grandParentSrc []byte, perSizeTrackingCoun
 	n += 8
 
 	{
-
 		if offsetPerSizeTracking != 0 { // ignore null offset
 			if L := len(grandParentSrc); L < offsetPerSizeTracking {
 				return item, 0, fmt.Errorf("reading TrackTableEntry: "+"EOF: expected length: %d, got %d", offsetPerSizeTracking, L)
@@ -106,7 +104,6 @@ func ParseTrak(src []byte) (Trak, int, error) {
 	n += 12
 
 	{
-
 		if offsetHoriz != 0 { // ignore null offset
 			if L := len(src); L < offsetHoriz {
 				return item, 0, fmt.Errorf("reading Trak: "+"EOF: expected length: %d, got %d", offsetHoriz, L)
@@ -121,7 +118,6 @@ func ParseTrak(src []byte) (Trak, int, error) {
 		}
 	}
 	{
-
 		if offsetVert != 0 { // ignore null offset
 			if L := len(src); L < offsetVert {
 				return item, 0, fmt.Errorf("reading Trak: "+"EOF: expected length: %d, got %d", offsetVert, L)

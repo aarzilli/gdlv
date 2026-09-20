@@ -158,7 +158,6 @@ func ParseMorxSubtableContextual(src []byte, valuesCount int) (MorxSubtableConte
 	n += 4
 
 	{
-
 		if offsetSubstitutions != 0 { // ignore null offset
 			if L := len(src); L < offsetSubstitutions {
 				return item, 0, fmt.Errorf("reading MorxSubtableContextual: "+"EOF: expected length: %d, got %d", offsetSubstitutions, L)
@@ -196,7 +195,6 @@ func ParseMorxSubtableInsertion(src []byte, valuesCount int) (MorxSubtableInsert
 	n += 4
 
 	{
-
 		if offsetInsertions != 0 { // ignore null offset
 			if L := len(src); L < offsetInsertions {
 				return item, 0, fmt.Errorf("reading MorxSubtableInsertion: "+"EOF: expected length: %d, got %d", offsetInsertions, L)

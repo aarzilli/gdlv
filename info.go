@@ -18,7 +18,6 @@ import (
 	"golang.org/x/mobile/event/key"
 
 	"github.com/aarzilli/nucular"
-	"github.com/aarzilli/nucular/clipboard"
 	"github.com/aarzilli/nucular/label"
 	"github.com/aarzilli/nucular/rect"
 	nstyle "github.com/aarzilli/nucular/style"
@@ -1428,7 +1427,7 @@ func funcInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx i
 			go functionListSetBreakpoint(p.slice[idx])
 		}
 		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
-			clipboard.Set(p.slice[idx])
+			w.SetClipboard(p.slice[idx])
 		}
 	}
 }
@@ -1446,7 +1445,7 @@ func sourceInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx
 	if w := w.ContextualOpen(0, image.Point{}, bounds, nil); w != nil {
 		w.Row(20).Dynamic(1)
 		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
-			clipboard.Set(p.slice[idx])
+			w.SetClipboard(p.slice[idx])
 		}
 	}
 }
@@ -1455,7 +1454,7 @@ func sliceInteraction(p *stringSlicePanel, w *nucular.Window, clicked bool, idx 
 	if w := w.ContextualOpen(0, image.Point{}, bounds, nil); w != nil {
 		w.Row(20).Dynamic(1)
 		if w.MenuItem(label.TA("Copy to clipboard", "LC")) {
-			clipboard.Set(p.slice[idx])
+			w.SetClipboard(p.slice[idx])
 		}
 	}
 }

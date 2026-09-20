@@ -3065,3 +3065,24 @@ func (win *Window) GroupEnd() {
 	// immediate drawing
 	win.parent.cmds.Commands = append(win.parent.cmds.Commands, win.cmds.Commands...)
 }
+
+///////////////////////////////////////////////////////////////////////////////////
+// CLIPBOARD
+///////////////////////////////////////////////////////////////////////////////////
+
+// SetClipboard sets the clipboard to text
+func (win *Window) SetClipboard(text string) {
+	win.cmds.SetClipboard(text)
+}
+
+// GetClipboard requests the clipboard, it will be returned in a subsequent
+// frame in the Input struct
+func (win *Window) GetClipboard() {
+	win.cmds.GetClipboard()
+}
+
+// GetPrimarySelection returns the primary selection, it will be returned in
+// a subsequent frame in the Input struct. Does nothing except on X11
+func (win *Window) GetPrimarySelection() {
+	win.cmds.GetPrimarySelection()
+}

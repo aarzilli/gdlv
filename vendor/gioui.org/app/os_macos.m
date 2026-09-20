@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
-// +build darwin,!ios
+//go:build darwin && !ios
 
 #import <AppKit/AppKit.h>
 
@@ -369,7 +369,7 @@ void gio_setCursor(NSUInteger curID) {
 	}
 }
 
-CFTypeRef gio_createWindow(CFTypeRef viewRef, CGFloat width, CGFloat height, CGFloat minWidth, CGFloat minHeight, CGFloat maxWidth, CGFloat maxHeight) {
+CFTypeRef gio_createWindow(CFTypeRef viewRef, CGFloat width, CGFloat height) {
 	@autoreleasepool {
 		NSRect rect = NSMakeRect(0, 0, width, height);
 		NSUInteger styleMask = NSTitledWindowMask |
@@ -381,12 +381,6 @@ CFTypeRef gio_createWindow(CFTypeRef viewRef, CGFloat width, CGFloat height, CGF
 													   styleMask:styleMask
 														 backing:NSBackingStoreBuffered
 														   defer:NO];
-		if (minWidth > 0 || minHeight > 0) {
-			window.contentMinSize = NSMakeSize(minWidth, minHeight);
-		}
-		if (maxWidth > 0 || maxHeight > 0) {
-			window.contentMaxSize = NSMakeSize(maxWidth, maxHeight);
-		}
 		[window setAcceptsMouseMovedEvents:YES];
 		NSView *view = (__bridge NSView *)viewRef;
 		[window setContentView:view];
@@ -426,7 +420,11 @@ void gio_viewSetHandle(CFTypeRef viewRef, uintptr_t handle) {
 - (void)applicationDidFinishLaunching:(NSNotification *)aNotification {
 	[NSApp setActivationPolicy:NSApplicationActivationPolicyRegular];
 	[NSApp activateIgnoringOtherApps:YES];
-	gio_onFinishLaunching();
+}
+- (void)application:(NSApplication *)application openURLs:(NSArray<NSURL *> *)urls {
+	for (NSURL *url in urls) {
+		gio_onOpenURI((__bridge CFTypeRef)url.absoluteString);
+	}
 }
 @end
 
@@ -455,5 +453,27 @@ void gio_main() {
 		globalWindowDel = [[GioWindowDelegate alloc] init];
 
 		[NSApp run];
+	}
+}
+
+@interface AppListener : NSObject
+@end
+
+static AppListener *appListener;
+
+@implementation AppListener
+- (void)launchFinished:(NSNotification *)notification {
+	appListener = nil;
+	gio_onFinishLaunching();
+}
+@end
+
+void gio_init() {
+	@autoreleasepool {
+		appListener = [[AppListener alloc] init];
+		[[NSNotificationCenter defaultCenter] addObserver:appListener
+												 selector:@selector(launchFinished:)
+													 name:NSApplicationDidFinishLaunchingNotification
+												   object:nil];
 	}
 }

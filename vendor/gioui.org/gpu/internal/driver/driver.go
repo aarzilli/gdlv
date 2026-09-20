@@ -88,7 +88,6 @@ type InputDesc struct {
 }
 
 type BlendDesc struct {
-	Enable               bool
 	SrcFactor, DstFactor BlendFactor
 }
 
@@ -96,8 +95,10 @@ type BlendFactor uint8
 
 type Topology uint8
 
-type TextureFilter uint8
-type TextureFormat uint8
+type (
+	TextureFilter uint8
+	TextureFormat uint8
+)
 
 type BufferBinding uint8
 
@@ -200,6 +201,20 @@ func (f Features) Has(feats Features) bool {
 	return f&feats == feats
 }
 
+func (b BlendDesc) IsEnabled() bool {
+	switch b.SrcFactor {
+	case BlendFactorOne, BlendFactorZero, BlendFactorOneMinusSrcAlpha:
+	default:
+		return true
+	}
+	switch b.DstFactor {
+	case BlendFactorZero:
+	default:
+		return true
+	}
+	return false
+}
+
 func DownloadImage(d Device, t Texture, img *image.RGBA) error {
 	r := img.Bounds()
 	if err := t.ReadPixels(r, img.Pix, img.Stride); err != nil {
@@ -217,7 +232,7 @@ func flipImageY(stride, height int, pixels []byte) {
 	// Flip image in y-direction. OpenGL's origin is in the lower
 	// left corner.
 	row := make([]uint8, stride)
-	for y := 0; y < height/2; y++ {
+	for y := range height / 2 {
 		y1 := height - y - 1
 		dest := y1 * stride
 		src := y * stride

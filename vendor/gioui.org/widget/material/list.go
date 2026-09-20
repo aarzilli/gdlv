@@ -321,3 +321,10 @@ func (l ListStyle) Layout(gtx layout.Context, length int, w layout.ListElement) 
 
 	return listDims
 }
+
+// LayoutWidgets the widgets and its scrollbar.
+func (l ListStyle) LayoutWidgets(gtx layout.Context, widgets ...layout.Widget) layout.Dimensions {
+	return l.Layout(gtx, len(widgets), func(gtx layout.Context, index int) layout.Dimensions {
+		return widgets[index](gtx)
+	})
+}

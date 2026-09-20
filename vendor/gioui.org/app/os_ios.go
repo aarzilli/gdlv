@@ -1,8 +1,5 @@
 // SPDX-License-Identifier: Unlicense OR MIT
 
-//go:build darwin && ios
-// +build darwin,ios
-
 package app
 
 /*
@@ -301,10 +298,7 @@ func (w *window) ReadClipboard() {
 
 func (w *window) WriteClipboard(mime string, s []byte) {
 	u16 := utf16.Encode([]rune(string(s)))
-	var chars *C.unichar
-	if len(u16) > 0 {
-		chars = (*C.unichar)(unsafe.Pointer(&u16[0]))
-	}
+	chars := (*C.unichar)(unsafe.Pointer(unsafe.SliceData(u16)))
 	C.writeClipboard(chars, C.NSUInteger(len(u16)))
 }
 
@@ -405,11 +399,12 @@ const (
 )
 
 func osMain() {
-	if !isMainThread() {
-		panic("app.Main must be run on the main goroutine")
-	}
 	switch mainMode {
 	case mainModeUndefined:
+		if !isMainThread() {
+			panic("app.Main must be run on the main goroutine")
+		}
+
 		mainMode = mainModeExe
 		var argv []*C.char
 		for _, arg := range os.Args {
@@ -423,6 +418,16 @@ func osMain() {
 	case mainModeLibrary:
 		// Do nothing, we're embedded as a library.
 	}
+	select {}
+}
+
+//export gio_onOpenURI
+func gio_onOpenURI(uri C.CFTypeRef) {
+	evt, err := newURLEvent(nsstringToString(uri))
+	if err != nil {
+		return
+	}
+	processGlobalEvent(evt)
 }
 
 //export gio_runMain

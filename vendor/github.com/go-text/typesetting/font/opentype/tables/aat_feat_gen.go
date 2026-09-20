@@ -60,7 +60,6 @@ func ParseFeatureName(src []byte, parentSrc []byte) (FeatureName, int, error) {
 	n += 12
 
 	{
-
 		if offsetSettingTable != 0 { // ignore null offset
 			if L := len(parentSrc); L < offsetSettingTable {
 				return item, 0, fmt.Errorf("reading FeatureName: "+"EOF: expected length: %d, got %d", offsetSettingTable, L)

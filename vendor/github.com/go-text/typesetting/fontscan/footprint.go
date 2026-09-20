@@ -3,6 +3,8 @@ package fontscan
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/go-text/typesetting/font"
 	ot "github.com/go-text/typesetting/font/opentype"
@@ -96,6 +98,22 @@ func newFootprintFromLoader(ld *ot.Loader, isUserProvided bool, buffer scanBuffe
 	buffer.tableBuffer = raw
 
 	return out, buffer, nil
+}
+
+// returns true for .ttf and .ttc font files
+func (fp *Footprint) isTruetypeHint() bool {
+	switch strings.ToLower(filepath.Ext(fp.Location.File)) {
+	case ".ttf", ".ttc":
+		return true
+	default:
+		return false
+	}
+}
+
+// isMonoHint returns true if "mono" is included in the family name
+// this is not very precise but much more efficient than using [font.Font.IsMonospace]
+func (fp *Footprint) isMonoHint() bool {
+	return strings.Contains(fp.Family, "mono")
 }
 
 // loadFromDisk assume the footprint location refers to the file system

@@ -21,7 +21,7 @@ import (
 	"github.com/go-text/typesetting/language"
 )
 
-// based on upstream commit 5d543d64222c6ce45332d0c188790f90691ef112
+// based on upstream commit 5a31dd02f0b32de12336f72db9297bfe94cf0da1 (v12.3.0)
 
 // debugMode is only used in test: if true, it prints detailed information
 // about shaping
@@ -166,10 +166,23 @@ type ClusterLevel uint8
 
 const (
 	// Return cluster values grouped by graphemes into monotone order.
+	// Non-base characters are merged into the cluster of the base character that precedes them.
+	// There is also cluster merging every time the clusters will otherwise become non-monotone.
 	MonotoneGraphemes ClusterLevel = iota
-	//  Return cluster values grouped into monotone order.
+	// Return cluster values grouped into monotone order.
+	// Non-base characters are initially
+	// assigned their own cluster values, which are not merged into preceding base
+	// clusters. This allows HarfBuzz to perform additional operations like reorder
+	// sequences of adjacent marks. The output is still monotone, but the cluster
+	// values are more granular.
 	MonotoneCharacters
 	// Don't group cluster values.
+	// Non-base characters are assigned their
+	// own cluster values, which are not merged into preceding base clusters. Moreover,
+	// the cluster values are not merged into monotone order. This is the most granular
+	// cluster level, and it is useful for clients that need to know the exact cluster
+	// values of each character, but is harder to use for clients, since clusters
+	// might appear in any order.
 	Characters
 )
 
@@ -285,7 +298,7 @@ func (p *parser) parseTag() (ot.Tag, error) {
 	}
 
 	start := p.pos
-	for p.pos < len(p.data) && (isAlnum(p.data[p.pos]) || p.data[p.pos] == '_') {
+	for p.pos < len(p.data) && (p.data[p.pos] != ' ' && p.data[p.pos] != '=' && p.data[p.pos] != '[' && p.data[p.pos] != quote) {
 		p.pos++
 	}
 
@@ -373,8 +386,10 @@ func (p *parser) parseFeatureValuePostfix() (uint32, bool) {
 	 * A value without an equal-sign is ok, but not required. */
 	p.parseChar('=')
 
+	pos := p.pos
 	val, hadValue := p.parseUint32()
-	if !hadValue {
+	if !hadValue { // retry for a bool
+		p.pos = pos
 		val, hadValue = p.parseBool()
 	}
 	return val, hadValue
@@ -408,20 +423,20 @@ func (p *parser) parseOneFeature() (feature Feature, err error) {
 
 // ParseFeature parses one feature string (usually coming from a comma-separated list of font features).
 //
-//	Features can be enabled or disabled, either globally or limited to
-//	specific character ranges.  The format for specifying feature settings
-//	follows.  All valid CSS font-feature-settings values other than 'normal'
-//	and the global values are also accepted, though not documented below.
-//	CSS string escapes are not supported.
+// Features can be enabled or disabled, either globally or limited to
+// specific character ranges.  The format for specifying feature settings
+// follows.  All valid CSS font-feature-settings values other than 'normal'
+// and the global values are also accepted, though not documented below.
+// CSS string escapes are not supported.
 //
-//	The range indices refer to the positions between Unicode characters,
-//	unless the --utf8-clusters is provided, in which case range indices
-//	refer to UTF-8 byte indices. The position before the first character
-//	is always 0.
+// The range indices refer to the positions between Unicode characters,
+// unless the --utf8-clusters is provided, in which case range indices
+// refer to UTF-8 byte indices. The position before the first character
+// is always 0.
 //
-//	The format is Python-esque.  Here is how it all works:
+// The format is Python-esque.  Here is how it all works:
 //
-//	  Syntax:       Value:    Start:    End:
+//	Syntax:       Value:    Start:    End:
 //
 //	Setting value:
 //	  "kern"        1         0         ∞         // Turn feature on
@@ -475,6 +490,20 @@ func max32(a, b uint32) uint32 {
 	return b
 }
 
+func minF(a, b float32) float32 {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+func maxF(a, b float32) float32 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
 func isAlpha(c byte) bool { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') }
 func isAlnum(c byte) bool { return isAlpha(c) || (c >= '0' && c <= '9') }
 func toUpper(c byte) byte {
@@ -496,6 +525,4 @@ const maxInt = int(^uint(0) >> 1)
 // bitStorage returns the number of bits needed to store the number.
 func bitStorage(v uint32) int { return 32 - bits.LeadingZeros32(v) }
 
-func roundf(f float32) Position {
-	return Position(math.Round(float64(f)))
-}
+func roundf(f float32) Position { return Position(math.Round(float64(f))) }

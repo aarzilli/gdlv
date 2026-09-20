@@ -62,10 +62,9 @@ const (
 )
 
 type otNormalizeContext struct {
-	plan   *otShapePlan
-	buffer *Buffer
-	font   *Font
-	// hb_unicode_funcs_t *unicode;
+	plan      *otShapePlan
+	buffer    *Buffer
+	font      *Font
 	decompose func(c *otNormalizeContext, ab rune) (a, b rune, ok bool)
 	compose   func(c *otNormalizeContext, a, b rune) (ab rune, ok bool)
 }
@@ -151,7 +150,7 @@ func (c *otNormalizeContext) decomposeCurrentCharacter(shortest bool) {
 	}
 
 	if buffer.cur(0).isUnicodeSpace() {
-		spaceType := uni.spaceFallbackType(u)
+		spaceType := uniSpaceFallbackType(u)
 		if spaceGlyph, ok := c.font.face.NominalGlyph(0x0020); spaceType != notSpace && (ok || buffer.Invisible != 0) {
 			if !ok {
 				spaceGlyph = buffer.Invisible
@@ -183,7 +182,7 @@ func (c *otNormalizeContext) handleVariationSelectorCluster(end int) {
 	}
 	font := c.font
 	for buffer.idx < end-1 {
-		if uni.isVariationSelector(buffer.cur(+1).codepoint) {
+		if uniIsVariationSelector(buffer.cur(+1).codepoint) {
 			var ok bool
 			buffer.cur(0).Glyph, ok = font.face.VariationGlyph(buffer.cur(0).codepoint, buffer.cur(+1).codepoint)
 			if ok {
@@ -193,11 +192,18 @@ func (c *otNormalizeContext) handleVariationSelectorCluster(end int) {
 				// Just pass on the two characters separately, let GSUB do its magic.
 				setGlyph(buffer.cur(0), font)
 				buffer.nextGlyph()
+
+				buffer.scratchFlags |= bsfHasVariationSelectorFallback
+				buffer.cur(0).setVariationSelector(true)
+				if buffer.notFoundVariationSelector != 0xFFFFFFFF {
+					buffer.cur(0).clearDefaultIgnorable()
+				}
+
 				setGlyph(buffer.cur(0), font)
 				buffer.nextGlyph()
 			}
 			// skip any further variation selectors.
-			for buffer.idx < end && uni.isVariationSelector(buffer.cur(0).codepoint) {
+			for buffer.idx < end && uniIsVariationSelector(buffer.cur(0).codepoint) {
 				setGlyph(buffer.cur(0), font)
 				buffer.nextGlyph()
 			}
@@ -219,7 +225,7 @@ func (c *otNormalizeContext) decomposeMultiCharCluster(end int, shortCircuit boo
 	}
 
 	for i := buffer.idx; i < end; i++ {
-		if uni.isVariationSelector(buffer.Info[i].codepoint) {
+		if uniIsVariationSelector(buffer.Info[i].codepoint) {
 			c.handleVariationSelectorCluster(end)
 			return
 		}
