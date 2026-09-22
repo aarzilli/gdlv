@@ -40,6 +40,9 @@ will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` 
 
 # News
 
+## 2026-09-22 / Version 1.17
+* Multiple fonts can be listed in the GDLV_*_FONT environment variables and will be used as fallback
+
 ## 2026-01-30 / Version 1.16
 * Imported non-utf-8 strings fix from Delve
 * Handled new process spawned event from Delve
