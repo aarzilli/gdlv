@@ -1180,9 +1180,9 @@ func (bped *breakpointEditor) update(w *nucular.Window) {
 
 	cancelled := false
 
-	for _, e := range w.Input().Keyboard.Keys {
+	for e := range w.Input().Keyboard.Events() {
 		switch {
-		case e.Code == key.CodeEscape:
+		case e.HandleKey(key.CodeEscape, 0):
 			cancelled = true
 		}
 	}

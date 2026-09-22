@@ -21,6 +21,8 @@ github.com/aarzilli/nucular v0.0.0-20260813095138-bd24df043b63 h1:xLWO9vPBM64UQB
 github.com/aarzilli/nucular v0.0.0-20260813095138-bd24df043b63/go.mod h1:HD5sNJdwkVNTyIDckk1g7kFpKgpOmLLBZhB8A0xSv9o=
 github.com/aarzilli/nucular v0.0.0-20260919163313-dfefea0307a2 h1:K2/JrziEESelL1Die5LS1u40Xcn5nqahmDdwkzspZm0=
 github.com/aarzilli/nucular v0.0.0-20260919163313-dfefea0307a2/go.mod h1:F2nhfn1CjYcUcl760I0F7+cF8kpgI0k59VuqOCluQ/M=
+github.com/aarzilli/nucular v0.0.0-20260922071552-58b808aa5772 h1:wUpmd+1KtaT41+bIa+RJ9WLM3vlfSmKMmpXppkRcDl4=
+github.com/aarzilli/nucular v0.0.0-20260922071552-58b808aa5772/go.mod h1:F2nhfn1CjYcUcl760I0F7+cF8kpgI0k59VuqOCluQ/M=
 github.com/chzyer/logex v1.1.10/go.mod h1:+Ywpsq7O8HXn0nuIou7OrIPyXbp3wmkHB+jjWRnGsAI=
 github.com/chzyer/readline v0.0.0-20180603132655-2972be24d48e/go.mod h1:nSuG5e5PlCu98SY8svDHJxuZscDgtXS6KTTbou5AhLI=
 github.com/chzyer/test v0.0.0-20180213035817-a1ea475d72b1/go.mod h1:Q3SI9o4m/ZMnBNeIyt5eFwwo7qiLfzFZmjNmxjkiQlU=

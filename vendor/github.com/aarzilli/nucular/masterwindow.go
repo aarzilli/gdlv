@@ -44,10 +44,21 @@ type MasterWindow interface {
 	Unlock()
 
 	setTitle(string)
+	setIcon(image.Image)
+}
+
+type NewWindowOptions struct {
+	Title string
+	Size  image.Point
+	Icon  image.Image
 }
 
 func NewMasterWindow(flags WindowFlags, title string, updatefn UpdateFn) MasterWindow {
-	return NewMasterWindowSize(flags, title, image.Point{640, 480}, updatefn)
+	return NewMasterWindowOptions(flags, NewWindowOptions{Title: title, Size: image.Point{640, 480}}, updatefn)
+}
+
+func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, updatefn UpdateFn) MasterWindow {
+	return NewMasterWindowOptions(flags, NewWindowOptions{Title: title, Size: sz}, updatefn)
 }
 
 type WindowWalkFn func(w *Window, title string, data interface{}, docked bool, splitSize int, rect rect.Rect)

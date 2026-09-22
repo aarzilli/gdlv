@@ -38,4 +38,4 @@ go build -tags nucular_shiny,metal
 
 Selects the shiny backend but uses metal to render on macOS.
 
-By default shiny is used on all operating systems except macOS, where gio is used.
+By default gio is used on all supported operating systems.

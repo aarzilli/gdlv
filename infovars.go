@@ -1339,9 +1339,9 @@ func handleKeyboardVar(w *nucular.Window, ed *richtext.RichText, exprMenu *int) 
 	}
 
 	kbd := &w.Input().Keyboard
-	for _, k := range kbd.Keys {
+	for e := range kbd.Events() {
 		switch {
-		case k.Modifiers == key.ModShift && k.Code == key.CodeDeleteForward:
+		case e.HandleKey(key.CodeDeleteForward, key.ModShift):
 			if *exprMenu+1 < len(localsPanel.v) {
 				activateExpr(*exprMenu + 1)
 			} else if *exprMenu-1 >= 0 {
@@ -1356,13 +1356,13 @@ func handleKeyboardVar(w *nucular.Window, ed *richtext.RichText, exprMenu *int) 
 			*exprMenu = -1
 			return
 
-		case k.Modifiers == key.ModShift && k.Code == key.CodeUpArrow:
+		case e.HandleKey(key.CodeUpArrow, key.ModShift):
 			activateExpr(*exprMenu - 1)
 
-		case k.Modifiers == key.ModShift && k.Code == key.CodeDownArrow:
+		case e.HandleKey(key.CodeDownArrow, key.ModShift):
 			activateExpr(*exprMenu + 1)
 
-		case k.Modifiers == key.ModControl && k.Code == key.CodeO:
+		case e.HandleKey(key.CodeO, key.ModControl):
 			v := localsPanel.v[*exprMenu]
 			if w.TreeIsOpen(v.Varname) {
 				w.TreeClose(v.Varname)

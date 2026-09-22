@@ -1,5 +1,4 @@
-//go:build (darwin && !nucular_shiny) || nucular_gio
-// +build darwin,!nucular_shiny nucular_gio
+//go:build !nucular_shiny
 
 package nucular
 
@@ -59,6 +58,10 @@ type masterWindow struct {
 
 	closed bool
 
+	ve app.ViewEvent
+
+	delayedIcon image.Image
+
 	charAtlas map[charAtlasKey]map[rune]renderedGlyph
 }
 
@@ -66,14 +69,15 @@ var clipboardStarted bool = false
 var hasX11Clipboard = false
 var clipboardMu sync.Mutex
 
-func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, updatefn UpdateFn) MasterWindow {
+func NewMasterWindowOptions(flags WindowFlags, opt NewWindowOptions, updatefn UpdateFn) MasterWindow {
 	ctx := &context{}
 	wnd := &masterWindow{}
 
 	wnd.masterWindowCommonInit(ctx, flags, updatefn, wnd)
 
-	wnd.Title = title
-	wnd.initialSize = sz
+	wnd.Title = opt.Title
+	wnd.initialSize = opt.Size
+	wnd.delayedIcon = opt.Icon
 
 	clipboardMu.Lock()
 	if !clipboardStarted {
@@ -104,7 +108,6 @@ func (mw *masterWindow) Main() {
 			os.Exit(0)
 		}
 	}()
-	go mw.updater()
 	app.Main()
 }
 
@@ -132,6 +135,7 @@ func (mw *masterWindow) OnClose(onClose func()) {
 
 func (mw *masterWindow) main() {
 	perfString := ""
+	first := true
 	for {
 		switch e := mw.w.Event().(type) {
 		case app.DestroyEvent:
@@ -144,6 +148,10 @@ func (mw *masterWindow) main() {
 			return
 
 		case app.FrameEvent:
+			if first {
+				first = false
+				go mw.updater()
+			}
 			mw.size = e.Size
 
 			for {
@@ -202,14 +210,13 @@ func (mw *masterWindow) main() {
 						case key.NameEnter, key.NameReturn:
 							io.WriteString(&mw.textbuffer, "\n")
 						}
-						mw.ctx.Input.Keyboard.Keys = append(mw.ctx.Input.Keyboard.Keys, gio2mobileKey(e))
+						mw.ctx.Input.Keyboard.events = append(mw.ctx.Input.Keyboard.events, KeyboardEvent{kind: keyboardEventKey, key: gio2mobileKey(e)})
 						mw.uilock.Unlock()
 					}
 				case transfer.DataEvent:
 					buf, err := io.ReadAll(e.Open())
 					if err == nil {
-						mw.ctx.Input.HasClipboard = true
-						mw.ctx.Input.Clipboard = string(buf)
+						mw.ctx.Input.Keyboard.addClipboard(string(buf))
 					}
 				}
 			}
@@ -221,6 +228,12 @@ func (mw *masterWindow) main() {
 
 			e.Frame(&mw.ops)
 
+		case app.ViewEvent:
+			mw.ve = e
+			if mw.delayedIcon != nil {
+				mw.setIcon(mw.delayedIcon)
+				mw.delayedIcon = nil
+			}
 		}
 	}
 }
@@ -391,7 +404,7 @@ func (mw *masterWindow) updateLocked(perfString string, source input.Source) {
 	mw.ctx.Windows[0].Bounds = rect.Rect{X: 0, Y: 0, W: mw.size.X, H: mw.size.Y}
 	in := &mw.ctx.Input
 	in.Mouse.clip = nk_null_rect
-	in.Keyboard.Text = mw.textbuffer.String()
+	in.Keyboard.addText(mw.textbuffer.String())
 	mw.textbuffer.Reset()
 
 	var t0, t1, te time.Time

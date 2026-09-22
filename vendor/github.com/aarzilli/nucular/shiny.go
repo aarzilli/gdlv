@@ -1,5 +1,4 @@
-//go:build (!darwin && !nucular_gio) || nucular_shiny
-// +build !darwin,!nucular_gio nucular_shiny
+//go:build nucular_shiny
 
 package nucular
 
@@ -63,14 +62,14 @@ type masterWindow struct {
 }
 
 // Creates new master window
-func NewMasterWindowSize(flags WindowFlags, title string, sz image.Point, updatefn UpdateFn) MasterWindow {
+func NewMasterWindowOptions(flags WindowFlags, opts NewWindowOptions, updatefn UpdateFn) MasterWindow {
 	ctx := &context{}
 	wnd := &masterWindow{}
 
 	wnd.masterWindowCommonInit(ctx, flags, updatefn, wnd)
 
-	wnd.Title = title
-	wnd.initialSize = sz
+	wnd.Title = opts.Title
+	wnd.initialSize = opts.Size
 
 	clipboardMu.Lock()
 	if !clipboardStarted {
@@ -277,7 +276,7 @@ func (w *masterWindow) updateLocked() {
 	w.ctx.Windows[0].Bounds = rect.FromRectangle(w.bounds)
 	in := &w.ctx.Input
 	in.Mouse.clip = nk_null_rect
-	in.Keyboard.Text = w.textbuffer.String()
+	in.Keyboard.addText(w.textbuffer.String())
 	w.textbuffer.Reset()
 
 	var t0, t1, te time.Time
@@ -873,5 +872,9 @@ func widgetText(o *command.Buffer, b rect.Rect, str string, t *textWidget, a lab
 }
 
 func (mw *masterWindow) setTitle(title string) {
+	// not implemented
+}
+
+func (mw *masterWindow) setIcon(icon image.Image) {
 	// not implemented
 }

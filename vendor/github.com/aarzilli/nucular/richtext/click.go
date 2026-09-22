@@ -349,127 +349,102 @@ func (rtxt *RichText) handleKeyboard(w *nucular.Window, in *nucular.Input, chang
 		return
 	}
 	if rtxt.flags&Keyboard != 0 {
-		for _, k := range in.Keyboard.Keys {
+		for e := range in.Keyboard.Events() {
 			switch {
-			case k.Modifiers == key.ModControl && k.Code == key.CodeC:
+			case e.HandleKey(key.CodeC, key.ModControl):
 				if rtxt.flags&Clipboard != 0 {
 					w.SetClipboard(rtxt.Get(rtxt.Sel))
 				}
-			case k.Code == key.CodeUpArrow:
+			case e.HandleKey(key.CodeUpArrow, 0):
 				return -1, 0
-			case k.Code == key.CodeDownArrow:
+			case e.HandleKey(key.CodeDownArrow, 0):
 				return +1, 0
-			case k.Code == key.CodePageDown:
+			case e.HandleKey(key.CodePageDown, 0):
 				return 0, +1
-			case k.Code == key.CodePageUp:
+			case e.HandleKey(key.CodePageUp, 0):
 				return 0, -1
 			}
 		}
 	}
 	if rtxt.flags&Editable != 0 {
-		if in.Keyboard.Text != "" {
-			rtxt.replace(in.Keyboard.Text, changed)
-		}
-		if rtxt.flags&Clipboard != 0 && in.HasClipboard {
-			rtxt.replace(in.Clipboard, changed)
-		}
-		for _, k := range in.Keyboard.Keys {
-			switch k.Code {
-			case key.CodeUpArrow:
+		for e := range in.Keyboard.Events() {
+			switch {
+			case e.HandleText():
+				rtxt.replace(e.Text(), changed)
+			case rtxt.flags&Clipboard != 0 && e.HandleClipboard():
+				rtxt.replace(e.Text(), changed)
+			case e.HandleKey(key.CodeUpArrow, 0):
 				//TODO: implement
-			case key.CodeDownArrow:
+			case e.HandleKey(key.CodeDownArrow, 0):
 				//TODO: implement
-			case key.CodeLeftArrow:
-				if k.Modifiers == 0 {
-					rtxt.Sel.E--
-					rtxt.Sel.S = rtxt.Sel.E
-				} else if k.Modifiers == key.ModControl {
-					rtxt.Sel.E = rtxt.towd(rtxt.Sel.E, -1, true)
-					rtxt.Sel.S = rtxt.Sel.E
-				}
+			case e.HandleKey(key.CodeLeftArrow, 0):
+				rtxt.Sel.E--
+				rtxt.Sel.S = rtxt.Sel.E
 				rtxt.clampSel()
-			case key.CodeRightArrow:
-				if k.Modifiers == 0 {
+			case e.HandleKey(key.CodeLeftArrow, key.ModControl):
+				rtxt.Sel.E = rtxt.towd(rtxt.Sel.E, -1, true)
+				rtxt.Sel.S = rtxt.Sel.E
+				rtxt.clampSel()
+			case e.HandleKey(key.CodeRightArrow, 0):
+				rtxt.Sel.E++
+				rtxt.Sel.S = rtxt.Sel.E
+				rtxt.clampSel()
+			case e.HandleKey(key.CodeRightArrow, key.ModControl):
+				rtxt.Sel.E = rtxt.towd(rtxt.Sel.E, +1, true)
+				rtxt.Sel.S = rtxt.Sel.E
+				rtxt.clampSel()
+			case e.HandleKey(key.CodePageDown, 0):
+				return 0, +1
+			case e.HandleKey(key.CodePageUp, 0):
+				return 0, -1
+			case e.HandleKey(key.CodeDeleteForward, 0):
+				if rtxt.Sel.S == rtxt.Sel.E {
 					rtxt.Sel.E++
-					rtxt.Sel.S = rtxt.Sel.E
-				} else {
-					rtxt.Sel.E = rtxt.towd(rtxt.Sel.E, +1, true)
-					rtxt.Sel.S = rtxt.Sel.E
 				}
 				rtxt.clampSel()
-			case key.CodePageDown:
-				if k.Modifiers == 0 {
-					return 0, +1
-				}
-			case key.CodePageUp:
-				if k.Modifiers == 0 {
-					return 0, -1
-				}
-			case key.CodeDeleteForward:
-				if k.Modifiers == 0 {
-					if rtxt.Sel.S == rtxt.Sel.E {
-						rtxt.Sel.E++
+				rtxt.replace("", changed)
+				rtxt.Sel.S = rtxt.Sel.E
+			case e.HandleKey(key.CodeDeleteBackspace, 0):
+				fallthrough
+			case e.HandleKey(key.CodeDeleteBackspace, key.ModControl):
+				k := e.Key()
+				if rtxt.Sel.S == rtxt.Sel.E {
+					if k.Modifiers == 0 {
+						rtxt.Sel.S--
+					} else if k.Modifiers == key.ModControl {
+						rtxt.Sel.S = rtxt.towd(rtxt.Sel.S, -1, true)
 					}
-					rtxt.clampSel()
-					rtxt.replace("", changed)
-					rtxt.Sel.S = rtxt.Sel.E
 				}
-			case key.CodeDeleteBackspace:
-				if k.Modifiers == 0 || k.Modifiers == key.ModControl {
-					if rtxt.Sel.S == rtxt.Sel.E {
-						if k.Modifiers == 0 {
-							rtxt.Sel.S--
-						} else if k.Modifiers == key.ModControl {
-							rtxt.Sel.S = rtxt.towd(rtxt.Sel.S, -1, true)
-						}
-					}
-					rtxt.clampSel()
-					rtxt.replace("", changed)
-					rtxt.Sel.S = rtxt.Sel.E
-				}
-			case key.CodeHome:
+				rtxt.clampSel()
+				rtxt.replace("", changed)
+				rtxt.Sel.S = rtxt.Sel.E
+			case e.HandleKey(key.CodeHome, 0):
 				rtxt.Sel.S = 0
 				rtxt.Sel.E = 0
-			case key.CodeA:
-				if k.Modifiers == key.ModControl {
-					rtxt.Sel.S = 0
-					rtxt.Sel.E = 0
-				}
-			case key.CodeEnd:
+			case e.HandleKey(key.CodeA, key.ModControl):
+				rtxt.Sel.S = 0
+				rtxt.Sel.E = 0
+			case e.HandleKey(key.CodeEnd, 0):
 				rtxt.Sel.S = int32(^uint32(0) >> 1)
 				rtxt.Sel.E = rtxt.Sel.S
 				rtxt.clampSel()
-			case key.CodeE:
-				if k.Modifiers == key.ModControl {
-					rtxt.Sel.S = int32(^uint32(0) >> 1)
-					rtxt.Sel.E = rtxt.Sel.S
-					rtxt.clampSel()
-				}
-			case key.CodeZ:
-				if k.Modifiers == key.ModControl {
-					rtxt.undo(changed)
-				}
-			case key.CodeTab:
-				if k.Modifiers == 0 {
-					rtxt.replace("\t", changed)
-				}
-			case key.CodeReturnEnter:
-				if k.Modifiers == 0 {
-					rtxt.replace("\n", changed)
-				}
-			case key.CodeC:
-				if k.Modifiers == key.ModControl && rtxt.flags&Clipboard != 0 {
-					w.SetClipboard(rtxt.Get(rtxt.Sel))
-				}
-			case key.CodeX:
-				if k.Modifiers == key.ModControl && rtxt.flags&Clipboard != 0 {
-					w.SetClipboard(rtxt.Get(rtxt.Sel))
-					rtxt.replace("", changed)
-				}
-			case key.CodeV:
-				if k.Modifiers == key.ModControl && rtxt.flags&Clipboard != 0 {
-					w.GetClipboard()
-				}
+			case e.HandleKey(key.CodeE, key.ModControl):
+				rtxt.Sel.S = int32(^uint32(0) >> 1)
+				rtxt.Sel.E = rtxt.Sel.S
+				rtxt.clampSel()
+			case e.HandleKey(key.CodeTab, 0):
+				rtxt.replace("\t", changed)
+			case e.HandleKey(key.CodeZ, key.ModControl):
+				rtxt.undo(changed)
+			case e.HandleKey(key.CodeReturnEnter, 0):
+				rtxt.replace("\n", changed)
+			case rtxt.flags&Clipboard != 0 && e.HandleKey(key.CodeC, key.ModControl):
+				w.SetClipboard(rtxt.Get(rtxt.Sel))
+			case rtxt.flags&Clipboard != 0 && e.HandleKey(key.CodeX, key.ModControl):
+				w.SetClipboard(rtxt.Get(rtxt.Sel))
+				rtxt.replace("", changed)
+			case rtxt.flags&Clipboard != 0 && e.HandleKey(key.CodeV, key.ModControl):
+				w.GetClipboard()
 			}
 		}
 	}

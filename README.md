@@ -30,13 +30,13 @@ Use Ctrl+plus and Ctrl+minus (On macOS Cmd+plus and Cmd+minus), or `config zoom 
 
 ## Other backends
 
-On Linux and Windows gdlv uses [shiny](https://github.com/golang/exp/tree/master/shiny) to draw its window and receive mouse and keyboard input from the Operating System. On macOS [gio](https://gioui.org/) is used instead. This behavior can be changed using build tags:
+Gdlv uses [gio](https://gioui.org/) to draw its window and receive mouse and keyboard input from the Operating System. It can be changed to use [shiny](https://github.com/golang/exp/tree/master/shiny) using build tags:
 
 ```
-go install -tags=nucular_gio github.com/aarzilli/gdlv@latest
+go install -tags=nucular_shiny github.com/aarzilli/gdlv@latest
 ```
 
-will force gdlv to use nucular_gio everywhere, conversely `-tags=nucular_shiny` will select the shiny backend on macOS. Additionally, on macOS, `-tags=nucular_shiny,metal` can be used to make shiny draw using the metal API.
+Additionally, on macOS, `-tags=nucular_shiny,metal` can be used to make shiny draw using the metal API.
 
 # News
 

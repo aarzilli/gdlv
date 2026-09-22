@@ -2,6 +2,7 @@ package nucular
 
 import (
 	"image"
+	"iter"
 
 	"github.com/aarzilli/nucular/rect"
 
@@ -26,15 +27,24 @@ type MouseInput struct {
 }
 
 type KeyboardInput struct {
-	Keys []key.Event
-	Text string
+	events []KeyboardEvent
+	/*Keys []key.Event
+	Text string*/
+}
+
+// KeyboardEvent is a keyboard event or a clipboard transfer event.
+type KeyboardEvent struct {
+	kind    keyboardEventKind
+	key     key.Event
+	text    string
+	handled bool
 }
 
 type Input struct {
-	Keyboard     KeyboardInput
-	Mouse        MouseInput
-	HasClipboard bool
-	Clipboard    string
+	Keyboard KeyboardInput
+	Mouse    MouseInput
+	/*HasClipboard bool
+	Clipboard    string*/
 
 	activateEditor interface{}
 	activateWindow *Window
@@ -107,11 +117,125 @@ func (i *MouseInput) Released(id mouse.Button) bool {
 	return !(i.Buttons[id].Down) && i.Buttons[id].Clicked
 }
 
-func (i *KeyboardInput) Pressed(key key.Code) bool {
-	for _, k := range i.Keys {
-		if k.Code == key {
-			return true
+type keyboardEventKind int
+
+const (
+	keyboardEventKey keyboardEventKind = iota
+	keyboardEventText
+	keyboardEventClipboard
+)
+
+func (i *KeyboardInput) addClipboard(text string) {
+	i.events = append(i.events, KeyboardEvent{kind: keyboardEventClipboard, text: text})
+}
+
+func (i *KeyboardInput) addText(text string) {
+	if text != "" {
+		i.events = append(i.events, KeyboardEvent{kind: keyboardEventText, text: text})
+	}
+}
+
+func (ki *KeyboardInput) Events() iter.Seq[*KeyboardEvent] {
+	return func(yield func(ev *KeyboardEvent) bool) {
+		didhandle := false
+		for i := range ki.events {
+			cont := yield(&ki.events[i])
+			if ki.events[i].handled {
+				didhandle = true
+			}
+			if !cont {
+				break
+			}
 		}
+		if didhandle {
+			// reap handled events
+			newevents := ki.events[:0]
+			for _, e := range ki.events {
+				if !e.handled {
+					newevents = append(newevents, e)
+				}
+			}
+			ki.events = newevents
+		}
+	}
+}
+
+// HandleText returns true if this is a text event and marks it as handled.
+func (e *KeyboardEvent) HandleText() bool {
+	if e.kind == keyboardEventText {
+		e.handled = true
+		return true
+	}
+	return false
+}
+
+// Text returns the text of this event, must be a text or clipboard event
+// that was already marked as handled.
+func (e *KeyboardEvent) Text() string {
+	if !e.handled {
+		return ""
+	}
+	return e.text
+}
+
+// HandleKey returns true if this is a key event matching code and modifiers
+// and marks it as handled.
+func (e *KeyboardEvent) HandleKey(code key.Code, modifiers key.Modifiers) bool {
+	if e.kind == keyboardEventKey && e.key.Code == code && e.key.Modifiers == modifiers {
+		e.handled = true
+		return true
+	}
+	return false
+}
+
+// HandleKeyModmask returns true if this is a key event matching the key and
+// at least one of the modifiers in modmask. Marks it as handled.
+func (e *KeyboardEvent) HandleKeyModmask(code key.Code, modmask key.Modifiers) bool {
+	if e.kind == keyboardEventKey && e.key.Code == code && e.key.Modifiers&modmask != 0 {
+		e.handled = true
+		return true
+	}
+	return false
+}
+
+// HandleKeyAny returns true if this is a key event and marks it as handled, unconditionally.
+func (e *KeyboardEvent) HandleKeyAny() bool {
+	if e.kind == keyboardEventKey {
+		e.handled = true
+		return true
+	}
+	return false
+}
+
+// HandleKeyRune returns true if this is a key event matching the given rune.
+func (e *KeyboardEvent) HandleKeyRune(r rune) bool {
+	if e.kind == keyboardEventKey && e.key.Rune == r {
+		e.handled = true
+		return true
+	}
+	return false
+}
+
+// Key returns the key press of a key event, that has already been marked as
+// handled.
+func (e *KeyboardEvent) Key() key.Event {
+	if !e.handled {
+		return key.Event{}
+	}
+	return e.key
+}
+
+// Unhandle marks this event as not handled.
+func (e *KeyboardEvent) Unhandle() {
+	e.handled = false
+}
+
+// HandleClipboard returns true if this is a clipboard event and marks it as
+// handled.
+func (e *KeyboardEvent) HandleClipboard() bool {
+	if e.kind == keyboardEventClipboard {
+		e.handled = true
+		return true
 	}
 	return false
 }

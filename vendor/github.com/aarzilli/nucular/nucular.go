@@ -211,6 +211,12 @@ func (win *Window) SetTitle(s string) {
 	win.title = s
 }
 
+func (win *Window) SetIcon(icon image.Image) {
+	if win.idx == 0 {
+		win.ctx.mw.setIcon(icon)
+	}
+}
+
 func (win *Window) style() *nstyle.Window {
 	switch {
 	case win.flags&windowCombo != 0:
@@ -2607,8 +2613,12 @@ func (win *Window) doProperty(property rect.Rect, name string, text string, filt
 	ed.doEdit(edit, &style.Edit, in, false, false, false)
 	active = ed.Active
 
-	if active && in.Keyboard.Pressed(key.CodeReturnEnter) {
-		active = !active
+	if active {
+		for ev := range in.Keyboard.Events() {
+			if ev.HandleKey(key.CodeReturnEnter, 0) {
+				active = !active
+			}
+		}
 	}
 
 	if old && !active {

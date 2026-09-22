@@ -738,11 +738,11 @@ func restart(out io.Writer, args string) error {
 }
 
 func yesno(w *nucular.Window) (yes, no bool) {
-	for _, e := range w.Input().Keyboard.Keys {
+	for e := range w.Input().Keyboard.Events() {
 		switch {
-		case e.Code == key.CodeEscape:
+		case e.HandleKey(key.CodeEscape, 0):
 			no = true
-		case e.Code == key.CodeReturnEnter:
+		case e.HandleKey(key.CodeReturnEnter, 0):
 			yes = true
 		}
 	}

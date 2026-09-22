@@ -75,8 +75,7 @@ func (ctx *context) Update() {
 			ctx.Windows[i].began = false
 		}
 		if ctx.hasNextClipboard {
-			ctx.Input.HasClipboard = true
-			ctx.Input.Clipboard = ctx.nextClipboard
+			ctx.Input.Keyboard.addClipboard(ctx.nextClipboard)
 			ctx.hasNextClipboard = false
 			ctx.nextClipboard = ""
 		}
@@ -126,13 +125,14 @@ func (ctx *context) processKeyEvent(e key.Event, textbuffer *bytes.Buffer) {
 	}
 
 	evinNotext := func() {
-		for _, k := range ctx.Input.Keyboard.Keys {
-			if k.Code == e.Code {
-				k.Modifiers |= e.Modifiers
+		for i := range ctx.Input.Keyboard.events {
+			ev := &ctx.Input.Keyboard.events[i]
+			if ev.kind == keyboardEventKey && ev.key.Code == e.Code {
+				ev.key.Modifiers |= e.Modifiers
 				return
 			}
 		}
-		ctx.Input.Keyboard.Keys = append(ctx.Input.Keyboard.Keys, e)
+		ctx.Input.Keyboard.events = append(ctx.Input.Keyboard.events, KeyboardEvent{kind: keyboardEventKey, key: e})
 	}
 	evinText := func() {
 		if e.Modifiers == 0 || e.Modifiers == key.ModShift {
@@ -151,7 +151,7 @@ func (ctx *context) processKeyEvent(e key.Event, textbuffer *bytes.Buffer) {
 		evinText()
 	case e.Code == key.CodeTab:
 		e.Rune = '\t'
-		evinText()
+		evinNotext()
 	case e.Code == key.CodeReturnEnter || e.Code == key.CodeKeypadEnter:
 		e.Rune = '\n'
 		evinText()
@@ -225,9 +225,7 @@ func (ctx *context) Reset() {
 	in.Mouse.Prev.X = in.Mouse.Pos.X
 	in.Mouse.Prev.Y = in.Mouse.Pos.Y
 	in.Mouse.Delta = image.Point{}
-	in.Keyboard.Keys = in.Keyboard.Keys[0:0]
-	in.HasClipboard = false
-	in.Clipboard = ""
+	in.Keyboard.events = in.Keyboard.events[0:0]
 }
 
 func (ctx *context) Restack() {

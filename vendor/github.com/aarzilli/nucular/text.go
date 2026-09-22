@@ -542,147 +542,68 @@ func (edit *TextEditor) Text(text []rune) {
 	}
 }
 
-func (state *TextEditor) key(e key.Event, font font.Face, row_height int, area_height int) {
+func (state *TextEditor) key(e *KeyboardEvent, font font.Face, row_height int, area_height int) {
 	readOnly := state.Flags&EditReadOnly != 0
-retry:
-	switch e.Code {
-	case key.CodeZ:
-		if readOnly {
-			return
-		}
-		if e.Modifiers&key.ModControl != 0 {
-			if e.Modifiers&key.ModShift != 0 {
-				state.DoRedo()
-				state.HasPreferredX = false
+	switch {
+	case !readOnly && e.HandleKey(key.CodeZ, key.ModControl):
+		state.DoUndo()
+		state.HasPreferredX = false
 
-			} else {
-				state.DoUndo()
-				state.HasPreferredX = false
-			}
-		}
+	case !readOnly && e.HandleKey(key.CodeZ, key.ModControl|key.ModShift):
+		state.DoRedo()
+		state.HasPreferredX = false
 
-	case key.CodeK:
-		if readOnly {
-			return
-		}
-		if e.Modifiers&key.ModControl != 0 {
-			state.trueSelectStart = state.Cursor
-			state.selectLine(state.Cursor)
-			state.DeleteSelection()
-		}
+	case !readOnly && e.HandleKey(key.CodeK, key.ModControl):
+		state.trueSelectStart = state.Cursor
+		state.selectLine(state.Cursor)
+		state.DeleteSelection()
 
-	case key.CodeInsert:
+	case e.HandleKey(key.CodeInsert, 0):
 		state.InsertMode = !state.InsertMode
 
-	case key.CodeLeftArrow:
-		if e.Modifiers&key.ModControl != 0 {
-			if e.Modifiers&key.ModShift != 0 {
-				if !state.hasSelection() {
-					state.prepSelectionAtCursor()
-				}
-				state.Cursor = state.towd(state.Cursor-1, -1, false)
-				state.SelectEnd = state.Cursor
-				state.clamp()
-			} else {
-				if state.hasSelection() {
-					state.moveToFirst()
-				} else {
-					state.Cursor = state.towd(state.Cursor-1, -1, false)
-					state.clamp()
-				}
-			}
+	case e.HandleKey(key.CodeLeftArrow, 0):
+		fallthrough
+	case e.HandleKeyModmask(key.CodeLeftArrow, key.ModControl|key.ModShift):
+		state.horizontalCursorMove(e.Key())
+
+	case e.HandleKey(key.CodeRightArrow, 0):
+		fallthrough
+	case e.HandleKeyModmask(key.CodeRightArrow, key.ModControl|key.ModShift):
+		state.horizontalCursorMove(e.Key())
+
+	case e.HandleKey(key.CodeDownArrow, 0):
+		fallthrough
+	case e.HandleKeyModmask(key.CodeDownArrow, key.ModControl|key.ModShift):
+		ke := e.Key()
+		if state.SingleLine {
+			ke.Code = key.CodeLeftArrow
+			state.horizontalCursorMove(ke)
 		} else {
-			if e.Modifiers&key.ModShift != 0 {
-				state.clamp()
-				state.prepSelectionAtCursor()
-
-				/* move selection left */
-				if state.SelectEnd > 0 {
-					state.SelectEnd--
-				}
-				state.Cursor = state.SelectEnd
-				state.HasPreferredX = false
-			} else {
-				/* if currently there's a selection,
-				 * move cursor to start of selection */
-				if state.hasSelection() {
-					state.moveToFirst()
-				} else if state.Cursor > 0 {
-					state.Cursor--
-				}
-				state.HasPreferredX = false
-			}
+			state.verticalCursorMove(ke, font, row_height, +row_height)
 		}
 
-	case key.CodeRightArrow:
-		if e.Modifiers&key.ModControl != 0 {
-			if e.Modifiers&key.ModShift != 0 {
-				if !state.hasSelection() {
-					state.prepSelectionAtCursor()
-				}
-				state.Cursor = state.towd(state.Cursor, +1, false)
-				state.SelectEnd = state.Cursor
-				state.clamp()
-			} else {
-				if state.hasSelection() {
-					state.moveToLast()
-				} else {
-					state.Cursor = state.towd(state.Cursor, +1, false)
-					state.clamp()
-				}
-			}
+	case e.HandleKey(key.CodeUpArrow, 0):
+		fallthrough
+	case e.HandleKeyModmask(key.CodeUpArrow, key.ModControl|key.ModShift):
+		ke := e.Key()
+		if state.SingleLine {
+			ke.Code = key.CodeRightArrow
+			state.horizontalCursorMove(ke)
 		} else {
-			if e.Modifiers&key.ModShift != 0 {
-				state.prepSelectionAtCursor()
-
-				/* move selection right */
-				state.SelectEnd++
-
-				state.clamp()
-				state.Cursor = state.SelectEnd
-				state.HasPreferredX = false
-			} else {
-				/* if currently there's a selection,
-				 * move cursor to end of selection */
-				if state.hasSelection() {
-					state.moveToLast()
-				} else {
-					state.Cursor++
-				}
-				state.clamp()
-				state.HasPreferredX = false
-			}
+			state.verticalCursorMove(ke, font, row_height, -row_height)
 		}
-	case key.CodeDownArrow:
-		if state.SingleLine {
-			e.Code = key.CodeRightArrow
-			goto retry
-		}
-		state.verticalCursorMove(e, font, row_height, +row_height)
 
-	case key.CodeUpArrow:
-		if state.SingleLine {
-			e.Code = key.CodeRightArrow
-			goto retry
-		}
-		state.verticalCursorMove(e, font, row_height, -row_height)
+	case !state.SingleLine && e.HandleKey(key.CodePageDown, 0):
+		fallthrough
+	case !state.SingleLine && e.HandleKey(key.CodePageDown, key.ModShift):
+		state.verticalCursorMove(e.Key(), font, row_height, +area_height/2)
 
-	case key.CodePageDown:
-		if state.SingleLine {
-			break
-		}
-		state.verticalCursorMove(e, font, row_height, +area_height/2)
+	case !state.SingleLine && e.HandleKey(key.CodePageUp, 0):
+		fallthrough
+	case !state.SingleLine && e.HandleKey(key.CodePageUp, key.ModShift):
+		state.verticalCursorMove(e.Key(), font, row_height, -area_height/2)
 
-	case key.CodePageUp:
-		if state.SingleLine {
-			break
-		}
-		state.verticalCursorMove(e, font, row_height, -area_height/2)
-
-	case key.CodeDeleteForward:
-		if readOnly {
-			return
-		}
+	case !readOnly && e.HandleKey(key.CodeDeleteForward, 0):
 		if state.hasSelection() {
 			state.DeleteSelection()
 		} else {
@@ -693,14 +614,14 @@ retry:
 
 		state.HasPreferredX = false
 
-	case key.CodeDeleteBackspace:
-		if readOnly {
-			return
-		}
+	case !readOnly && e.HandleKey(key.CodeDeleteBackspace, 0):
+		fallthrough
+	case !readOnly && e.HandleKey(key.CodeDeleteBackspace, key.ModControl):
+		ke := e.Key()
 		switch {
 		case state.hasSelection():
 			state.DeleteSelection()
-		case e.Modifiers&key.ModControl != 0:
+		case ke.Modifiers&key.ModControl != 0:
 			state.SelectEnd = state.Cursor
 			state.SelectStart = state.towd(state.Cursor-1, -1, false)
 			state.DeleteSelection()
@@ -713,82 +634,76 @@ retry:
 		}
 		state.HasPreferredX = false
 
-	case key.CodeHome:
-		if e.Modifiers&key.ModControl != 0 {
-			if e.Modifiers&key.ModShift != 0 {
-				state.prepSelectionAtCursor()
-				state.SelectEnd = 0
-				state.Cursor = state.SelectEnd
-				state.HasPreferredX = false
-			} else {
-				state.SelectEnd = 0
-				state.SelectStart = state.SelectEnd
-				state.Cursor = state.SelectStart
-				state.HasPreferredX = false
-			}
-		} else {
-			state.clamp()
-			start := state.tonl(state.Cursor-1, -1)
-			if e.Modifiers&key.ModShift != 0 {
-				state.clamp()
-				state.prepSelectionAtCursor()
-				state.SelectEnd = start
-				state.Cursor = state.SelectEnd
-				state.HasPreferredX = false
-			} else {
-				state.clamp()
-				state.moveToFirst()
-				state.Cursor = start
-				state.HasPreferredX = false
-			}
-		}
+	case e.HandleKey(key.CodeHome, key.ModControl|key.ModShift):
+		state.prepSelectionAtCursor()
+		state.SelectEnd = 0
+		state.Cursor = state.SelectEnd
+		state.HasPreferredX = false
 
-	case key.CodeA:
-		if e.Modifiers&key.ModControl != 0 {
-			state.clamp()
-			state.moveToFirst()
-			state.Cursor = state.tonl(state.Cursor-1, -1)
-			state.HasPreferredX = false
-		}
+	case e.HandleKey(key.CodeHome, key.ModControl):
+		state.SelectEnd = 0
+		state.SelectStart = state.SelectEnd
+		state.Cursor = state.SelectStart
+		state.HasPreferredX = false
 
-	case key.CodeEnd:
-		if e.Modifiers&key.ModControl != 0 {
-			if e.Modifiers&key.ModShift != 0 {
-				state.prepSelectionAtCursor()
-				state.SelectEnd = len(state.Buffer)
-				state.Cursor = state.SelectEnd
-				state.HasPreferredX = false
-			} else {
-				state.Cursor = len(state.Buffer)
-				state.SelectEnd = 0
-				state.SelectStart = state.SelectEnd
-				state.HasPreferredX = false
-			}
-		} else {
-			state.clamp()
-			end := state.tonl(state.Cursor, +1)
-			if e.Modifiers&key.ModShift != 0 {
-				state.clamp()
-				state.prepSelectionAtCursor()
-				state.HasPreferredX = false
-				state.Cursor = end
-				state.SelectEnd = state.Cursor
-			} else {
-				state.clamp()
-				state.moveToFirst()
-				state.HasPreferredX = false
-				state.Cursor = end
-			}
-		}
+	case e.HandleKey(key.CodeHome, key.ModShift):
+		state.clamp()
+		start := state.tonl(state.Cursor-1, -1)
+		state.clamp()
+		state.prepSelectionAtCursor()
+		state.SelectEnd = start
+		state.Cursor = state.SelectEnd
+		state.HasPreferredX = false
 
-	case key.CodeE:
-		if e.Modifiers&key.ModControl != 0 {
-			end := state.tonl(state.Cursor, +1)
-			state.clamp()
-			state.moveToFirst()
-			state.HasPreferredX = false
-			state.Cursor = end
-		}
+	case e.HandleKey(key.CodeHome, 0):
+		state.clamp()
+		start := state.tonl(state.Cursor-1, -1)
+		state.clamp()
+		state.moveToFirst()
+		state.Cursor = start
+		state.HasPreferredX = false
+
+	case e.HandleKey(key.CodeA, key.ModControl):
+		state.clamp()
+		state.moveToFirst()
+		state.Cursor = state.tonl(state.Cursor-1, -1)
+		state.HasPreferredX = false
+
+	case e.HandleKey(key.CodeEnd, key.ModControl|key.ModShift):
+		state.prepSelectionAtCursor()
+		state.SelectEnd = len(state.Buffer)
+		state.Cursor = state.SelectEnd
+		state.HasPreferredX = false
+
+	case e.HandleKey(key.CodeEnd, key.ModControl):
+		state.Cursor = len(state.Buffer)
+		state.SelectEnd = 0
+		state.SelectStart = state.SelectEnd
+		state.HasPreferredX = false
+
+	case e.HandleKey(key.CodeEnd, key.ModShift):
+		state.clamp()
+		end := state.tonl(state.Cursor, +1)
+		state.clamp()
+		state.prepSelectionAtCursor()
+		state.HasPreferredX = false
+		state.Cursor = end
+		state.SelectEnd = state.Cursor
+
+	case e.HandleKey(key.CodeEnd, 0):
+		state.clamp()
+		end := state.tonl(state.Cursor, +1)
+		state.clamp()
+		state.moveToFirst()
+		state.HasPreferredX = false
+		state.Cursor = end
+
+	case e.HandleKey(key.CodeE, key.ModControl):
+		end := state.tonl(state.Cursor, +1)
+		state.clamp()
+		state.moveToFirst()
+		state.HasPreferredX = false
+		state.Cursor = end
 	}
 }
 
@@ -820,6 +735,89 @@ func (state *TextEditor) verticalCursorMove(e key.Event, font font.Face, row_hei
 
 	if e.Modifiers&key.ModShift != 0 {
 		state.SelectEnd = state.Cursor
+	}
+}
+
+func (state *TextEditor) horizontalCursorMove(e key.Event) {
+	switch e.Code {
+	case key.CodeLeftArrow:
+		switch e.Modifiers {
+		case key.ModControl | key.ModShift:
+			if !state.hasSelection() {
+				state.prepSelectionAtCursor()
+			}
+			state.Cursor = state.towd(state.Cursor-1, -1, false)
+			state.SelectEnd = state.Cursor
+			state.clamp()
+
+		case key.ModControl:
+			if state.hasSelection() {
+				state.moveToFirst()
+			} else {
+				state.Cursor = state.towd(state.Cursor-1, -1, false)
+				state.clamp()
+			}
+
+		case key.ModShift:
+			state.clamp()
+			state.prepSelectionAtCursor()
+
+			/* move selection left */
+			if state.SelectEnd > 0 {
+				state.SelectEnd--
+			}
+			state.Cursor = state.SelectEnd
+			state.HasPreferredX = false
+
+		case 0:
+			/* if currently there's a selection,
+			 * move cursor to start of selection */
+			if state.hasSelection() {
+				state.moveToFirst()
+			} else if state.Cursor > 0 {
+				state.Cursor--
+			}
+			state.HasPreferredX = false
+		}
+	case key.CodeRightArrow:
+		switch e.Modifiers {
+		case key.ModControl | key.ModShift:
+			if !state.hasSelection() {
+				state.prepSelectionAtCursor()
+			}
+			state.Cursor = state.towd(state.Cursor, +1, false)
+			state.SelectEnd = state.Cursor
+			state.clamp()
+
+		case key.ModControl:
+			if state.hasSelection() {
+				state.moveToLast()
+			} else {
+				state.Cursor = state.towd(state.Cursor, +1, false)
+				state.clamp()
+			}
+
+		case key.ModShift:
+			state.prepSelectionAtCursor()
+
+			/* move selection right */
+			state.SelectEnd++
+
+			state.clamp()
+			state.Cursor = state.SelectEnd
+			state.HasPreferredX = false
+
+		case 0:
+			/* if currently there's a selection,
+			 * move cursor to end of selection */
+			if state.hasSelection() {
+				state.moveToLast()
+			} else {
+				state.Cursor++
+			}
+			state.clamp()
+			state.HasPreferredX = false
+		}
 	}
 }
 
@@ -1212,63 +1210,52 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 			cursor_follow = true
 		}
 
-		/* text input */
-		if inp.Keyboard.Text != "" {
-			ed.Text([]rune(inp.Keyboard.Text))
-			cursor_follow = true
-		}
-
 		clipboardModifier := key.ModControl
 		if runtime.GOOS == "darwin" {
 			clipboardModifier = key.ModMeta
 		}
 
-		for _, e := range inp.Keyboard.Keys {
-			switch e.Code {
-			case key.CodeReturnEnter:
-				if ed.Flags&EditCtrlEnterNewline != 0 && e.Modifiers&key.ModShift != 0 {
-					ed.Text([]rune{'\n'})
-					cursor_follow = true
-				} else if ed.Flags&EditSigEnter != 0 && e.Modifiers == 0 {
-					ret = EditInactive
-					ret |= EditDeactivated
-					if ed.Flags&EditReadOnly == 0 {
-						ret |= EditCommitted
-					}
-					ed.Active = false
-				}
+		for e := range inp.Keyboard.Events() {
+			switch {
+			case e.HandleText():
+				ed.Text([]rune(e.Text()))
+				cursor_follow = true
 
-			case key.CodeTab:
-				if e.Modifiers == 0 {
-					ed.Text([]rune{'\t'})
-					cursor_follow = true
-				}
+			case e.HandleKey(key.CodeTab, 0):
+				ed.Text([]rune{'\t'})
+				cursor_follow = true
 
-			case key.CodeX:
-				if e.Modifiers&clipboardModifier != 0 {
-					cut = true
-				}
+			case ed.Flags&EditCtrlEnterNewline != 0 && e.HandleKey(key.CodeReturnEnter, key.ModShift):
+				ed.Text([]rune{'\n'})
+				cursor_follow = true
 
-			case key.CodeC:
-				if e.Modifiers&clipboardModifier != 0 {
-					copy = true
+			case ed.Flags&EditSigEnter != 0 && e.HandleKey(key.CodeReturnEnter, 0):
+				ret = EditInactive
+				ret |= EditDeactivated
+				if ed.Flags&EditReadOnly == 0 {
+					ret |= EditCommitted
 				}
+				ed.Active = false
 
-			case key.CodeV:
-				if e.Modifiers&clipboardModifier != 0 {
-					paste = true
-				}
+			case e.HandleKey(key.CodeX, clipboardModifier):
+				cut = true
 
-			case key.CodeF:
-				if e.Modifiers&clipboardModifier != 0 {
-					ed.popupFind()
-				}
+			case e.HandleKey(key.CodeC, clipboardModifier):
+				copy = true
 
-			case key.CodeG:
-				if e.Modifiers&clipboardModifier != 0 {
-					ed.lookForward(true)
-					cursor_follow = true
-				}
+			case e.HandleKey(key.CodeV, clipboardModifier):
+				paste = true
+
+			case e.HandleKey(key.CodeF, clipboardModifier):
+				ed.popupFind()
+
+			case e.HandleKey(key.CodeG, clipboardModifier):
+				ed.lookForward(true)
+				cursor_follow = true
+
+			case ed.Flags&EditClipboard != 0 && e.HandleClipboard():
+				ed.Paste(e.Text())
+				cursor_follow = true
 
 			default:
 				ed.key(e, font, row_height, area.H)
@@ -1292,11 +1279,6 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 				ed.Cut()
 				cursor_follow = true
 			}
-		}
-
-		if ed.Flags&EditClipboard != 0 && inp.HasClipboard {
-			ed.Paste(inp.Clipboard)
-			cursor_follow = true
 		}
 
 		/* paste handler */
@@ -1606,12 +1588,11 @@ func (edit *TextEditor) popupFind() {
 			edit.Active = true
 			w.Close()
 		}
-		kbd := &w.Input().Keyboard
-		for _, k := range kbd.Keys {
+		for e := range w.Input().Keyboard.Events() {
 			switch {
-			case k.Modifiers == clipboardModifier && k.Code == key.CodeG:
+			case e.HandleKey(key.CodeG, clipboardModifier):
 				edit.lookForward(true)
-			case k.Modifiers == 0 && k.Code == key.CodeEscape:
+			case e.HandleKey(key.CodeEscape, 0):
 				edit.SelectEnd = edit.SelectStart
 				edit.Cursor = edit.SelectStart
 				edit.Active = true
@@ -1626,9 +1607,6 @@ func (edit *TextEditor) popupFind() {
 }
 
 func (edit *TextEditor) lookForward(forceAdvance bool) {
-	if edit.Flags&EditMultiline == 0 {
-		return
-	}
 	if edit.hasSelection() {
 		if forceAdvance {
 			edit.SelectStart = edit.SelectEnd

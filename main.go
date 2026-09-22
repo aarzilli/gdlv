@@ -244,98 +244,96 @@ func guiUpdate(w *nucular.Window) {
 
 	mw := w.Master()
 
-	for _, e := range wnd.Input().Keyboard.Keys {
+	for e := range wnd.Input().Keyboard.Events() {
 		switch {
-		case (e.Modifiers&zoomMetaKey != 0) && e.Code == key.CodeEqualSign:
+		case e.HandleKey(key.CodeEqualSign, zoomMetaKey):
 			// mitigation for shiny bug on macOS (see https://github.com/aarzilli/gdlv/issues/39)
 			fallthrough
-		case (e.Modifiers&zoomMetaKey != 0) && e.Rune == '+':
+		case e.HandleKey(key.CodeEqualSign, zoomMetaKey|key.ModShift):
 			conf.Scaling += 0.1
 			setupStyle()
 
-		case (e.Modifiers&zoomMetaKey != 0) && e.Code == key.CodeHyphenMinus:
-			// mitigation for shiny bug on macOS (see https://github.com/aarzilli/gdlv/issues/39)
-			fallthrough
-		case (e.Modifiers&zoomMetaKey != 0) && e.Rune == '-':
+		case e.HandleKey(key.CodeHyphenMinus, zoomMetaKey):
 			conf.Scaling -= 0.1
 			setupStyle()
 
-		case (e.Modifiers&zoomMetaKey != 0) && e.Rune == '0':
+		case e.HandleKey(key.Code0, zoomMetaKey):
 			conf.Scaling = 1.0
 			setupStyle()
 
-		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeF):
+		case e.HandleKey(key.CodeF, key.ModControl):
 			mw.SetPerf(!mw.GetPerf())
 
-		case (e.Modifiers == 0) && (e.Code == key.CodeEscape):
+		case e.HandleKey(key.CodeEscape, 0):
 			mw.ActivateEditor(findWindow(infoCommand), &commandLineEditor)
 			mw.Changed()
+			e.Unhandle()
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeReturnEnter):
+		case e.HandleKey(key.CodeReturnEnter, key.ModAlt):
 			fallthrough
-		case (e.Modifiers == 0) && (e.Code == key.CodeF5):
+		case e.HandleKey(key.CodeF5, 0):
 			if !client.Running() && client != nil {
 				doCommand("continue")
 			}
 
-		case (e.Modifiers == 0) && (e.Code == key.CodeF10):
+		case e.HandleKey(key.CodeF10, 0):
 			fallthrough
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeRightArrow):
+		case e.HandleKey(key.CodeRightArrow, key.ModAlt):
 			if !client.Running() && client != nil {
 				doCommand("next")
 			}
 
-		case (e.Modifiers == 0) && (e.Code == key.CodeF11):
+		case e.HandleKey(key.CodeF11, 0):
 			fallthrough
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeDownArrow):
+		case e.HandleKey(key.CodeDownArrow, key.ModAlt):
 			if !client.Running() && client != nil {
 				doCommand("step")
 			}
 
-		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeF11):
+		case e.HandleKey(key.CodeF11, key.ModShift):
 			fallthrough
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.CodeUpArrow):
+		case e.HandleKey(key.CodeUpArrow, key.ModAlt):
 			if !client.Running() && client != nil {
 				doCommand("stepout")
 			}
 
-		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeF5):
+		case e.HandleKey(key.CodeF5, key.ModShift):
 			fallthrough
-		case (e.Modifiers == key.ModControl) && (e.Code == key.CodeDeleteForward):
+		case e.HandleKey(key.CodeDeleteForward, key.ModControl):
 			if client != nil {
 				doCommand("interrupt")
 			}
 
-		case (e.Modifiers == key.ModShift) && (e.Code == key.CodeReturnEnter):
+		case e.HandleKey(key.CodeReturnEnter, key.ModShift):
 			if findWindow(infoLocals) != nil {
 				go addExpression("", true)
 			}
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code1):
+		case e.HandleKey(key.Code1, key.ModAlt):
 			openWindow(infoListing)
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code2):
+		case e.HandleKey(key.Code2, key.ModAlt):
 			openWindow(infoLocals)
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code3):
+		case e.HandleKey(key.Code3, key.ModAlt):
 			openWindow(infoGlobal)
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code4):
+		case e.HandleKey(key.Code4, key.ModAlt):
 			openWindow(infoRegisters)
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code5):
+		case e.HandleKey(key.Code5, key.ModAlt):
 			openWindow(infoBps)
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code6):
+		case e.HandleKey(key.Code6, key.ModAlt):
 			openWindow(infoStacktrace)
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code7):
+		case e.HandleKey(key.Code7, key.ModAlt):
 			openWindow(infoDisassembly)
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code8):
+		case e.HandleKey(key.Code8, key.ModAlt):
 			openWindow(infoGoroutines)
 
-		case (e.Modifiers == key.ModAlt) && (e.Code == key.Code9):
+		case e.HandleKey(key.Code9, key.ModAlt):
 			openWindow(infoThreads)
 		}
 	}
@@ -447,41 +445,39 @@ func updateCommandPanel(w *nucular.Window) {
 	if commandLineEditor.Active {
 		showHistory := false
 		kbd := &w.Input().Keyboard
-		for _, k := range kbd.Keys {
+		for e := range kbd.Events() {
 			switch {
-			case k.Modifiers == 0 && k.Code == key.CodeTab:
+			case e.HandleKey(key.CodeTab, 0):
 				historySearch = false
-				w.Input().Keyboard.Text = ""
 				completeAny()
-			case k.Modifiers == 0 && k.Code == key.CodeUpArrow:
+			case e.HandleKey(key.CodeUpArrow, 0):
 				historySearch = false
 				historyShown--
 				showHistory = true
-			case k.Modifiers == 0 && k.Code == key.CodeDownArrow:
+			case e.HandleKey(key.CodeDownArrow, 0):
 				historySearch = false
 				historyShown++
 				showHistory = true
-			case k.Modifiers == key.ModControl && k.Code == key.CodeR:
+			case e.HandleKey(key.CodeR, key.ModControl):
 				historySearch = true
 				historyShown = -1
 				historyNeedle = ""
 				showHistory = true
-			case k.Modifiers == 0 && k.Code == key.CodeEscape:
+			case e.HandleKey(key.CodeEscape, 0):
 				historySearch = false
 				historyShown = -1
 				showHistory = true
-			case k.Modifiers == 0 && k.Code == key.CodeDeleteBackspace && historySearch:
+			case historySearch && e.HandleKey(key.CodeDeleteBackspace, 0):
 				historyNeedle = historyNeedle[:len(historyNeedle)]
+			case historySearch && e.HandleText():
+				if e.Text() != "\n" && e.Text() != "\t" {
+					historyNeedle = historyNeedle + e.Text()
+					searchHistory()
+					showHistory = true
+				}
 			}
 		}
-		if historySearch && kbd.Text != "" && kbd.Text != "\n" {
-			historyNeedle = historyNeedle + kbd.Text
-			kbd.Text = ""
-			searchHistory()
-			showHistory = true
-		}
 		if showHistory {
-			w.Input().Keyboard.Keys = w.Input().Keyboard.Keys[:0]
 			if historyShown < 0 || historyShown > len(cmdhistory) {
 				historyShown = len(cmdhistory)
 			}
