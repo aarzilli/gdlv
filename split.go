@@ -4,9 +4,11 @@ package main
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 	"image"
 	"image/color"
+	"image/png"
 	"os"
 	"strconv"
 	"strings"
@@ -99,6 +101,9 @@ const (
 	controlBtnWidth = 30
 )
 
+//go:embed icon512.png
+var iconData []byte
+
 func loadPanelDescrToplevel(in string) {
 	var width, height int
 	if len(in) > 3 {
@@ -119,7 +124,8 @@ func loadPanelDescrToplevel(in string) {
 	}
 
 	if wnd == nil {
-		wnd = nucular.NewMasterWindowSize(nucular.WindowNoScrollbar, "Gdlv", image.Point{width, height}, guiUpdate)
+		icon, _ := png.Decode(bytes.NewReader(iconData))
+		wnd = nucular.NewMasterWindowOptions(nucular.WindowNoScrollbar, nucular.NewWindowOptions{Title: "Gdlv", Size: image.Point{width, height}, Icon: icon}, guiUpdate)
 		setupStyle()
 	}
 
