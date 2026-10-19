@@ -28,6 +28,20 @@ $ go install github.com/aarzilli/gdlv@latest
 
 Use Ctrl+plus and Ctrl+minus (On macOS Cmd+plus and Cmd+minus), or `config zoom 1.5` to change font size. You can reset font size with Ctrl+0 (on macOS Cmd+0). See `help` for a list of available commands.
 
+If you have compilation problems on Linux they might be caused by missing dependencies of Gio, which can be installed on Fedora with:
+
+```
+dnf install gcc pkg-config wayland-devel libX11-devel libxkbcommon-x11-devel mesa-libGLES-devel mesa-libEGL-devel libXcursor-devel vulkan-headers
+```
+
+and on Ubuntu with:
+
+```
+apt install gcc pkg-config libwayland-dev libx11-dev libx11-xcb-dev libxkbcommon-x11-dev libgles2-mesa-dev libegl1-mesa-dev libffi-dev libxcursor-dev libvulkan-dev
+```
+
+See also https://gioui.org/doc/install/linux. Or see the following section to use shiny as the backend.
+
 ## Other backends
 
 Gdlv uses [gio](https://gioui.org/) to draw its window and receive mouse and keyboard input from the Operating System. It can be changed to use [shiny](https://github.com/golang/exp/tree/master/shiny) using build tags:
