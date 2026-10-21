@@ -1,6 +1,8 @@
 package main
 
 import (
+	"io"
+	"math"
 	"testing"
 
 	"github.com/aarzilli/gdlv/internal/dlvclient/service/api"
@@ -68,4 +70,83 @@ func TestWrapInstruction(t *testing.T) {
 	c("rep lock blah arg1, arg2", "rep lock blah", "arg1, arg2")
 	c("rex.w blah", "rex.w blah", "")
 	c("rex.w blah arg1", "rex.w blah", "arg1")
+}
+
+func TestDisplayScalingValidation(t *testing.T) {
+	for _, tc := range []struct {
+		scaling float64
+		valid   bool
+	}{
+		{0.2, true},
+		{1.0, true},
+		{4.0, true},
+		{0.19, false},
+		{4.01, false},
+		{10.0, false},
+		{math.NaN(), false},
+		{math.Inf(1), false},
+		{math.Inf(-1), false},
+	} {
+		if got := validDisplayScaling(tc.scaling); got != tc.valid {
+			t.Errorf("validDisplayScaling(%v) = %v, want %v", tc.scaling, got, tc.valid)
+		}
+	}
+}
+
+func TestConfigCommandRejectsUnsupportedDisplayScaling(t *testing.T) {
+	previous := conf.Scaling
+	conf.Scaling = 1.25
+	defer func() { conf.Scaling = previous }()
+
+	if err := configCommand(io.Discard, "zoom 10"); err == nil {
+		t.Fatal("config zoom 10 should be rejected")
+	}
+	if conf.Scaling != 1.25 {
+		t.Fatalf("rejected zoom changed scaling to %v", conf.Scaling)
+	}
+}
+
+func TestAdjustConfigurationNormalizesUnsupportedDisplayScaling(t *testing.T) {
+	previous := conf
+	defer func() { conf = previous }()
+
+	conf = Configuration{Scaling: 10}
+	adjustConfiguration()
+	if conf.Scaling != 1.0 {
+		t.Fatalf("unsupported persisted zoom normalized to %v, want 1.0", conf.Scaling)
+	}
+}
+
+func TestNormalizeDisplayScaling(t *testing.T) {
+	for _, tc := range []struct {
+		input, want float64
+	}{
+		{0.2, 0.2},
+		{1.0, 1.0},
+		{4.0, 4.0},
+		{0.1, 1.0},
+		{10.0, 1.0},
+		{math.NaN(), 1.0},
+		{math.Inf(1), 1.0},
+	} {
+		if got := normalizedDisplayScaling(tc.input); got != tc.want {
+			t.Errorf("normalizedDisplayScaling(%v) = %v, want %v", tc.input, got, tc.want)
+		}
+	}
+}
+
+func TestSteppedDisplayScalingStaysInRange(t *testing.T) {
+	for _, tc := range []struct {
+		scaling, delta, want float64
+	}{
+		{1.0, 0.1, 1.1},
+		{1.0, -0.1, 0.9},
+		{4.0, 0.1, 4.0},
+		{0.2, -0.1, 0.2},
+		{3.95, 0.1, 4.0},
+	} {
+		if got := steppedDisplayScaling(tc.scaling, tc.delta); math.Abs(got-tc.want) > 1e-9 {
+			t.Errorf("steppedDisplayScaling(%v, %v) = %v, want %v", tc.scaling, tc.delta, got, tc.want)
+		}
+	}
 }

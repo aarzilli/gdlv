@@ -1426,6 +1426,9 @@ func configCommand(out io.Writer, args string) error {
 		if err != nil {
 			return err
 		}
+		if !validDisplayScaling(s) {
+			return fmt.Errorf("zoom factor must be between %g and %g", minDisplayScaling, maxDisplayScaling)
+		}
 		conf.Scaling = s
 		setupStyle()
 		return nil
@@ -1497,7 +1500,7 @@ func (cw *configWindow) Update(w *nucular.Window) {
 
 	w.Row(20).Static(col1, 0)
 	w.Label("Display zoom:", "LC")
-	if w.PropertyFloat("Zoom", 0.2, &conf.Scaling, 4.0, 0.1, 0.1, 2) {
+	if w.PropertyFloat("Zoom", minDisplayScaling, &conf.Scaling, maxDisplayScaling, 0.1, 0.1, 2) {
 		setupStyle()
 	}
 

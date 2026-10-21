@@ -51,10 +51,35 @@ type SubstitutePathRule struct {
 
 var conf Configuration
 
-func adjustConfiguration() {
-	if conf.Scaling < 0.2 {
-		conf.Scaling = 1.0
+const (
+	minDisplayScaling = 0.2
+	maxDisplayScaling = 4.0
+)
+
+func validDisplayScaling(s float64) bool {
+	return s >= minDisplayScaling && s <= maxDisplayScaling
+}
+
+func normalizedDisplayScaling(s float64) float64 {
+	if !validDisplayScaling(s) {
+		return 1.0
 	}
+	return s
+}
+
+func steppedDisplayScaling(s, delta float64) float64 {
+	next := s + delta
+	if next < minDisplayScaling {
+		return minDisplayScaling
+	}
+	if next > maxDisplayScaling {
+		return maxDisplayScaling
+	}
+	return next
+}
+
+func adjustConfiguration() {
+	conf.Scaling = normalizedDisplayScaling(conf.Scaling)
 	if conf.Layouts == nil {
 		conf.Layouts = map[string]LayoutDescr{}
 		conf.Layouts["gs"] = LayoutDescr{"|300_250LC_231GS", "Goroutines and Stacktraces"}
