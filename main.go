@@ -250,12 +250,16 @@ func guiUpdate(w *nucular.Window) {
 			// mitigation for shiny bug on macOS (see https://github.com/aarzilli/gdlv/issues/39)
 			fallthrough
 		case e.HandleKey(key.CodeEqualSign, zoomMetaKey|key.ModShift):
-			conf.Scaling += 0.1
-			setupStyle()
+			if next := steppedDisplayScaling(conf.Scaling, 0.1); next != conf.Scaling {
+				conf.Scaling = next
+				setupStyle()
+			}
 
 		case e.HandleKey(key.CodeHyphenMinus, zoomMetaKey):
-			conf.Scaling -= 0.1
-			setupStyle()
+			if next := steppedDisplayScaling(conf.Scaling, -0.1); next != conf.Scaling {
+				conf.Scaling = next
+				setupStyle()
+			}
 
 		case e.HandleKey(key.Code0, zoomMetaKey):
 			conf.Scaling = 1.0
