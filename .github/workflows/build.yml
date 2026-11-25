@@ -10,6 +10,10 @@ jobs:
       uses: actions/setup-go@v5
       with:
         go-version: '>=1.20.0'
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libx11-dev libx11-xcb-dev libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev libvulkan-dev libgles2-mesa-dev libegl1-mesa-dev libffi-dev libxcursor-dev libxrandr-dev libxinerama-dev libxi-dev libxxf86vm-dev
     - name: Build
       run: go build -v
     
