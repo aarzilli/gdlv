@@ -19,8 +19,8 @@ var fontsMap = map[[sha256.Size]byte]*truetype.Font{}
 //go:embed DroidSansMono.ttf
 var droidSansMonoFontData []byte
 
-//go:embed DroidSansJapanese.ttf
-var droidSansJapaneseData []byte
+//go:embed DroidSansFallbackFull.ttf
+var droidSansFallbackData []byte
 
 type Face struct {
 	Face font.Face
@@ -32,7 +32,7 @@ func (face Face) Metrics() font.Metrics {
 
 // Returns default font (DroidSansMono) with specified size and scaling
 func DefaultFont(size int, scaling float64) Face {
-	face, err := NewFallbackFace(int(float64(size)*scaling), droidSansMonoFontData, droidSansJapaneseData)
+	face, err := NewFallbackFace(int(float64(size)*scaling), droidSansMonoFontData, droidSansFallbackData)
 	if err != nil {
 		panic(err)
 	}

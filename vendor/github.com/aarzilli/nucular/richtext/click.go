@@ -40,7 +40,6 @@ func (rtxt *RichText) handleClick(w *nucular.Window, r rect.Rect, in *nucular.In
 			rtxt.focused = true
 		}
 	}
-
 	oldSel := rtxt.Sel
 
 	if rtxt.down {
@@ -367,50 +366,66 @@ func (rtxt *RichText) handleKeyboard(w *nucular.Window, in *nucular.Input, chang
 		}
 	}
 	if rtxt.flags&Editable != 0 {
+		edited := false
 		for e := range in.Keyboard.Events() {
 			switch {
 			case e.HandleText():
 				rtxt.replace(e.Text(), changed)
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
+				edited = true
 			case rtxt.flags&Clipboard != 0 && e.HandleClipboard():
 				rtxt.replace(e.Text(), changed)
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeUpArrow, 0):
 				//TODO: implement
 			case e.HandleKey(key.CodeDownArrow, 0):
 				//TODO: implement
 			case e.HandleKey(key.CodeLeftArrow, 0):
-				rtxt.Sel.E--
+				rtxt.Sel.E = rtxt.prevRuneOff(rtxt.Sel.E)
 				rtxt.Sel.S = rtxt.Sel.E
 				rtxt.clampSel()
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeLeftArrow, key.ModControl):
 				rtxt.Sel.E = rtxt.towd(rtxt.Sel.E, -1, true)
 				rtxt.Sel.S = rtxt.Sel.E
 				rtxt.clampSel()
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeRightArrow, 0):
-				rtxt.Sel.E++
+				rtxt.Sel.E = rtxt.nextRuneOff(rtxt.Sel.E)
 				rtxt.Sel.S = rtxt.Sel.E
 				rtxt.clampSel()
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeRightArrow, key.ModControl):
 				rtxt.Sel.E = rtxt.towd(rtxt.Sel.E, +1, true)
 				rtxt.Sel.S = rtxt.Sel.E
 				rtxt.clampSel()
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodePageDown, 0):
 				return 0, +1
 			case e.HandleKey(key.CodePageUp, 0):
 				return 0, -1
 			case e.HandleKey(key.CodeDeleteForward, 0):
 				if rtxt.Sel.S == rtxt.Sel.E {
-					rtxt.Sel.E++
+					rtxt.Sel.E = rtxt.nextRuneOff(rtxt.Sel.E)
 				}
 				rtxt.clampSel()
 				rtxt.replace("", changed)
 				rtxt.Sel.S = rtxt.Sel.E
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeDeleteBackspace, 0):
 				fallthrough
 			case e.HandleKey(key.CodeDeleteBackspace, key.ModControl):
 				k := e.Key()
 				if rtxt.Sel.S == rtxt.Sel.E {
 					if k.Modifiers == 0 {
-						rtxt.Sel.S--
+						rtxt.Sel.S = rtxt.prevRuneOff(rtxt.Sel.S)
 					} else if k.Modifiers == key.ModControl {
 						rtxt.Sel.S = rtxt.towd(rtxt.Sel.S, -1, true)
 					}
@@ -418,37 +433,116 @@ func (rtxt *RichText) handleKeyboard(w *nucular.Window, in *nucular.Input, chang
 				rtxt.clampSel()
 				rtxt.replace("", changed)
 				rtxt.Sel.S = rtxt.Sel.E
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeHome, 0):
 				rtxt.Sel.S = 0
 				rtxt.Sel.E = 0
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeA, key.ModControl):
 				rtxt.Sel.S = 0
 				rtxt.Sel.E = 0
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeEnd, 0):
 				rtxt.Sel.S = int32(^uint32(0) >> 1)
 				rtxt.Sel.E = rtxt.Sel.S
 				rtxt.clampSel()
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeE, key.ModControl):
 				rtxt.Sel.S = int32(^uint32(0) >> 1)
 				rtxt.Sel.E = rtxt.Sel.S
 				rtxt.clampSel()
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeTab, 0):
 				rtxt.replace("\t", changed)
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeZ, key.ModControl):
 				rtxt.undo(changed)
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case e.HandleKey(key.CodeReturnEnter, 0):
 				rtxt.replace("\n", changed)
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case rtxt.flags&Clipboard != 0 && e.HandleKey(key.CodeC, key.ModControl):
 				w.SetClipboard(rtxt.Get(rtxt.Sel))
 			case rtxt.flags&Clipboard != 0 && e.HandleKey(key.CodeX, key.ModControl):
 				w.SetClipboard(rtxt.Get(rtxt.Sel))
 				rtxt.replace("", changed)
+				rtxt.updateIMESnippet(rtxt.Sel)
+				rtxt.ime.updateSel = true
 			case rtxt.flags&Clipboard != 0 && e.HandleKey(key.CodeV, key.ModControl):
 				w.GetClipboard()
+
+			case e.HandleSnippet():
+				rng := e.Range()
+				rtxt.ime.updateSnippetWithRuneSel = &rng
+				rtxt.ime.updateSnippet = false
+
+			case e.HandleSelection():
+				if !edited {
+					rtxt.Sel = rtxt.runeSelToSel(e.Range())
+					rtxt.clampSel()
+				}
 			}
 		}
 	}
 	return 0, 0
+}
+
+// byteAt returns the byte at offset off of the text, ok is false if off is
+// out of range.
+func (rtxt *RichText) byteAt(off int32) (c byte, ok bool) {
+	if off < 0 {
+		return 0, false
+	}
+	base := int32(0)
+	for _, chunk := range rtxt.chunks {
+		n := chunk.len()
+		if off < base+n {
+			if chunk.b != nil {
+				return chunk.b[off-base], true
+			}
+			return chunk.s[off-base], true
+		}
+		base += n
+	}
+	return 0, false
+}
+
+func isContinuationByte(c byte) bool {
+	return c&0b1100_0000 == 0b1000_0000
+}
+
+// nextRuneOff returns the offset of the rune following the one starting at off.
+func (rtxt *RichText) nextRuneOff(off int32) int32 {
+	off++
+	for i := 1; i < utf8.UTFMax; i++ {
+		c, ok := rtxt.byteAt(off)
+		if !ok || !isContinuationByte(c) {
+			break
+		}
+		off++
+	}
+	return off
+}
+
+// prevRuneOff returns the offset of the rune preceding the one starting at off.
+func (rtxt *RichText) prevRuneOff(off int32) int32 {
+	off--
+	for i := 1; i < utf8.UTFMax; i++ {
+		c, ok := rtxt.byteAt(off)
+		if !ok || !isContinuationByte(c) {
+			break
+		}
+		off--
+	}
+	return off
 }
 
 func (rtxt *RichText) clampSel() {
@@ -485,7 +579,6 @@ func (rtxt *RichText) replace(str string, changed *bool) {
 	rtxt.undoEdit = &undoEdit{Sel{rtxt.Sel.S, rtxt.Sel.S + int32(len(str))}, rtxt.Get(rtxt.Sel)}
 	rtxt.Sel.S = rtxt.Sel.S + int32(len(str))
 	rtxt.Sel.E = rtxt.Sel.S
-	rtxt.clampSel()
 }
 
 func (rtxt *RichText) undo(changed *bool) {
@@ -493,6 +586,62 @@ func (rtxt *RichText) undo(changed *bool) {
 		rtxt.Sel = rtxt.undoEdit.sel
 		rtxt.replace(rtxt.undoEdit.str, changed)
 	}
+}
+
+// updateIMESnippet schedules sel to be sent to the IME as the current
+// snippet. The snippet is sent by flushIMESnippet, during drawRows, because
+// when an edit happens the new text isn't known until the caller has
+// re-populated the widget.
+func (rtxt *RichText) updateIMESnippet(sel Sel) {
+	rtxt.ime.updateSnippet = true
+	rtxt.ime.snippetSel = sel
+}
+
+// flushIMESnippet sends the pending snippet to the IME, if it changed.
+func (rtxt *RichText) flushIMESnippet(w *nucular.Window) {
+	if rtxt.ime.updateSnippetWithRuneSel != nil {
+		if !rtxt.ime.updateSnippet {
+			rtxt.ime.updateSnippet = true
+			rtxt.ime.snippetSel = rtxt.runeSelToSel(*rtxt.ime.updateSnippetWithRuneSel)
+		}
+		rtxt.ime.updateSnippetWithRuneSel = nil
+	}
+	if !rtxt.ime.updateSnippet {
+		return
+	}
+	rtxt.ime.updateSnippet = false
+	if rtxt.flags&Editable == 0 || !rtxt.focused {
+		return
+	}
+	sel := rtxt.ime.snippetSel
+	if sel.S > sel.E {
+		sel.S, sel.E = sel.E, sel.S
+	}
+	length := rtxt.length()
+	if sel.S > length {
+		sel.S = length
+	}
+	if sel.E > length {
+		sel.E = length
+	}
+	start, end := rtxt.offToRune(sel.S), rtxt.offToRune(sel.E)
+	text := rtxt.Get(sel)
+	if start == rtxt.ime.start && end == rtxt.ime.end && text == rtxt.ime.text {
+		return
+	}
+	rtxt.ime.start, rtxt.ime.end, rtxt.ime.text = start, end, text
+	w.IMESnippet(start, end, text)
+}
+
+// sendIMESelection sends the current selection to the IME, if needed. Caret
+// is the position of the cursor (top of the line).
+func (rtxt *RichText) sendIMESelection(w *nucular.Window, caret image.Point, lineh int) {
+	if !rtxt.ime.updateSel || rtxt.flags&Editable == 0 || !rtxt.focused {
+		return
+	}
+	rtxt.ime.updateSel = false
+	caret.Y += lineh
+	w.IMESelection(rtxt.offToRune(rtxt.Sel.S), rtxt.offToRune(rtxt.Sel.E), caret, lineh, w.Bounds)
 }
 
 type undoEdit struct {

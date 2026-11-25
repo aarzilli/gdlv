@@ -68,6 +68,11 @@ type TextEditor struct {
 	needle []rune
 
 	password []rune // support buffer for drawing PasswordChar!=0 fields
+
+	ime struct {
+		start, end int
+		text       string
+	}
 }
 
 type drawchunk struct {
@@ -1115,6 +1120,8 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 		}
 	}
 
+	updateIMESelection := false
+
 	/* (de)activate text editor */
 	var select_all bool
 	if !prev_state && ed.Active {
@@ -1129,6 +1136,7 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 		if ed.Flags&EditAutoSelect != 0 {
 			select_all = true
 		}
+		updateIMESelection = true
 	} else if !ed.Active {
 		ed.InsertMode = false
 	}
@@ -1195,19 +1203,23 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 				ed.clickCount = 1
 			}
 			ed.click(coord, font, row_height)
+			updateIMESelection = true
 		} else if isHovered && inp.Mouse.Buttons[mouse.ButtonLeft].Down && (indelta.X != 0.0 || indelta.Y != 0.0) {
 			ed.drag(coord, font, row_height)
 			cursor_follow = true
+			updateIMESelection = true
 		} else if autoscrollTop {
 			coord1 := coord
 			coord1.Y -= FontHeight(font)
 			ed.drag(coord1, font, row_height)
 			cursor_follow = true
+			updateIMESelection = true
 		} else if autoscrollBot {
 			coord1 := coord
 			coord1.Y += FontHeight(font)
 			ed.drag(coord1, font, row_height)
 			cursor_follow = true
+			updateIMESelection = true
 		}
 
 		clipboardModifier := key.ModControl
@@ -1218,16 +1230,24 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 		for e := range inp.Keyboard.Events() {
 			switch {
 			case e.HandleText():
-				ed.Text([]rune(e.Text()))
+				txt := []rune(e.Text())
+				if len(txt) != 1 && len(txt) != 2 {
+					ed.Paste(e.Text())
+				} else {
+					ed.Text(txt)
+				}
 				cursor_follow = true
+				updateIMESelection = true
 
 			case e.HandleKey(key.CodeTab, 0):
 				ed.Text([]rune{'\t'})
 				cursor_follow = true
+				updateIMESelection = true
 
 			case ed.Flags&EditCtrlEnterNewline != 0 && e.HandleKey(key.CodeReturnEnter, key.ModShift):
 				ed.Text([]rune{'\n'})
 				cursor_follow = true
+				updateIMESelection = true
 
 			case ed.Flags&EditSigEnter != 0 && e.HandleKey(key.CodeReturnEnter, 0):
 				ret = EditInactive
@@ -1236,6 +1256,7 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 					ret |= EditCommitted
 				}
 				ed.Active = false
+				updateIMESelection = true
 
 			case e.HandleKey(key.CodeX, clipboardModifier):
 				cut = true
@@ -1252,13 +1273,35 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 			case e.HandleKey(key.CodeG, clipboardModifier):
 				ed.lookForward(true)
 				cursor_follow = true
+				updateIMESelection = true
 
 			case ed.Flags&EditClipboard != 0 && e.HandleClipboard():
 				ed.Paste(e.Text())
 				cursor_follow = true
+				updateIMESelection = true
+
+			case e.HandleSelection():
+				rng := e.Range()
+				ed.SelectStart = rng[0]
+				ed.SelectEnd = rng[1]
+				ed.clamp()
+				cursor_follow = true
+
+			case e.HandleSnippet():
+				rng := e.Range()
+				if rng[0] > rng[1] {
+					rng[0], rng[1] = rng[1], rng[0]
+				}
+				ed.updateIMESnippet(rng[0], rng[1])
 
 			default:
 				ed.key(e, font, row_height, area.H)
+				updateIMESelection = true
+				if ed.SelectStart != ed.SelectEnd {
+					ed.updateIMESnippet(ed.SelectStart, ed.SelectEnd)
+				} else {
+					ed.updateIMESnippet(ed.Cursor, ed.Cursor)
+				}
 				cursor_follow = true
 			}
 
@@ -1278,6 +1321,7 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 			if cut {
 				ed.Cut()
 				cursor_follow = true
+				updateIMESelection = true
 			}
 		}
 
@@ -1321,6 +1365,18 @@ func (ed *TextEditor) doEdit(bounds rect.Rect, style *nstyle.Edit, inp *Input, c
 	d.hasInput = inp.Mouse.valid
 	ed.win.widgets.Add(state, bounds)
 	d.Draw(&ed.win.ctx.Style, &ed.win.cmds)
+
+	if updateIMESelection {
+		cursor := d.CursorPos
+		cursor.X += area.X - ed.Scrollbar.X
+		cursor.Y += area.Y - ed.Scrollbar.Y
+		cursor.Y += d.RowHeight
+		start, end := ed.SelectStart, ed.SelectEnd
+		if start == end {
+			start, end = ed.Cursor, ed.Cursor
+		}
+		ed.win.IMESelection(start, end, cursor, d.RowHeight, area)
+	}
 
 	/* scrollbar */
 	if cursor_follow {
@@ -1637,6 +1693,24 @@ func (edit *TextEditor) lookForward(forceAdvance bool) {
 	edit.SelectEnd = 0
 	edit.Cursor = 0
 	edit.CursorFollow = true
+}
+
+func (edit *TextEditor) updateIMESnippet(start, end int) {
+	l := len(edit.Buffer)
+	if start > l {
+		start = l
+	}
+	if end > l {
+		end = l
+	}
+	changed := start != edit.ime.start || end != edit.ime.end || edit.ime.text != string(edit.Buffer[start:end])
+	if !changed {
+		return
+	}
+	edit.ime.start = start
+	edit.ime.end = end
+	edit.ime.text = string(edit.Buffer[start:end])
+	edit.win.IMESnippet(start, end, edit.ime.text)
 }
 
 // Adds text editor edit to win.

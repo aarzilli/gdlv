@@ -53,6 +53,16 @@ type RichText struct {
 	wasFocused        bool
 	pageKey, arrowKey int
 
+	ime struct {
+		updateSel     bool // the IME selection must be sent to the IME the next time the cursor is drawn
+		updateSnippet bool // snippetSel must be sent to the IME
+		snippetSel    Sel  // pending snippet (in byte offsets)
+		start, end    int  // last snippet sent to the IME (in rune offsets)
+		text          string
+
+		updateSnippetWithRuneSel *[2]int
+	}
+
 	undoEdit *undoEdit
 
 	followCursor bool // scroll to show cursor on screen
@@ -353,42 +363,78 @@ func (rtxt *RichText) FollowCursor() {
 	rtxt.followCursor = true
 }
 
+// Get returns the text contained in sel.
 func (rtxt *RichText) Get(sel Sel) string {
-	var titer textIter
-	titer.Init(rtxt)
-	if !titer.Advance(rtxt.Sel.S) {
-		return ""
-	}
-
-	startChunkIdx := titer.chunkIdx
-	startByteIdx := titer.j
-
-	var endChunkIdx int
-	var endByteIdx int32
-	if titer.Advance(rtxt.Sel.E - rtxt.Sel.S) {
-		endChunkIdx = titer.chunkIdx
-		endByteIdx = titer.j
-	} else {
-		endChunkIdx = len(rtxt.chunks)
-		endByteIdx = 0
-	}
-
-	if startChunkIdx == endChunkIdx {
-		return rtxt.chunks[startChunkIdx].sub(startByteIdx, endByteIdx).str()
-	}
-
 	var out strings.Builder
-	out.WriteString(rtxt.chunks[startChunkIdx].sub(startByteIdx, rtxt.chunks[startChunkIdx].len()).str())
-
-	for i := startChunkIdx + 1; i < endChunkIdx; i++ {
-		out.WriteString(rtxt.chunks[i].str())
+	off := int32(0)
+	for _, chunk := range rtxt.chunks {
+		n := chunk.len()
+		s, e := sel.S-off, sel.E-off
+		off += n
+		if e <= 0 {
+			break
+		}
+		if s >= n {
+			continue
+		}
+		if s < 0 {
+			s = 0
+		}
+		if e > n {
+			e = n
+		}
+		out.WriteString(chunk.sub(s, e).str())
 	}
-
-	if endChunkIdx < len(rtxt.chunks) {
-		out.WriteString(rtxt.chunks[endChunkIdx].sub(0, endByteIdx).str())
-	}
-
 	return out.String()
+}
+
+// runeToOff converts an offset expressed in runes into an offset expressed in bytes.
+func (rtxt *RichText) runeToOff(r int) int32 {
+	off := int32(0)
+	for _, chunk := range rtxt.chunks {
+		for j := int32(0); j < chunk.len(); {
+			if r <= 0 {
+				return off + j
+			}
+			var sz int
+			if chunk.b != nil {
+				_, sz = utf8.DecodeRune(chunk.b[j:])
+			} else {
+				_, sz = utf8.DecodeRuneInString(chunk.s[j:])
+			}
+			j += int32(sz)
+			r--
+		}
+		off += chunk.len()
+	}
+	return off
+}
+
+// offToRune converts an offset expressed in bytes into an offset expressed in runes.
+func (rtxt *RichText) offToRune(o int32) int {
+	r := 0
+	off := int32(0)
+	for _, chunk := range rtxt.chunks {
+		n := chunk.len()
+		if off+n <= o {
+			r += chunk.runeCount()
+			off += n
+			continue
+		}
+		if o > off {
+			r += chunk.sub(0, o-off).runeCount()
+		}
+		break
+	}
+	return r
+}
+
+// runeSelToSel converts a range expressed in runes (as used by the IME) into a Sel.
+func (rtxt *RichText) runeSelToSel(rng [2]int) Sel {
+	if rng[0] > rng[1] {
+		rng[0], rng[1] = rng[1], rng[0]
+	}
+	return Sel{rtxt.runeToOff(rng[0]), rtxt.runeToOff(rng[1])}
 }
 
 // Tail removes everything but the last n physical lines
@@ -645,6 +691,9 @@ func (ctor *Ctor) SetStyleForSel(sel Sel, s TextStyle) {
 
 // Text adds text to the widget.
 func (ctor *Ctor) Text(text string) {
+	if text == "" {
+		return
+	}
 	ctor.textChunk(chunk{s: text})
 }
 
@@ -893,6 +942,9 @@ func (titer *textIter) Char() byte {
 }
 
 func (titer *textIter) Advance(off int32) bool {
+	if titer.chunkIdx >= len(titer.rtxt.chunks) {
+		return false
+	}
 	titer.j += off
 	titer.off += off
 

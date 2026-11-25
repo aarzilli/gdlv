@@ -28,8 +28,6 @@ type MouseInput struct {
 
 type KeyboardInput struct {
 	events []KeyboardEvent
-	/*Keys []key.Event
-	Text string*/
 }
 
 // KeyboardEvent is a keyboard event or a clipboard transfer event.
@@ -37,14 +35,13 @@ type KeyboardEvent struct {
 	kind    keyboardEventKind
 	key     key.Event
 	text    string
+	rng     [2]int
 	handled bool
 }
 
 type Input struct {
 	Keyboard KeyboardInput
 	Mouse    MouseInput
-	/*HasClipboard bool
-	Clipboard    string*/
 
 	activateEditor interface{}
 	activateWindow *Window
@@ -123,6 +120,8 @@ const (
 	keyboardEventKey keyboardEventKind = iota
 	keyboardEventText
 	keyboardEventClipboard
+	keyboardEventSelection
+	keyboardEventSnippet
 )
 
 func (i *KeyboardInput) addClipboard(text string) {
@@ -234,6 +233,35 @@ func (e *KeyboardEvent) Unhandle() {
 // handled.
 func (e *KeyboardEvent) HandleClipboard() bool {
 	if e.kind == keyboardEventClipboard {
+		e.handled = true
+		return true
+	}
+	return false
+}
+
+// HandleSelection returns true if this is a selection event and marks it as
+// handled.
+func (e *KeyboardEvent) HandleSelection() bool {
+	if e.kind == keyboardEventSelection {
+		e.handled = true
+		return true
+	}
+	return false
+}
+
+// Range returns the range of a selection event, that has already been
+// marked as handled.
+func (e *KeyboardEvent) Range() [2]int {
+	if !e.handled {
+		return [2]int{0, 0}
+	}
+	return e.rng
+}
+
+// HandleSnippet returns true if this is a snippet event and marks it as
+// handled.
+func (e *KeyboardEvent) HandleSnippet() bool {
+	if e.kind == keyboardEventSnippet {
 		e.handled = true
 		return true
 	}

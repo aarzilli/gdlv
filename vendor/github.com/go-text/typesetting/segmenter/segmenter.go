@@ -13,6 +13,9 @@
 package segmenter
 
 import (
+	"fmt"
+	"unicode/utf8"
+
 	ucd "github.com/go-text/typesetting/internal/unicodedata"
 )
 
@@ -229,6 +232,9 @@ type Segmenter struct {
 
 // Init resets the segmenter storage with the given input,
 // and computes the attributes required to segment the text.
+//
+// If paragraph includes an invalid rune like out of range, some outputs like
+// [Line.OffsetInBytes] and [Line.LengthInBytes] are undefined.
 func (seg *Segmenter) Init(paragraph []rune) {
 	seg.text = append(seg.text[:0], paragraph...)
 	seg.initAttributes()
@@ -237,32 +243,60 @@ func (seg *Segmenter) Init(paragraph []rune) {
 // InitWithString resets the segmenter storage with the given string input,
 // and computes the attributes required to segment the text.
 //
-// If paragraph includes an invalid UTF-8 sequence, these are replaced with U+FFFD.
+// InitWithString returns an error if paragraph includes an invalid UTF-8 sequence.
 //
 // InitWithString is more efficient than [Init] if the input is a string.
 // No allocation for the text is made if its internal buffer capacity is already large enough.
-func (seg *Segmenter) InitWithString(paragraph string) {
+func (seg *Segmenter) InitWithString(paragraph string) (err error) {
+	defer func() {
+		if err != nil {
+			seg.text = seg.text[:0]
+			seg.attributes = seg.attributes[:0]
+		}
+	}()
+
 	seg.text = seg.text[:0]
-	for _, r := range paragraph {
+	for i, r := range paragraph {
+		if r == utf8.RuneError {
+			// Check whether the rune is acually U+FFFD, or an invalid UTF-8 sequence.
+			if r, l := utf8.DecodeRuneInString(paragraph[i:]); r == utf8.RuneError && l == 1 {
+				return fmt.Errorf("invalid UTF-8 sequence at index %d", i)
+			}
+		}
 		seg.text = append(seg.text, r)
 	}
 	seg.initAttributes()
+	return nil
 }
 
 // InitWithBytes resets the segmenter storage with the given byte slice input,
 // and computes the attributes required to segment the text.
 //
-// If paragraph includes an invalid UTF-8 sequence, these are replaced with U+FFFD.
+// InitWithBytes returns an error if paragraph includes an invalid UTF-8 sequence.
 //
 // InitWithBytes is more efficient than [Init] if the input is a byte slice.
 // No allocation for the text is made if its internal buffer capacity is already large enough.
-func (seg *Segmenter) InitWithBytes(paragraph []byte) {
+func (seg *Segmenter) InitWithBytes(paragraph []byte) (err error) {
+	defer func() {
+		if err != nil {
+			seg.text = seg.text[:0]
+			seg.attributes = seg.attributes[:0]
+		}
+	}()
+
 	seg.text = seg.text[:0]
 	// The Go compiler should optimize this without allocating a string.
-	for _, r := range string(paragraph) {
+	for i, r := range string(paragraph) {
+		if r == utf8.RuneError {
+			// Check whether the rune is acually U+FFFD, or an invalid UTF-8 sequence.
+			if r, l := utf8.DecodeRune(paragraph[i:]); r == utf8.RuneError && l == 1 {
+				return fmt.Errorf("invalid UTF-8 sequence at index %d", i)
+			}
+		}
 		seg.text = append(seg.text, r)
 	}
 	seg.initAttributes()
+	return nil
 }
 
 func (seg *Segmenter) initAttributes() {
@@ -273,10 +307,12 @@ func (seg *Segmenter) initAttributes() {
 // attributeIterator is an helper type used to
 // handle iterating over a slice of runeAttr
 type attributeIterator struct {
-	src       *Segmenter
-	pos       int       // the current position in the input slice
-	lastBreak int       // the start of the current segment
-	flag      breakAttr // break where this flag is on
+	src              *Segmenter
+	pos              int       // the current position in the input slice (in runes)
+	lastBreak        int       // the start of the current segment (in runes)
+	posInBytes       int       // the current position in the input (in UTF-8 bytes)
+	lastBreakInBytes int       // the start of the current segment (in UTF-8 bytes)
+	flag             breakAttr // break where this flag is on
 }
 
 // next returns true if there is still a segment to process,
@@ -284,15 +320,29 @@ type attributeIterator struct {
 // if returning true, the segment is at [iter.lastBreak:iter.pos]
 func (iter *attributeIterator) next() bool {
 	iter.lastBreak = iter.pos // remember the start of the next segment
-	iter.pos++
+	iter.lastBreakInBytes = iter.posInBytes
+	iter.incrementPos()
 	for iter.pos <= len(iter.src.text) {
 		// can we break before i ?
 		if iter.src.attributes[iter.pos]&iter.flag != 0 {
 			return true
 		}
-		iter.pos++
+		iter.incrementPos()
 	}
 	return false
+}
+
+func (iter *attributeIterator) incrementPos() {
+	if iter.pos < len(iter.src.text) {
+		r := iter.src.text[iter.pos]
+		if l := utf8.RuneLen(r); l > 0 {
+			iter.posInBytes += l
+		}
+		// If l <= 0, it means that the rune is an invalid code point like out of range.
+		// There is no correct way to update the byte position.
+		// This case is treated as an undefined behavior. Just skip it.
+	}
+	iter.pos++
 }
 
 // Line is the content of a line delimited by the segmenter.
@@ -301,6 +351,10 @@ type Line struct {
 	Text []rune
 	// Offset is the start of the line in the input rune slice
 	Offset int
+	// OffsetInBytes is the start of the line in the input, in UTF-8 bytes
+	OffsetInBytes int
+	// LengthInBytes is the length of the line in the input, in UTF-8 bytes
+	LengthInBytes int
 	// IsMandatoryBreak is true if breaking (at the end of the line)
 	// is mandatory
 	IsMandatoryBreak bool
@@ -320,6 +374,8 @@ func (li *LineIterator) Next() bool { return li.next() }
 func (li *LineIterator) Line() Line {
 	return Line{
 		Offset:           li.lastBreak,
+		OffsetInBytes:    li.lastBreakInBytes,
+		LengthInBytes:    li.posInBytes - li.lastBreakInBytes,
 		Text:             li.src.text[li.lastBreak:li.pos], // pos is not included since we break right before
 		IsMandatoryBreak: li.src.attributes[li.pos]&mandatoryLineBoundary != 0,
 	}
@@ -337,6 +393,10 @@ type Grapheme struct {
 	Text []rune
 	// Offset is the start of the grapheme in the input rune slice
 	Offset int
+	// OffsetInBytes is the start of the grapheme in the input, in UTF-8 bytes
+	OffsetInBytes int
+	// LengthInBytes is the length of the grapheme in the input, in UTF-8 bytes
+	LengthInBytes int
 }
 
 // GraphemeIterator provides a convenient way of
@@ -352,8 +412,10 @@ func (gr *GraphemeIterator) Next() bool { return gr.next() }
 // Grapheme returns the current `Grapheme`
 func (gr *GraphemeIterator) Grapheme() Grapheme {
 	return Grapheme{
-		Offset: gr.lastBreak,
-		Text:   gr.src.text[gr.lastBreak:gr.pos],
+		Offset:        gr.lastBreak,
+		OffsetInBytes: gr.lastBreakInBytes,
+		LengthInBytes: gr.posInBytes - gr.lastBreakInBytes,
+		Text:          gr.src.text[gr.lastBreak:gr.pos],
 	}
 }
 
@@ -377,6 +439,10 @@ type Word struct {
 	Text []rune
 	// Offset is the start of the word in the input rune slice
 	Offset int
+	// OffsetInBytes is the start of the word in the input, in UTF-8 bytes
+	OffsetInBytes int
+	// LengthInBytes is the length of the word in the input, in UTF-8 bytes
+	LengthInBytes int
 }
 
 type WordIterator struct {
@@ -409,8 +475,10 @@ func (gr *WordIterator) Next() bool {
 // Word returns the current `Word`
 func (gr *WordIterator) Word() Word {
 	return Word{
-		Offset: gr.lastBreak,
-		Text:   gr.src.text[gr.lastBreak:gr.pos],
+		Offset:        gr.lastBreak,
+		OffsetInBytes: gr.lastBreakInBytes,
+		LengthInBytes: gr.posInBytes - gr.lastBreakInBytes,
+		Text:          gr.src.text[gr.lastBreak:gr.pos],
 	}
 }
 

@@ -55,11 +55,17 @@ const maxCompositeNesting = 20 // protect against malicious fonts
 
 // use the `glyf` table to fetch the contour points,
 // applying variation if needed.
-// for composite, recursively calls itself; allPoints includes phantom points and will be at least of length 4
+// for composite, recursively calls itself; allPoints includes phantom points and is
+// always at least of length phantomCount, even for a missing, too-deeply-nested or
+// otherwise malformed glyph (in which case an empty-but-valid outline is produced).
 func (f *Face) getPointsForGlyphRec(gid tables.GlyphID, currentDepth int, currentGlyphs glyphSet, allPoints *[]contourPoint /* OUT */) {
 	// adapted from harfbuzz/src/OT/glyf/Glyph.hh
 
 	if currentDepth > maxCompositeNesting || int(gid) >= len(f.glyf) {
+		// The glyph is missing or too deeply nested; still contribute the
+		// phantom points so the invariant documented above holds and callers
+		// never see a slice shorter than phantomCount.
+		*allPoints = append(*allPoints, make([]contourPoint, phantomCount)...)
 		return
 	}
 
@@ -104,11 +110,9 @@ func (f *Face) getPointsForGlyphRec(gid tables.GlyphID, currentDepth int, curren
 
 			f.getPointsForGlyphRec(item.GlyphIndex, currentDepth+1, currentGlyphs, &compPoints)
 
+			// getPointsForGlyphRec guarantees at least the phantom points, so a
+			// component always contributes a well-formed slice here.
 			LC := len(compPoints)
-			if LC < phantomCount { // in case of max depth reached
-				delete(currentGlyphs, item.GlyphIndex)
-				return
-			}
 
 			/* Copy phantom points from component if USE_MY_METRICS flag set */
 			if item.HasUseMyMetrics() {

@@ -1319,10 +1319,6 @@ func (indicPlan *indicShapePlan) finalReorderingSyllableIndic(buffer *Buffer, st
 						tmp := info[oldPos]
 						copy(info[newPos+1:], info[newPos:oldPos])
 						info[newPos] = tmp
-
-						if newPos <= base && base < oldPos {
-							base++
-						}
 					}
 				}
 

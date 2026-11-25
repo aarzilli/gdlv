@@ -67,6 +67,9 @@ type Editor struct {
 	Filter string
 	// WrapPolicy configures how displayed text will be broken into lines.
 	WrapPolicy text.WrapPolicy
+	// PaintSelectionWhenUnfocused controls whether the selection is highlighted
+	// even when the editor does not have focus.
+	PaintSelectionWhenUnfocused bool
 
 	buffer *editBuffer
 	// scratch is a byte buffer that is reused to efficiently read portions of text
@@ -387,10 +390,10 @@ func (e *Editor) processKey(gtx layout.Context) (EditorEvent, bool) {
 		key.Filter{Focus: e, Name: key.NameEnd, Optional: key.ModShortcut | key.ModShift},
 		key.Filter{Focus: e, Name: key.NamePageDown, Optional: key.ModShift},
 		key.Filter{Focus: e, Name: key.NamePageUp, Optional: key.ModShift},
-		condFilter(!atBeginning, key.Filter{Focus: e, Name: key.NameLeftArrow, Optional: key.ModShortcutAlt | key.ModShift}),
-		condFilter(!atBeginning, key.Filter{Focus: e, Name: key.NameUpArrow, Optional: key.ModShortcutAlt | key.ModShift}),
-		condFilter(!atEnd, key.Filter{Focus: e, Name: key.NameRightArrow, Optional: key.ModShortcutAlt | key.ModShift}),
-		condFilter(!atEnd, key.Filter{Focus: e, Name: key.NameDownArrow, Optional: key.ModShortcutAlt | key.ModShift}),
+		key.Filter{Focus: e, Name: key.NameLeftArrow, Optional: key.ModShortcutAlt | key.ModShift | key.ModCtrl},
+		key.Filter{Focus: e, Name: key.NameUpArrow, Optional: key.ModShortcutAlt | key.ModShift | key.ModCtrl},
+		key.Filter{Focus: e, Name: key.NameRightArrow, Optional: key.ModShortcutAlt | key.ModShift | key.ModCtrl},
+		key.Filter{Focus: e, Name: key.NameDownArrow, Optional: key.ModShortcutAlt | key.ModShift | key.ModCtrl},
 	}
 	// adjust keeps track of runes dropped because of MaxLen.
 	var adjust int
@@ -498,6 +501,20 @@ func (e *Editor) command(gtx layout.Context, k key.Event) (EditorEvent, bool) {
 	selAct := selectionClear
 	if k.Modifiers.Contain(key.ModShift) {
 		selAct = selectionExtend
+	}
+	if k.Modifiers.Contain(key.ModCtrl) {
+		switch k.Name {
+		case key.NameLeftArrow:
+			if selAct == selectionClear {
+				e.text.ClearSelection()
+			}
+			e.text.MoveWord(-1*direction, selAct)
+		case key.NameRightArrow:
+			if selAct == selectionClear {
+				e.text.ClearSelection()
+			}
+			e.text.MoveWord(1*direction, selAct)
+		}
 	}
 	if k.Modifiers.Contain(key.ModShortcut) {
 		switch k.Name {
@@ -778,7 +795,7 @@ func (e *Editor) layout(gtx layout.Context, textMaterial, selectMaterial op.Call
 // material to set the painting material for the selection.
 func (e *Editor) paintSelection(gtx layout.Context, material op.CallOp) {
 	e.initBuffer()
-	if !gtx.Focused(e) {
+	if !gtx.Focused(e) && !e.PaintSelectionWhenUnfocused {
 		return
 	}
 	e.text.PaintSelection(gtx, material)

@@ -429,10 +429,10 @@ func parseBitmapDataMetrics(imageData []byte, start, end tables.Offset32, imageF
 	}
 	imageData = imageData[start:end]
 	switch imageFormat {
-	case 1, 6, 7, 8, 9:
+	case 6, 7, 8, 9:
 		return bitmapImage{}, fmt.Errorf("valid but currently not implemented bitmap image format: %d", imageFormat)
-	case 2:
-		data, _, err := tables.ParseBitmapData2(imageData)
+	case 1, 2:
+		data, _, err := tables.ParseBitmapData1Or2(imageData)
 		return bitmapImage{metrics: data.SmallGlyphMetrics, image: data.Image}, err
 	case 17:
 		data, _, err := tables.ParseBitmapData17(imageData)

@@ -32,6 +32,9 @@ type Command struct {
 	Image          Image
 	Text           Text
 	Cursor         font.Cursor
+	Range          [2]int
+	CursorPos      image.Point
+	Ascent         int
 }
 
 type CommandKind uint8
@@ -48,6 +51,8 @@ const (
 	SetClipboardCmd
 	GetClipboardCmd
 	GetPrimarySelectionCmd
+	IMESnippet
+	IMESelection
 )
 
 type Line struct {
@@ -207,4 +212,12 @@ func (b *Buffer) GetClipboard() {
 
 func (b *Buffer) GetPrimarySelection() {
 	b.Commands = append(b.Commands, Command{Kind: GetPrimarySelectionCmd})
+}
+
+func (b *Buffer) IMESnippet(start, end int, text string) {
+	b.Commands = append(b.Commands, Command{Kind: IMESnippet, Range: [2]int{start, end}, Text: Text{String: text}})
+}
+
+func (b *Buffer) IMESelection(start, end int, cursor image.Point, ascent int, area rect.Rect) {
+	b.Commands = append(b.Commands, Command{Kind: IMESelection, Range: [2]int{start, end}, Rect: area, CursorPos: cursor, Ascent: ascent})
 }

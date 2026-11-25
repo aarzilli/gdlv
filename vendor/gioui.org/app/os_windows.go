@@ -96,7 +96,12 @@ func newWindow(win *callbacks, options []Option) {
 		// then thread-specific messages such as WM_QUIT are ignored.
 		// Instead lock the thread so window messages arrive through
 		// unfiltered GetMessage calls.
+		//
+		// Don't call UnLockOSThread, so that the Go runtime doesn't
+		// reuse a thread with thread-specific settings such as DPI
+		// awareness.
 		runtime.LockOSThread()
+		windows.SetThreadDpiAwarenessContext()
 
 		w := &window{
 			w: win,
@@ -125,7 +130,6 @@ func newWindow(win *callbacks, options []Option) {
 
 // initResources initializes the resources global.
 func initResources() error {
-	windows.SetProcessDPIAware()
 	hInst, err := windows.GetModuleHandle()
 	if err != nil {
 		return err
@@ -269,8 +273,18 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 		// The message is processed.
 		return windows.TRUE
 	case windows.WM_DPICHANGED:
-		// Let Windows know we're prepared for runtime DPI changes.
-		return windows.TRUE
+		// Windows provides a rectangle scaled for the new monitor DPI.
+		r := (*windows.Rect)(unsafe.Pointer(lParam))
+		windows.SetWindowPos(
+			w.hwnd,
+			0,
+			r.Left,
+			r.Top,
+			r.Right-r.Left,
+			r.Bottom-r.Top,
+			windows.SWP_NOACTIVATE|windows.SWP_NOZORDER,
+		)
+		return 0
 	case windows.WM_ERASEBKGND:
 		// Avoid flickering between GPU content and background color.
 		return windows.TRUE
@@ -338,6 +352,12 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 		np := windows.Point{X: int32(x), Y: int32(y)}
 		windows.ScreenToClient(w.hwnd, &np)
 		return w.hitTest(int(np.X), int(np.Y))
+	case windows.WM_CLOSE:
+		e := &ClosingEvent{}
+		w.ProcessEvent(e)
+		if e.abort {
+			return 0
+		}
 	case windows.WM_POINTERWHEEL:
 		w.scrollEvent(wParam, lParam, false, getModifiers())
 	case windows.WM_POINTERHWHEEL:
@@ -373,7 +393,10 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 		// state. See https://devblogs.microsoft.com/oldnewthing/20150304-00/?p=44543.
 		// Note that trying to do the adjustment in WM_GETMINMAXINFO is ignored by Windows.
 		szp := (*windows.NCCalcSizeParams)(unsafe.Pointer(lParam))
-		mi := windows.GetMonitorInfo(w.hwnd)
+		mi, ok := windows.GetMonitorInfo(szp.Rgrc[0], windows.MONITOR_DEFAULTTONULL)
+		if !ok {
+			return 0
+		}
 		szp.Rgrc[0] = mi.WorkArea
 		return 0
 	case windows.WM_PAINT:
@@ -508,18 +531,21 @@ func windowProc(hwnd syscall.Handle, msg uint32, wParam, lParam uintptr) uintptr
 	return windows.DefWindowProc(hwnd, msg, wParam, lParam)
 }
 
+// getModifiers reports the currently pressed modifier keys.
+// GetKeyState uses the high-order bit for the pressed state:
+// https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getkeystate
 func getModifiers() key.Modifiers {
 	var kmods key.Modifiers
-	if windows.GetKeyState(windows.VK_LWIN)&0x1000 != 0 || windows.GetKeyState(windows.VK_RWIN)&0x1000 != 0 {
+	if windows.GetKeyState(windows.VK_LWIN) < 0 || windows.GetKeyState(windows.VK_RWIN) < 0 {
 		kmods |= key.ModSuper
 	}
-	if windows.GetKeyState(windows.VK_MENU)&0x1000 != 0 {
+	if windows.GetKeyState(windows.VK_MENU) < 0 {
 		kmods |= key.ModAlt
 	}
-	if windows.GetKeyState(windows.VK_CONTROL)&0x1000 != 0 {
+	if windows.GetKeyState(windows.VK_CONTROL) < 0 {
 		kmods |= key.ModCtrl
 	}
-	if windows.GetKeyState(windows.VK_SHIFT)&0x1000 != 0 {
+	if windows.GetKeyState(windows.VK_SHIFT) < 0 {
 		kmods |= key.ModShift
 	}
 	return kmods
@@ -831,7 +857,7 @@ func (w *window) processDataEvent(content string) {
 }
 
 func (w *window) Configure(options []Option) {
-	dpi := windows.GetSystemDPI()
+	dpi := windows.GetWindowDPI(w.hwnd)
 	metric := configForDPI(dpi)
 	cnf := w.config
 	cnf.apply(metric, options)
@@ -897,10 +923,13 @@ func (w *window) Configure(options []Option) {
 		showMode = windows.SW_SHOWMAXIMIZED
 	}
 
-	// Disable window resizing if MinSize and MaxSize are equal.
-	if cnf.MaxSize != (image.Point{}) && cnf.MinSize == cnf.MaxSize {
+	// Disable the maximize button if MaxSize is set.
+	if cnf.MaxSize != (image.Point{}) {
 		style &^= windows.WS_MAXIMIZEBOX
-		style &^= windows.WS_THICKFRAME
+		// Disable window resizing if MinSize and MaxSize are equal.
+		if cnf.MinSize == cnf.MaxSize {
+			style &^= windows.WS_THICKFRAME
+		}
 	}
 
 	// Note: these invocation all trigger the windows callback method which may process a pending system.ActionCenter
@@ -1021,7 +1050,11 @@ func (w *window) Perform(acts system.Action) {
 			dx := r.Right - r.Left
 			dy := r.Bottom - r.Top
 			// Center in the usable area of the current monitor.
-			area := windows.GetMonitorInfo(w.hwnd).WorkArea
+			mi, ok := windows.GetMonitorInfo(r, windows.MONITOR_DEFAULTTONULL)
+			if !ok {
+				break
+			}
+			area := mi.WorkArea
 			x := (area.Right + area.Left - dx) / 2
 			y := (area.Bottom + area.Top - dy) / 2
 			windows.SetWindowPos(w.hwnd, 0, x, y, dx, dy, windows.SWP_NOZORDER|windows.SWP_FRAMECHANGED)
@@ -1046,9 +1079,22 @@ func convertKeyCode(code uintptr) (key.Name, bool) {
 	if '0' <= code && code <= '9' || 'A' <= code && code <= 'Z' {
 		return key.Name(rune(code)), true
 	}
+	if windows.VK_NUMPAD0 <= code && code <= windows.VK_NUMPAD9 {
+		return key.Name('0' + rune(code-windows.VK_NUMPAD0)), true
+	}
 	var r key.Name
 
 	switch code {
+	case windows.VK_ADD:
+		r = "+"
+	case windows.VK_SUBTRACT:
+		r = "-"
+	case windows.VK_MULTIPLY:
+		r = "*"
+	case windows.VK_DIVIDE:
+		r = "/"
+	case windows.VK_DECIMAL:
+		r = "."
 	case windows.VK_ESCAPE:
 		r = key.NameEscape
 	case windows.VK_LEFT:

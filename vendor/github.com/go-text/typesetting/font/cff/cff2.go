@@ -9,8 +9,6 @@ import (
 	"github.com/go-text/typesetting/font/opentype/tables"
 )
 
-//go:generate ../../../../typesetting-utils/generators/binarygen/cmd/generator . _src.go
-
 // CFF2 represents a parsed 'CFF2' Opentype table.
 type CFF2 struct {
 	fdSelect fdSelect // maybe nil if there is only one font dict
@@ -100,7 +98,13 @@ func ParseCFF2(src []byte) (*CFF2, error) {
 		out.fonts[i].defaultVSIndex = pd.vsindex
 		// if required, parse the local subroutines
 		if pd.subrsOffset != 0 {
-			out.fonts[i].localSubrs, err = parseIndex2(src, int(pd.subrsOffset))
+			// "The local subrs offset is relative to the beginning of the
+			// Private DICT data" (5176.CFF.pdf section 15, and CFF2 section
+			// 10), so it is measured from the Private DICT, not from the start
+			// of the table. The CFF1 parser does this correctly; see
+			// parsePrivateDict.
+			subrsOffset := int(fd.privateDictOffset) + int(pd.subrsOffset)
+			out.fonts[i].localSubrs, err = parseIndex2(src, subrsOffset)
 			if err != nil {
 				return nil, err
 			}
@@ -145,6 +149,9 @@ func ParseCFF2(src []byte) (*CFF2, error) {
 }
 
 func parseIndex2(src []byte, offset int) ([][]byte, error) {
+	if offset < 0 {
+		return nil, fmt.Errorf("reading INDEX: invalid offset %d", offset)
+	}
 	if L := len(src); L < offset+5 {
 		return nil, fmt.Errorf("reading INDEX: EOF: expected length: %d, got %d", offset+5, L)
 	}

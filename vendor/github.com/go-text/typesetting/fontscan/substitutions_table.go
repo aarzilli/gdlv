@@ -2647,7 +2647,7 @@ var familySubstitution = []substitution{
 	// confs/60-latin.conf (Set preferable fonts for Latin)
 	{
 		test:               familyEquals("monospace"),
-		additionalFamilies: []string{"Noto Sans Mono", "DejaVu Sans Mono", "Inconsolata", "Andale Mono", "Courier New", "Cumberland AMT", "Luxi Mono", "Nimbus Mono L", "Nimbus Mono", "Nimbus Mono PS", "Courier"},
+		additionalFamilies: []string{"Noto Sans Mono", "DejaVu Sans Mono", "Inconsolata", "Andale Mono", "Courier New", "Cumberland AMT", "Luxi Mono", "Nimbus Mono L", "Nimbus Mono", "Nimbus Mono PS", "Courier", "Droid Sans Mono", "Cutive Mono"},
 		op:                 opPrepend,
 		importance:         'w',
 	},

@@ -154,7 +154,7 @@ func (x *Context) Modifiers() key.Modifiers {
 	return mods
 }
 
-func (x *Context) DispatchKey(keyCode uint32, state key.State) (events []event.Event) {
+func (x *Context) DispatchKey(keyCode uint32, state key.State) (symbol uint32, events []event.Event) {
 	if x.state == nil {
 		return
 	}
@@ -163,6 +163,7 @@ func (x *Context) DispatchKey(keyCode uint32, state key.State) (events []event.E
 		x.utf8Buf = make([]byte, 1)
 	}
 	sym := C.xkb_state_key_get_one_sym(x.state, kc)
+	symbol = uint32(sym)
 	if name, ok := convertKeysym(sym); ok {
 		cmd := key.Event{
 			Name:      name,

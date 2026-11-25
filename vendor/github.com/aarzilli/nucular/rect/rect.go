@@ -10,7 +10,7 @@ type Rect struct {
 }
 
 func between(x int, a int, b int) bool {
-	return a <= x && x <= b
+	return a <= x && x < b
 }
 
 func (rect Rect) Contains(p image.Point) bool {

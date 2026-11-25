@@ -7,6 +7,7 @@ import (
 
 	"gioui.org/app"
 
+	"github.com/aarzilli/nucular/internal/wayland"
 	"github.com/aarzilli/nucular/internal/x11"
 )
 
@@ -19,6 +20,6 @@ func (mw *masterWindow) setIcon(icon image.Image) {
 	case app.X11ViewEvent:
 		x11.SetIcon(ve.Display, ve.Window, icon)
 	case app.WaylandViewEvent:
-		//TODO: implement
+		wayland.SetIcon(ve.Display, ve.Surface, ve.Toplevel, icon)
 	}
 }

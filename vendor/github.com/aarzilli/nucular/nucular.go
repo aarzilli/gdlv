@@ -3096,3 +3096,17 @@ func (win *Window) GetClipboard() {
 func (win *Window) GetPrimarySelection() {
 	win.cmds.GetPrimarySelection()
 }
+
+///////////////////////////////////////////////////////////////////////////////////
+// IME
+///////////////////////////////////////////////////////////////////////////////////
+
+// IMESnippet updates the IME snippet
+func (win *Window) IMESnippet(start, end int, text string) {
+	win.cmds.IMESnippet(start, end, text)
+}
+
+// IMESelection updates the IME selection
+func (win *Window) IMESelection(start, end int, caret image.Point, ascent int, area rect.Rect) {
+	win.cmds.IMESelection(start, end, caret, ascent, area)
+}

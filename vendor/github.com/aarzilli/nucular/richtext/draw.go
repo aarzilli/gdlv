@@ -81,6 +81,10 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 
 	rtxt.changed = false
 
+	rtxt.flushIMESnippet(w)
+
+	selAtStart, focusedAtStart := rtxt.Sel, rtxt.focused
+
 	in := w.Input()
 	rowSpacing := w.WindowStyle().Spacing.Y
 
@@ -206,6 +210,7 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 						chunk2 := chunk.sub(s, e)
 						w2 := line.chunkWidthEx(i, s, chunk2, rtxt.adv)
 						rtxt.drawSelectedChunk(w, out, &p, chunk2, siter.styleSel, w2, line.h, line.asc, rowSpacing)
+						rtxt.sendIMESelection(w, p, line.h)
 
 						chunk3 := chunk.sub(e, chunk.len())
 						w3 := line.chunkWidthEx(i, e, chunk3, rtxt.adv)
@@ -227,6 +232,7 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 					chunk1 := chunk.sub(0, e)
 					w1 := line.chunkWidthEx(i, 0, chunk1, rtxt.adv)
 					rtxt.drawSelectedChunk(w, out, &p, chunk1, siter.styleSel, w1, line.h, line.asc, rowSpacing)
+					rtxt.sendIMESelection(w, p, line.h)
 
 					chunk2 := chunk.sub(e, chunk.len())
 					w2 := line.chunkWidthEx(i, e, chunk2, rtxt.adv)
@@ -248,9 +254,12 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 
 			if simpleDrawChunk {
 				drawChunk(w, out, &p, chunk, siter.styleSel, line.w[i], line.h, line.asc, rowSpacing)
-				if insel == selTick && (rtxt.flags&ShowTick != 0) && (rtxt.wasFocused || (rtxt.flags&Keyboard == 0 && rtxt.flags&Editable == 0)) && chunkrng.contains(rtxt.Sel.S) {
+				if insel == selTick && chunkrng.contains(rtxt.Sel.S) {
 					x := p.X - line.w[i] + line.chunkWidth(i, rtxt.Sel.S-line.off[i], rtxt.adv)
-					rtxt.drawTick(w, out, image.Point{x, p.Y}, line.h, siter.styleSel.Color, lineidx)
+					if (rtxt.flags&ShowTick != 0) && (rtxt.wasFocused || (rtxt.flags&Keyboard == 0 && rtxt.flags&Editable == 0)) {
+						rtxt.drawTick(w, out, image.Point{x, p.Y}, line.h, siter.styleSel.Color, lineidx)
+					}
+					rtxt.sendIMESelection(w, image.Point{x, p.Y}, line.h)
 				}
 			}
 		}
@@ -262,8 +271,16 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 		// click after the last chunk of text on the line
 		rtxt.handleClick(w, rect.Rect{X: p.X, Y: p.Y, W: rtxt.width + bounds.X - p.X, H: line.h + rowSpacing}, in, siter.styleSel, line, len(line.chunks)-1, nil, nil)
 
-		if insel == selTick && (rtxt.flags&ShowTick != 0) && (rtxt.wasFocused || (rtxt.flags&Keyboard == 0 && rtxt.flags&Editable == 0)) && (line.endoff() == rtxt.Sel.S) {
-			rtxt.drawTick(w, out, p, line.h, siter.styleSel.Color, lineidx)
+		if insel == selTick && (line.endoff() == rtxt.Sel.S) {
+			if (rtxt.flags&ShowTick != 0) && (rtxt.wasFocused || (rtxt.flags&Keyboard == 0 && rtxt.flags&Editable == 0)) {
+				rtxt.drawTick(w, out, p, line.h, siter.styleSel.Color, lineidx)
+			}
+			rtxt.sendIMESelection(w, p, line.h)
+		}
+
+		if insel != selTick && rtxt.Sel.S != rtxt.Sel.E && line.endoff() == rtxt.Sel.E {
+			// selection ends at the end of this line
+			rtxt.sendIMESelection(w, p, line.h)
 		}
 
 		if insel == selInside && rtxt.Sel.contains(line.endoff()) {
@@ -278,6 +295,28 @@ func (rtxt *RichText) drawRows(w *nucular.Window, viewporth int) *Ctor {
 
 	if rtxt.down && !in.Mouse.Down(mouse.ButtonLeft) {
 		rtxt.down = false
+	}
+
+	if len(rtxt.lines) == 0 && rtxt.flags&ShowTick != 0 {
+		h := nucular.FontHeight(rtxt.face)
+		w.RowScaled(h).Dynamic(1)
+		bounds, out := w.Custom(nstyle.WidgetStateActive)
+		p := image.Point{bounds.X, bounds.Y}
+		if out != nil {
+			rtxt.drawTick(w, out, p, h, siter.styleSel.Color, 0)
+		}
+		if rtxt.flags&Editable != 0 && rtxt.focused {
+			rtxt.sendIMESelection(w, p, h)
+		}
+	}
+	rtxt.ime.updateSel = false
+
+	if rtxt.flags&Editable != 0 && rtxt.focused && (rtxt.Sel != selAtStart || !focusedAtStart) {
+		// selection changed (or we got focus) because of a click while
+		// drawing, update the IME on the next frame.
+		rtxt.updateIMESnippet(rtxt.Sel)
+		rtxt.ime.updateSel = true
+		w.Master().Changed()
 	}
 
 	if rtxt.followCursor {

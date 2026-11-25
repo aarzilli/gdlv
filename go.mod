@@ -1,18 +1,19 @@
 module github.com/aarzilli/gdlv
 
 require (
-	github.com/aarzilli/nucular v0.0.0-20260922071552-58b808aa5772
+	github.com/aarzilli/nucular v0.0.0-20261124151617-37de78906f86
 	go.starlark.net v0.0.0-20200821142938-949cc6f4b097
 	golang.org/x/mobile v0.0.0-20231127183840-76ac6878050a
 )
 
 require (
 	dmitri.shuralyov.com/gpu/mtl v0.0.0-20221208032759-85de2813cf6b // indirect
-	gioui.org v0.10.2 // indirect
+	gioui.org v0.10.3 // indirect
 	gioui.org/shader v1.0.9 // indirect
 	github.com/BurntSushi/xgb v0.0.0-20160522181843-27f122750802 // indirect
 	github.com/go-gl/glfw/v3.3/glfw v0.0.0-20231223183121-56fa3ac82ce7 // indirect
-	github.com/go-text/typesetting v0.3.4 // indirect
+	github.com/go-text/typesetting v0.3.5 // indirect
+	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/golang/freetype v0.0.0-20170609003504-e2365dfdc4a0 // indirect
 	github.com/hashicorp/golang-lru v0.5.3 // indirect
 	github.com/jezek/xgb v1.1.1 // indirect

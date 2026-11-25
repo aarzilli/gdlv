@@ -261,3 +261,52 @@ func (sv ScriptVerticalOrientation) Orientation(r rune) (isSideways bool) {
 	}
 	return !sv.isMainSideways
 }
+
+// BidiClass is a flag storing the Bidi_Class property used for UAX9.
+type BidiClass uint32
+
+func (c BidiClass) IsRTL() bool {
+	return c&(BD_R|BD_RLI|BD_AL|BD_RLO|BD_RLE) != 0
+}
+
+func (c BidiClass) IsStrong() bool {
+	return c&(BD_L|BD_R|BD_AL|BD_LRO|BD_RLO|BD_RLE|BD_LRE) != 0
+}
+
+func (c BidiClass) IsIsolate() bool {
+	return c&(BD_LRI|BD_RLI|BD_FSI|BD_PDI) != 0
+}
+
+func (c BidiClass) IsArabic() bool {
+	return c&(BD_AL|BD_AN) != 0
+}
+
+func (c BidiClass) IsNumber() bool {
+	return c&(BD_AN|BD_EN) != 0
+}
+
+func (c BidiClass) IsLetter() bool {
+	return c&(BD_L|BD_R|BD_AL) != 0
+}
+
+// BidiBracket stores the matching bracket
+type BidiBracket uint8
+
+func (bb BidiBracket) IsBracket() bool { return bb&bidiBracketMask != 0 }
+
+func (bb BidiBracket) IsOpening() bool { return bb&bidiBracketOpenMask != 0 }
+
+func (bb BidiBracket) Reverse(r rune) rune {
+	return bracketsXORMasks[bb&bidiBracketReverseMask] ^ r
+}
+
+// LookupBidiClass return the value of the Bidi_Class,
+// or zero.
+func LookupBidiClass(r rune) (BidiClass, BidiBracket) {
+	i := bidiLookup(r)
+	if i == 0 {
+		return 0, 0
+	}
+	class := i & 0xFF
+	return 1 << (class - 1), BidiBracket(i >> 8)
+}

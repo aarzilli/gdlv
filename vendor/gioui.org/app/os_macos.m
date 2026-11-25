@@ -20,6 +20,10 @@ __attribute__ ((visibility ("hidden"))) CALayer *gio_layerFactory(BOOL presentWi
 @end
 
 @implementation GioWindowDelegate
+- (BOOL)windowShouldClose:(NSWindow *)window {
+	GioView *view = (GioView *)window.contentView;
+	return gio_onCloseRequest(view.handle) != 0;
+}
 - (void)windowWillMiniaturize:(NSNotification *)notification {
 	NSWindow *window = (NSWindow *)[notification object];
   GioView *view = (GioView *)window.contentView;
@@ -216,7 +220,10 @@ static void handleMouse(GioView *view, NSEvent *event, int typ, CGFloat dx, CGFl
 - (BOOL) becomeFirstResponder {
 	gio_onFocus(self.handle, 1);
 	return [super becomeFirstResponder];
- }
+}
+- (BOOL)acceptsFirstResponder {
+    return YES;
+}
 - (BOOL) resignFirstResponder {
 	gio_onFocus(self.handle, 0);
 	return [super resignFirstResponder];

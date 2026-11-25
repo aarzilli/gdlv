@@ -3,7 +3,6 @@
 package nucular
 
 import (
-	"bytes"
 	"fmt"
 	"image"
 	"image/color"
@@ -54,8 +53,6 @@ type masterWindow struct {
 	w   *app.Window
 	ops op.Ops
 
-	textbuffer bytes.Buffer
-
 	closed bool
 
 	ve app.ViewEvent
@@ -64,6 +61,8 @@ type masterWindow struct {
 
 	charAtlas map[charAtlasKey]map[rune]renderedGlyph
 }
+
+const debugIME = false
 
 var clipboardStarted bool = false
 var hasX11Clipboard = false
@@ -190,12 +189,31 @@ func (mw *masterWindow) main() {
 					mw.processPointerEvent(e)
 					mw.uilock.Unlock()
 				case key.EditEvent:
+					if debugIME {
+						fmt.Printf("edit event %q (%v)\n", e.Text, e.Range)
+					}
 					changed := atomic.LoadInt32(&mw.ctx.changed)
 					if changed < 2 {
 						atomic.StoreInt32(&mw.ctx.changed, 2)
 					}
 					mw.uilock.Lock()
-					io.WriteString(&mw.textbuffer, e.Text)
+					mw.ctx.Input.Keyboard.events = append(mw.ctx.Input.Keyboard.events, KeyboardEvent{kind: keyboardEventSelection, rng: [2]int{e.Range.Start, e.Range.End}})
+					mw.ctx.Input.Keyboard.events = append(mw.ctx.Input.Keyboard.events, KeyboardEvent{kind: keyboardEventText, text: e.Text})
+					mw.uilock.Unlock()
+
+				case key.SelectionEvent:
+					if debugIME {
+						fmt.Printf("selection event %#v\n", e)
+					}
+					mw.uilock.Lock()
+					mw.ctx.Input.Keyboard.events = append(mw.ctx.Input.Keyboard.events, KeyboardEvent{kind: keyboardEventSelection, rng: [2]int{e.Start, e.End}})
+					mw.uilock.Unlock()
+				case key.SnippetEvent:
+					if debugIME {
+						fmt.Printf("snippet event %#v\n", e)
+					}
+					mw.uilock.Lock()
+					mw.ctx.Input.Keyboard.events = append(mw.ctx.Input.Keyboard.events, KeyboardEvent{kind: keyboardEventSnippet, rng: [2]int{e.Start, e.End}})
 					mw.uilock.Unlock()
 
 				case key.Event:
@@ -208,7 +226,7 @@ func (mw *masterWindow) main() {
 						mw.uilock.Lock()
 						switch e.Name {
 						case key.NameEnter, key.NameReturn:
-							io.WriteString(&mw.textbuffer, "\n")
+							mw.ctx.Input.Keyboard.addText("\n")
 						}
 						mw.ctx.Input.Keyboard.events = append(mw.ctx.Input.Keyboard.events, KeyboardEvent{kind: keyboardEventKey, key: gio2mobileKey(e)})
 						mw.uilock.Unlock()
@@ -216,7 +234,9 @@ func (mw *masterWindow) main() {
 				case transfer.DataEvent:
 					buf, err := io.ReadAll(e.Open())
 					if err == nil {
+						mw.uilock.Lock()
 						mw.ctx.Input.Keyboard.addClipboard(string(buf))
+						mw.uilock.Unlock()
 					}
 				}
 			}
@@ -404,8 +424,6 @@ func (mw *masterWindow) updateLocked(perfString string, source input.Source) {
 	mw.ctx.Windows[0].Bounds = rect.Rect{X: 0, Y: 0, W: mw.size.X, H: mw.size.Y}
 	in := &mw.ctx.Input
 	in.Mouse.clip = nk_null_rect
-	in.Keyboard.addText(mw.textbuffer.String())
-	mw.textbuffer.Reset()
 
 	var t0, t1, te time.Time
 	if perfUpdate || mw.Perf {
@@ -652,6 +670,28 @@ func (ctx *context) Draw(ops *op.Ops, source input.Source, size image.Point, per
 				ctx.hasNextClipboard = true
 				ctx.trashFrame = true
 			}
+
+		case command.IMESnippet:
+			if debugIME {
+				fmt.Printf("snippetcmd to %d, %d %q\n", icmd.Range[0], icmd.Range[1], icmd.Text.String)
+			}
+			source.Execute(key.SnippetCmd{
+				eventTag, key.Snippet{key.Range{icmd.Range[0], icmd.Range[1]}, icmd.Text.String},
+			})
+		case command.IMESelection:
+			if debugIME {
+				fmt.Printf("selectioncmd to %d, %d cursor: %#v %d area: %#v\n", icmd.Range[0], icmd.Range[1], icmd.CursorPos, icmd.Ascent, icmd.Rect)
+			}
+			source.Execute(key.SelectionCmd{
+				Tag:   eventTag,
+				Range: key.Range{icmd.Range[0], icmd.Range[1]},
+				Caret: key.Caret{
+					Pos:     f32.Point{float32(icmd.CursorPos.X), float32(icmd.CursorPos.Y)},
+					Ascent:  float32(icmd.Ascent),
+					Descent: 0,
+				},
+				CompositionBounds: icmd.Rect.Rectangle(),
+			})
 
 		default:
 			panic(UnknownCommandErr)

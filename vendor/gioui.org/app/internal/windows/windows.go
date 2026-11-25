@@ -194,6 +194,8 @@ const (
 
 	CW_USEDEFAULT = -2147483648
 
+	DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 = ^uintptr(3) // -4
+
 	GWL_STYLE = ^(uintptr(16) - 1) // -16
 
 	GCS_COMPSTR       = 0x0008
@@ -244,6 +246,7 @@ const (
 
 	MDT_EFFECTIVE_DPI = 0
 
+	MONITOR_DEFAULTTONULL    = 0
 	MONITOR_DEFAULTTOPRIMARY = 1
 
 	NI_COMPOSITIONSTR = 0x0015
@@ -265,6 +268,7 @@ const (
 	SW_RESTORE       = 9
 
 	SWP_FRAMECHANGED  = 0x0020
+	SWP_NOACTIVATE    = 0x0010
 	SWP_NOMOVE        = 0x0002
 	SWP_NOOWNERZORDER = 0x0200
 	SWP_NOSIZE        = 0x0001
@@ -293,6 +297,22 @@ const (
 	VK_SPACE  = 0x20
 	VK_TAB    = 0x09
 	VK_UP     = 0x26
+
+	VK_NUMPAD0  = 0x60
+	VK_NUMPAD1  = 0x61
+	VK_NUMPAD2  = 0x62
+	VK_NUMPAD3  = 0x63
+	VK_NUMPAD4  = 0x64
+	VK_NUMPAD5  = 0x65
+	VK_NUMPAD6  = 0x66
+	VK_NUMPAD7  = 0x67
+	VK_NUMPAD8  = 0x68
+	VK_NUMPAD9  = 0x69
+	VK_MULTIPLY = 0x6A
+	VK_ADD      = 0x6B
+	VK_SUBTRACT = 0x6D
+	VK_DECIMAL  = 0x6E
+	VK_DIVIDE   = 0x6F
 
 	VK_F1  = 0x70
 	VK_F2  = 0x71
@@ -422,65 +442,64 @@ var (
 	_GlobalLock       = kernel32.NewProc("GlobalLock")
 	_GlobalUnlock     = kernel32.NewProc("GlobalUnlock")
 
-	user32                       = syscall.NewLazySystemDLL("user32.dll")
-	_AdjustWindowRectEx          = user32.NewProc("AdjustWindowRectEx")
-	_CallMsgFilter               = user32.NewProc("CallMsgFilterW")
-	_CloseClipboard              = user32.NewProc("CloseClipboard")
-	_CreateWindowEx              = user32.NewProc("CreateWindowExW")
-	_DefWindowProc               = user32.NewProc("DefWindowProcW")
-	_DestroyWindow               = user32.NewProc("DestroyWindow")
-	_DispatchMessage             = user32.NewProc("DispatchMessageW")
-	_FindWindow                  = user32.NewProc("FindWindowW")
-	_EmptyClipboard              = user32.NewProc("EmptyClipboard")
-	_EnableMouseInPointer        = user32.NewProc("EnableMouseInPointer")
-	_GetWindowRect               = user32.NewProc("GetWindowRect")
-	_GetClientRect               = user32.NewProc("GetClientRect")
-	_GetClipboardData            = user32.NewProc("GetClipboardData")
-	_GetDC                       = user32.NewProc("GetDC")
-	_GetDpiForWindow             = user32.NewProc("GetDpiForWindow")
-	_GetKeyState                 = user32.NewProc("GetKeyState")
-	_GetMessage                  = user32.NewProc("GetMessageW")
-	_GetMessageTime              = user32.NewProc("GetMessageTime")
-	_GetMonitorInfo              = user32.NewProc("GetMonitorInfoW")
-	_GetPointerInfo              = user32.NewProc("GetPointerInfo")
-	_GetSystemMetrics            = user32.NewProc("GetSystemMetrics")
-	_GetWindowLong               = user32.NewProc("GetWindowLongPtrW")
-	_GetWindowLong32             = user32.NewProc("GetWindowLongW")
-	_GetWindowPlacement          = user32.NewProc("GetWindowPlacement")
-	_KillTimer                   = user32.NewProc("KillTimer")
-	_LoadCursor                  = user32.NewProc("LoadCursorW")
-	_LoadImage                   = user32.NewProc("LoadImageW")
-	_MonitorFromPoint            = user32.NewProc("MonitorFromPoint")
-	_MonitorFromWindow           = user32.NewProc("MonitorFromWindow")
-	_MoveWindow                  = user32.NewProc("MoveWindow")
-	_MsgWaitForMultipleObjectsEx = user32.NewProc("MsgWaitForMultipleObjectsEx")
-	_OpenClipboard               = user32.NewProc("OpenClipboard")
-	_PeekMessage                 = user32.NewProc("PeekMessageW")
-	_PostMessage                 = user32.NewProc("PostMessageW")
-	_PostQuitMessage             = user32.NewProc("PostQuitMessage")
-	_ReleaseCapture              = user32.NewProc("ReleaseCapture")
-	_RegisterClassExW            = user32.NewProc("RegisterClassExW")
-	_RegisterTouchWindow         = user32.NewProc("RegisterTouchWindow")
-	_ReleaseDC                   = user32.NewProc("ReleaseDC")
-	_ScreenToClient              = user32.NewProc("ScreenToClient")
-	_ShowWindow                  = user32.NewProc("ShowWindow")
-	_IsIconic                    = user32.NewProc("IsIconic")
-	_SendMessage                 = user32.NewProc("SendMessageW")
-	_SetCapture                  = user32.NewProc("SetCapture")
-	_SetCursor                   = user32.NewProc("SetCursor")
-	_SetClipboardData            = user32.NewProc("SetClipboardData")
-	_SetForegroundWindow         = user32.NewProc("SetForegroundWindow")
-	_SetFocus                    = user32.NewProc("SetFocus")
-	_SetProcessDPIAware          = user32.NewProc("SetProcessDPIAware")
-	_SetTimer                    = user32.NewProc("SetTimer")
-	_SetWindowLong               = user32.NewProc("SetWindowLongPtrW")
-	_SetWindowLong32             = user32.NewProc("SetWindowLongW")
-	_SetWindowPlacement          = user32.NewProc("SetWindowPlacement")
-	_SetWindowPos                = user32.NewProc("SetWindowPos")
-	_SetWindowText               = user32.NewProc("SetWindowTextW")
-	_TranslateMessage            = user32.NewProc("TranslateMessage")
-	_UnregisterClass             = user32.NewProc("UnregisterClassW")
-	_UpdateWindow                = user32.NewProc("UpdateWindow")
+	user32                        = syscall.NewLazySystemDLL("user32.dll")
+	_AdjustWindowRectEx           = user32.NewProc("AdjustWindowRectEx")
+	_CallMsgFilter                = user32.NewProc("CallMsgFilterW")
+	_CloseClipboard               = user32.NewProc("CloseClipboard")
+	_CreateWindowEx               = user32.NewProc("CreateWindowExW")
+	_DefWindowProc                = user32.NewProc("DefWindowProcW")
+	_DestroyWindow                = user32.NewProc("DestroyWindow")
+	_DispatchMessage              = user32.NewProc("DispatchMessageW")
+	_FindWindow                   = user32.NewProc("FindWindowW")
+	_EmptyClipboard               = user32.NewProc("EmptyClipboard")
+	_EnableMouseInPointer         = user32.NewProc("EnableMouseInPointer")
+	_GetWindowRect                = user32.NewProc("GetWindowRect")
+	_GetClientRect                = user32.NewProc("GetClientRect")
+	_GetClipboardData             = user32.NewProc("GetClipboardData")
+	_GetDC                        = user32.NewProc("GetDC")
+	_GetDpiForWindow              = user32.NewProc("GetDpiForWindow")
+	_GetKeyState                  = user32.NewProc("GetKeyState")
+	_GetMessage                   = user32.NewProc("GetMessageW")
+	_GetMessageTime               = user32.NewProc("GetMessageTime")
+	_GetMonitorInfo               = user32.NewProc("GetMonitorInfoW")
+	_GetPointerInfo               = user32.NewProc("GetPointerInfo")
+	_GetSystemMetrics             = user32.NewProc("GetSystemMetrics")
+	_GetWindowLong                = user32.NewProc("GetWindowLongPtrW")
+	_GetWindowLong32              = user32.NewProc("GetWindowLongW")
+	_GetWindowPlacement           = user32.NewProc("GetWindowPlacement")
+	_LoadCursor                   = user32.NewProc("LoadCursorW")
+	_LoadImage                    = user32.NewProc("LoadImageW")
+	_MonitorFromPoint             = user32.NewProc("MonitorFromPoint")
+	_MonitorFromRect              = user32.NewProc("MonitorFromRect")
+	_MoveWindow                   = user32.NewProc("MoveWindow")
+	_MsgWaitForMultipleObjectsEx  = user32.NewProc("MsgWaitForMultipleObjectsEx")
+	_OpenClipboard                = user32.NewProc("OpenClipboard")
+	_PeekMessage                  = user32.NewProc("PeekMessageW")
+	_PostMessage                  = user32.NewProc("PostMessageW")
+	_PostQuitMessage              = user32.NewProc("PostQuitMessage")
+	_ReleaseCapture               = user32.NewProc("ReleaseCapture")
+	_RegisterClassExW             = user32.NewProc("RegisterClassExW")
+	_RegisterTouchWindow          = user32.NewProc("RegisterTouchWindow")
+	_ReleaseDC                    = user32.NewProc("ReleaseDC")
+	_ScreenToClient               = user32.NewProc("ScreenToClient")
+	_ShowWindow                   = user32.NewProc("ShowWindow")
+	_IsIconic                     = user32.NewProc("IsIconic")
+	_SendMessage                  = user32.NewProc("SendMessageW")
+	_SetCapture                   = user32.NewProc("SetCapture")
+	_SetCursor                    = user32.NewProc("SetCursor")
+	_SetClipboardData             = user32.NewProc("SetClipboardData")
+	_SetForegroundWindow          = user32.NewProc("SetForegroundWindow")
+	_SetFocus                     = user32.NewProc("SetFocus")
+	_SetThreadDpiAwarenessContext = user32.NewProc("SetThreadDpiAwarenessContext")
+	_SetTimer                     = user32.NewProc("SetTimer")
+	_SetWindowLong                = user32.NewProc("SetWindowLongPtrW")
+	_SetWindowLong32              = user32.NewProc("SetWindowLongW")
+	_SetWindowPlacement           = user32.NewProc("SetWindowPlacement")
+	_SetWindowPos                 = user32.NewProc("SetWindowPos")
+	_SetWindowText                = user32.NewProc("SetWindowTextW")
+	_TranslateMessage             = user32.NewProc("TranslateMessage")
+	_UnregisterClass              = user32.NewProc("UnregisterClassW")
+	_UpdateWindow                 = user32.NewProc("UpdateWindow")
 
 	shcore            = syscall.NewLazySystemDLL("shcore")
 	_GetDpiForMonitor = shcore.NewProc("GetDpiForMonitor")
@@ -710,12 +729,15 @@ func GetWindowPlacement(hwnd syscall.Handle) WindowPlacement {
 	return wp
 }
 
-func GetMonitorInfo(hwnd syscall.Handle) MonitorInfo {
+func GetMonitorInfo(r Rect, flags uint32) (MonitorInfo, bool) {
+	monitor, _, _ := _MonitorFromRect.Call(uintptr(unsafe.Pointer(&r)), uintptr(flags))
+	if monitor == 0 {
+		return MonitorInfo{}, false
+	}
 	var mi MonitorInfo
 	mi.cbSize = uint32(unsafe.Sizeof(mi))
-	v, _, _ := _MonitorFromWindow.Call(uintptr(hwnd), MONITOR_DEFAULTTOPRIMARY)
-	_GetMonitorInfo.Call(v, uintptr(unsafe.Pointer(&mi)))
-	return mi
+	_GetMonitorInfo.Call(monitor, uintptr(unsafe.Pointer(&mi)))
+	return mi, true
 }
 
 func GetWindowLong(hwnd syscall.Handle, index uintptr) (val uintptr) {
@@ -932,8 +954,8 @@ func SetFocus(hwnd syscall.Handle) {
 	_SetFocus.Call(uintptr(hwnd))
 }
 
-func SetProcessDPIAware() {
-	_SetProcessDPIAware.Call()
+func SetThreadDpiAwarenessContext() {
+	_SetThreadDpiAwarenessContext.Call(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)
 }
 
 func SetCapture(hwnd syscall.Handle) syscall.Handle {

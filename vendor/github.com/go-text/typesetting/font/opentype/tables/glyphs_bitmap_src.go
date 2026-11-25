@@ -161,8 +161,9 @@ type BigGlyphMetrics struct {
 	vertAdvance  uint8 // Vertical advance width in pixels.
 }
 
+// Format 1: small metrics, byte-aligned data
 // Format 2: small metrics, bit-aligned data
-type BitmapData2 struct {
+type BitmapData1Or2 struct {
 	SmallGlyphMetrics
 	Image []byte `arrayCount:"ToEnd"`
 }

@@ -3,6 +3,7 @@
 package shaping
 
 import (
+	"github.com/go-text/typesetting/bidi"
 	"github.com/go-text/typesetting/di"
 	"github.com/go-text/typesetting/font"
 	ot "github.com/go-text/typesetting/font/opentype"
@@ -10,7 +11,6 @@ import (
 	ucd "github.com/go-text/typesetting/internal/unicodedata"
 	"github.com/go-text/typesetting/language"
 	"golang.org/x/image/math/fixed"
-	"golang.org/x/text/unicode/bidi"
 )
 
 type Input struct {
@@ -117,7 +117,7 @@ func SplitByFontGlyphs(input Input, availableFaces []*font.Face) []Input {
 // the return value of the [Fontmap.ResolveFace] call.
 // The 'Face' field of 'input' is ignored: only 'availableFaces' is used to select the face.
 func SplitByFace(input Input, availableFaces Fontmap) []Input {
-	return splitByFace(input, availableFaces, nil)
+	return splitByFace(input, availableFaces, nil, true)
 }
 
 // Segmenter holds a state used to split input
@@ -218,9 +218,8 @@ func (seg *Segmenter) splitByBidi(text Input) {
 	if text.Direction.Progression() == di.TowardTopLeft {
 		def = bidi.RightToLeft
 	}
-	seg.bidiParagraph.SetString(string(text.Text[text.RunStart:text.RunEnd]), bidi.DefaultDirection(def))
-	out, err := seg.bidiParagraph.Order()
-	if err != nil || out.NumRuns() == 0 {
+	out := seg.bidiParagraph.Segment(text.Text[text.RunStart:text.RunEnd], def)
+	if out.NumRuns() == 0 {
 		seg.output = append(seg.output, text)
 		return
 	}
@@ -229,16 +228,14 @@ func (seg *Segmenter) splitByBidi(text Input) {
 	for i := 0; i < out.NumRuns(); i++ {
 		currentInput := input
 		run := out.Run(i)
-		dir := run.Direction()
-		_, endRune := run.Pos()
-		endRune += text.RunStart // shift by the input run position
-		currentInput.RunEnd = endRune + 1
+
+		currentInput.RunEnd = run.End + text.RunStart // shift by the input run position
 
 		// override the direction
-		if dir == bidi.RightToLeft {
-			currentInput.Direction.SetProgression(di.TowardTopLeft)
-		} else {
+		if run.IsLeftToRight() {
 			currentInput.Direction.SetProgression(di.FromTopLeft)
+		} else {
+			currentInput.Direction.SetProgression(di.TowardTopLeft)
 		}
 
 		seg.output = append(seg.output, currentInput)
@@ -395,22 +392,40 @@ func (seg *Segmenter) splitByVertOrientation() {
 // assume [splitByScript] has been called
 func (seg *Segmenter) splitByFace(faces Fontmap) {
 	withScript, hasScriptSupport := faces.(FontmapScript)
-	for _, input := range seg.input {
+	lastRunWithoutFace := -1
+	for i, input := range seg.input {
 		if hasScriptSupport {
 			withScript.SetScript(input.Script)
 		}
-		seg.output = splitByFace(input, faces, seg.output)
+		isLast := i == len(seg.input)-1
+		L := len(seg.output)
+		seg.output = splitByFace(input, faces, seg.output, isLast)
+		if face := seg.output[L].Face; face != nil {
+			if lastRunWithoutFace != -1 {
+				// apply it back
+				for k := lastRunWithoutFace; k < L; k++ {
+					seg.output[k].Face = face
+				}
+				// reset the marker
+				lastRunWithoutFace = -1
+			}
+		} else {
+			// in this case, only one run has been added by splitByFace
+			if lastRunWithoutFace == -1 {
+				lastRunWithoutFace = L
+			}
+		}
 	}
 }
 
-func splitByFace(input Input, availableFaces Fontmap, buffer []Input) []Input {
+func splitByFace(input Input, availableFaces Fontmap, buffer []Input, isLast bool) []Input {
 	currentInput := input
 	for i := input.RunStart; i < input.RunEnd; i++ {
 		r := input.Text[i]
 		// We can safely ignore characters if we have a face or if there is more text,
 		// but we must force the choice of a face if we still don't have one and we reach
 		// the final rune. Otherwise strings like all-whitespace are never assigned a face.
-		if ignoreFaceChange(r) && (currentInput.Face != nil || i < input.RunEnd-1) {
+		if ignoreFaceChange(r) && (currentInput.Face != nil || !isLast || i < input.RunEnd-1) {
 			// add the rune to the current input
 			continue
 		}
